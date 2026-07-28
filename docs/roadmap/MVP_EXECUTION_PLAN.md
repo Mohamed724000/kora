@@ -16,8 +16,8 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 | Lot 00 | Preflight read-only | Completed |
 | Lot 00B | Remédiation documentaire | Completed |
 | Lot 00C | Canonicalisation AdminLTE | Completed |
-| S0.1 | Gouvernance et Git | Partial — gouvernance prête, commit bloqué par l’identité Git |
-| S0.2 | Contrat monorepo et versions | Not started |
+| S0.1 | Gouvernance et Git | Completed |
+| S0.2 | Contrat monorepo et versions | Completed |
 | S0.3 | Fondations applicatives | Not started |
 | S0.4 | Infrastructure locale | Not started — Docker blocker connu |
 | S0.5 | CI, sécurité et observabilité | Not started |
@@ -38,18 +38,23 @@ Livrables :
 - Git local sur `main` ;
 - premier commit seulement avec identité Git préexistante.
 
-Sortie : baseline gouvernée, aucun code, aucune dépendance et aucun remote.
+Sortie actuelle : baseline gouvernée publiée sur `main`, aucun code applicatif
+et aucune dépendance.
 
 ### S0.2 — Contrat monorepo et versions
 
-Statut : **Not started**
+Statut : **Completed**
 
-Prévu uniquement après autorisation :
+Livré dans le périmètre autorisé :
 
 - politique Node 22.18.0 et npm 10.9.3 ;
-- workspaces et contrats de commandes ;
-- arborescence `apps`, `packages`, `infra`, `assets` ;
-- aucun package métier.
+- workspaces npm explicites pour web, administration, API et packages partagés ;
+- mobile Flutter maintenu hors des npm workspaces ;
+- commandes communes avec état `NON EXÉCUTÉ` explicite en l’absence
+  d’application ;
+- arborescence canonique réservée sous `apps`, `packages`, `infra` et `assets` ;
+- lockfile racine reproductible, sans dépendance ;
+- aucun package métier ni début de Sprint 0.3.
 
 ### S0.3 — Fondations applicatives
 
