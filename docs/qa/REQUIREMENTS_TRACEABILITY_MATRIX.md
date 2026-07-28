@@ -8,7 +8,8 @@ Elle sert de registre vivant pour l’implémentation et la vérification. Elle 
 modifie ni les exigences sources ni les décisions d’architecture applicables.
 
 Les colonnes `Implémentation`, `Vérification` et `Preuve` décrivent l’état réel
-du dépôt à la date du présent lot. Sprint 0.1 ne produit aucun code applicatif.
+du dépôt à la date du présent lot. Sprint 0.1 et Sprint 0.2 ne produisent aucun
+code applicatif.
 
 ## Exigences produit
 
@@ -90,9 +91,18 @@ du dépôt à la date du présent lot. Sprint 0.1 ne produit aucun code applicat
 | GOV-S0.1-01 | Baseline clean-room et archive AdminLTE canonique | Vérifié | Rapport validé du Lot 00C et manifeste de baseline |
 | GOV-S0.1-02 | Seize artefacts de gouvernance autorisés, complets et cohérents | Verified | Validation documentaire de Sprint 0.1 |
 | GOV-S0.1-03 | Dépôt Git local initialisé sur `main` | Verified | Métadonnées Git locales |
-| GOV-S0.1-04 | Premier commit local unique | Blocked — identité Git préexistante absente | Index vide et aucun `HEAD` |
-| GOV-S0.1-05 | Aucun remote, tag ou hook ajouté | Verified | Configuration Git locale |
+| GOV-S0.1-04 | Premier commit local unique | Verified | Commit `44505233361ecd9b13dbae82deb69e5c47f0d65e` |
+| GOV-S0.1-05 | Remote officiel unique ; aucun tag ou hook actif | Verified | `origin` vers `https://github.com/Mohamed724000/kora.git` |
 | GOV-S0.1-06 | Aucun secret ou artefact applicatif introduit | Verified | Scans de Sprint 0.1 |
+
+## Contrôles de gouvernance de Sprint 0.2
+
+| ID | Contrôle | État | Preuve attendue |
+|---|---|---|---|
+| GOV-S0.2-01 | Contrat racine privé et versions verrouillées | Implemented — pending CTO review | `package.json`, `.nvmrc` et `package-lock.json` |
+| GOV-S0.2-02 | Validation Node/npm sans dépendance | Implemented — pending CTO review | `npm.cmd run env:check` retourne le code 0 |
+| GOV-S0.2-03 | Neuf zones canoniques réservées sans package applicatif | Implemented — pending CTO review | Inventaire des zones et scan des manifestes enfants |
+| GOV-S0.2-04 | Zéro dépendance, code métier ou source immuable modifiée | Implemented — pending CTO review | Lockfile vide, scans du dépôt et manifeste 52/52 |
 
 ## Règles de mise à jour
 
