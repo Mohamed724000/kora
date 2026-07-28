@@ -99,10 +99,10 @@ code applicatif.
 
 | ID | Contrôle | État | Preuve attendue |
 |---|---|---|---|
-| GOV-S0.2-01 | Contrat racine privé et versions verrouillées | Implemented — pending CTO review | `package.json`, `.nvmrc` et `package-lock.json` |
-| GOV-S0.2-02 | Validation Node/npm sans dépendance | Implemented — pending CTO review | `npm.cmd run env:check` retourne le code 0 |
-| GOV-S0.2-03 | Neuf zones canoniques réservées sans package applicatif | Implemented — pending CTO review | Inventaire des zones et scan des manifestes enfants |
-| GOV-S0.2-04 | Zéro dépendance, code métier ou source immuable modifiée | Implemented — pending CTO review | Lockfile vide, scans du dépôt et manifeste 52/52 |
+| GOV-S0.2-01 | Contrat racine privé et versions verrouillées | Verified | `package.json`, `.nvmrc` et `package-lock.json` ; revue CTO PASS sur PR #1 |
+| GOV-S0.2-02 | Validation Node/npm sans dépendance | Verified | `npm.cmd run env:check` retourne le code 0 ; revue CTO PASS sur PR #1 |
+| GOV-S0.2-03 | Neuf zones canoniques réservées sans package applicatif | Verified | Inventaire des zones et scan des manifestes enfants ; revue CTO PASS sur PR #1 |
+| GOV-S0.2-04 | Zéro dépendance, code métier ou source immuable modifiée | Verified | Lockfile vide, scans du dépôt et manifeste 52/52 ; revue CTO PASS sur PR #1 |
 
 ## Règles de mise à jour
 

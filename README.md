@@ -8,7 +8,7 @@ Aucune application ni aucun package métier n’est initialisé par Sprint 0.2.
 
 - Gate 0 et Lots 00, 00B et 00C : terminés.
 - Sprint 0.1 : terminé ; baseline unique publiée sur `main`.
-- Sprint 0.2 : contrat monorepo implémenté, en attente de revue CTO.
+- Sprint 0.2 : contrat monorepo terminé et validé par la revue CTO.
 - Sprint 0.3 et lots applicatifs : non commencés.
 - Docker : contrôle différé à S0.4.
 

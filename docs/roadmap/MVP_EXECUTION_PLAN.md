@@ -17,7 +17,7 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 | Lot 00B | Remédiation documentaire | Completed |
 | Lot 00C | Canonicalisation AdminLTE | Completed |
 | S0.1 | Gouvernance et Git | Completed |
-| S0.2 | Contrat monorepo et versions | Implemented — pending CTO review |
+| S0.2 | Contrat monorepo et versions | Completed |
 | S0.3 | Fondations applicatives | Not started |
 | S0.4 | Infrastructure locale | Not started — Docker blocker connu |
 | S0.5 | CI, sécurité et observabilité | Not started |
@@ -43,7 +43,7 @@ et aucune dépendance.
 
 ### S0.2 — Contrat monorepo et versions
 
-Statut : **Implemented — pending CTO review**
+Statut : **Completed**
 
 Livré dans le périmètre autorisé :
 
