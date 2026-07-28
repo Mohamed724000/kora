@@ -1,0 +1,57 @@
+* text=auto eol=lf
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+*.zip binary
+*.docx binary
+*.xlsx binary
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.mp3 binary
+*.mp4 binary
+
+# Immutable official sources with historical Markdown whitespace
+# Preserve their historical bytes; disable whitespace diagnostics only here.
+docs/prompts/CODEX_SPRINT_0_1_GOVERNANCE_AND_GIT.md -whitespace
+docs/roadmap/MASTER_EXECUTION_BLUEPRINT.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/README.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/docs/adr/ADR-001-apexcharts-dependency.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/docs/adr/ADR-002-admin-totp.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/docs/adr/ADR-003-dashboard-endpoints.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/docs/adr/ADR-004-audit-read-api.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/docs/adr/ADR-005-admin-session-and-recovery.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/docs/adr/ADR-006-banner-and-platform-config.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/docs/adr/ADR-007-artist-support-terminology.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/docs/adr/ADR-008-admin-session-policy.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/docs/adr/ADR-009-monorepo-contracts-and-codegen.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/docs/adr/ADR-010-guest-identity-and-sessions.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/docs/adr/ADR-011-content-media-and-publication.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/docs/adr/ADR-012-order-payment-attempts.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/docs/adr/ADR-013-financial-ledger-and-refunds.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/docs/adr/ADR-014-artist-earnings-and-payouts.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/docs/adr/ADR-015-webhook-inbox-and-outbox.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/docs/adr/ADR-016-entitlements-library-and-archive.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/docs/adr/ADR-017-preview-and-signed-playback.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/docs/adr/ADR-018-secure-offline.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/docs/adr/ADR-019-append-only-audit.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/docs/adr/ADR-020-admin-rbac-and-theme.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/docs/adr/ADR-021-content-subtypes-and-supporting-models.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/docs/adr/ADR-022-store-and-provider-payment-gate.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/docs/adr/ADR-023-ticketing-v2.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/docs/adr/ADR-024-realistic-capture-protection.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/docs/governance/DECISION_LOG.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/docs/governance/SOURCE_OF_TRUTH.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/docs/governance/SPEC_ALIGNMENT_REGISTER.md -whitespace
+docs/source-material/originals/KORA_PLUS_Specification_Resolution_Pack_V2/docs/roadmap/MVP_EXECUTION_PLAN.md -whitespace
+docs/source-material/references/adminlte/README.md -whitespace
