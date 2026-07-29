@@ -6,6 +6,7 @@
   --admin-surface: #ffffff;
   --admin-canvas: #f5f6f8;
   --admin-accent: #b08d4f;
+  --admin-accent-text: #765b24;
   --admin-hover: #eceef1;
   --admin-on-strong: #ffffff;
   --kp-brand-accent: var(--admin-accent);
@@ -79,7 +80,7 @@ button:focus-visible {
 
 .admin-eyebrow {
   margin: 0 0 0.7rem;
-  color: var(--admin-accent);
+  color: var(--admin-accent-text);
   font-size: 0.72rem;
   font-weight: 800;
   letter-spacing: 0.11em;
