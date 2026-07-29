@@ -139,7 +139,7 @@ typecheck, 12 tests API, build Nest et smoke via
 | TODO/FIXME, lorem ipsum, marqueurs IA | PASS — code 0 ; 0 finding actionnable |
 | artefacts générés suivis | PASS — code 0 ; 0 ; APK confirmé ignoré |
 | `git diff --check` | PASS — code 0 |
-| `git fsck --full` | PASS — code 0 ; quatre blobs orphelins non référencés |
+| `git fsck --full` | PASS — code 0 ; cinq blobs orphelins non référencés après contrôles d’index |
 | audit Design/QA indépendant | PASS AVEC RÉSERVES — goldens conformes ; captures runtime Web/Admin absentes |
 | audit Foundation Contract indépendant | PASS — aucun finding résiduel après remédiation |
 | audit Security/Supply Chain indépendant | PASS technique — revue juridique toujours requise |
