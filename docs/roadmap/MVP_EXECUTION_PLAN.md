@@ -70,9 +70,9 @@ Livré dans le périmètre autorisé :
 - états de fondation et goldens mobiles, sans comportement métier ;
 - aucune migration, file BullMQ, logique financière ou intégration fournisseur.
 
-Réserves de revue : le build APK reste bloqué par le NDK Android absent, le
-build iOS n’est pas exécutable sous Windows, l’audit npm détaillé reste à
-résoudre et les captures interactives web/admin n’ont pas pu être réalisées.
+Réserves de revue : le build iOS n’est pas exécutable sous Windows, les
+captures runtime Web/Admin n’ont pas été réalisées, et la validation visuelle
+finale du Product Owner ainsi que la revue juridique restent obligatoires.
 
 ### S0.4 — Infrastructure locale
 

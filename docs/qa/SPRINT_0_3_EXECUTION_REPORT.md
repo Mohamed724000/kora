@@ -4,7 +4,16 @@ Date de remédiation : 2026-07-29
 Branche : `chore/s0-3-application-foundations`
 Baseline : `7f58b194c85757c0be93485aa4706242e8acd915`
 Statut produit : **Implemented — pending CTO review**
-Verdict d’exécution : **READY FOR CTO REVIEW**
+Verdict d’exécution : **READY FOR CTO RE-REVIEW**
+
+## Reprise après CTO review
+
+La revue CTO a examiné le
+`9db8763430e0c3d1b877b9212a61d7173c717e93`. La reprise corrective a confirmé
+en lecture seule la branche `chore/s0-3-application-foundations`, le même SHA
+pour `HEAD` et son upstream, un working tree propre et aucun diff. Les huit
+commits publiés avant cette revue sont préservés sans amend, rebase, squash,
+reset ni force-push. S0.4 n’a pas commencé.
 
 ## Reprise après interruption
 
@@ -106,8 +115,30 @@ vers `node dist/src/main.js`. Le contre-audit Foundation a aussi relevé que les
 health checks devaient rester hors du préfixe applicatif : ils sont maintenant
 exposés uniquement par `/health/live` et `/health/ready`, tandis que
 `/api/v1` reste réservé aux futures routes applicatives. Format, lint,
-typecheck, 12 tests API, build Nest et smoke via
+typecheck, 15 tests API, build Nest et smoke via
 `npm.cmd run start --workspace @kora-plus/api` passent ensuite.
+
+### Correctifs demandés par la CTO review
+
+- Le readiness applique désormais un délai maximal global piloté par
+  `READINESS_TIMEOUT_MS`. Une probe bloquée ou en échec retourne uniquement
+  `down/unavailable`, sans détail interne. Les résolutions ou rejets tardifs
+  sont consommés sans rejection non gérée.
+- Le client PostgreSQL configure les délais de connexion, de requête et de
+  statement ; le client Redis configure les délais de connexion et de
+  commande. Le timeout global reste la borne contractuelle de dernier recours.
+- Les méthodes de `NestStructuredLogger` utilisent un `msg` fixe par niveau et
+  placent un détail assaini dans un champ structuré. Les chaînes contenant
+  token, DSN, mot de passe, OTP, email ou téléphone sont testées sur les six
+  méthodes sans réexposition des valeurs.
+- Les treize fragments de navigation Admin sont reliés par test à une cible DOM
+  unique. `#tableau-de-bord` correspond à la première carte rendue.
+- Le petit texte `.admin-eyebrow` utilise le token distinct
+  `--admin-accent-text: #765b24`, avec un contraste déterministe de 6,38:1 sur
+  blanc et 5,90:1 sur le canvas. La couleur de marque `#b08d4f` reste utilisée
+  pour les usages non textuels conformes.
+- Les réserves obsolètes du plan MVP concernant le NDK, l’APK et l’audit npm
+  ont été retirées.
 
 ## Contrôles
 
@@ -122,11 +153,11 @@ typecheck, 12 tests API, build Nest et smoke via
 | `npm.cmd run format` | PASS — code 0 ; 6 workspaces et mobile, 0 changement |
 | `npm.cmd run lint` | PASS — code 0 ; 6 workspaces et mobile |
 | `npm.cmd run typecheck` | PASS — code 0 ; 6 workspaces et mobile |
-| `npm.cmd test` | PASS — code 0 ; Web 7, Admin 8, API 12, contracts 1, config 1, UI 4, mobile 7 |
+| `npm.cmd test` | PASS — code 0 ; Web 7, Admin 10, API 15, contracts 1, config 1, UI 4, mobile 7 |
 | `npm.cmd run build` | PASS — code 0 ; Web, Admin, API, contracts, config, UI et APK debug |
 | tests et builds ciblés | PASS — codes 0 ; Web, Admin, API, contracts, config et UI séparément |
 | smokes Web/Admin | PASS — code 0 ; HTTP 200, titres/robots conformes, Admin `robots.txt` bloque `/` |
-| smoke API compilée | PASS — code 0 ; `/health/live` 200 ; `/health/ready` 503 ; anciens chemins préfixés 404 |
+| smoke API compilée | PASS — code 0 ; `/health/live` 200 ; `/health/ready` 503 dans la borne configurée, sans fuite ; anciens chemins préfixés 404 |
 | `dart format --output=none --set-exit-if-changed .` | PASS — code 0 ; 13 fichiers, 0 changement |
 | `flutter doctor -v` | PASS — code 0 pour Android ; Visual Studio absent, hors périmètre |
 | `flutter analyze` | PASS — code 0 ; aucun problème |

@@ -37,9 +37,10 @@ financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
 - surface HTTP NestJS limitée à `/health/live` et `/health/ready`, hors du
   préfixe `/api/v1` réservé aux futures routes applicatives ;
 - validation stricte de la configuration au démarrage, sans secret embarqué ;
-- probes PostgreSQL et Redis paresseuses, locales et limitées au readiness ;
-- corrélation des requêtes et logs Pino avec redaction des en-têtes et champs
-  sensibles ;
+- probes PostgreSQL et Redis paresseuses, locales et limitées au readiness,
+  avec délais clients et borne globale pilotée par `READINESS_TIMEOUT_MS` ;
+- corrélation des requêtes et logs Pino avec redaction des en-têtes, champs et
+  chaînes de message sensibles ; le champ `msg` Nest reste catégoriel et fixe ;
 - client Prisma vide et frontière de contrats explicitement vide ;
 - aucune migration, queue BullMQ active, intégration fournisseur, URL média,
   logique financière ou donnée personnelle.
@@ -58,12 +59,20 @@ financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
 | Offline | Extraction clé/fichier, replay licence, copie appareil | AES-256-GCM, clé non exportable, licence renouvelable ; ADR-018 | Not implemented |
 | Audit | Suppression ou falsification | Écriture transactionnelle, blocage UPDATE/DELETE, exports audités ; ADR-019 | Not implemented |
 | Capture | Enregistrement écran et dispositif externe | `FLAG_SECURE`, détection/pause iOS, protections en couches sans promesse absolue ; ADR-024 | Not implemented |
-| Données/logs | Fuite PII, token ou secret | Redaction, minimisation, contrôle accès, rétention et tests | Foundation implemented — pending review |
+| Données/logs | Fuite PII, token ou secret | Redaction des champs et messages, `msg` catégoriel, minimisation, contrôle accès, rétention et tests | Foundation implemented — pending CTO re-review |
 | Supply chain | Package compromis, licence incompatible | Versions verrouillées, revue, audit et provenance | Remediated and qualified — Security audit PASS technique, CTO/legal review pending |
 | CI/CD | Secret exposé, artefact altéré, déploiement non autorisé | Moindre privilège, environnements protégés, provenance et rollback | Not implemented |
 
 ## Risques ouverts et gates
 
+- Le readiness est borné par `READINESS_TIMEOUT_MS`, y compris lorsqu’une probe
+  ne se résout jamais. PostgreSQL et Redis appliquent aussi leurs délais de
+  connexion/requête/commande. Les réponses restent génériques et les rejets
+  tardifs sont consommés. Les dépendances réelles ne seront introduites qu’en
+  S0.4, qui n’a pas commencé.
+- Les messages Nest sont assainis avant journalisation structurée et ne sont
+  jamais transmis directement comme `msg`. Les tests couvrent token, DSN, mot
+  de passe, OTP, email et téléphone sur toutes les méthodes du logger.
 - Le NDK Android autorisé `28.2.13676358` est installé et l’APK debug passe.
   Build-Tools `36.0.0` et CMake `3.22.1` ont été installés automatiquement par
   Gradle pendant le build ; leur conservation a été explicitement autorisée

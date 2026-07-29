@@ -111,10 +111,11 @@ aucune exigence produit ci-dessous n’est déclarée commencée ou vérifiée.
 |---|---|---|---|
 | GOV-S0.3-01 | Fondations Flutter, Next.js, NestJS et packages partagés, sans métier | Implemented — pending CTO review | Sources applicatives, tests de fondation et audit contractuel |
 | GOV-S0.3-02 | Format, lint, typecheck et tests des six workspaces et du mobile | Verified | Commandes racine et Flutter terminées avec code 0 |
-| GOV-S0.3-03 | Builds et smokes applicatifs | Verified on Android/Windows — pending CTO review | Builds web/admin/API/packages et smokes HTTP vérifiés ; APK debug construit après installation du NDK autorisé ; iOS non exécuté sous Windows |
+| GOV-S0.3-03 | Builds et smokes applicatifs | Verified on Android/Windows — pending CTO review | Builds web/admin/API/packages et smokes HTTP vérifiés ; readiness borné par `READINESS_TIMEOUT_MS` avec réponse 503 sûre ; APK debug construit après installation du NDK autorisé ; iOS non exécuté sous Windows |
 | GOV-S0.3-04 | Inventaires de dépendances et licences | Qualified — pending CTO/legal review | Audits npm complet/production à zéro ; audit Security/Supply Chain PASS technique ; chemins LGPL/MPL/EPL/CC-BY documentés avec réserve juridique |
-| GOV-S0.3-05 | Validation visuelle des shells | Partially verified | Trois goldens mobiles inspectés ; audit Design/QA PASS AVEC RÉSERVES ; captures interactives Web/Admin non exécutées |
+| GOV-S0.3-05 | Validation visuelle des shells | Partially verified | Trois goldens mobiles inspectés ; fragments Admin reliés à une cible DOM unique ; petit texte accentué testé à 6,38:1 sur blanc et 5,90:1 sur canvas ; captures runtime Web/Admin non exécutées |
 | GOV-S0.3-06 | Intégrité clean-room, sources immuables et absence de métier | Verified | Manifeste 52/52, scans finaux ; Foundation PASS, Security PASS technique et Design QA PASS AVEC RÉSERVES |
+| GOV-S0.3-07 | Readiness et journalisation défensive | Implemented — pending CTO re-review | Timeout global et délais clients PostgreSQL/Redis ; probe bloquée et rejet tardif testés ; `msg` Nest fixe et chaînes token/DSN/password/OTP/email/phone assainies sur toutes les méthodes |
 
 ## Règles de mise à jour
 
