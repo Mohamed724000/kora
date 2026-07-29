@@ -1,0 +1,26 @@
+# This file tracks properties of this Flutter project.
+# Used by Flutter tool to assess capabilities and perform upgrades.
+#
+# This file should be version controlled.
+
+version:
+  revision: "924134a44c189315be2148659913dda1671cbe99"
+  channel: "stable"
+
+project_type: app
+
+migration:
+  platforms:
+    - platform: root
+      create_revision: 924134a44c189315be2148659913dda1671cbe99
+      base_revision: 924134a44c189315be2148659913dda1671cbe99
+    - platform: android
+      create_revision: 924134a44c189315be2148659913dda1671cbe99
+      base_revision: 924134a44c189315be2148659913dda1671cbe99
+    - platform: ios
+      create_revision: 924134a44c189315be2148659913dda1671cbe99
+      base_revision: 924134a44c189315be2148659913dda1671cbe99
+
+  unmanaged_files:
+    - 'lib/main.dart'
+    - 'ios/Runner.xcodeproj/project.pbxproj'
