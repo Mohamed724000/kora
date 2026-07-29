@@ -1,0 +1,33 @@
+{
+  "name": "@kora-plus/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "format": "prettier --check .",
+    "format:write": "prettier --write .",
+    "lint": "eslint \"src/**/*.ts\" --max-warnings=0",
+    "test": "node --test",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.2",
+    "@kora-plus/config": "0.0.0",
+    "eslint": "9.39.2",
+    "prettier": "3.9.6",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.65.0"
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "name": "@kora-plus/api",
+  "version": "0.0.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": {
+    "node": "22.18.0",
+    "npm": "10.9.3"
+  },
+  "scripts": {
+    "build": "nest build",
+    "db:generate": "prisma generate --config prisma.config.ts",
+    "format": "prettier --check . && prisma format --schema prisma/schema.prisma",
+    "format:write": "prettier --write . && prisma format --schema prisma/schema.prisma",
+    "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\" prisma.config.ts --max-warnings=0",
+    "start": "node dist/main.js",
+    "start:dev": "nest start --watch",
+    "test": "jest --runInBand",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@nestjs/bullmq": "11.0.4",
+    "@nestjs/common": "11.1.28",
+    "@nestjs/config": "4.0.4",
+    "@nestjs/core": "11.1.28",
+    "@nestjs/platform-express": "11.1.28",
+    "@prisma/client": "7.9.1",
+    "bullmq": "5.81.2",
+    "ioredis": "5.11.1",
+    "pg": "8.22.0",
+    "pino": "10.3.1",
+    "pino-http": "11.0.0",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.2",
+    "@kora-plus/config": "0.0.0",
+    "@nestjs/cli": "11.0.24",
+    "@nestjs/testing": "11.1.28",
+    "@types/jest": "30.0.0",
+    "@types/node": "22.18.13",
+    "@types/pg": "8.20.0",
+    "@types/supertest": "7.2.1",
+    "eslint": "9.39.2",
+    "jest": "30.4.2",
+    "prettier": "3.9.6",
+    "prisma": "7.9.1",
+    "supertest": "7.2.2",
+    "ts-jest": "29.4.12",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.65.0"
+  }
+}
