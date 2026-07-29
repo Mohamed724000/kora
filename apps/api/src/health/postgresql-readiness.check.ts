@@ -40,6 +40,8 @@ export class PostgresqlReadinessCheck implements ReadinessCheck, OnApplicationSh
       max: 1,
       password: postgresql.password,
       port: postgresql.port,
+      query_timeout: readiness.timeoutMs,
+      statement_timeout: readiness.timeoutMs,
       user: postgresql.user,
     };
 

@@ -18,6 +18,7 @@ export class RedisReadinessCheck implements ReadinessCheck {
     const readiness = this.config.get('readiness', { infer: true });
     const client = new Redis({
       ...redisConnectionOptions(this.config),
+      commandTimeout: readiness.timeoutMs,
       connectTimeout: readiness.timeoutMs,
       enableOfflineQueue: false,
       maxRetriesPerRequest: 0,

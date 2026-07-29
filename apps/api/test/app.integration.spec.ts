@@ -20,6 +20,25 @@ function failedCheck(name: 'postgresql' | 'redis'): ReadinessCheck {
   };
 }
 
+function neverCompletingCheck(name: 'postgresql' | 'redis'): ReadinessCheck {
+  return {
+    check: () => new Promise<void>(() => undefined),
+    name,
+  };
+}
+
+function lateFailingCheck(name: 'postgresql' | 'redis'): ReadinessCheck {
+  return {
+    check: () =>
+      new Promise<void>((_resolve, reject) => {
+        setTimeout(() => {
+          reject(new Error('late private dependency detail'));
+        }, 150);
+      }),
+    name,
+  };
+}
+
 describe('API foundation', () => {
   let application: INestApplication;
 
@@ -80,6 +99,42 @@ describe('API foundation', () => {
       status: 'not_ready',
     });
     expect(JSON.stringify(response.body)).not.toContain('private dependency detail');
+  });
+
+  it('borne le readiness lorsqu’une probe ne se termine jamais', async () => {
+    await start([neverCompletingCheck('postgresql'), successfulCheck('redis')]);
+
+    const startedAt = Date.now();
+    const response = await request(application.getHttpServer())
+      .get('/health/ready')
+      .timeout({ deadline: 1_000, response: 750 });
+    const elapsedMs = Date.now() - startedAt;
+
+    expect(response.status).toBe(503);
+    expect(elapsedMs).toBeLessThan(1_000);
+    expect(response.body).toMatchObject({
+      checks: {
+        postgresql: { reason: 'unavailable', status: 'down' },
+        redis: { status: 'up' },
+      },
+      status: 'not_ready',
+    });
+    expect(response.body.checks.postgresql.latencyMs).toBeGreaterThanOrEqual(90);
+    expect(JSON.stringify(response.body)).not.toMatch(
+      /timeout|READINESS_TIMEOUT_MS|postgresql:\/\//i,
+    );
+  });
+
+  it('absorbe un rejet tardif après expiration du délai', async () => {
+    await start([lateFailingCheck('postgresql'), successfulCheck('redis')]);
+
+    const response = await request(application.getHttpServer()).get('/health/ready');
+    await new Promise((resolve) => {
+      setTimeout(resolve, 100);
+    });
+
+    expect(response.status).toBe(503);
+    expect(JSON.stringify(response.body)).not.toContain('late private dependency detail');
   });
 
   it('valide et propage un identifiant de corrélation fourni', async () => {

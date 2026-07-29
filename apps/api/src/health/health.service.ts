@@ -1,4 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import type { RuntimeConfig } from '../config/runtime-config';
 import { READINESS_CHECKS, type DependencyName, type ReadinessCheck } from './readiness-check';
 
 export interface DependencyHealth {
@@ -12,33 +14,59 @@ export interface ReadinessResult {
   status: 'ready' | 'not_ready';
 }
 
-async function runCheck(check: ReadinessCheck): Promise<DependencyHealth> {
+async function runCheck(check: ReadinessCheck, timeoutMs: number): Promise<DependencyHealth> {
   const startedAt = Date.now();
-  try {
-    await check.check();
-    return {
-      latencyMs: Date.now() - startedAt,
-      status: 'up',
+  const status = await new Promise<'up' | 'down'>((resolve) => {
+    let settled = false;
+
+    const finish = (result: 'up' | 'down'): void => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
     };
-  } catch {
-    return {
-      latencyMs: Date.now() - startedAt,
-      reason: 'unavailable',
-      status: 'down',
-    };
-  }
+
+    const timer = setTimeout(() => {
+      finish('down');
+    }, timeoutMs);
+
+    void Promise.resolve()
+      .then(async () => check.check())
+      .then(
+        () => {
+          finish('up');
+        },
+        () => {
+          finish('down');
+        },
+      );
+  });
+
+  return {
+    latencyMs: Date.now() - startedAt,
+    ...(status === 'down' ? { reason: 'unavailable' as const } : {}),
+    status,
+  };
 }
 
 @Injectable()
 export class HealthService {
   constructor(
+    @Inject(ConfigService)
+    private readonly config: ConfigService<RuntimeConfig, true>,
     @Inject(READINESS_CHECKS)
     private readonly checks: readonly ReadinessCheck[],
   ) {}
 
   async readiness(): Promise<ReadinessResult> {
+    const readiness = this.config.get('readiness', { infer: true });
     const results = await Promise.all(
-      this.checks.map(async (check) => [check.name, await runCheck(check)] as const),
+      this.checks.map(
+        async (check) => [check.name, await runCheck(check, readiness.timeoutMs)] as const,
+      ),
     );
     const checks = Object.fromEntries(results) as Record<DependencyName, DependencyHealth>;
     const ready =
