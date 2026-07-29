@@ -1,20 +1,21 @@
 # KORA+ Final
 
-KORA+ Final est la clean room de production du produit KORA+. Le repository
-contient la baseline documentaire et le contrat technique minimal du monorepo.
-Aucune application ni aucun package métier n’est initialisé par Sprint 0.2.
+KORA+ Final est la clean room de production du produit KORA+. Le dépôt contient
+la baseline documentaire, le contrat du monorepo et les fondations applicatives
+de Sprint 0.3. Aucune fonctionnalité métier n’est implémentée.
 
 ## État actuel
 
 - Gate 0 et Lots 00, 00B et 00C : terminés.
 - Sprint 0.1 : terminé ; baseline unique publiée sur `main`.
 - Sprint 0.2 : contrat monorepo terminé et validé par la revue CTO.
-- Sprint 0.3 et lots applicatifs : non commencés.
-- Docker : contrôle différé à S0.4.
+- Sprint 0.3 : **Implemented — pending CTO review**.
+- Sprint 0.4 : **Not started — Docker blocker connu**.
+- S0.5, S0.6 et les slices produit : non commencés.
 
-Un lot ne peut commencer qu’après autorisation explicite du Product Owner dans
-la session active. La présence d’un ancien prompt ne constitue pas une
-autorisation.
+La revue CTO de S0.3 doit encore arbitrer les réserves de supply chain et
+d’environnement consignées par les audits indépendants. Aucun lot suivant n’est
+autorisé par le présent état.
 
 ## Autorités
 
@@ -30,29 +31,51 @@ La [portée clean room](docs/governance/CLEAN_ROOM_SCOPE.md), le
 [Master Execution Blueprint](docs/roadmap/MASTER_EXECUTION_BLUEPRINT.md)
 gouvernent l’exécution.
 
-## Contrat technique de Sprint 0.2
+## Fondations de Sprint 0.3
 
-- Node.js : `22.18.0`.
-- npm : `10.9.3`.
-- Package racine : privé, version `0.0.0`, sans dépendance.
-- Workspaces npm : `apps/web`, `apps/admin`, `apps/api`,
-  `packages/contracts`, `packages/config` et `packages/ui`.
-- `apps/mobile` reste hors des npm workspaces conformément à l’ADR-009.
+- `apps/mobile` : Flutter `3.44.1`, Dart `3.12.1`, Riverpod et GoRouter,
+  Android/iOS, cinq onglets officiels, états fondamentaux et goldens.
+- `apps/web` : Next.js App Router public, accessible, responsive et sans
+  commerce ou lecture web.
+- `apps/admin` : Next.js App Router et `@adminlte/react`, thème clair, treize
+  zones officielles et aucun comportement opérationnel.
+- `apps/api` : NestJS, préfixe `/api/v1`, health checks honnêtes,
+  configuration stricte, corrélation, logs avec redaction, Prisma PostgreSQL
+  vide et préparation Redis/BullMQ sans queue.
+- `packages/config`, `packages/ui` et `packages/contracts` : politiques
+  réellement partagées, primitives communes et frontière contractuelle vide.
 
-Sous Windows, les commandes disponibles sont :
+Le mobile reste hors des workspaces npm conformément à l’ADR-009.
 
-| Commande | Effet actuel |
+## Commandes
+
+Sous Windows :
+
+| Commande | Effet |
 |---|---|
-| `npm.cmd run env:check` | Vérifie strictement les versions Node et npm |
-| `npm.cmd run format` | Déclare le contrôle non exécuté tant qu’aucun package applicatif n’existe |
-| `npm.cmd run lint` | Déclare le contrôle non exécuté tant qu’aucun package applicatif n’existe |
-| `npm.cmd run typecheck` | Déclare le contrôle non exécuté tant qu’aucun package applicatif n’existe |
-| `npm.cmd test` | Déclare le contrôle non exécuté tant qu’aucun package applicatif n’existe |
-| `npm.cmd run build` | Déclare le contrôle non exécuté tant qu’aucun package applicatif n’existe |
+| `npm.cmd run env:check` | Vérifie strictement Node, npm, Flutter et Dart |
+| `npm.cmd run format` | Contrôle Prettier, Prisma et Dart |
+| `npm.cmd run lint` | Exécute ESLint et Flutter analyze |
+| `npm.cmd run typecheck` | Exécute TypeScript strict et Dart analyze |
+| `npm.cmd test` | Exécute Vitest, Jest, Node Test et Flutter/goldens |
+| `npm.cmd run build` | Construit les workspaces puis l’APK debug ; iOS uniquement sur macOS |
+| `npm.cmd run db:generate` | Génère explicitement le client Prisma |
+| `npm.cmd run licenses` | Inventorie les licences npm installées |
 
-Sur macOS et Linux, utiliser `npm` à la place de `npm.cmd`. Ces commandes ne
-prétendent pas valider une application inexistante ; elles seront raccordées
-aux packages réels dans un lot ultérieur explicitement autorisé.
+Sur macOS et Linux, utiliser `npm` à la place de `npm.cmd`.
+
+## Réserves connues avant revue CTO
+
+- Le build APK exige le NDK Android `28.2.13676358`, absent de l’environnement.
+  Son installation globale n’est pas autorisée par Sprint 0.3.
+- L’installation npm a signalé 33 vulnérabilités transitives ; l’audit détaillé
+  en ligne a été refusé par la protection d’exfiltration et doit être résolu
+  avant un verdict de readiness.
+- L’inventaire des licences est complet, mais les obligations LGPL, MPL, EPL et
+  CC-BY relevées nécessitent une validation CTO/juridique avant distribution.
+- Le navigateur intégré était indisponible pour les captures Web/Admin. Les
+  builds, tests DOM/accessibilité et smoke tests HTTP ont été exécutés.
+- Le build iOS est `NON EXÉCUTÉ` sous Windows.
 
 ## Référence AdminLTE
 
@@ -64,6 +87,5 @@ non exécutable et ne doit jamais être extraite dans une application.
 
 Lire [AGENTS.md](AGENTS.md), [CONTRIBUTING.md](CONTRIBUTING.md), le
 [workflow Git](docs/governance/GIT_WORKFLOW.md) et la
-[Definition of Done](docs/qa/DEFINITION_OF_DONE.md). N’initialiser aucune
-application et n’ajouter aucune dépendance sans autorisation explicite du lot
-correspondant.
+[Definition of Done](docs/qa/DEFINITION_OF_DONE.md). Aucun lot ne commence sans
+autorisation explicite du Product Owner dans la session active.

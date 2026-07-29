@@ -17,10 +17,12 @@
   ],
   "scripts": {
     "env:check": "node scripts/check-environment.mjs",
-    "format": "node scripts/check-environment.mjs --task=format",
-    "lint": "node scripts/check-environment.mjs --task=lint",
-    "typecheck": "node scripts/check-environment.mjs --task=typecheck",
-    "test": "node scripts/check-environment.mjs --task=test",
-    "build": "node scripts/check-environment.mjs --task=build"
+    "format": "node scripts/run-workspace-task.mjs format",
+    "lint": "node scripts/run-workspace-task.mjs lint",
+    "typecheck": "node scripts/run-workspace-task.mjs typecheck",
+    "test": "node scripts/run-workspace-task.mjs test",
+    "build": "node scripts/run-workspace-task.mjs build",
+    "db:generate": "npm run db:generate --workspace @kora-plus/api",
+    "licenses": "node scripts/report-licenses.mjs"
   }
 }

@@ -1,0 +1,29 @@
+{
+  "name": "@kora-plus/config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./eslint": "./eslint/base.mjs",
+    "./prettier": "./prettier.json",
+    "./typescript/base": "./typescript/base.json",
+    "./typescript/nest": "./typescript/nest.json",
+    "./typescript/next": "./typescript/next.json",
+    "./typescript/node-library": "./typescript/node-library.json",
+    "./typescript/react-library": "./typescript/react-library.json"
+  },
+  "scripts": {
+    "format": "prettier --check .",
+    "lint": "eslint eslint scripts test",
+    "typecheck": "node scripts/validate-config.mjs",
+    "test": "node --test",
+    "build": "node scripts/validate-config.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.2",
+    "eslint": "9.39.2",
+    "prettier": "3.9.6",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.65.0"
+  }
+}

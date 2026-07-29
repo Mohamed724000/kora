@@ -9,7 +9,8 @@ modifie ni les exigences sources ni les décisions d’architecture applicables.
 
 Les colonnes `Implémentation`, `Vérification` et `Preuve` décrivent l’état réel
 du dépôt à la date du présent lot. Sprint 0.1 et Sprint 0.2 ne produisent aucun
-code applicatif.
+code applicatif. Sprint 0.3 introduit uniquement des fondations techniques ;
+aucune exigence produit ci-dessous n’est déclarée commencée ou vérifiée.
 
 ## Exigences produit
 
@@ -103,6 +104,17 @@ code applicatif.
 | GOV-S0.2-02 | Validation Node/npm sans dépendance | Verified | `npm.cmd run env:check` retourne le code 0 ; revue CTO PASS sur PR #1 |
 | GOV-S0.2-03 | Neuf zones canoniques réservées sans package applicatif | Verified | Inventaire des zones et scan des manifestes enfants ; revue CTO PASS sur PR #1 |
 | GOV-S0.2-04 | Zéro dépendance, code métier ou source immuable modifiée | Verified | Lockfile vide, scans du dépôt et manifeste 52/52 ; revue CTO PASS sur PR #1 |
+
+## Contrôles de gouvernance de Sprint 0.3
+
+| ID | Contrôle | État | Preuve attendue |
+|---|---|---|---|
+| GOV-S0.3-01 | Fondations Flutter, Next.js, NestJS et packages partagés, sans métier | Implemented — pending CTO review | Sources applicatives, tests de fondation et audit contractuel |
+| GOV-S0.3-02 | Format, lint, typecheck et tests des six workspaces et du mobile | Verified | Commandes racine et Flutter terminées avec code 0 |
+| GOV-S0.3-03 | Builds et smokes applicatifs | Partially verified | Builds web/admin/API/packages et smokes HTTP vérifiés ; APK bloqué par le NDK ; iOS non exécuté sous Windows |
+| GOV-S0.3-04 | Inventaires de dépendances et licences | Pending remediation | Inventaires npm/pub complets ; 33 vulnérabilités signalées par l’installation npm, détail en ligne non autorisé |
+| GOV-S0.3-05 | Validation visuelle des shells | Partially verified | Trois goldens mobiles inspectés et audit Design/QA PASS ; captures interactives web/admin non exécutées, navigateur intégré indisponible |
+| GOV-S0.3-06 | Intégrité clean-room, sources immuables et absence de métier | Verified | Manifeste 52/52, diff des sources et scans finaux du dépôt ; audits indépendants |
 
 ## Règles de mise à jour
 

@@ -18,7 +18,7 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 | Lot 00C | Canonicalisation AdminLTE | Completed |
 | S0.1 | Gouvernance et Git | Completed |
 | S0.2 | Contrat monorepo et versions | Completed |
-| S0.3 | Fondations applicatives | Not started |
+| S0.3 | Fondations applicatives | Implemented — pending CTO review |
 | S0.4 | Infrastructure locale | Not started — Docker blocker connu |
 | S0.5 | CI, sécurité et observabilité | Not started |
 | S0.6 | Foundation Gate | Not started |
@@ -58,18 +58,25 @@ Livré dans le périmètre autorisé :
 
 ### S0.3 — Fondations applicatives
 
-Statut : **Not started**
+Statut : **Implemented — pending CTO review**
 
-- Flutter/Riverpod/GoRouter ;
-- Next.js web et administration ;
-- NestJS/Prisma ;
-- packages partagés étroits ;
-- shells, health checks et tests de fondation ;
-- aucun comportement métier.
+Livré dans le périmètre autorisé :
+
+- shell mobile Flutter avec Riverpod, GoRouter et cinq onglets canoniques ;
+- shells Next.js séparés pour le web public et l’administration ;
+- shell NestJS sous `/api/v1`, health checks et limites Prisma/Redis explicites ;
+- packages partagés étroits pour les contrats, la configuration et l’UI ;
+- format, lint, typecheck, tests, builds non mobiles et smokes applicatifs ;
+- états de fondation et goldens mobiles, sans comportement métier ;
+- aucune migration, file BullMQ, logique financière ou intégration fournisseur.
+
+Réserves de revue : le build APK reste bloqué par le NDK Android absent, le
+build iOS n’est pas exécutable sous Windows, l’audit npm détaillé reste à
+résoudre et les captures interactives web/admin n’ont pas pu être réalisées.
 
 ### S0.4 — Infrastructure locale
 
-Statut : **Not started — BLOCKER Docker**
+Statut : **Not started — Docker blocker connu**
 
 - PostgreSQL et Redis locaux ;
 - health checks et volumes nommés ;
