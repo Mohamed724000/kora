@@ -11,13 +11,14 @@ métier.
 @kora-plus/api` sous Windows.
 4. Exécuter `npm.cmd run start:dev --workspace @kora-plus/api`.
 
-L’API écoute sur l’hôte et le port validés par la configuration. Toutes les
-routes sont sous le préfixe `/api/v1`.
+L’API écoute sur l’hôte et le port validés par la configuration. Les futures
+routes applicatives sont sous le préfixe `/api/v1`. Les health checks
+d’infrastructure restent volontairement à la racine.
 
 ## Health checks
 
-- `GET /api/v1/health/live` confirme uniquement que le processus répond.
-- `GET /api/v1/health/ready` sonde PostgreSQL et Redis à la demande.
+- `GET /health/live` confirme uniquement que le processus répond.
+- `GET /health/ready` sonde PostgreSQL et Redis à la demande.
 
 La readiness répond `503` avec l’état séparé de chaque dépendance si l’une
 d’elles est indisponible. PostgreSQL, Redis et BullMQ ne se connectent pas au

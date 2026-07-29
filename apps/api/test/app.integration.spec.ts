@@ -44,7 +44,7 @@ describe('API foundation', () => {
     await start([successfulCheck('postgresql'), successfulCheck('redis')]);
 
     await request(application.getHttpServer())
-      .get('/api/v1/health/live')
+      .get('/health/live')
       .expect(200)
       .expect({ status: 'live' });
   });
@@ -52,7 +52,7 @@ describe('API foundation', () => {
   it('déclare ready uniquement lorsque les deux probes réussissent', async () => {
     await start([successfulCheck('postgresql'), successfulCheck('redis')]);
 
-    const response = await request(application.getHttpServer()).get('/api/v1/health/ready');
+    const response = await request(application.getHttpServer()).get('/health/ready');
 
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
@@ -69,7 +69,7 @@ describe('API foundation', () => {
   it('retourne 503 et un détail sûr lorsqu’une dépendance échoue', async () => {
     await start([failedCheck('postgresql'), successfulCheck('redis')]);
 
-    const response = await request(application.getHttpServer()).get('/api/v1/health/ready');
+    const response = await request(application.getHttpServer()).get('/health/ready');
 
     expect(response.status).toBe(503);
     expect(response.body).toMatchObject({
@@ -86,7 +86,7 @@ describe('API foundation', () => {
     await start([successfulCheck('postgresql'), successfulCheck('redis')]);
 
     await request(application.getHttpServer())
-      .get('/api/v1/health/live')
+      .get('/health/live')
       .set('X-Request-Id', 'client-request-123')
       .expect('X-Request-Id', 'client-request-123')
       .expect(200);
@@ -96,7 +96,7 @@ describe('API foundation', () => {
     await start([successfulCheck('postgresql'), successfulCheck('redis')]);
 
     const response = await request(application.getHttpServer())
-      .get('/api/v1/health/live')
+      .get('/health/live')
       .set('X-Request-Id', 'invalid value');
 
     expect(response.status).toBe(200);
@@ -123,5 +123,12 @@ describe('API foundation', () => {
     });
     expect(JSON.stringify(response.body)).not.toContain('private');
     expect(response.body.stack).toBeUndefined();
+  });
+
+  it('ne duplique pas les health checks sous le préfixe API', async () => {
+    await start([successfulCheck('postgresql'), successfulCheck('redis')]);
+
+    await request(application.getHttpServer()).get('/api/v1/health/live').expect(404);
+    await request(application.getHttpServer()).get('/api/v1/health/ready').expect(404);
   });
 });

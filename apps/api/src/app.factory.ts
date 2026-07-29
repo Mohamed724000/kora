@@ -1,4 +1,4 @@
-import { type INestApplication } from '@nestjs/common';
+import { type INestApplication, RequestMethod } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { AppModule, type AppModuleOptions } from './app.module';
@@ -18,7 +18,12 @@ export async function createApplication(options: AppModuleOptions = {}): Promise
   application.useLogger(new NestStructuredLogger(logger));
   application.use(createHttpLogger(logger));
   application.useGlobalFilters(new GlobalExceptionFilter(logger));
-  application.setGlobalPrefix('api/v1');
+  application.setGlobalPrefix('api/v1', {
+    exclude: [
+      { path: 'health/live', method: RequestMethod.GET },
+      { path: 'health/ready', method: RequestMethod.GET },
+    ],
+  });
   await application.init();
 
   return application;

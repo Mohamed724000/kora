@@ -13,7 +13,7 @@
     "format": "prettier --check . && prisma format --schema prisma/schema.prisma",
     "format:write": "prettier --write . && prisma format --schema prisma/schema.prisma",
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\" prisma.config.ts --max-warnings=0",
-    "start": "node dist/main.js",
+    "start": "node dist/src/main.js",
     "start:dev": "nest start --watch",
     "test": "jest --runInBand",
     "typecheck": "tsc --noEmit -p tsconfig.json"
