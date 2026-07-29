@@ -1,289 +1,190 @@
 # Rapport d’exécution — Sprint 0.3
 
+Date de remédiation : 2026-07-29
+Branche : `chore/s0-3-application-foundations`
+Baseline : `7f58b194c85757c0be93485aa4706242e8acd915`
 Statut produit : **Implemented — pending CTO review**
+Verdict d’exécution : **READY FOR CTO REVIEW**
 
-Verdict d’exécution : **SPRINT 0.3 BLOCKED**
+## Reprise après interruption
 
-Ce rapport décrit l’état exact produit sur la branche
-`chore/s0-3-application-foundations` depuis le commit
-`7f58b194c85757c0be93485aa4706242e8acd915`.
+La reprise a commencé en lecture seule depuis l’état réellement présent sur
+disque. La branche courante était
+`chore/s0-3-application-foundations`, sans upstream, avec un index vide. Les
+quatre commits S0.3 attendus étaient les quatre derniers commits. Les
+modifications de remédiation non commitées ont été conservées intégralement.
 
-## Résultat
+Aucun processus npm, Node, Flutter, Dart, Gradle, Java ou sdkmanager n’était
+actif. Les fichiers de verrouillage Gradle présents n’étaient détenus par aucun
+processus. `package.json`, `package-lock.json` et
+`node_modules/.package-lock.json` étaient des documents JSON valides. Aucune
+installation npm, aucun `npm audit fix` et aucune opération Git destructive
+n’ont été exécutés pendant la reprise.
 
-Les quatre fondations applicatives, les trois packages partagés et
-l’orchestration racine sont implémentés sans comportement métier. Format, lint,
-typecheck, tests, builds non mobiles, smokes HTTP et Design QA passent.
+## Intégrité de l’historique
 
-La publication reste bloquée par :
+Les quatre commits d’origine restent distincts et inchangés :
 
-1. 33 vulnérabilités npm signalées mais non qualifiées, dont 32 élevées ;
-2. les obligations LGPL, MPL, EPL et CC-BY en attente de validation
-   CTO/juridique ;
-3. le NDK Android `28.2.13676358` absent, donc aucun APK validé.
-
-Le build iOS et les captures interactives Web/Admin sont `NON EXÉCUTÉS`.
-La branche n’est ni poussée ni associée à une Pull Request tant que ces
-blockers restent ouverts.
-
-## Versions
-
-| Outil | Version |
+| SHA | Objet |
 |---|---|
-| Node.js | 22.18.0 |
-| npm | 10.9.3 |
-| Flutter | 3.44.1 |
-| Dart | 3.12.1 |
+| `c55d67e967631ccc50eed648ae5012910bee28d4` | fondations mobile |
+| `395c950124abd1b23fa20c4f764425ffab37cdbf` | fondations API |
+| `588abc535c0b7aba3d5f9bc29d4c88df716ac25d` | fondations Web/Admin |
+| `259943c4a59dbf1fd6bc30bc175c4777ac0c0f90` | intégration des fondations |
 
-Toutes les versions directes npm et pub sont exactes. `package-lock.json` et
-`apps/mobile/pubspec.lock` sont présents.
+Aucun amend, rebase, squash, force-push, tag, release ou démarrage de S0.4
+n’est autorisé ou effectué.
 
-## Architecture livrée
+## Remédiations appliquées
 
-- `apps/mobile` : Flutter, Riverpod, GoRouter, cinq onglets officiels, états de
-  fondation et trois goldens à 341 px ;
-- `apps/web` : shell public Next.js sans achat, téléchargement ou lecture ;
-- `apps/admin` : shell Next.js/AdminLTE React clair avec treize zones, sans
-  donnée ou action métier ;
-- `apps/api` : NestJS sous `/api/v1`, liveness/readiness, configuration stricte,
-  corrélation, redaction, Prisma vide et Redis/BullMQ sans queue ;
-- `packages/config` : TypeScript, ESLint et Prettier partagés ;
-- `packages/contracts` : frontière vide, protégée par test ;
-- `packages/ui` : primitives Web/Admin sans logique métier.
+### Sécurité npm
+
+L’état initial était de 33 paquets signalés par l’audit complet, dont
+1 modéré et 32 élevés, et de 4 paquets dans le graphe production, dont
+1 modéré et 3 élevés.
+
+Quatre overrides exacts ont été ajoutés :
+
+- `postcss@8.5.24` ;
+- `sharp@0.35.3` ;
+- `minimatch@10.2.6` ;
+- `brace-expansion@5.0.8`.
+
+`npm audit fix` n’a pas été utilisé. Les audits complet et production
+post-remédiation terminent avec code 0 et zéro vulnérabilité. La qualification
+par avis, chemin, surface et exploitabilité figure dans
+[`SPRINT_0_3_SECURITY_REMEDIATION.md`](../security/SPRINT_0_3_SECURITY_REMEDIATION.md).
+
+### Licences
+
+Les composants LGPL, MPL, EPL et CC-BY sont qualifiés dans
+[`THIRD_PARTY_LICENSE_REVIEW_S0_3.md`](../security/THIRD_PARTY_LICENSE_REVIEW_S0_3.md).
+La provenance `caniuse.com`, Alexis Deveria et l’auteur du package
+`caniuse-lite`, Ben Briggs, sont consignés dans
+[`THIRD_PARTY_NOTICES.md`](../../THIRD_PARTY_NOTICES.md).
+
+La conclusion n’est pas présentée comme juridique : la stratégie de packaging
+et les obligations applicables aux artefacts effectivement distribués sont
+explicitement soumises au CTO/juridique.
+
+### Android
+
+Le répertoire partiel exact du NDK `28.2.13676358`, dépourvu de
+`source.properties`, a été supprimé puis réinstallé avec le gestionnaire SDK
+officiel. L’installation finale déclare :
+
+```text
+Pkg.Desc = Android NDK
+Pkg.Revision = 28.2.13676358
+Pkg.BaseRevision = 28.2.13676358
+Pkg.ReleaseName = r28c
+```
+
+`flutter doctor -v`, `flutter analyze`, les 7 tests Flutter et
+`flutter build apk --debug` passent.
+
+APK local ignoré par Git :
+
+```text
+apps/mobile/build/app/outputs/flutter-apk/app-debug.apk
+taille = 149123694 octets
+SHA-256 = 53C6F91153307A7049F1A22E286DB822C99AEFDEB91728CFD35084F34FC8BD64
+```
+
+Pendant ce build demandé, Gradle a automatiquement installé Android
+Build-Tools `36.0.0` et CMake `3.22.1`. Ces deux installations n’étaient pas
+explicitement autorisées dans la consigne qui limitait le changement global au
+NDK. Après l’interruption, le CTO a explicitement autorisé leur conservation
+pour la seule chaîne de build Android. Elles ne sont ni supprimées ni modifiées
+et cette décision n’autorise aucune autre installation ou mise à jour du SDK.
+
+### Démarrage de l’API compilée
+
+Le smoke initial a montré que Nest produit `dist/src/main.js`, tandis que le
+script `start` pointait vers `dist/main.js`. Le manifeste API a été corrigé
+vers `node dist/src/main.js`. Le contre-audit Foundation a aussi relevé que les
+health checks devaient rester hors du préfixe applicatif : ils sont maintenant
+exposés uniquement par `/health/live` et `/health/ready`, tandis que
+`/api/v1` reste réservé aux futures routes applicatives. Format, lint,
+typecheck, 12 tests API, build Nest et smoke via
+`npm.cmd run start --workspace @kora-plus/api` passent ensuite.
 
 ## Contrôles
 
-| Contrôle | Code / état |
+| Contrôle | État courant |
 |---|---|
-| `npm.cmd run env:check` | 0 |
-| `npm.cmd install --ignore-scripts` | 0 |
-| `npm.cmd ls --all` | 0 |
-| `npm.cmd audit --offline --json` | 0, non probant sans cache |
-| audit npm détaillé en ligne | NON EXÉCUTÉ — protection d’egress |
-| `npm.cmd run licenses` | 0 — 1111 paquets, 0 licence non déclarée |
-| `npm.cmd run format` | 0 |
-| `npm.cmd run lint` | 0 |
-| `npm.cmd run typecheck` | 0 |
-| `npm.cmd test` | 0 |
-| builds Web/Admin/API/contracts/config/UI | 0 |
-| `npm.cmd run build` | 1 — APK bloqué par le NDK |
-| `flutter test --update-goldens test/golden_test.dart` | 0 |
-| `flutter test` | 0 — 7 tests |
-| `flutter build apk --debug` | 1 — NDK absent |
+| `npm.cmd run env:check` | PASS — code 0 ; Node 22.18.0, npm 10.9.3, Flutter 3.44.1, Dart 3.12.1 |
+| versions ciblées | PASS — code 0 ; postcss 8.5.24, sharp 0.35.3, minimatch 10.2.6, brace-expansion 5.0.8 |
+| `npm.cmd ls --all` | PASS — code 0, aucun problem/invalid/extraneous/unmet |
+| `npm.cmd audit --json` | PASS — code 0 ; 0 vulnérabilité |
+| `npm.cmd audit --omit=dev --json` | PASS — code 0 ; 0 vulnérabilité |
+| `npm.cmd run licenses` | PASS — code 0 ; 1 092 paquets installés, 0 licence non déclarée |
+| `npm.cmd run format` | PASS — code 0 ; 6 workspaces et mobile, 0 changement |
+| `npm.cmd run lint` | PASS — code 0 ; 6 workspaces et mobile |
+| `npm.cmd run typecheck` | PASS — code 0 ; 6 workspaces et mobile |
+| `npm.cmd test` | PASS — code 0 ; Web 7, Admin 8, API 12, contracts 1, config 1, UI 4, mobile 7 |
+| `npm.cmd run build` | PASS — code 0 ; Web, Admin, API, contracts, config, UI et APK debug |
+| tests et builds ciblés | PASS — codes 0 ; Web, Admin, API, contracts, config et UI séparément |
+| smokes Web/Admin | PASS — code 0 ; HTTP 200, titres/robots conformes, Admin `robots.txt` bloque `/` |
+| smoke API compilée | PASS — code 0 ; `/health/live` 200 ; `/health/ready` 503 ; anciens chemins préfixés 404 |
+| `dart format --output=none --set-exit-if-changed .` | PASS — code 0 ; 13 fichiers, 0 changement |
+| `flutter doctor -v` | PASS — code 0 pour Android ; Visual Studio absent, hors périmètre |
+| `flutter analyze` | PASS — code 0 ; aucun problème |
+| `flutter test` | PASS — code 0 ; 7 tests |
+| `flutter build apk --debug` | PASS — code 0 |
+| `flutter pub deps` | PASS — code 0 ; inventaire résolu |
+| manifeste immuable | PASS — code 0 ; 52/52 |
+| secrets et fichiers `.env` interdits | PASS — code 0 ; 0 finding |
+| métier prématuré | PASS — code 0 ; 0 finding |
+| TODO/FIXME, lorem ipsum, marqueurs IA | PASS — code 0 ; 0 finding actionnable |
+| artefacts générés suivis | PASS — code 0 ; 0 ; APK confirmé ignoré |
+| `git diff --check` | PASS — code 0 |
+| `git fsck --full` | PASS — code 0 ; quatre blobs orphelins non référencés |
+| audit Design/QA indépendant | PASS AVEC RÉSERVES — goldens conformes ; captures runtime Web/Admin absentes |
+| audit Foundation Contract indépendant | PASS — aucun finding résiduel après remédiation |
+| audit Security/Supply Chain indépendant | PASS technique — revue juridique toujours requise |
 | build iOS | NON EXÉCUTÉ — hôte Windows |
-| smoke API | live 200 ; ready 503 |
-| smoke Web | 200 ; titre KORA+ |
-| smoke Admin | 200 ; noindex ; robots disallow all |
-| captures interactives Web/Admin | NON EXÉCUTÉES — navigateur indisponible |
-| manifeste immuable | 52/52 |
-| secrets à haute confiance | 0 |
-| marqueurs métier prématurés | 0 |
-| TODO/FIXME/marqueurs IA/placeholders | 0 |
-| `git diff --check` | 0 |
-| `git fsck --full` | 0, avec un dangling blob préexistant |
 
-Tests finaux : Web 7, Admin 8, API 11, contracts 1, config 1, UI 4 et mobile 7.
-Les audits finaux donnent Design QA `PASS`, Foundation Contract `PASS
-code/contrat — NO-GO externe` et Security/Supply Chain `NO-GO`.
+## Audits indépendants
 
-## Inventaire exact des fichiers
+- **Foundation Contract Auditor — PASS** : endpoints health conformes,
+  inventaire et codes de sortie complets, aucun métier prématuré et S0.4 non
+  commencé.
+- **Security & Supply Chain Auditor — PASS technique** : graphe et audits npm
+  propres, lockfile cohérent, licences et attributions qualifiées. Ce verdict
+  ne constitue pas une approbation juridique.
+- **Design QA Auditor — PASS AVEC RÉSERVES** : trois goldens mobiles conformes,
+  shells Web/Admin statiquement conformes ; captures runtime Web/Admin et
+  validation visuelle finale du Product Owner encore requises.
 
-État avant commits : 14 fichiers modifiés et 178 fichiers ajoutés, soit 192
-fichiers en incluant le présent rapport.
+## Inventaire exact avant commits
+
+Treize fichiers composent le diff final avant commits : dix fichiers modifiés
+et trois fichiers ajoutés. Aucun artefact généré n’en fait partie.
 
 ```text
 M  README.md
-M  apps/admin/README.md
 M  apps/api/README.md
-M  apps/mobile/README.md
-M  apps/web/README.md
+M  apps/api/package.json
+M  apps/api/src/app.factory.ts
+M  apps/api/test/app.integration.spec.ts
 M  docs/qa/REQUIREMENTS_TRACEABILITY_MATRIX.md
-M  docs/roadmap/MVP_EXECUTION_PLAN.md
+M  docs/qa/SPRINT_0_3_EXECUTION_REPORT.md
 M  docs/security/THREAT_MODEL.md
 M  package-lock.json
 M  package.json
-M  packages/config/README.md
-M  packages/contracts/README.md
-M  packages/ui/README.md
-M  scripts/check-environment.mjs
-A  apps/admin/.prettierignore
-A  apps/admin/.prettierrc.json
-A  apps/admin/app/error.tsx
-A  apps/admin/app/globals.css
-A  apps/admin/app/layout.tsx
-A  apps/admin/app/loading.tsx
-A  apps/admin/app/metadata.test.ts
-A  apps/admin/app/not-found.tsx
-A  apps/admin/app/page.test.tsx
-A  apps/admin/app/page.tsx
-A  apps/admin/app/robots.test.ts
-A  apps/admin/app/robots.ts
-A  apps/admin/app/states.test.tsx
-A  apps/admin/eslint.config.mjs
-A  apps/admin/lib/admin-navigation.ts
-A  apps/admin/next-env.d.ts
-A  apps/admin/next.config.ts
-A  apps/admin/package.json
-A  apps/admin/tsconfig.json
-A  apps/admin/vitest.config.ts
-A  apps/admin/vitest.setup.ts
-A  apps/api/.env.example
-A  apps/api/.prettierignore
-A  apps/api/.prettierrc.json
-A  apps/api/eslint.config.mjs
-A  apps/api/jest.config.cjs
-A  apps/api/nest-cli.json
-A  apps/api/package.json
-A  apps/api/prisma.config.ts
-A  apps/api/prisma/schema.prisma
-A  apps/api/src/app.factory.ts
-A  apps/api/src/app.module.ts
-A  apps/api/src/common/filters/global-exception.filter.spec.ts
-A  apps/api/src/common/filters/global-exception.filter.ts
-A  apps/api/src/config/runtime-config.spec.ts
-A  apps/api/src/config/runtime-config.ts
-A  apps/api/src/health/health.controller.ts
-A  apps/api/src/health/health.module.ts
-A  apps/api/src/health/health.service.ts
-A  apps/api/src/health/postgresql-readiness.check.ts
-A  apps/api/src/health/readiness-check.ts
-A  apps/api/src/health/redis-readiness.check.ts
-A  apps/api/src/infrastructure/queue-infrastructure.module.ts
-A  apps/api/src/infrastructure/redis-connection-options.ts
-A  apps/api/src/main.ts
-A  apps/api/src/observability/http-logger.ts
-A  apps/api/src/observability/request-id.ts
-A  apps/api/src/observability/structured-logger.spec.ts
-A  apps/api/src/observability/structured-logger.ts
-A  apps/api/test/app.integration.spec.ts
-A  apps/api/test/safe-test-environment.ts
-A  apps/api/tsconfig.build.json
-A  apps/api/tsconfig.json
-A  apps/mobile/.gitignore
-A  apps/mobile/.metadata
-A  apps/mobile/analysis_options.yaml
-A  apps/mobile/android/.gitignore
-A  apps/mobile/android/app/build.gradle.kts
-A  apps/mobile/android/app/src/debug/AndroidManifest.xml
-A  apps/mobile/android/app/src/main/AndroidManifest.xml
-A  apps/mobile/android/app/src/main/kotlin/com/example/kora_plus/MainActivity.kt
-A  apps/mobile/android/app/src/main/res/drawable/ic_launcher_provisional.xml
-A  apps/mobile/android/app/src/main/res/drawable/launch_background.xml
-A  apps/mobile/android/app/src/main/res/values-night/styles.xml
-A  apps/mobile/android/app/src/main/res/values/colors.xml
-A  apps/mobile/android/app/src/main/res/values/styles.xml
-A  apps/mobile/android/app/src/profile/AndroidManifest.xml
-A  apps/mobile/android/build.gradle.kts
-A  apps/mobile/android/gradle.properties
-A  apps/mobile/android/gradle/wrapper/gradle-wrapper.properties
-A  apps/mobile/android/settings.gradle.kts
-A  apps/mobile/ios/.gitignore
-A  apps/mobile/ios/Flutter/AppFrameworkInfo.plist
-A  apps/mobile/ios/Flutter/Debug.xcconfig
-A  apps/mobile/ios/Flutter/Release.xcconfig
-A  apps/mobile/ios/Runner.xcodeproj/project.pbxproj
-A  apps/mobile/ios/Runner.xcodeproj/project.xcworkspace/contents.xcworkspacedata
-A  apps/mobile/ios/Runner.xcodeproj/project.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
-A  apps/mobile/ios/Runner.xcodeproj/project.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings
-A  apps/mobile/ios/Runner.xcodeproj/xcshareddata/xcschemes/Runner.xcscheme
-A  apps/mobile/ios/Runner.xcworkspace/contents.xcworkspacedata
-A  apps/mobile/ios/Runner.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
-A  apps/mobile/ios/Runner.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings
-A  apps/mobile/ios/Runner/AppDelegate.swift
-A  apps/mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json
-A  apps/mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png
-A  apps/mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-20x20@1x.png
-A  apps/mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-20x20@2x.png
-A  apps/mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-20x20@3x.png
-A  apps/mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-29x29@1x.png
-A  apps/mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-29x29@2x.png
-A  apps/mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-29x29@3x.png
-A  apps/mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-40x40@1x.png
-A  apps/mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-40x40@2x.png
-A  apps/mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-40x40@3x.png
-A  apps/mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-60x60@2x.png
-A  apps/mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-60x60@3x.png
-A  apps/mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-76x76@1x.png
-A  apps/mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-76x76@2x.png
-A  apps/mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-83.5x83.5@2x.png
-A  apps/mobile/ios/Runner/Base.lproj/LaunchScreen.storyboard
-A  apps/mobile/ios/Runner/Base.lproj/Main.storyboard
-A  apps/mobile/ios/Runner/Info.plist
-A  apps/mobile/ios/Runner/Runner-Bridging-Header.h
-A  apps/mobile/ios/Runner/SceneDelegate.swift
-A  apps/mobile/ios/RunnerTests/RunnerTests.swift
-A  apps/mobile/lib/main.dart
-A  apps/mobile/lib/src/app.dart
-A  apps/mobile/lib/src/foundation/application/foundation_presentation_controller.dart
-A  apps/mobile/lib/src/foundation/presentation/foundation_section_screen.dart
-A  apps/mobile/lib/src/foundation/presentation/foundation_state_view.dart
-A  apps/mobile/lib/src/foundation/presentation/foundation_states_gallery.dart
-A  apps/mobile/lib/src/foundation/presentation/kora_shell.dart
-A  apps/mobile/lib/src/navigation/app_router.dart
-A  apps/mobile/lib/src/navigation/app_section.dart
-A  apps/mobile/lib/src/theme/kora_colors.dart
-A  apps/mobile/lib/src/theme/kora_theme.dart
-A  apps/mobile/pubspec.lock
-A  apps/mobile/pubspec.yaml
-A  apps/mobile/test/foundation_shell_test.dart
-A  apps/mobile/test/golden_test.dart
-A  apps/mobile/test/goldens/foundation_shell_341.png
-A  apps/mobile/test/goldens/foundation_states_gallery_341.png
-A  apps/mobile/test/goldens/no_mini_player_341.png
-A  apps/web/.prettierignore
-A  apps/web/.prettierrc.json
-A  apps/web/app/error.tsx
-A  apps/web/app/globals.css
-A  apps/web/app/layout.tsx
-A  apps/web/app/loading.tsx
-A  apps/web/app/metadata.test.ts
-A  apps/web/app/not-found.tsx
-A  apps/web/app/page.test.tsx
-A  apps/web/app/page.tsx
-A  apps/web/app/states.test.tsx
-A  apps/web/eslint.config.mjs
-A  apps/web/next-env.d.ts
-A  apps/web/next.config.ts
-A  apps/web/package.json
-A  apps/web/tsconfig.json
-A  apps/web/vitest.config.ts
-A  apps/web/vitest.setup.ts
-A  docs/qa/SPRINT_0_3_EXECUTION_REPORT.md
-A  packages/config/eslint.config.mjs
-A  packages/config/eslint/base.mjs
-A  packages/config/package.json
-A  packages/config/prettier.json
-A  packages/config/scripts/validate-config.mjs
-A  packages/config/test/config.test.mjs
-A  packages/config/typescript/base.json
-A  packages/config/typescript/nest.json
-A  packages/config/typescript/next.json
-A  packages/config/typescript/node-library.json
-A  packages/config/typescript/react-library.json
-A  packages/contracts/.prettierignore
-A  packages/contracts/.prettierrc.json
-A  packages/contracts/eslint.config.mjs
-A  packages/contracts/package.json
-A  packages/contracts/src/index.ts
-A  packages/contracts/test/boundary.test.mjs
-A  packages/contracts/tsconfig.build.json
-A  packages/contracts/tsconfig.json
-A  packages/ui/.prettierignore
-A  packages/ui/.prettierrc.json
-A  packages/ui/eslint.config.mjs
-A  packages/ui/package.json
-A  packages/ui/src/action-button.tsx
-A  packages/ui/src/brand-mark.tsx
-A  packages/ui/src/index.ts
-A  packages/ui/src/primitives.test.tsx
-A  packages/ui/src/skip-link.tsx
-A  packages/ui/src/status-panel.tsx
-A  packages/ui/src/styles.css
-A  packages/ui/tsconfig.json
-A  packages/ui/vitest.config.ts
-A  packages/ui/vitest.setup.ts
-A  scripts/report-licenses.mjs
-A  scripts/run-workspace-task.mjs
+A  THIRD_PARTY_NOTICES.md
+A  docs/security/SPRINT_0_3_SECURITY_REMEDIATION.md
+A  docs/security/THIRD_PARTY_LICENSE_REVIEW_S0_3.md
 ```
 
-S0.4 reste **Not started — Docker blocker connu**. Aucun fichier
-d’infrastructure locale, service Docker ou lot S0.4 n’a été créé.
+## Gate de publication
+
+GitHub CLI est installé et authentifié sur `Mohamed724000/kora`. Les conditions
+techniques de publication sont remplies. Seuls des commits correctifs atomiques,
+le push sans force de la branche courante et une PR brouillon vers `main` sont
+autorisés. La PR ne peut passer en mode Ready, être fusionnée, donner lieu à
+une release ou à une distribution publique/commerciale avant la revue
+juridique et les validations CTO/visuelle requises.
+
+S0.4 reste **Not started — Docker blocker connu**.

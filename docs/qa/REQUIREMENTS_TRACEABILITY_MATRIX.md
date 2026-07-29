@@ -111,10 +111,10 @@ aucune exigence produit ci-dessous n’est déclarée commencée ou vérifiée.
 |---|---|---|---|
 | GOV-S0.3-01 | Fondations Flutter, Next.js, NestJS et packages partagés, sans métier | Implemented — pending CTO review | Sources applicatives, tests de fondation et audit contractuel |
 | GOV-S0.3-02 | Format, lint, typecheck et tests des six workspaces et du mobile | Verified | Commandes racine et Flutter terminées avec code 0 |
-| GOV-S0.3-03 | Builds et smokes applicatifs | Partially verified | Builds web/admin/API/packages et smokes HTTP vérifiés ; APK bloqué par le NDK ; iOS non exécuté sous Windows |
-| GOV-S0.3-04 | Inventaires de dépendances et licences | Pending remediation | Inventaires npm/pub complets ; 33 vulnérabilités signalées par l’installation npm, détail en ligne non autorisé |
-| GOV-S0.3-05 | Validation visuelle des shells | Partially verified | Trois goldens mobiles inspectés et audit Design/QA PASS ; captures interactives web/admin non exécutées, navigateur intégré indisponible |
-| GOV-S0.3-06 | Intégrité clean-room, sources immuables et absence de métier | Verified | Manifeste 52/52, diff des sources et scans finaux du dépôt ; audits indépendants |
+| GOV-S0.3-03 | Builds et smokes applicatifs | Verified on Android/Windows — pending CTO review | Builds web/admin/API/packages et smokes HTTP vérifiés ; APK debug construit après installation du NDK autorisé ; iOS non exécuté sous Windows |
+| GOV-S0.3-04 | Inventaires de dépendances et licences | Qualified — pending CTO/legal review | Audits npm complet/production à zéro ; audit Security/Supply Chain PASS technique ; chemins LGPL/MPL/EPL/CC-BY documentés avec réserve juridique |
+| GOV-S0.3-05 | Validation visuelle des shells | Partially verified | Trois goldens mobiles inspectés ; audit Design/QA PASS AVEC RÉSERVES ; captures interactives Web/Admin non exécutées |
+| GOV-S0.3-06 | Intégrité clean-room, sources immuables et absence de métier | Verified | Manifeste 52/52, scans finaux ; Foundation PASS, Security PASS technique et Design QA PASS AVEC RÉSERVES |
 
 ## Règles de mise à jour
 

@@ -34,8 +34,8 @@ financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
 ## Frontières réellement introduites en S0.3
 
 - shells mobile, web public et administration sans appel API ni donnée métier ;
-- surface HTTP NestJS limitée à `/api/v1/health/live` et
-  `/api/v1/health/ready` ;
+- surface HTTP NestJS limitée à `/health/live` et `/health/ready`, hors du
+  préfixe `/api/v1` réservé aux futures routes applicatives ;
 - validation stricte de la configuration au démarrage, sans secret embarqué ;
 - probes PostgreSQL et Redis paresseuses, locales et limitées au readiness ;
 - corrélation des requêtes et logs Pino avec redaction des en-têtes et champs
@@ -59,19 +59,23 @@ financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
 | Audit | Suppression ou falsification | Écriture transactionnelle, blocage UPDATE/DELETE, exports audités ; ADR-019 | Not implemented |
 | Capture | Enregistrement écran et dispositif externe | `FLAG_SECURE`, détection/pause iOS, protections en couches sans promesse absolue ; ADR-024 | Not implemented |
 | Données/logs | Fuite PII, token ou secret | Redaction, minimisation, contrôle accès, rétention et tests | Foundation implemented — pending review |
-| Supply chain | Package compromis, licence incompatible | Versions verrouillées, revue, audit et provenance | Foundation incomplete — pending review |
+| Supply chain | Package compromis, licence incompatible | Versions verrouillées, revue, audit et provenance | Remediated and qualified — Security audit PASS technique, CTO/legal review pending |
 | CI/CD | Secret exposé, artefact altéré, déploiement non autorisé | Moindre privilège, environnements protégés, provenance et rollback | Not implemented |
 
 ## Risques ouverts et gates
 
-- NDK Android 28.2.13676358 absent : build APK S0.3 bloqué ; toute installation
-  globale exige une autorisation explicite.
-- L’installation npm signale 33 vulnérabilités (1 modérée, 32 élevées) :
-  résolution obligatoire avant le Go S0.3 ; le détail en ligne n’a pas été
-  autorisé à sortir du workspace.
-- Les licences installées sont toutes déclarées, mais les obligations LGPL,
-  MPL, EPL et CC-BY identifiées exigent une validation CTO/juridique avant
-  distribution.
+- Le NDK Android autorisé `28.2.13676358` est installé et l’APK debug passe.
+  Build-Tools `36.0.0` et CMake `3.22.1` ont été installés automatiquement par
+  Gradle pendant le build ; leur conservation a été explicitement autorisée
+  par le CTO. Cette décision n’autorise aucune autre action globale sur le SDK.
+- Les audits npm complet et production passent à zéro après remédiation ciblée
+  de PostCSS, sharp, minimatch et brace-expansion. La qualification détaillée
+  est versionnée dans `SPRINT_0_3_SECURITY_REMEDIATION.md`.
+- Les chemins LGPL, MPL, EPL et CC-BY, leur présence dans les artefacts et les
+  mesures proposées sont documentés dans
+  `THIRD_PARTY_LICENSE_REVIEW_S0_3.md`. Une draft PR est autorisée, mais une
+  revue juridique reste obligatoire avant Ready, fusion, release ou
+  distribution publique ou commerciale.
 - Docker local inaccessible : blocker S0.4, sans impact sur les fondations S0.3.
 - Fournisseurs OTP/paiement et stratégie stores non approuvés : gate avant
   paiement réel.

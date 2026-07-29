@@ -13,9 +13,11 @@ de Sprint 0.3. Aucune fonctionnalité métier n’est implémentée.
 - Sprint 0.4 : **Not started — Docker blocker connu**.
 - S0.5, S0.6 et les slices produit : non commencés.
 
-La revue CTO de S0.3 doit encore arbitrer les réserves de supply chain et
-d’environnement consignées par les audits indépendants. Aucun lot suivant n’est
-autorisé par le présent état.
+La remédiation CTO de S0.3 a ramené les audits npm à zéro et produit un APK
+debug. La conservation des outils Android installés automatiquement est
+autorisée. La qualification des licences permet une draft PR, avec revue
+juridique toujours obligatoire avant Ready, fusion, release ou distribution.
+Aucun lot suivant n’est autorisé par le présent état.
 
 ## Autorités
 
@@ -66,13 +68,17 @@ Sur macOS et Linux, utiliser `npm` à la place de `npm.cmd`.
 
 ## Réserves connues avant revue CTO
 
-- Le build APK exige le NDK Android `28.2.13676358`, absent de l’environnement.
-  Son installation globale n’est pas autorisée par Sprint 0.3.
-- L’installation npm a signalé 33 vulnérabilités transitives ; l’audit détaillé
-  en ligne a été refusé par la protection d’exfiltration et doit être résolu
-  avant un verdict de readiness.
-- L’inventaire des licences est complet, mais les obligations LGPL, MPL, EPL et
-  CC-BY relevées nécessitent une validation CTO/juridique avant distribution.
+- Le NDK Android autorisé `28.2.13676358` est installé et l’APK debug passe.
+  Gradle a aussi installé automatiquement Build-Tools `36.0.0` et CMake
+  `3.22.1` pendant le build ; leur conservation a été explicitement autorisée
+  par le CTO, sans autoriser une autre modification du SDK.
+- Les audits npm complet et production passent à zéro après quatre overrides
+  transitifs exacts. La qualification est consignée dans
+  [la preuve de remédiation](docs/security/SPRINT_0_3_SECURITY_REMEDIATION.md).
+- Les chemins LGPL, MPL, EPL et CC-BY sont qualifiés, l’attribution CC-BY est
+  versionnée et une draft PR est autorisée. La revue juridique reste requise
+  avant Ready, fusion, release ou distribution, comme consigné dans
+  [la revue des licences](docs/security/THIRD_PARTY_LICENSE_REVIEW_S0_3.md).
 - Le navigateur intégré était indisponible pour les captures Web/Admin. Les
   builds, tests DOM/accessibilité et smoke tests HTTP ont été exécutés.
 - Le build iOS est `NON EXÉCUTÉ` sous Windows.
