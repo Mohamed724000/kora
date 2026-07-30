@@ -1,14 +1,19 @@
 # Revue des licences tierces — Sprint 0.3
 
 Date de qualification : 2026-07-29
+Date de décision du gate : 2026-07-30
 Source : `package-lock.json` et manifestes installés
-Statut : **QUALIFIÉ — DRAFT PR AUTORISÉE, REVUE JURIDIQUE REQUISE**
+Statut : **QUALIFIÉ — LEGAL/LICENSE GATE APPROVED FOR S0.3 MERGE**
 
 Cette analyse décrit les chemins, usages et mesures de conformité identifiés.
-Elle ne constitue pas un avis juridique. Le CTO autorise sa publication dans
-une Pull Request brouillon. Une revue juridique reste obligatoire avant le
-passage de la PR en mode Ready, sa fusion, toute release et toute distribution
-publique ou commerciale.
+Elle ne constitue pas un avis juridique. Le Product Owner atteste qu’un juriste
+a validé la situation des licences et notices tierces actuellement verrouillées
+pour S0.3 et autorise le passage Ready puis la fusion de la PR S0.3. Aucun nom,
+document confidentiel, numéro de dossier ou citation juridique n’est enregistré.
+
+Cette approbation est strictement limitée au périmètre S0.3 actuel. Elle ne vaut
+pas autorisation générale pour une future dépendance, modification de
+packaging, distribution, release ou exploitation commerciale.
 
 ## Matrice de qualification
 
@@ -37,10 +42,11 @@ Sources de qualification :
 - <https://www.mozilla.org/en-US/MPL/2.0/FAQ/>
 - <https://www.eclipse.org/legal/epl-2.0/faq/>
 
-## Décision à soumettre
+## Décision attestée et portée résiduelle
 
-La revue demande explicitement au juridique de valider avant Ready, fusion,
-release ou distribution :
+Le gate juridique/licences est **APPROVED FOR S0.3 MERGE** sur attestation du
+Product Owner. Les obligations suivantes restent à réévaluer pour tout futur
+packaging, artefact distribué ou release :
 
 1. l'inclusion de la notice CC-BY versionnée ;
 2. la stratégie de packaging serveur qui exclut Prisma CLI/Studio et les
@@ -49,7 +55,7 @@ release ou distribution :
    artefact serveur redistribué ;
 4. la conservation automatisée des licences/notices dans les artefacts futurs.
 
-Cette réserve qualifie le risque sans conclure à la compatibilité juridique.
-Tous les composants inventoriés sont utilisés sans modification locale. Aucun
-composant npm à licence concernée n'est embarqué dans l'APK Flutter debug
-produit par S0.3.
+Cette décision autorise la fusion des fondations S0.3 sans conclure à une
+compatibilité juridique générale au-delà de ce périmètre. Tous les composants
+inventoriés sont utilisés sans modification locale. Aucun composant npm à
+licence concernée n'est embarqué dans l'APK Flutter debug produit par S0.3.

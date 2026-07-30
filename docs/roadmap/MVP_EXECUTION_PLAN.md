@@ -18,7 +18,7 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 | Lot 00C | Canonicalisation AdminLTE | Completed |
 | S0.1 | Gouvernance et Git | Completed |
 | S0.2 | Contrat monorepo et versions | Completed |
-| S0.3 | Fondations applicatives | Implemented — pending CTO review |
+| S0.3 | Fondations applicatives | Approved — ready for merge |
 | S0.4 | Infrastructure locale | Not started — Docker blocker connu |
 | S0.5 | CI, sécurité et observabilité | Not started |
 | S0.6 | Foundation Gate | Not started |
@@ -58,7 +58,7 @@ Livré dans le périmètre autorisé :
 
 ### S0.3 — Fondations applicatives
 
-Statut : **Implemented — pending CTO review**
+Statut : **Approved — ready for merge**
 
 Livré dans le périmètre autorisé :
 
@@ -70,9 +70,13 @@ Livré dans le périmètre autorisé :
 - états de fondation et goldens mobiles, sans comportement métier ;
 - aucune migration, file BullMQ, logique financière ou intégration fournisseur.
 
-Réserves de revue : le build iOS n’est pas exécutable sous Windows, les
-captures runtime Web/Admin n’ont pas été réalisées, et la validation visuelle
-finale du Product Owner ainsi que la revue juridique restent obligatoires.
+Les gates CTO, Product Owner et juridique/licences sont fermés pour le
+périmètre S0.3. Les quatre captures runtime Web/Admin sont versionnées avec
+leurs dimensions et SHA-256. L’approbation visuelle porte uniquement sur le
+shell de fondation et ne valide pas le design final de KORA+.
+
+Réserve non bloquante : le build iOS n’est pas exécutable sous Windows. Une
+validation sur macOS reste obligatoire avant toute release iOS.
 
 ### S0.4 — Infrastructure locale
 
