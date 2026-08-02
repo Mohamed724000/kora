@@ -45,6 +45,25 @@ cryptographique autonome du commit.
   évaluation juridique et licences.
 - S0.4 n’a pas commencé.
 
-## Décision
+## Décision de clôture avant fusion (historique)
 
 **SPRINT 0.3 APPROVAL GATES CLOSED — READY FOR MERGE**
+
+## Enregistrement post-merge
+
+Date : 2026-08-02
+
+- PR [#2](https://github.com/Mohamed724000/kora/pull/2) : **MERGED**.
+- Commit de clôture :
+  [`c4bce826b8a16d78aa2b10865e0d03d191ea7f46`](https://github.com/Mohamed724000/kora/commit/c4bce826b8a16d78aa2b10865e0d03d191ea7f46).
+- Merge commit :
+  [`d3f837c93044d0b514c2abd732c559cdd6543a96`](https://github.com/Mohamed724000/kora/commit/d3f837c93044d0b514c2abd732c559cdd6543a96).
+- Méthode : **merge commit**.
+- `main` est synchronisée sur le merge commit.
+- La branche distante `chore/s0-3-application-foundations` est conservée.
+- Aucun tag, release ou déploiement n’a été créé.
+- S0.4 n’a pas commencé.
+- La réserve iOS reste inchangée : build iOS `NON EXÉCUTÉ` sous Windows et
+  validation macOS requise avant toute future release iOS.
+- Le rendu validé reste le shell de fondation S0.3, pas le design final de
+  KORA+.

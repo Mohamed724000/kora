@@ -9,15 +9,18 @@ de Sprint 0.3. Aucune fonctionnalité métier n’est implémentée.
 - Gate 0 et Lots 00, 00B et 00C : terminés.
 - Sprint 0.1 : terminé ; baseline unique publiée sur `main`.
 - Sprint 0.2 : contrat monorepo terminé et validé par la revue CTO.
-- Sprint 0.3 : **Implemented — pending CTO review**.
+- Sprint 0.3 : **Closed and merged**.
 - Sprint 0.4 : **Not started — Docker blocker connu**.
 - S0.5, S0.6 et les slices produit : non commencés.
 
-La remédiation CTO de S0.3 a ramené les audits npm à zéro et produit un APK
-debug. La conservation des outils Android installés automatiquement est
-autorisée. La qualification des licences permet une draft PR, avec revue
-juridique toujours obligatoire avant Ready, fusion, release ou distribution.
-Aucun lot suivant n’est autorisé par le présent état.
+Sprint 0.3 a été fermé et fusionné via la
+[PR #2](https://github.com/Mohamed724000/kora/pull/2). Le commit de clôture est
+[`c4bce826b8a16d78aa2b10865e0d03d191ea7f46`](https://github.com/Mohamed724000/kora/commit/c4bce826b8a16d78aa2b10865e0d03d191ea7f46)
+et le merge commit est
+[`d3f837c93044d0b514c2abd732c559cdd6543a96`](https://github.com/Mohamed724000/kora/commit/d3f837c93044d0b514c2abd732c559cdd6543a96).
+Les gates CTO, Product Owner et juridique/licences sont fermés pour le seul
+périmètre verrouillé de S0.3. Aucun lot suivant n’est autorisé par le présent
+état ; S0.4 reste non commencé.
 
 ## Autorités
 
@@ -53,20 +56,20 @@ Le mobile reste hors des workspaces npm conformément à l’ADR-009.
 
 Sous Windows :
 
-| Commande | Effet |
-|---|---|
-| `npm.cmd run env:check` | Vérifie strictement Node, npm, Flutter et Dart |
-| `npm.cmd run format` | Contrôle Prettier, Prisma et Dart |
-| `npm.cmd run lint` | Exécute ESLint et Flutter analyze |
-| `npm.cmd run typecheck` | Exécute TypeScript strict et Dart analyze |
-| `npm.cmd test` | Exécute Vitest, Jest, Node Test et Flutter/goldens |
-| `npm.cmd run build` | Construit les workspaces puis l’APK debug ; iOS uniquement sur macOS |
-| `npm.cmd run db:generate` | Génère explicitement le client Prisma |
-| `npm.cmd run licenses` | Inventorie les licences npm installées |
+| Commande                  | Effet                                                                |
+| ------------------------- | -------------------------------------------------------------------- |
+| `npm.cmd run env:check`   | Vérifie strictement Node, npm, Flutter et Dart                       |
+| `npm.cmd run format`      | Contrôle Prettier, Prisma et Dart                                    |
+| `npm.cmd run lint`        | Exécute ESLint et Flutter analyze                                    |
+| `npm.cmd run typecheck`   | Exécute TypeScript strict et Dart analyze                            |
+| `npm.cmd test`            | Exécute Vitest, Jest, Node Test et Flutter/goldens                   |
+| `npm.cmd run build`       | Construit les workspaces puis l’APK debug ; iOS uniquement sur macOS |
+| `npm.cmd run db:generate` | Génère explicitement le client Prisma                                |
+| `npm.cmd run licenses`    | Inventorie les licences npm installées                               |
 
 Sur macOS et Linux, utiliser `npm` à la place de `npm.cmd`.
 
-## Réserves connues avant revue CTO
+## Réserves et limites après fusion de S0.3
 
 - Le NDK Android autorisé `28.2.13676358` est installé et l’APK debug passe.
   Gradle a aussi installé automatiquement Build-Tools `36.0.0` et CMake
@@ -76,11 +79,13 @@ Sur macOS et Linux, utiliser `npm` à la place de `npm.cmd`.
   transitifs exacts. La qualification est consignée dans
   [la preuve de remédiation](docs/security/SPRINT_0_3_SECURITY_REMEDIATION.md).
 - Les chemins LGPL, MPL, EPL et CC-BY sont qualifiés, l’attribution CC-BY est
-  versionnée et une draft PR est autorisée. La revue juridique reste requise
-  avant Ready, fusion, release ou distribution, comme consigné dans
+  versionnée et le gate juridique/licences est approuvé pour le périmètre
+  verrouillé de S0.3. Toute future dépendance, distribution ou release exige
+  une nouvelle évaluation, comme consigné dans
   [la revue des licences](docs/security/THIRD_PARTY_LICENSE_REVIEW_S0_3.md).
-- Le navigateur intégré était indisponible pour les captures Web/Admin. Les
-  builds, tests DOM/accessibilité et smoke tests HTTP ont été exécutés.
+- Les quatre captures runtime Web/Admin sont versionnées et leur approbation
+  Product Owner porte uniquement sur le shell de fondation S0.3, pas sur le
+  design final de KORA+.
 - Le build iOS est `NON EXÉCUTÉ` sous Windows.
 
 ## Référence AdminLTE
