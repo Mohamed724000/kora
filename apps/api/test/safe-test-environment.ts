@@ -1,0 +1,17 @@
+export const SAFE_TEST_ENVIRONMENT: Readonly<Record<string, string>> = {
+  API_HOST: '127.0.0.1',
+  API_PORT: '3001',
+  DATABASE_HOST: '127.0.0.1',
+  DATABASE_NAME: 'kora_test',
+  DATABASE_PASSWORD: 'local-test-only',
+  DATABASE_PORT: '5432',
+  DATABASE_SSL: 'false',
+  DATABASE_USER: 'kora_test',
+  LOG_LEVEL: 'silent',
+  NODE_ENV: 'test',
+  READINESS_TIMEOUT_MS: '100',
+  REDIS_HOST: '127.0.0.1',
+  REDIS_PASSWORD: '',
+  REDIS_PORT: '6379',
+  REDIS_TLS: 'false',
+};

@@ -18,7 +18,7 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 | Lot 00C | Canonicalisation AdminLTE | Completed |
 | S0.1 | Gouvernance et Git | Completed |
 | S0.2 | Contrat monorepo et versions | Completed |
-| S0.3 | Fondations applicatives | Not started |
+| S0.3 | Fondations applicatives | Approved — ready for merge |
 | S0.4 | Infrastructure locale | Not started — Docker blocker connu |
 | S0.5 | CI, sécurité et observabilité | Not started |
 | S0.6 | Foundation Gate | Not started |
@@ -58,18 +58,29 @@ Livré dans le périmètre autorisé :
 
 ### S0.3 — Fondations applicatives
 
-Statut : **Not started**
+Statut : **Approved — ready for merge**
 
-- Flutter/Riverpod/GoRouter ;
-- Next.js web et administration ;
-- NestJS/Prisma ;
-- packages partagés étroits ;
-- shells, health checks et tests de fondation ;
-- aucun comportement métier.
+Livré dans le périmètre autorisé :
+
+- shell mobile Flutter avec Riverpod, GoRouter et cinq onglets canoniques ;
+- shells Next.js séparés pour le web public et l’administration ;
+- shell NestJS sous `/api/v1`, health checks et limites Prisma/Redis explicites ;
+- packages partagés étroits pour les contrats, la configuration et l’UI ;
+- format, lint, typecheck, tests, builds non mobiles et smokes applicatifs ;
+- états de fondation et goldens mobiles, sans comportement métier ;
+- aucune migration, file BullMQ, logique financière ou intégration fournisseur.
+
+Les gates CTO, Product Owner et juridique/licences sont fermés pour le
+périmètre S0.3. Les quatre captures runtime Web/Admin sont versionnées avec
+leurs dimensions et SHA-256. L’approbation visuelle porte uniquement sur le
+shell de fondation et ne valide pas le design final de KORA+.
+
+Réserve non bloquante : le build iOS n’est pas exécutable sous Windows. Une
+validation sur macOS reste obligatoire avant toute release iOS.
 
 ### S0.4 — Infrastructure locale
 
-Statut : **Not started — BLOCKER Docker**
+Statut : **Not started — Docker blocker connu**
 
 - PostgreSQL et Redis locaux ;
 - health checks et volumes nommés ;

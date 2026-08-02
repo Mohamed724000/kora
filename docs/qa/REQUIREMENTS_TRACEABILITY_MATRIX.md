@@ -9,7 +9,8 @@ modifie ni les exigences sources ni les décisions d’architecture applicables.
 
 Les colonnes `Implémentation`, `Vérification` et `Preuve` décrivent l’état réel
 du dépôt à la date du présent lot. Sprint 0.1 et Sprint 0.2 ne produisent aucun
-code applicatif.
+code applicatif. Sprint 0.3 introduit uniquement des fondations techniques ;
+aucune exigence produit ci-dessous n’est déclarée commencée ou vérifiée.
 
 ## Exigences produit
 
@@ -103,6 +104,18 @@ code applicatif.
 | GOV-S0.2-02 | Validation Node/npm sans dépendance | Verified | `npm.cmd run env:check` retourne le code 0 ; revue CTO PASS sur PR #1 |
 | GOV-S0.2-03 | Neuf zones canoniques réservées sans package applicatif | Verified | Inventaire des zones et scan des manifestes enfants ; revue CTO PASS sur PR #1 |
 | GOV-S0.2-04 | Zéro dépendance, code métier ou source immuable modifiée | Verified | Lockfile vide, scans du dépôt et manifeste 52/52 ; revue CTO PASS sur PR #1 |
+
+## Contrôles de gouvernance de Sprint 0.3
+
+| ID | Contrôle | État | Preuve attendue |
+|---|---|---|---|
+| GOV-S0.3-01 | Fondations Flutter, Next.js, NestJS et packages partagés, sans métier | Approved — CTO technical review passed | Sources applicatives, tests de fondation, audit contractuel et rapport d’exécution S0.3 |
+| GOV-S0.3-02 | Format, lint, typecheck et tests des six workspaces et du mobile | Verified | Commandes racine et Flutter terminées avec code 0 |
+| GOV-S0.3-03 | Builds et smokes applicatifs | Verified on Android/Windows — CTO passed | Builds web/admin/API/packages et smokes HTTP vérifiés ; readiness borné par `READINESS_TIMEOUT_MS` avec réponse 503 sûre ; APK debug construit après installation du NDK autorisé ; iOS non exécuté sous Windows et validation macOS requise avant release iOS |
+| GOV-S0.3-04 | Inventaires de dépendances et licences | Approved for S0.3 merge | Audits npm complet/production à zéro ; audit Security/Supply Chain PASS technique ; chemins LGPL/MPL/EPL/CC-BY documentés ; gate juridique/licences approuvé sur attestation du Product Owner pour le périmètre verrouillé actuel |
+| GOV-S0.3-05 | Validation visuelle des shells | Approved for S0.3 foundation only | Goldens mobiles, navigation et contraste Admin vérifiés ; quatre captures runtime Playwright Web/Admin avec dimensions et SHA-256 ; approbation Product Owner limitée au shell de fondation, pas au design final |
+| GOV-S0.3-06 | Intégrité clean-room, sources immuables et absence de métier | Verified | Manifeste 52/52, scans finaux, aucun métier prématuré ; rapports Foundation/Security/Design et document de clôture S0.3 |
+| GOV-S0.3-07 | Readiness et journalisation défensive | Verified — CTO passed | Timeout global et délais clients PostgreSQL/Redis ; probe bloquée et rejet tardif testés ; `msg` Nest fixe et chaînes token/DSN/password/OTP/email/phone assainies sur toutes les méthodes |
 
 ## Règles de mise à jour
 

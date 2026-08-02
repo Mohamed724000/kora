@@ -1,0 +1,284 @@
+# Rapport d’exécution — Sprint 0.3
+
+Date de remédiation : 2026-07-29
+Date de clôture des gates d’approbation : 2026-07-30
+Branche : `chore/s0-3-application-foundations`
+Baseline : `7f58b194c85757c0be93485aa4706242e8acd915`
+HEAD technique et visuel examiné :
+`6fb34cddc665cb512317b5b29f5e30dfb90e69e8`
+CTO technical review : **PASSED**
+Product Owner visual foundation gate :
+**APPROVED FOR SPRINT 0.3 FOUNDATION ONLY**
+Legal/license gate : **APPROVED FOR S0.3 MERGE**, sur attestation du Product
+Owner
+Statut produit : **APPROVED — READY FOR MERGE**
+Verdict d’exécution :
+**SPRINT 0.3 APPROVAL GATES CLOSED — READY FOR MERGE**
+
+Le rendu Web et Admin approuvé est uniquement le shell de fondation S0.3, pas
+le design final de KORA+. La publication et la fusion éventuelle restent
+traçables par le commit de clôture et la PR `#2`.
+
+## Reprise après CTO review
+
+La revue CTO a examiné le
+`9db8763430e0c3d1b877b9212a61d7173c717e93`. La reprise corrective a confirmé
+en lecture seule la branche `chore/s0-3-application-foundations`, le même SHA
+pour `HEAD` et son upstream, un working tree propre et aucun diff. Les huit
+commits publiés avant cette revue sont préservés sans amend, rebase, squash,
+reset ni force-push. S0.4 n’a pas commencé.
+
+## Reprise après interruption
+
+La reprise a commencé en lecture seule depuis l’état réellement présent sur
+disque. La branche courante était
+`chore/s0-3-application-foundations`, sans upstream, avec un index vide. Les
+quatre commits S0.3 attendus étaient les quatre derniers commits. Les
+modifications de remédiation non commitées ont été conservées intégralement.
+
+Aucun processus npm, Node, Flutter, Dart, Gradle, Java ou sdkmanager n’était
+actif. Les fichiers de verrouillage Gradle présents n’étaient détenus par aucun
+processus. `package.json`, `package-lock.json` et
+`node_modules/.package-lock.json` étaient des documents JSON valides. Aucune
+installation npm, aucun `npm audit fix` et aucune opération Git destructive
+n’ont été exécutés pendant la reprise.
+
+## Intégrité de l’historique
+
+Les quatre commits d’origine restent distincts et inchangés :
+
+| SHA                                        | Objet                      |
+| ------------------------------------------ | -------------------------- |
+| `c55d67e967631ccc50eed648ae5012910bee28d4` | fondations mobile          |
+| `395c950124abd1b23fa20c4f764425ffab37cdbf` | fondations API             |
+| `588abc535c0b7aba3d5f9bc29d4c88df716ac25d` | fondations Web/Admin       |
+| `259943c4a59dbf1fd6bc30bc175c4777ac0c0f90` | intégration des fondations |
+
+Aucun amend, rebase, squash, force-push, tag, release ou démarrage de S0.4
+n’est autorisé ou effectué.
+
+## Remédiations appliquées
+
+### Sécurité npm
+
+L’état initial était de 33 paquets signalés par l’audit complet, dont
+1 modéré et 32 élevés, et de 4 paquets dans le graphe production, dont
+1 modéré et 3 élevés.
+
+Quatre overrides exacts ont été ajoutés :
+
+- `postcss@8.5.24` ;
+- `sharp@0.35.3` ;
+- `minimatch@10.2.6` ;
+- `brace-expansion@5.0.8`.
+
+`npm audit fix` n’a pas été utilisé. Les audits complet et production
+post-remédiation terminent avec code 0 et zéro vulnérabilité. La qualification
+par avis, chemin, surface et exploitabilité figure dans
+[`SPRINT_0_3_SECURITY_REMEDIATION.md`](../security/SPRINT_0_3_SECURITY_REMEDIATION.md).
+
+### Licences
+
+Les composants LGPL, MPL, EPL et CC-BY sont qualifiés dans
+[`THIRD_PARTY_LICENSE_REVIEW_S0_3.md`](../security/THIRD_PARTY_LICENSE_REVIEW_S0_3.md).
+La provenance `caniuse.com`, Alexis Deveria et l’auteur du package
+`caniuse-lite`, Ben Briggs, sont consignés dans
+[`THIRD_PARTY_NOTICES.md`](../../THIRD_PARTY_NOTICES.md).
+
+Le Product Owner atteste qu’un juriste a validé la situation des licences et
+notices tierces de S0.3. Le gate est **APPROVED FOR SPRINT 0.3 MERGE**. Cette
+approbation est limitée aux dépendances et notices actuellement verrouillées ;
+elle ne vaut pas autorisation générale pour une future dépendance,
+distribution ou release. Toute évolution de ce périmètre exige une nouvelle
+évaluation. Aucun échange confidentiel, nom de juriste ou dossier juridique
+n’est enregistré dans le repository.
+
+### Android
+
+Le répertoire partiel exact du NDK `28.2.13676358`, dépourvu de
+`source.properties`, a été supprimé puis réinstallé avec le gestionnaire SDK
+officiel. L’installation finale déclare :
+
+```text
+Pkg.Desc = Android NDK
+Pkg.Revision = 28.2.13676358
+Pkg.BaseRevision = 28.2.13676358
+Pkg.ReleaseName = r28c
+```
+
+`flutter doctor -v`, `flutter analyze`, les 7 tests Flutter et
+`flutter build apk --debug` passent.
+
+APK local ignoré par Git :
+
+```text
+apps/mobile/build/app/outputs/flutter-apk/app-debug.apk
+taille = 149123694 octets
+SHA-256 = 53C6F91153307A7049F1A22E286DB822C99AEFDEB91728CFD35084F34FC8BD64
+```
+
+Pendant ce build demandé, Gradle a automatiquement installé Android
+Build-Tools `36.0.0` et CMake `3.22.1`. Ces deux installations n’étaient pas
+explicitement autorisées dans la consigne qui limitait le changement global au
+NDK. Après l’interruption, le CTO a explicitement autorisé leur conservation
+pour la seule chaîne de build Android. Elles ne sont ni supprimées ni modifiées
+et cette décision n’autorise aucune autre installation ou mise à jour du SDK.
+
+### Démarrage de l’API compilée
+
+Le smoke initial a montré que Nest produit `dist/src/main.js`, tandis que le
+script `start` pointait vers `dist/main.js`. Le manifeste API a été corrigé
+vers `node dist/src/main.js`. Le contre-audit Foundation a aussi relevé que les
+health checks devaient rester hors du préfixe applicatif : ils sont maintenant
+exposés uniquement par `/health/live` et `/health/ready`, tandis que
+`/api/v1` reste réservé aux futures routes applicatives. Format, lint,
+typecheck, 15 tests API, build Nest et smoke via
+`npm.cmd run start --workspace @kora-plus/api` passent ensuite.
+
+### Correctifs demandés par la CTO review
+
+- Le readiness applique désormais un délai maximal global piloté par
+  `READINESS_TIMEOUT_MS`. Une probe bloquée ou en échec retourne uniquement
+  `down/unavailable`, sans détail interne. Les résolutions ou rejets tardifs
+  sont consommés sans rejection non gérée.
+- Le client PostgreSQL configure les délais de connexion, de requête et de
+  statement ; le client Redis configure les délais de connexion et de
+  commande. Le timeout global reste la borne contractuelle de dernier recours.
+- Les méthodes de `NestStructuredLogger` utilisent un `msg` fixe par niveau et
+  placent un détail assaini dans un champ structuré. Les chaînes contenant
+  token, DSN, mot de passe, OTP, email ou téléphone sont testées sur les six
+  méthodes sans réexposition des valeurs.
+- Les treize fragments de navigation Admin sont reliés par test à une cible DOM
+  unique. `#tableau-de-bord` correspond à la première carte rendue.
+- Le petit texte `.admin-eyebrow` utilise le token distinct
+  `--admin-accent-text: #765b24`, avec un contraste déterministe de 6,38:1 sur
+  blanc et 5,90:1 sur le canvas. La couleur de marque `#b08d4f` reste utilisée
+  pour les usages non textuels conformes.
+- Les réserves obsolètes du plan MVP concernant le NDK, l’APK et l’audit npm
+  ont été retirées.
+
+## Preuves visuelles runtime
+
+Le Product Owner a approuvé les fondations visuelles Web et Admin :
+**APPROVED FOR SPRINT 0.3 FOUNDATION ONLY**. Cette décision ne valide pas le
+design final de KORA+ et ne couvre aucun catalogue réel, contenu,
+authentification, paiement, achat, lecteur ou workflow métier.
+
+Les quatre preuves ont été régénérées de manière reproductible le 2026-07-30
+avec Playwright `1.51.1` et son Chromium `134.0.6998.35` (build Playwright
+`1161`), installés temporairement hors du repository. Pour chaque preuve :
+
+- un nouveau contexte a utilisé le viewport attendu et
+  `deviceScaleFactor: 1` ;
+- le runtime correspondant a répondu HTTP 200 ;
+- l’état `networkidle` et `document.fonts.ready` ont été attendus ;
+- la page a été replacée à `window.scrollY = 0` ;
+- animations, transitions et caret ont été désactivés ;
+- la capture a utilisé `fullPage: false`, sans recadrage ni redimensionnement ;
+- le contexte a ensuite été fermé.
+
+| Preuve                                             | Dimensions IHDR | SHA-256                                                            |
+| -------------------------------------------------- | --------------: | ------------------------------------------------------------------ |
+| `docs/qa/evidence/s0-3/web-desktop-1440x900.png`   |      1440 × 900 | `AB1EC673596330BFF089637CE2EE8A0FF8FFEB0C5D72F6E056766A20EC9B9F1C` |
+| `docs/qa/evidence/s0-3/web-mobile-390x844.png`     |       390 × 844 | `8F229F4C3927F7DAC2AC174CE66216ACB87F7EFD9CDAE37560FB4B723BB40F87` |
+| `docs/qa/evidence/s0-3/admin-desktop-1440x900.png` |      1440 × 900 | `6C84DFDFD06B4BE66FBFC930836C866B4C2ABA1D9339B9A0B889FA30AA102895` |
+| `docs/qa/evidence/s0-3/admin-mobile-390x844.png`   |       390 × 844 | `E386725025D8AEA59AF8C0503B928A0AC57DECFBDCC02109E143A95D79B1D2CF` |
+
+La signature PNG, le chunk IHDR et la décodabilité ont été contrôlés par
+lecture binaire, WPF et System.Drawing. L’inspection visuelle confirme les
+shells Web/Admin attendus, sans interface navigateur, secret, chemin local ou
+donnée utilisateur réelle. Aucun fichier concurrent suffixé `(1)`, `(2)`, etc.
+n’a été retenu comme preuve.
+
+Ces captures runtime sont accompagnées de la chaîne de contrôle Git
+(branche et HEAD vérifiés avant génération). Elles ne constituent pas, à elles
+seules, une preuve cryptographique du commit.
+
+## Contrôles
+
+| Contrôle                                            | État courant                                                                                                                 |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `npm.cmd run env:check`                             | PASS — code 0 ; Node 22.18.0, npm 10.9.3, Flutter 3.44.1, Dart 3.12.1                                                        |
+| versions ciblées                                    | PASS — code 0 ; postcss 8.5.24, sharp 0.35.3, minimatch 10.2.6, brace-expansion 5.0.8                                        |
+| `npm.cmd ls --all`                                  | PASS — code 0, aucun problem/invalid/extraneous/unmet                                                                        |
+| `npm.cmd audit --json`                              | PASS — code 0 ; 0 vulnérabilité                                                                                              |
+| `npm.cmd audit --omit=dev --json`                   | PASS — code 0 ; 0 vulnérabilité                                                                                              |
+| `npm.cmd run licenses`                              | PASS — code 0 ; 1 092 paquets installés, 0 licence non déclarée                                                              |
+| `npm.cmd run format`                                | PASS — code 0 ; 6 workspaces et mobile, 0 changement                                                                         |
+| `npm.cmd run lint`                                  | PASS — code 0 ; 6 workspaces et mobile                                                                                       |
+| `npm.cmd run typecheck`                             | PASS — code 0 ; 6 workspaces et mobile                                                                                       |
+| `npm.cmd test`                                      | PASS — code 0 ; Web 7, Admin 10, API 15, contracts 1, config 1, UI 4, mobile 7                                               |
+| `npm.cmd run build`                                 | PASS — code 0 ; Web, Admin, API, contracts, config, UI et APK debug                                                          |
+| tests et builds ciblés                              | PASS — codes 0 ; Web, Admin, API, contracts, config et UI séparément                                                         |
+| smokes Web/Admin                                    | PASS — code 0 ; HTTP 200, titres/robots conformes, Admin `robots.txt` bloque `/`                                             |
+| smoke API compilée                                  | PASS — code 0 ; `/health/live` 200 ; `/health/ready` 503 dans la borne configurée, sans fuite ; anciens chemins préfixés 404 |
+| `dart format --output=none --set-exit-if-changed .` | PASS — code 0 ; 13 fichiers, 0 changement                                                                                    |
+| `flutter doctor -v`                                 | PASS — code 0 pour Android ; Visual Studio absent, hors périmètre                                                            |
+| `flutter analyze`                                   | PASS — code 0 ; aucun problème                                                                                               |
+| `flutter test`                                      | PASS — code 0 ; 7 tests                                                                                                      |
+| `flutter build apk --debug`                         | PASS — code 0                                                                                                                |
+| `flutter pub deps`                                  | PASS — code 0 ; inventaire résolu                                                                                            |
+| manifeste immuable                                  | PASS — code 0 ; 52/52                                                                                                        |
+| secrets et fichiers `.env` interdits                | PASS — code 0 ; 0 finding                                                                                                    |
+| métier prématuré                                    | PASS — code 0 ; 0 finding                                                                                                    |
+| TODO/FIXME, lorem ipsum, marqueurs IA               | PASS — code 0 ; 0 finding actionnable                                                                                        |
+| artefacts générés suivis                            | PASS — code 0 ; 0 ; APK confirmé ignoré                                                                                      |
+| `git diff --check`                                  | PASS — code 0                                                                                                                |
+| `git fsck --full`                                   | PASS — code 0 ; cinq blobs orphelins non référencés après contrôles d’index                                                  |
+| preuves runtime Web/Admin                           | PASS — quatre PNG Playwright inspectés, dimensions et SHA-256 enregistrés                                                    |
+| gate visuel Product Owner                           | APPROVED FOR SPRINT 0.3 FOUNDATION ONLY — le shell n’est pas le design final                                                 |
+| audit Design/QA indépendant                         | PASS AVEC RÉSERVES — verdict historique du 2026-07-29 ; la réserve de captures est désormais levée par les preuves ci-dessus |
+| audit Foundation Contract indépendant               | PASS — aucun finding résiduel après remédiation                                                                              |
+| audit Security/Supply Chain indépendant             | PASS technique — gate juridique ultérieur approuvé pour le périmètre S0.3 actuel                                             |
+| gate juridique/licences                             | APPROVED FOR SPRINT 0.3 MERGE — sur attestation du Product Owner, portée limitée                                             |
+| build iOS                                           | NON EXÉCUTÉ — hôte Windows                                                                                                   |
+
+## Audits indépendants
+
+- **Foundation Contract Auditor — PASS** : endpoints health conformes,
+  inventaire et codes de sortie complets, aucun métier prématuré et S0.4 non
+  commencé.
+- **Security & Supply Chain Auditor — PASS technique** : graphe et audits npm
+  propres, lockfile cohérent, licences et attributions qualifiées. Le gate
+  juridique a ensuite été approuvé pour le merge S0.3 sur attestation du
+  Product Owner, sans élargir la portée de cet audit technique.
+- **Design QA Auditor — PASS AVEC RÉSERVES (verdict historique)** : trois
+  goldens mobiles conformes et shells Web/Admin statiquement conformes. La
+  réserve de captures runtime est maintenant levée par les quatre preuves
+  Playwright et l’approbation visuelle du Product Owner, limitée aux fondations
+  S0.3.
+
+## Inventaire exact avant commits
+
+Treize fichiers composent le diff final avant commits : dix fichiers modifiés
+et trois fichiers ajoutés. Aucun artefact généré n’en fait partie.
+
+```text
+M  README.md
+M  apps/api/README.md
+M  apps/api/package.json
+M  apps/api/src/app.factory.ts
+M  apps/api/test/app.integration.spec.ts
+M  docs/qa/REQUIREMENTS_TRACEABILITY_MATRIX.md
+M  docs/qa/SPRINT_0_3_EXECUTION_REPORT.md
+M  docs/security/THREAT_MODEL.md
+M  package-lock.json
+M  package.json
+A  THIRD_PARTY_NOTICES.md
+A  docs/security/SPRINT_0_3_SECURITY_REMEDIATION.md
+A  docs/security/THIRD_PARTY_LICENSE_REVIEW_S0_3.md
+```
+
+## Gate de publication
+
+Les gates CTO, Product Owner et juridique sont fermés pour le périmètre S0.3.
+Le commit de clôture regroupe uniquement les documents concernés et les quatre
+preuves runtime. Sa publication, le passage Ready et la fusion doivent
+s’effectuer via la PR `#2` avec un merge commit, sans squash, rebase,
+force-push, suppression de branche, tag, release ou déploiement.
+
+Le build iOS reste **NON EXÉCUTÉ** sur l’hôte Windows. Une validation sur macOS
+reste obligatoire avant toute release iOS ; cette réserve ne bloque pas le
+merge des fondations S0.3.
+
+S0.4 reste **Not started — Docker blocker connu**.

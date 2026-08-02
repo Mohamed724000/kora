@@ -1,0 +1,22 @@
+name: kora_plus
+description: Fondation mobile Flutter de KORA+.
+publish_to: none
+version: 0.1.0+1
+
+environment:
+  sdk: 3.12.1
+  flutter: 3.44.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: 3.4.1
+  go_router: 17.3.0
+
+dev_dependencies:
+  flutter_lints: 6.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true

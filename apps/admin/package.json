@@ -1,0 +1,43 @@
+{
+  "name": "@kora-plus/admin",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev",
+    "format": "prettier --check .",
+    "lint": "eslint . --max-warnings=0",
+    "start": "next start",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@adminlte/react": "0.3.0",
+    "@kora-plus/ui": "0.0.0",
+    "@popperjs/core": "2.11.8",
+    "@tanstack/react-table": "8.21.3",
+    "apexcharts": "4.7.0",
+    "bootstrap": "5.3.8",
+    "bootstrap-icons": "1.13.1",
+    "next": "16.2.12",
+    "react": "19.2.8",
+    "react-apexcharts": "1.7.0",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@kora-plus/config": "0.0.0",
+    "@testing-library/dom": "10.4.1",
+    "@testing-library/jest-dom": "7.0.0",
+    "@testing-library/react": "16.3.2",
+    "@types/node": "22.18.13",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "eslint": "9.39.2",
+    "eslint-config-next": "16.2.12",
+    "jsdom": "27.4.0",
+    "prettier": "3.9.6",
+    "typescript": "5.9.3",
+    "vitest": "4.1.10"
+  }
+}

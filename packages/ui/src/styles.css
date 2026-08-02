@@ -1,0 +1,154 @@
+.kp-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.kp-brand {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.65rem;
+  color: inherit;
+  line-height: 1;
+}
+
+.kp-brand__name {
+  font-size: 1.2rem;
+  font-weight: 850;
+  letter-spacing: -0.045em;
+}
+
+.kp-brand__plus {
+  color: var(--kp-brand-accent);
+}
+
+.kp-brand__context {
+  padding-left: 0.65rem;
+  border-left: 1px solid currentColor;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.kp-skip-link {
+  position: fixed;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 1100;
+  padding: 0.75rem 1rem;
+  border: 2px solid currentColor;
+  background: var(--kp-surface);
+  color: var(--kp-ink);
+  font-weight: 700;
+  transform: translateY(-160%);
+}
+
+.kp-skip-link:focus {
+  transform: translateY(0);
+}
+
+.kp-status-panel {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  padding: clamp(1.2rem, 3vw, 1.75rem);
+  border: 1px solid var(--kp-line);
+  border-radius: 0.75rem;
+  background: var(--kp-surface);
+  color: var(--kp-ink);
+}
+
+.kp-status-panel__icon {
+  display: inline-grid;
+  flex: 0 0 2.5rem;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  border: 1px solid var(--kp-line);
+  border-radius: 50%;
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+.kp-status-panel--error .kp-status-panel__icon {
+  border-color: var(--kp-error);
+  color: var(--kp-error);
+}
+
+.kp-status-panel__body {
+  min-width: 0;
+}
+
+.kp-status-panel__title {
+  margin: 0;
+  color: inherit;
+  font-size: 1.05rem;
+  line-height: 1.35;
+}
+
+.kp-status-panel__description {
+  max-width: 60ch;
+  margin: 0.45rem 0 0;
+  color: var(--kp-muted);
+  line-height: 1.6;
+}
+
+.kp-status-panel__action {
+  margin-top: 1rem;
+}
+
+.kp-action-button {
+  min-height: 2.75rem;
+  padding: 0.65rem 1rem;
+  border: 1px solid var(--kp-ink);
+  border-radius: 0.4rem;
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.kp-action-button--primary {
+  background: var(--kp-ink);
+  color: var(--kp-surface);
+}
+
+.kp-action-button--secondary {
+  background: var(--kp-surface);
+  color: var(--kp-ink);
+}
+
+.kp-action-button:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.kp-action-button:focus-visible,
+.kp-skip-link:focus-visible {
+  outline: 3px solid var(--kp-focus);
+  outline-offset: 3px;
+}
+
+.kp-action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.kp-brand,
+.kp-skip-link,
+.kp-status-panel,
+.kp-action-button {
+  --kp-brand-accent: #b08d4f;
+  --kp-surface: #ffffff;
+  --kp-ink: #1c1d21;
+  --kp-muted: #6b6e76;
+  --kp-line: #e3e5e9;
+  --kp-error: #8a2020;
+  --kp-focus: #b08d4f;
+}

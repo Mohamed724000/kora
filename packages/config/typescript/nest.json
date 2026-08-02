@@ -1,0 +1,14 @@
+{
+  "extends": "./base.json",
+  "compilerOptions": {
+    "declaration": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "module": "commonjs",
+    "moduleResolution": "node10",
+    "outDir": "dist",
+    "removeComments": true,
+    "sourceMap": true,
+    "target": "ES2023"
+  }
+}
