@@ -8,6 +8,8 @@ import type { ReadinessCheck } from './readiness-check';
 export class PostgresqlReadinessCheck implements ReadinessCheck, OnApplicationShutdown {
   readonly name = 'postgresql' as const;
 
+  private readonly handleIdleClientError = (): void => undefined;
+
   private pool?: Pool;
 
   constructor(
@@ -49,7 +51,9 @@ export class PostgresqlReadinessCheck implements ReadinessCheck, OnApplicationSh
       options.ssl = { rejectUnauthorized: true };
     }
 
-    this.pool = new Pool(options);
-    return this.pool;
+    const pool = new Pool(options);
+    pool.on('error', this.handleIdleClientError);
+    this.pool = pool;
+    return pool;
   }
 }
