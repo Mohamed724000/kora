@@ -1,6 +1,6 @@
 # KORA+ Final — Threat Model initial
 
-Statut : **BASELINE DE CONCEPTION + FONDATIONS S0.3 — REVUE CTO EN ATTENTE**
+Statut : **BASELINE DE CONCEPTION + FONDATIONS S0.3 VALIDÉES ET FUSIONNÉES**
 
 Ce modèle décrit les frontières et mesures attendues. Sprint 0.3 introduit des
 shells et quelques contrôles de fondation étroits ; aucun contrôle métier,
@@ -47,21 +47,21 @@ financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
 
 ## Menaces et mesures attendues
 
-| Domaine | Menaces principales | Mesures attendues / autorités | État |
-|---|---|---|---|
-| Identité/OTP | Brute force, interception, replay, enumeration | Rate limits, OTP court et haché, rotation session, logs masqués ; ADR-010 | Not implemented |
-| Admin | Vol de session, MFA contournée, récupération abusive | TOTP RFC 6238, codes Argon2id, cookies httpOnly, step-up, révocation ; ADR-002/005/008 | Not implemented |
-| RBAC | Escalade verticale/horizontale, champs sensibles | Contrôle serveur route/action/champ, moindre privilège ; ADR-020 | Not implemented |
-| Paiement | Double débit, faux webhook, replay, ordre inversé | Signature, idempotence, Inbox/Outbox, PaymentAttempts immuables ; ADR-012/015 | Not implemented |
-| Ledger | Altération, déséquilibre, double comptage | Append-only, groupes équilibrés, compensation, reconciliation ; ADR-013/014 | Not implemented |
-| Droits | Accès sans achat, révocation excessive | Entitlement permanent ciblé, checks serveur ; ADR-016 | Not implemented |
-| Média | URL brute, partage, scraping, logs sensibles | Stockage privé, descriptor court, PreviewGrant, device binding ; ADR-011/017 | Not implemented |
-| Offline | Extraction clé/fichier, replay licence, copie appareil | AES-256-GCM, clé non exportable, licence renouvelable ; ADR-018 | Not implemented |
-| Audit | Suppression ou falsification | Écriture transactionnelle, blocage UPDATE/DELETE, exports audités ; ADR-019 | Not implemented |
-| Capture | Enregistrement écran et dispositif externe | `FLAG_SECURE`, détection/pause iOS, protections en couches sans promesse absolue ; ADR-024 | Not implemented |
-| Données/logs | Fuite PII, token ou secret | Redaction des champs et messages, `msg` catégoriel, minimisation, contrôle accès, rétention et tests | Foundation implemented — pending CTO re-review |
-| Supply chain | Package compromis, licence incompatible | Versions verrouillées, revue, audit et provenance | Remediated and qualified — Security audit PASS technique, CTO/legal review pending |
-| CI/CD | Secret exposé, artefact altéré, déploiement non autorisé | Moindre privilège, environnements protégés, provenance et rollback | Not implemented |
+| Domaine      | Menaces principales                                      | Mesures attendues / autorités                                                                        | État                                                                                          |
+| ------------ | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Identité/OTP | Brute force, interception, replay, enumeration           | Rate limits, OTP court et haché, rotation session, logs masqués ; ADR-010                            | Not implemented                                                                               |
+| Admin        | Vol de session, MFA contournée, récupération abusive     | TOTP RFC 6238, codes Argon2id, cookies httpOnly, step-up, révocation ; ADR-002/005/008               | Not implemented                                                                               |
+| RBAC         | Escalade verticale/horizontale, champs sensibles         | Contrôle serveur route/action/champ, moindre privilège ; ADR-020                                     | Not implemented                                                                               |
+| Paiement     | Double débit, faux webhook, replay, ordre inversé        | Signature, idempotence, Inbox/Outbox, PaymentAttempts immuables ; ADR-012/015                        | Not implemented                                                                               |
+| Ledger       | Altération, déséquilibre, double comptage                | Append-only, groupes équilibrés, compensation, reconciliation ; ADR-013/014                          | Not implemented                                                                               |
+| Droits       | Accès sans achat, révocation excessive                   | Entitlement permanent ciblé, checks serveur ; ADR-016                                                | Not implemented                                                                               |
+| Média        | URL brute, partage, scraping, logs sensibles             | Stockage privé, descriptor court, PreviewGrant, device binding ; ADR-011/017                         | Not implemented                                                                               |
+| Offline      | Extraction clé/fichier, replay licence, copie appareil   | AES-256-GCM, clé non exportable, licence renouvelable ; ADR-018                                      | Not implemented                                                                               |
+| Audit        | Suppression ou falsification                             | Écriture transactionnelle, blocage UPDATE/DELETE, exports audités ; ADR-019                          | Not implemented                                                                               |
+| Capture      | Enregistrement écran et dispositif externe               | `FLAG_SECURE`, détection/pause iOS, protections en couches sans promesse absolue ; ADR-024           | Not implemented                                                                               |
+| Données/logs | Fuite PII, token ou secret                               | Redaction des champs et messages, `msg` catégoriel, minimisation, contrôle accès, rétention et tests | Foundation validated — CTO technical review passed                                            |
+| Supply chain | Package compromis, licence incompatible                  | Versions verrouillées, revue, audit et provenance                                                    | Remediated and qualified — technical and S0.3 legal/license gates passed for the locked scope |
+| CI/CD        | Secret exposé, artefact altéré, déploiement non autorisé | Moindre privilège, environnements protégés, provenance et rollback                                   | Not implemented                                                                               |
 
 ## Risques ouverts et gates
 
@@ -82,9 +82,9 @@ financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
   est versionnée dans `SPRINT_0_3_SECURITY_REMEDIATION.md`.
 - Les chemins LGPL, MPL, EPL et CC-BY, leur présence dans les artefacts et les
   mesures proposées sont documentés dans
-  `THIRD_PARTY_LICENSE_REVIEW_S0_3.md`. Une draft PR est autorisée, mais une
-  revue juridique reste obligatoire avant Ready, fusion, release ou
-  distribution publique ou commerciale.
+  `THIRD_PARTY_LICENSE_REVIEW_S0_3.md`. Le gate juridique/licences a été
+  approuvé pour le seul périmètre verrouillé de S0.3. Toute future dépendance,
+  distribution ou release exige une nouvelle évaluation juridique et licences.
 - Docker local inaccessible : blocker S0.4, sans impact sur les fondations S0.3.
 - Fournisseurs OTP/paiement et stratégie stores non approuvés : gate avant
   paiement réel.

@@ -10,19 +10,19 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 
 ## État des gates et lots
 
-| Gate ou lot | Objectif | Statut |
-|---|---|---|
-| Gate 0 | Sources approuvées et readiness clean room | Completed |
-| Lot 00 | Preflight read-only | Completed |
-| Lot 00B | Remédiation documentaire | Completed |
-| Lot 00C | Canonicalisation AdminLTE | Completed |
-| S0.1 | Gouvernance et Git | Completed |
-| S0.2 | Contrat monorepo et versions | Completed |
-| S0.3 | Fondations applicatives | Approved — ready for merge |
-| S0.4 | Infrastructure locale | Not started — Docker blocker connu |
-| S0.5 | CI, sécurité et observabilité | Not started |
-| S0.6 | Foundation Gate | Not started |
-| Slice 1 et suivantes | Fonctionnalités produit | Not started |
+| Gate ou lot          | Objectif                                   | Statut                             |
+| -------------------- | ------------------------------------------ | ---------------------------------- |
+| Gate 0               | Sources approuvées et readiness clean room | Completed                          |
+| Lot 00               | Preflight read-only                        | Completed                          |
+| Lot 00B              | Remédiation documentaire                   | Completed                          |
+| Lot 00C              | Canonicalisation AdminLTE                  | Completed                          |
+| S0.1                 | Gouvernance et Git                         | Completed                          |
+| S0.2                 | Contrat monorepo et versions               | Completed                          |
+| S0.3                 | Fondations applicatives                    | Closed and merged                  |
+| S0.4                 | Infrastructure locale                      | Not started — Docker blocker connu |
+| S0.5                 | CI, sécurité et observabilité              | Not started                        |
+| S0.6                 | Foundation Gate                            | Not started                        |
+| Slice 1 et suivantes | Fonctionnalités produit                    | Not started                        |
 
 ## Sprint 0 — Clean-room foundation
 
@@ -58,7 +58,7 @@ Livré dans le périmètre autorisé :
 
 ### S0.3 — Fondations applicatives
 
-Statut : **Approved — ready for merge**
+Statut : **Closed and merged**
 
 Livré dans le périmètre autorisé :
 
@@ -74,6 +74,10 @@ Les gates CTO, Product Owner et juridique/licences sont fermés pour le
 périmètre S0.3. Les quatre captures runtime Web/Admin sont versionnées avec
 leurs dimensions et SHA-256. L’approbation visuelle porte uniquement sur le
 shell de fondation et ne valide pas le design final de KORA+.
+
+La fusion a été effectuée via la
+[PR #2](https://github.com/Mohamed724000/kora/pull/2), avec le merge commit
+[`d3f837c93044d0b514c2abd732c559cdd6543a96`](https://github.com/Mohamed724000/kora/commit/d3f837c93044d0b514c2abd732c559cdd6543a96).
 
 Réserve non bloquante : le build iOS n’est pas exécutable sous Windows. Une
 validation sur macOS reste obligatoire avant toute release iOS.
@@ -131,13 +135,13 @@ Gate : un achat audio sandbox complet, réconcilié, sans URL média brute.
 
 ## Slices suivantes
 
-| Slice | Contenu | Statut |
-|---|---|---|
-| 2 — Discovery & Public Web | Recherche, catégories, tendances, SEO et deep links ; aucun achat/playback web | Not started |
-| 3 — Library & Media Types | Albums, favoris, playlists, historique, vidéo, podcast et livre | Not started |
-| 4 — Secure Offline | Chunks chiffrés, reprise, licence liée appareil et révocation | Not started |
-| 5 — Artist Finance | Earnings immuables, soutien, soldes, retraits et réconciliation | Not started |
-| 6 — Loyalty, Notifications & Security | Paliers, préférences, delivery et opérations sécurité | Not started |
+| Slice                                 | Contenu                                                                        | Statut      |
+| ------------------------------------- | ------------------------------------------------------------------------------ | ----------- |
+| 2 — Discovery & Public Web            | Recherche, catégories, tendances, SEO et deep links ; aucun achat/playback web | Not started |
+| 3 — Library & Media Types             | Albums, favoris, playlists, historique, vidéo, podcast et livre                | Not started |
+| 4 — Secure Offline                    | Chunks chiffrés, reprise, licence liée appareil et révocation                  | Not started |
+| 5 — Artist Finance                    | Earnings immuables, soutien, soldes, retraits et réconciliation                | Not started |
+| 6 — Loyalty, Notifications & Security | Paliers, préférences, delivery et opérations sécurité                          | Not started |
 
 ## Gates bêta et production
 
