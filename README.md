@@ -10,7 +10,7 @@ de Sprint 0.3. Aucune fonctionnalité métier n’est implémentée.
 - Sprint 0.1 : terminé ; baseline unique publiée sur `main`.
 - Sprint 0.2 : contrat monorepo terminé et validé par la revue CTO.
 - Sprint 0.3 : **Closed and merged**.
-- Sprint 0.4 : **Not started — Docker blocker connu**.
+- Sprint 0.4 : **implémentation et validations locales terminées — prête pour revue CTO**.
 - S0.5, S0.6 et les slices produit : non commencés.
 
 Sprint 0.3 a été fermé et fusionné via la
@@ -20,7 +20,8 @@ et le merge commit est
 [`d3f837c93044d0b514c2abd732c559cdd6543a96`](https://github.com/Mohamed724000/kora/commit/d3f837c93044d0b514c2abd732c559cdd6543a96).
 Les gates CTO, Product Owner et juridique/licences sont fermés pour le seul
 périmètre verrouillé de S0.3. Aucun lot suivant n’est autorisé par le présent
-état ; S0.4 reste non commencé.
+état. S0.4 est implémenté et validé localement sur sa branche dédiée, sans
+démarrer S0.5.
 
 ## Autorités
 
