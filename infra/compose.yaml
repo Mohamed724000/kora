@@ -1,0 +1,90 @@
+name: kora-plus-local
+
+services:
+  postgres:
+    image: postgres:18.4-alpine3.24@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+    environment:
+      POSTGRES_DB: ${KORA_POSTGRES_DB:?KORA_POSTGRES_DB is required}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_USER: ${KORA_POSTGRES_USER:?KORA_POSTGRES_USER is required}
+    secrets:
+      - postgres_password
+    ports:
+      - "127.0.0.1:${KORA_POSTGRES_PORT:?KORA_POSTGRES_PORT is required}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    networks:
+      - local
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'pg_isready --host=127.0.0.1 --port=5432 --username="$${POSTGRES_USER}" --dbname="$${POSTGRES_DB}"',
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+    labels:
+      com.kora-plus.managed: "true"
+      com.kora-plus.project: kora-plus-local
+      com.kora-plus.service: postgresql
+
+  redis:
+    image: redis:7.2.15-alpine3.21@sha256:05a97a479bc73de66f087dc05b569010772880f778cc8671fa6b8aadee32e5c6
+    entrypoint: ["/usr/local/bin/kora-redis-entrypoint.sh"]
+    secrets:
+      - redis_password
+    ports:
+      - "127.0.0.1:${KORA_REDIS_PORT:?KORA_REDIS_PORT is required}:6379"
+    volumes:
+      - redis-data:/data
+      - ./redis/entrypoint.sh:/usr/local/bin/kora-redis-entrypoint.sh:ro
+    tmpfs:
+      - /run/kora-redis:mode=0700
+    networks:
+      - local
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'REDISCLI_AUTH="$$(cat /run/secrets/redis_password)" redis-cli --no-auth-warning -h 127.0.0.1 ping | grep -qx PONG',
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    restart: unless-stopped
+    labels:
+      com.kora-plus.managed: "true"
+      com.kora-plus.project: kora-plus-local
+      com.kora-plus.service: redis
+
+networks:
+  local:
+    name: kora-plus-local-network
+    driver: bridge
+    labels:
+      com.kora-plus.managed: "true"
+      com.kora-plus.project: kora-plus-local
+
+volumes:
+  postgres-data:
+    name: kora-plus-local-postgres-data
+    labels:
+      com.kora-plus.managed: "true"
+      com.kora-plus.project: kora-plus-local
+      com.kora-plus.volume: postgresql
+  redis-data:
+    name: kora-plus-local-redis-data
+    labels:
+      com.kora-plus.managed: "true"
+      com.kora-plus.project: kora-plus-local
+      com.kora-plus.volume: redis
+
+secrets:
+  postgres_password:
+    file: ./.local/secrets/postgres_password
+  redis_password:
+    file: ./.local/secrets/redis_password

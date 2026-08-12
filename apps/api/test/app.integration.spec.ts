@@ -59,9 +59,11 @@ describe('API foundation', () => {
     });
   }
 
-  it('démarre en test sans connexion externe et expose la liveness', async () => {
+  beforeAll(async () => {
     await start([successfulCheck('postgresql'), successfulCheck('redis')]);
+  }, 10_000);
 
+  it('démarre en test sans connexion externe et expose la liveness', async () => {
     await request(application.getHttpServer())
       .get('/health/live')
       .expect(200)
