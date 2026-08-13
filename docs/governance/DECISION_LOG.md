@@ -113,6 +113,10 @@ sécurité métier.
 | DEC-M0.1-05 | Automatisation | Les version updates Dependabot sont limitées aux dépendances directes patch/minor ; les security updates restent actives et aucune fusion automatique n'est configurée. | Décision CTO M0.1                | Accepted |
 | DEC-M0.1-06 | Automatisation | `versioning-strategy: increase` reste désactivé faute de garantie sur les pins exacts ; le scanner de dépôt est le gate bloquant.                                       | Décision CTO M0.1 / preuve PR #9 | Accepted |
 
+**DEC-M0.1-07 — Sécurité — Accepted.** Les pins workspace exacts de
+`@types/react` sont unanimes et le lockfile contient une seule installation
+physique racine à la même version. Autorité : décision CTO M0.1-R1.
+
 M0.1 est un gate de maintenance pré-S0.6. Il ne démarre ni S0.6 ni Slice 1.
 
 ## Catégories d’autorité

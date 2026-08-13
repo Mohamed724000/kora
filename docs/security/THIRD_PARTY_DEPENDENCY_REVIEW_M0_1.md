@@ -32,6 +32,30 @@ La PR #9 a démontré une divergence : les trois manifestes proposaient
 Les sections contrôlées sont `dependencies`, `devDependencies`,
 `optionalDependencies` et `peerDependencies`.
 
+### Correction M0.1-R1 — singleton `@types/react`
+
+Le lockfile initial de M0.1 conservait `@types/react@19.2.17` à la racine et
+installait `19.2.18` séparément sous Admin, Web et UI. Les inspections
+`npm dedupe --dry-run` et `npm find-dupes` avec npm 10.9.3 identifiaient bien
+la déduplication, mais proposaient aussi des changements transitifs et des
+ajouts optionnels de plateforme hors périmètre ; leur application directe a
+donc été refusée.
+
+La procédure déterministe a été vérifiée dans une copie temporaire complète :
+pin racine temporaire exact à `19.2.18`, régénération `package-lock-only` avec
+préférence de déduplication, retrait du pin temporaire, puis seconde
+régénération. Son diff utile a été reporté sans modifier `package.json` :
+
+- une seule installation physique, `node_modules/@types/react@19.2.18` ;
+- aucune installation imbriquée sous Admin, Web ou UI ;
+- les trois pins directs et leurs métadonnées workspace restent `19.2.18` ;
+- aucune autre version ou topologie du graphe npm n'est modifiée.
+
+Le scanner applique cette règle uniquement à `@types/react`. Il dérive la
+version attendue des pins directs des workspaces, exige leur unanimité exacte,
+puis vérifie l'unicité physique à la racine et sa version résolue. Les
+duplications transitives légitimes des autres packages restent autorisées.
+
 ## Politique Dependabot
 
 Les version updates npm et Pub restent actives uniquement pour les dépendances
