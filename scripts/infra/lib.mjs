@@ -304,13 +304,13 @@ export function pullImages() {
   validateCompose();
   runCompose(["pull"]);
   const expected = [
-    ["postgres:18.4-alpine3.24", POSTGRES_IMAGE.split("@")[1]],
-    ["redis:7.2.15-alpine3.21", REDIS_IMAGE.split("@")[1]],
+    [POSTGRES_IMAGE, POSTGRES_IMAGE.split("@")[1]],
+    [REDIS_IMAGE, REDIS_IMAGE.split("@")[1]],
   ];
 
-  for (const [tag, digest] of expected) {
+  for (const [reference, digest] of expected) {
     const output = runDocker(
-      ["image", "inspect", tag, "--format", "{{json .RepoDigests}}"],
+      ["image", "inspect", reference, "--format", "{{json .RepoDigests}}"],
       {
         capture: true,
       },
@@ -318,7 +318,7 @@ export function pullImages() {
     const repositoryDigests = JSON.parse(output);
     if (!repositoryDigests.some((item) => item.endsWith(`@${digest}`))) {
       throw new Error(
-        `Resolved digest for ${tag} does not match the approved digest.`,
+        `Resolved digest for ${reference.split("@")[0]} does not match the approved digest.`,
       );
     }
   }

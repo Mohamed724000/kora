@@ -99,6 +99,31 @@ export function sanitizeLogText(value: unknown): string {
   );
 }
 
+const SENSITIVE_FIELD_PATTERN =
+  /^(?:authorization|cookie|password|passwd|pwd|token|access[_-]?token|refresh[_-]?token|otp|dsn|email|phone|telephone|tel|user|username|ip(?:_address|address)?|device[_-]?id|card|payment)$/iu;
+
+export function sanitizeObservabilityValue(value: unknown, field = ''): unknown {
+  if (SENSITIVE_FIELD_PATTERN.test(field)) {
+    return REDACTED_VALUE;
+  }
+
+  if (typeof value === 'string' || value instanceof Error) {
+    return sanitizeLogText(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => sanitizeObservabilityValue(entry));
+  }
+
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, sanitizeObservabilityValue(entry, key)]),
+    );
+  }
+
+  return value;
+}
+
 function structuredLogFields(
   message: unknown,
   context: string | undefined,

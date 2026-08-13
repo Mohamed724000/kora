@@ -1,0 +1,114 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "KORA+ Foundation API",
+    "version": "0.5.0",
+    "description": "Contrat OpenAPI limité aux endpoints de santé autorisés avant Slice 1."
+  },
+  "paths": {
+    "/health/live": {
+      "get": {
+        "operationId": "healthLiveness",
+        "summary": "Vérifie que le processus API répond.",
+        "responses": {
+          "200": {
+            "description": "Processus actif.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LivenessResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "operationId": "healthReadiness",
+        "summary": "Vérifie PostgreSQL et Redis.",
+        "responses": {
+          "200": {
+            "description": "Toutes les dépendances sont disponibles.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Une dépendance est indisponible.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "LivenessResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "live"
+          }
+        }
+      },
+      "DependencyHealth": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["latencyMs", "status"],
+        "properties": {
+          "latencyMs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "reason": {
+            "type": "string",
+            "const": "unavailable"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["up", "down"]
+          }
+        }
+      },
+      "ReadinessResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["checks", "status"],
+        "properties": {
+          "checks": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["postgresql", "redis"],
+            "properties": {
+              "postgresql": {
+                "$ref": "#/components/schemas/DependencyHealth"
+              },
+              "redis": {
+                "$ref": "#/components/schemas/DependencyHealth"
+              }
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": ["ready", "not_ready"]
+          }
+        }
+      }
+    }
+  }
+}

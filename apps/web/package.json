@@ -14,6 +14,8 @@
   },
   "dependencies": {
     "@kora-plus/ui": "0.0.0",
+    "@sentry/node": "10.70.0",
+    "@sentry/react": "10.70.0",
     "next": "16.2.12",
     "react": "19.2.8",
     "react-dom": "19.2.8"

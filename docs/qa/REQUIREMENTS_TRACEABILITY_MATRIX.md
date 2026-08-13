@@ -9,14 +9,31 @@ modifie ni les exigences sources ni les décisions d’architecture applicables.
 
 Les colonnes `Implémentation`, `Vérification` et `Preuve` décrivent l’état réel
 du dépôt à la date du présent lot. Sprint 0.1 et Sprint 0.2 ne produisent aucun
-code applicatif. Sprint 0.3 introduit uniquement des fondations techniques ;
-aucune exigence produit ci-dessous n’est déclarée commencée ou vérifiée.
+code applicatif. Les Sprints 0.3 à 0.5 introduisent uniquement des fondations
+techniques ; aucune exigence produit ci-dessous n’est déclarée commencée ou
+vérifiée par S0.5.
 
 Sprint 0.3 est fermé et fusionné via la
 [PR #2](https://github.com/Mohamed724000/kora/pull/2). Son commit de clôture est
 [`c4bce826b8a16d78aa2b10865e0d03d191ea7f46`](https://github.com/Mohamed724000/kora/commit/c4bce826b8a16d78aa2b10865e0d03d191ea7f46)
 et son merge commit est
 [`d3f837c93044d0b514c2abd732c559cdd6543a96`](https://github.com/Mohamed724000/kora/commit/d3f837c93044d0b514c2abd732c559cdd6543a96).
+Sprint 0.4 est fermé et fusionné via la
+[PR #5](https://github.com/Mohamed724000/kora/pull/5), au merge commit
+[`8c3e65e2bcbffb53050b61cab4b953f108491db1`](https://github.com/Mohamed724000/kora/commit/8c3e65e2bcbffb53050b61cab4b953f108491db1).
+
+## Preuves techniques S0.5 hors exigences produit
+
+| Fondation        | Implémentation                                  | Vérification                                          |
+| ---------------- | ----------------------------------------------- | ----------------------------------------------------- |
+| CI multi-OS      | `.github/workflows/*.yml`                       | `npm run ci:validate`, Actions réelles de la Draft PR |
+| Launcher Windows | `scripts/run-workspace-task.mjs` inchangé       | tests dédiés + enfant contrôlé code 23                |
+| Supply-chain     | audits, licences, scan dépôt/historique         | `npm run security:scan`, `npm run licenses`           |
+| Observabilité    | SDK désactivés sans DSN, callbacks de redaction | tests API, Web, Admin et Flutter                      |
+| Contrat de santé | `docs/api/openapi.yaml`                         | `npm run openapi:validate`                            |
+| Rollback         | `docs/operations/FOUNDATION_ROLLBACK.md`        | revue documentaire S0.5                               |
+
+Ces preuves ne modifient aucun des 68 statuts produit ci-dessous.
 
 ## Exigences produit
 

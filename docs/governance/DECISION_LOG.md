@@ -48,15 +48,15 @@ Les entrées `REG-01` à `REG-40` du
 décisions existantes, pas de nouvelles décisions S0.1. Elles restent toutes
 fermées.
 
-| IDs | Objet | Statut |
-|---|---|---|
-| REG-01 à REG-09 | Dépendances AdminLTE, sécurité/session admin, dashboard, audit, contrats et configuration | Accepted |
-| REG-10 à REG-16 | Terminologie, performance/tests, sessions, artiste, guest-first et identité | Accepted |
-| REG-17 | Billetterie | Deferred V2 |
-| REG-18 à REG-29 | Paiements, ledger, revenus, preview, média, archive, webhooks, sessions, audit, offline et bibliothèque | Accepted |
-| REG-30 | Avis et notes | Deferred V2 |
-| REG-31 à REG-39 | Notifications, checkout, thème, RBAC, flows, benchmark, revenus, remboursements et capture | Accepted |
-| REG-40 | Paiements réels et distribution | Contract gate |
+| IDs             | Objet                                                                                                   | Statut        |
+| --------------- | ------------------------------------------------------------------------------------------------------- | ------------- |
+| REG-01 à REG-09 | Dépendances AdminLTE, sécurité/session admin, dashboard, audit, contrats et configuration               | Accepted      |
+| REG-10 à REG-16 | Terminologie, performance/tests, sessions, artiste, guest-first et identité                             | Accepted      |
+| REG-17          | Billetterie                                                                                             | Deferred V2   |
+| REG-18 à REG-29 | Paiements, ledger, revenus, preview, média, archive, webhooks, sessions, audit, offline et bibliothèque | Accepted      |
+| REG-30          | Avis et notes                                                                                           | Deferred V2   |
+| REG-31 à REG-39 | Notifications, checkout, thème, RBAC, flows, benchmark, revenus, remboursements et capture              | Accepted      |
+| REG-40          | Paiements réels et distribution                                                                         | Contract gate |
 
 La décision détaillée, la justification, l’impact, les sources, les ADR et la
 date de chaque ID sont conservés dans le registre canonique.
@@ -78,16 +78,29 @@ créent aucune tâche dans `KORA-PLUS-FINAL`.
 
 ## 2026-07-28 — Gouvernance S0.1
 
-| ID | Nature | Décision | Autorité | Statut |
-|---|---|---|---|---|
-| DEC-S0.1-01 | Technique | La seule implémentation active est une clean room ; aucun ancien code n’est réutilisable. | ChatGPT Work / Clean-room Scope | Accepted |
-| DEC-S0.1-02 | Technique | La racine unique est `KORA-PLUS-FINAL`. | ChatGPT Work / Product Owner | Accepted |
-| DEC-S0.1-03 | Technique | Baseline : Git disponible, Node 22.18.0, npm 10.9.3, Flutter 3.44.1 et Dart 3.12.1. | Master Blueprint | Accepted |
-| DEC-S0.1-04 | Technique | Git est initialisé localement uniquement dans la racine validée. | Product Owner | Accepted |
-| DEC-S0.1-05 | Technique | La branche stable initiale est `main`. | Product Owner | Accepted |
-| DEC-S0.1-06 | Technique | Le premier commit local S0.1 est l’unique exception de bootstrap, uniquement avec identité Git préexistante et contrôles conformes. | Product Owner | Accepted |
-| DEC-S0.1-07 | Réservée PO | Aucun remote, push, tag ou compte GitHub n’est créé sans nouvelle autorisation. | Product Owner | Accepted |
-| DEC-S0.1-08 | Technique | Docker demeure `BLOCKER FOR SPRINT 0.4 — NOT BLOCKING SPRINT 0.1`. | Master Blueprint / Lot 00B | Accepted |
+| ID          | Nature      | Décision                                                                                                                            | Autorité                        | Statut   |
+| ----------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- | -------- |
+| DEC-S0.1-01 | Technique   | La seule implémentation active est une clean room ; aucun ancien code n’est réutilisable.                                           | ChatGPT Work / Clean-room Scope | Accepted |
+| DEC-S0.1-02 | Technique   | La racine unique est `KORA-PLUS-FINAL`.                                                                                             | ChatGPT Work / Product Owner    | Accepted |
+| DEC-S0.1-03 | Technique   | Baseline : Git disponible, Node 22.18.0, npm 10.9.3, Flutter 3.44.1 et Dart 3.12.1.                                                 | Master Blueprint                | Accepted |
+| DEC-S0.1-04 | Technique   | Git est initialisé localement uniquement dans la racine validée.                                                                    | Product Owner                   | Accepted |
+| DEC-S0.1-05 | Technique   | La branche stable initiale est `main`.                                                                                              | Product Owner                   | Accepted |
+| DEC-S0.1-06 | Technique   | Le premier commit local S0.1 est l’unique exception de bootstrap, uniquement avec identité Git préexistante et contrôles conformes. | Product Owner                   | Accepted |
+| DEC-S0.1-07 | Réservée PO | Aucun remote, push, tag ou compte GitHub n’est créé sans nouvelle autorisation.                                                     | Product Owner                   | Accepted |
+| DEC-S0.1-08 | Technique   | Docker demeure `BLOCKER FOR SPRINT 0.4 — NOT BLOCKING SPRINT 0.1`.                                                                  | Master Blueprint / Lot 00B      | Accepted |
+
+## 2026-08-12 — Exécution technique S0.5
+
+| ID          | Nature    | Décision                                                                                                    | Autorité                                   | Statut   |
+| ----------- | --------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------ | -------- |
+| DEC-S0.5-01 | Technique | S0.4 est la baseline fusionnée exacte `8c3e65e2bcbffb53050b61cab4b953f108491db1`.                           | Décision CTO S0.5                          | Accepted |
+| DEC-S0.5-02 | Technique | Les workflows restent en lecture seule, épinglent les actions par SHA et ne déploient rien.                 | Décision CTO S0.5                          | Accepted |
+| DEC-S0.5-03 | Sécurité  | Sentry reste inactif sans DSN, sans PII, logs, traces, replay ou source maps.                               | Décision CTO S0.5 / Engineering `1.13-1.14` | Accepted |
+| DEC-S0.5-04 | Contrat   | OpenAPI reste limité aux deux routes de santé avant Slice 1.                                                | ADR-009 / Décision CTO S0.5                | Accepted |
+| DEC-S0.5-05 | Exécution | La publication s’arrête à une Draft PR ; Ready, merge, tag, release, déploiement et S0.6 restent interdits. | Décision CTO S0.5                          | Accepted |
+
+Ces décisions n’ajoutent aucune décision produit, financière, juridique ou de
+sécurité métier.
 
 ## Catégories d’autorité
 
