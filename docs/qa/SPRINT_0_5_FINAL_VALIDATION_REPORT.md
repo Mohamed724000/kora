@@ -1,7 +1,7 @@
 # KORA+ — Rapport final de validation Sprint 0.5
 
-Statut au 2026-08-13 : **validations locales terminées ; GitHub Actions en
-attente de la publication de la Draft PR**.
+Statut au 2026-08-13 : **S0.5 techniquement validé ; Draft PR #6 publiée,
+ouverte, fusionnable et conservée en Draft ; décision CTO en attente**.
 
 Ce rapport couvre uniquement S0.5 : CI, sécurité supply-chain, observabilité
 minimale, OpenAPI de fondation et rollback. S0.6 et Slice 1 ne sont pas
@@ -278,16 +278,26 @@ Le deuxième run sur `c5def6538acebe49440903197a133db204765080` a donné :
 - Quality Linux : FAIL en 2 min 56 s, run `31687251141`, dérive raster des trois
   goldens Windows uniquement ; tous les autres tests avaient passé.
 
-Le troisième run réel, sur le commit d'implémentation final
-`575f9bf9eec90725c75f54cd1299ef916ff0c668`, est entièrement vert :
+Le head d'implémentation
+`575f9bf9eec90725c75f54cd1299ef916ff0c668` est entièrement vert :
 
 - Infrastructure : PASS en 1 min 46 s, run `31689107113` ;
 - Launcher Windows : PASS en 4 min 30 s, run `31689106909` ;
 - Quality Linux : PASS en 6 min 34 s, run `31689106870` ;
 - Security : PASS en 1 min 04 s, run `31689106974`.
 
-Chaque run référence le même head exact. Le commit documentaire de ce rapport
-sera poussé séparément et couvert à son tour par les quatre workflows. Aucun
+Le head de preuve technique publié
+`e1fb54c3c49d18aa964c9701156355a73e6673db`, distinct du head
+d'implémentation, est lui aussi entièrement vert :
+
+- Security : PASS en 49 s, run `31689817351` ;
+- Quality Linux : PASS en 6 min 13 s, run `31689817363` ;
+- Infrastructure : PASS en 1 min 41 s, run `31689817468` ;
+- Launcher Windows : PASS en 3 min 57 s, run `31689817542`.
+
+Ces quatre runs référencent tous le head de preuve exact `e1fb54c3…`. Le SHA du
+commit de réconciliation qui contient ce rapport n'est volontairement pas
+auto-référencé ; ses checks sont contrôlés sur la PR après publication. Aucun
 état défaillant n'est présenté comme PASS.
 
 La PR reste en Draft ; Ready, merge, tag, release et déploiement sont interdits.
@@ -317,9 +327,12 @@ La PR reste en Draft ; Ready, merge, tag, release et déploiement sont interdits
 - Base inchangée : `8c3e65e2bcbffb53050b61cab4b953f108491db1`.
 - Commit d'implémentation validé :
   `575f9bf9eec90725c75f54cd1299ef916ff0c668`.
-- Draft PR #6 : ouverte, Draft, fusionnable, 56 fichiers.
+- Head de preuve technique :
+  `e1fb54c3c49d18aa964c9701156355a73e6673db`.
+- Draft PR #6 : publiée, ouverte, Draft, fusionnable, 56 fichiers au head de
+  preuve.
 - Aucun processus de validation orphelin.
 - S0.6 et Slice 1 : non commencés.
 
-Verdict : **S0.5 CI, SECURITY AND OBSERVABILITY IMPLEMENTED — READY FOR CTO
-REVIEW — S0.6 NOT STARTED**.
+Statut de sortie : **S0.5 TECHNIQUEMENT VALIDÉ — DÉCISION CTO EN ATTENTE — S0.6
+NON COMMENCÉ**.

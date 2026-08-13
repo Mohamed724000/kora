@@ -1,6 +1,7 @@
 # KORA+ Final — Threat Model initial
 
-Statut : **BASELINE + S0.4 FUSIONNÉ + CONTRÔLES S0.5 EN VALIDATION**
+Statut : **BASELINE + S0.4 FUSIONNÉ ET CLÔTURÉ + S0.5 TECHNIQUEMENT VALIDÉ,
+DÉCISION CTO EN ATTENTE**
 
 Ce modèle décrit les frontières et mesures attendues. Sprint 0.3 introduit des
 shells et quelques contrôles de fondation étroits ; aucun contrôle métier,
@@ -51,29 +52,29 @@ financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
 
 ## Menaces et mesures attendues
 
-| Domaine      | Menaces principales                                      | Mesures attendues / autorités                                                                        | État                                                             |
-| ------------ | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| Identité/OTP | Brute force, interception, replay, enumeration           | Rate limits, OTP court et haché, rotation session, logs masqués ; ADR-010                            | Not implemented                                                  |
-| Admin        | Vol de session, MFA contournée, récupération abusive     | TOTP RFC 6238, codes Argon2id, cookies httpOnly, step-up, révocation ; ADR-002/005/008               | Not implemented                                                  |
-| RBAC         | Escalade verticale/horizontale, champs sensibles         | Contrôle serveur route/action/champ, moindre privilège ; ADR-020                                     | Not implemented                                                  |
-| Paiement     | Double débit, faux webhook, replay, ordre inversé        | Signature, idempotence, Inbox/Outbox, PaymentAttempts immuables ; ADR-012/015                        | Not implemented                                                  |
-| Ledger       | Altération, déséquilibre, double comptage                | Append-only, groupes équilibrés, compensation, reconciliation ; ADR-013/014                          | Not implemented                                                  |
-| Droits       | Accès sans achat, révocation excessive                   | Entitlement permanent ciblé, checks serveur ; ADR-016                                                | Not implemented                                                  |
-| Média        | URL brute, partage, scraping, logs sensibles             | Stockage privé, descriptor court, PreviewGrant, device binding ; ADR-011/017                         | Not implemented                                                  |
-| Offline      | Extraction clé/fichier, replay licence, copie appareil   | AES-256-GCM, clé non exportable, licence renouvelable ; ADR-018                                      | Not implemented                                                  |
-| Audit        | Suppression ou falsification                             | Écriture transactionnelle, blocage UPDATE/DELETE, exports audités ; ADR-019                          | Not implemented                                                  |
-| Capture      | Enregistrement écran et dispositif externe               | `FLAG_SECURE`, détection/pause iOS, protections en couches sans promesse absolue ; ADR-024           | Not implemented                                                  |
-| Données/logs | Fuite PII, token ou secret                               | Redaction des champs et messages, `msg` catégoriel, minimisation, contrôle accès, rétention et tests | Foundation validated — CTO technical review passed               |
-| Supply chain | Package compromis, licence incompatible                  | Versions verrouillées, revue, audit, provenance, scripts d’installation qualifiés                    | S0.5 candidate — automated local/CI gates, final Actions pending |
-| CI/CD        | Secret exposé, artefact altéré, déploiement non autorisé | Permissions lecture seule, actions épinglées, scans, timeouts et rollback                            | S0.5 candidate — no deployment or write permission               |
+| Domaine      | Menaces principales                                      | Mesures attendues / autorités                                                                        | État                                                           |
+| ------------ | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Identité/OTP | Brute force, interception, replay, enumeration           | Rate limits, OTP court et haché, rotation session, logs masqués ; ADR-010                            | Not implemented                                                |
+| Admin        | Vol de session, MFA contournée, récupération abusive     | TOTP RFC 6238, codes Argon2id, cookies httpOnly, step-up, révocation ; ADR-002/005/008               | Not implemented                                                |
+| RBAC         | Escalade verticale/horizontale, champs sensibles         | Contrôle serveur route/action/champ, moindre privilège ; ADR-020                                     | Not implemented                                                |
+| Paiement     | Double débit, faux webhook, replay, ordre inversé        | Signature, idempotence, Inbox/Outbox, PaymentAttempts immuables ; ADR-012/015                        | Not implemented                                                |
+| Ledger       | Altération, déséquilibre, double comptage                | Append-only, groupes équilibrés, compensation, reconciliation ; ADR-013/014                          | Not implemented                                                |
+| Droits       | Accès sans achat, révocation excessive                   | Entitlement permanent ciblé, checks serveur ; ADR-016                                                | Not implemented                                                |
+| Média        | URL brute, partage, scraping, logs sensibles             | Stockage privé, descriptor court, PreviewGrant, device binding ; ADR-011/017                         | Not implemented                                                |
+| Offline      | Extraction clé/fichier, replay licence, copie appareil   | AES-256-GCM, clé non exportable, licence renouvelable ; ADR-018                                      | Not implemented                                                |
+| Audit        | Suppression ou falsification                             | Écriture transactionnelle, blocage UPDATE/DELETE, exports audités ; ADR-019                          | Not implemented                                                |
+| Capture      | Enregistrement écran et dispositif externe               | `FLAG_SECURE`, détection/pause iOS, protections en couches sans promesse absolue ; ADR-024           | Not implemented                                                |
+| Données/logs | Fuite PII, token ou secret                               | Redaction des champs et messages, `msg` catégoriel, minimisation, contrôle accès, rétention et tests | Foundation validated — CTO technical review passed             |
+| Supply chain | Package compromis, licence incompatible                  | Versions verrouillées, revue, audit, provenance, scripts d’installation qualifiés                    | S0.5 technically validated — local and final CI gates passed   |
+| CI/CD        | Secret exposé, artefact altéré, déploiement non autorisé | Permissions lecture seule, actions épinglées, scans, timeouts et rollback                            | S0.5 technically validated — no deployment or write permission |
 
 ## Risques ouverts et gates
 
 - Le readiness est borné par `READINESS_TIMEOUT_MS`, y compris lorsqu’une probe
   ne se résout jamais. PostgreSQL et Redis appliquent aussi leurs délais de
   connexion/requête/commande. Les réponses restent génériques et les rejets
-  tardifs sont consommés. Les dépendances réelles ne seront introduites qu’en
-  S0.4, qui n’a pas commencé.
+  tardifs sont consommés. PostgreSQL et Redis locaux ont été introduits en
+  S0.4, désormais fusionné et clôturé.
 - Les messages Nest sont assainis avant journalisation structurée et ne sont
   jamais transmis directement comme `msg`. Les tests couvrent token, DSN, mot
   de passe, OTP, email et téléphone sur toutes les méthodes du logger.
