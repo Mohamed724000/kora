@@ -11,7 +11,7 @@ commencés.
 
 - Racine unique : `C:\Users\moham\Music\KORA-PLUS-FINAL`.
 - Baseline : `HEAD = origin/main =
-  8c3e65e2bcbffb53050b61cab4b953f108491db1`.
+8c3e65e2bcbffb53050b61cab4b953f108491db1`.
 - PR S0.4 : #5 fusionnée ; branche distante S0.4 au SHA
   `03aeeff1344a073f6f8fd32eb80e21598d77c37c`.
 - Worktree et index : propres avant mutation.
@@ -96,12 +96,12 @@ inchangés.
 
 Quatre workflows sont ajoutés :
 
-| Workflow | Runner | Gate principal |
-| --- | --- | --- |
-| Quality Linux | `ubuntu-latest` | environnement, outillage, format, lint, typecheck, tests, builds |
-| Launcher Windows | `windows-latest` | tests dédiés, enfant code 23, matrice racine |
-| Infrastructure | `ubuntu-latest` | Compose S0.4, cycle de vie, API et pannes/reprises |
-| Security | `ubuntu-latest` | arbre, deux audits, licences, secrets, provenance, locks, OpenAPI |
+| Workflow         | Runner           | Gate principal                                                    |
+| ---------------- | ---------------- | ----------------------------------------------------------------- |
+| Quality Linux    | `ubuntu-latest`  | environnement, outillage, format, lint, typecheck, tests, builds  |
+| Launcher Windows | `windows-latest` | tests dédiés, enfant code 23, matrice racine                      |
+| Infrastructure   | `ubuntu-latest`  | Compose S0.4, cycle de vie, API et pannes/reprises                |
+| Security         | `ubuntu-latest`  | arbre, deux audits, licences, secrets, provenance, locks, OpenAPI |
 
 Tous se déclenchent sur Pull Request, push vers `main` et lancement manuel.
 Chaque job a un timeout, une concurrence avec annulation des runs obsolètes et
@@ -186,35 +186,35 @@ globale.
 
 ## Résultats locaux finaux
 
-| Contrôle | Résultat final |
-| --- | --- |
-| `npm run env:check` | PASS — Node 22.18.0, npm 10.9.3, Flutter 3.44.1, Dart 3.12.1 |
-| `npm ci --ignore-scripts` | PASS — code 0, 1 136 paquets recréés |
-| `npm ls --all` | PASS — code 0 |
-| `npm audit --audit-level=low` | PASS — 0 vulnérabilité |
-| `npm audit --omit=dev --audit-level=low` | PASS — 0 vulnérabilité |
-| `npm run licenses` | PASS — 1 130 paquets, 0 non déclaré, 0 non approuvé |
-| `flutter pub deps` | PASS — graphe résolu depuis Pub |
-| `npm run format` | PASS |
-| `npm run lint` | PASS — ESLint + Flutter analyze sans finding |
-| `npm run typecheck` | PASS |
-| `npm test` | PASS — 61/61, dont les 48 historiques et 13 tests S0.5 |
-| `npm run test:tooling` | PASS — 10/10 |
-| test dédié du launcher | PASS — attente du child et propagation non-zéro |
-| enfant contrôlé code `23` | PASS — rejet vérifié |
-| `npm run ci:validate` | PASS — 4 workflows, 4 actions approuvées |
-| `npm run openapi:validate` | PASS — 2 chemins, 3 schémas, références résolues |
-| `npm run security:scan` | PASS — 305 fichiers, historique, immuable 52/52, 5 scripts qualifiés |
-| `npm run build` | PASS — six workspaces npm + APK Flutter debug |
-| `npm run db:generate` | PASS — Prisma Client 7.9.1 |
-| `npm run infra:status` | PASS — PostgreSQL/Redis healthy |
-| `npm run infra:check` | PASS — connexions et smoke checks |
-| `npm run infra:verify` | PASS — persistance, reset borné, idempotence, ressources étrangères intactes |
-| build API + `npm run infra:verify-api` | PASS — même PID, pannes/reprises Redis et PostgreSQL, reset, 0 fuite |
-| APK debug | PASS — 187 955 067 octets, régénéré le 2026-08-13 |
-| absence de processus orphelin | PASS — aucun nouveau Node/Dart ; daemon Gradle final identifié et arrêté |
-| `git diff --check` | PASS |
-| `git fsck --full` | PASS — aucune corruption ; objets non référencés seulement |
+| Contrôle                                 | Résultat final                                                               |
+| ---------------------------------------- | ---------------------------------------------------------------------------- |
+| `npm run env:check`                      | PASS — Node 22.18.0, npm 10.9.3, Flutter 3.44.1, Dart 3.12.1                 |
+| `npm ci --ignore-scripts`                | PASS — code 0, 1 136 paquets recréés                                         |
+| `npm ls --all`                           | PASS — code 0                                                                |
+| `npm audit --audit-level=low`            | PASS — 0 vulnérabilité                                                       |
+| `npm audit --omit=dev --audit-level=low` | PASS — 0 vulnérabilité                                                       |
+| `npm run licenses`                       | PASS — 1 130 paquets, 0 non déclaré, 0 non approuvé                          |
+| `flutter pub deps`                       | PASS — graphe résolu depuis Pub                                              |
+| `npm run format`                         | PASS                                                                         |
+| `npm run lint`                           | PASS — ESLint + Flutter analyze sans finding                                 |
+| `npm run typecheck`                      | PASS                                                                         |
+| `npm test`                               | PASS — 61/61, dont les 48 historiques et 13 tests S0.5                       |
+| `npm run test:tooling`                   | PASS — 10/10                                                                 |
+| test dédié du launcher                   | PASS — attente du child et propagation non-zéro                              |
+| enfant contrôlé code `23`                | PASS — rejet vérifié                                                         |
+| `npm run ci:validate`                    | PASS — 4 workflows, 4 actions approuvées                                     |
+| `npm run openapi:validate`               | PASS — 2 chemins, 3 schémas, références résolues                             |
+| `npm run security:scan`                  | PASS — 305 fichiers, historique, immuable 52/52, 5 scripts qualifiés         |
+| `npm run build`                          | PASS — six workspaces npm + APK Flutter debug                                |
+| `npm run db:generate`                    | PASS — Prisma Client 7.9.1                                                   |
+| `npm run infra:status`                   | PASS — PostgreSQL/Redis healthy                                              |
+| `npm run infra:check`                    | PASS — connexions et smoke checks                                            |
+| `npm run infra:verify`                   | PASS — persistance, reset borné, idempotence, ressources étrangères intactes |
+| build API + `npm run infra:verify-api`   | PASS — même PID, pannes/reprises Redis et PostgreSQL, reset, 0 fuite         |
+| APK debug                                | PASS — 187 955 067 octets, régénéré le 2026-08-13                            |
+| absence de processus orphelin            | PASS — aucun nouveau Node/Dart ; daemon Gradle final identifié et arrêté     |
+| `git diff --check`                       | PASS                                                                         |
+| `git fsck --full`                        | PASS — aucune corruption ; objets non référencés seulement                   |
 
 Répartition des 61 tests applicatifs : Web 10, Admin 13, API 22, contrats 1,
 configuration 1, UI partagée 4 et Flutter 10. Les 13 ajouts S0.5 sont Web 3,
@@ -278,8 +278,17 @@ Le deuxième run sur `c5def6538acebe49440903197a133db204765080` a donné :
 - Quality Linux : FAIL en 2 min 56 s, run `31687251141`, dérive raster des trois
   goldens Windows uniquement ; tous les autres tests avaient passé.
 
-Le commit correctif final et son exécution réelle des quatre workflows sont en
-attente. Aucun état défaillant n'est présenté comme PASS.
+Le troisième run réel, sur le commit d'implémentation final
+`575f9bf9eec90725c75f54cd1299ef916ff0c668`, est entièrement vert :
+
+- Infrastructure : PASS en 1 min 46 s, run `31689107113` ;
+- Launcher Windows : PASS en 4 min 30 s, run `31689106909` ;
+- Quality Linux : PASS en 6 min 34 s, run `31689106870` ;
+- Security : PASS en 1 min 04 s, run `31689106974`.
+
+Chaque run référence le même head exact. Le commit documentaire de ce rapport
+sera poussé séparément et couvert à son tour par les quatre workflows. Aucun
+état défaillant n'est présenté comme PASS.
 
 La PR reste en Draft ; Ready, merge, tag, release et déploiement sont interdits.
 
@@ -302,13 +311,15 @@ La PR reste en Draft ; Ready, merge, tag, release et déploiement sont interdits
   le registre locaux mais s'est terminé avec code 0 ; les Actions fourniront
   la mesure Linux propre.
 
-## État de sortie avant validation GitHub finale
+## État de sortie vérifié
 
 - Branche : `chore/s0-5-ci-security-observability`.
 - Base inchangée : `8c3e65e2bcbffb53050b61cab4b953f108491db1`.
-- Index : vide avant préparation intentionnelle du commit.
+- Commit d'implémentation validé :
+  `575f9bf9eec90725c75f54cd1299ef916ff0c668`.
+- Draft PR #6 : ouverte, Draft, fusionnable, 56 fichiers.
 - Aucun processus de validation orphelin.
 - S0.6 et Slice 1 : non commencés.
 
-Verdict intermédiaire : **S0.5 LOCAL VALIDATION PASSED — ACTIONS FINALES EN
-ATTENTE**.
+Verdict : **S0.5 CI, SECURITY AND OBSERVABILITY IMPLEMENTED — READY FOR CTO
+REVIEW — S0.6 NOT STARTED**.
