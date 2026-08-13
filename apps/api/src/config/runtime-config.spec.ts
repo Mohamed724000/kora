@@ -7,7 +7,36 @@ describe('loadRuntimeConfig', () => {
 
     expect(config.environment).toBe('test');
     expect(config.http).toEqual({ host: '127.0.0.1', port: 3001 });
+    expect(config.observability).toEqual({ environment: 'test' });
     expect(config.redis.password).toBeUndefined();
+  });
+
+  it('valide les options Sentry sans exposer le DSN', () => {
+    const config = loadRuntimeConfig({
+      ...SAFE_TEST_ENVIRONMENT,
+      SENTRY_DSN: 'https://public-key@sentry.example.test/42',
+      SENTRY_ENVIRONMENT: 'ci',
+      SENTRY_RELEASE: 's0.5-test.1',
+    });
+
+    expect(config.observability).toEqual({
+      dsn: 'https://public-key@sentry.example.test/42',
+      environment: 'ci',
+      release: 's0.5-test.1',
+    });
+
+    const invalid = {
+      ...SAFE_TEST_ENVIRONMENT,
+      SENTRY_DSN: 'private-invalid-dsn',
+    };
+    try {
+      loadRuntimeConfig(invalid);
+      throw new Error('La validation aurait dû échouer');
+    } catch (error: unknown) {
+      expect(error).toBeInstanceOf(ConfigValidationError);
+      expect((error as Error).message).toContain('SENTRY_DSN');
+      expect((error as Error).message).not.toContain('private-invalid-dsn');
+    }
   });
 
   it('rejette les variables manquantes et les nombres hors limites', () => {

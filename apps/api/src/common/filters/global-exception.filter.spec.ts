@@ -23,7 +23,8 @@ describe('GlobalExceptionFilter', () => {
         getResponse: () => response,
       }),
     } as ArgumentsHost;
-    const filter = new GlobalExceptionFilter(createStructuredLogger('silent'));
+    const reportException = jest.fn();
+    const filter = new GlobalExceptionFilter(createStructuredLogger('silent'), reportException);
 
     filter.catch(new Error('private internal detail'), host);
 
@@ -40,5 +41,9 @@ describe('GlobalExceptionFilter', () => {
     expect(body).not.toContain('private internal detail');
     expect(body).not.toContain('hidden');
     expect(body).not.toContain('stack');
+    expect(reportException).toHaveBeenCalledWith(expect.any(Error), {
+      path: '/api/v1/failure',
+      requestId: 'request-test-123',
+    });
   });
 });

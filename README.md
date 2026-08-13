@@ -2,7 +2,7 @@
 
 KORA+ Final est la clean room de production du produit KORA+. Le dépôt contient
 la baseline documentaire, le contrat du monorepo et les fondations applicatives
-de Sprint 0.3. Aucune fonctionnalité métier n’est implémentée.
+des Sprints 0.3 à 0.5. Aucune fonctionnalité métier n’est implémentée.
 
 ## État actuel
 
@@ -10,8 +10,9 @@ de Sprint 0.3. Aucune fonctionnalité métier n’est implémentée.
 - Sprint 0.1 : terminé ; baseline unique publiée sur `main`.
 - Sprint 0.2 : contrat monorepo terminé et validé par la revue CTO.
 - Sprint 0.3 : **Closed and merged**.
-- Sprint 0.4 : **implémentation et validations locales terminées — prête pour revue CTO**.
-- S0.5, S0.6 et les slices produit : non commencés.
+- Sprint 0.4 : **Closed and merged** via la PR #5.
+- Sprint 0.5 : **CI, sécurité et observabilité en cours sur sa branche dédiée**.
+- S0.6 et les slices produit : non commencés.
 
 Sprint 0.3 a été fermé et fusionné via la
 [PR #2](https://github.com/Mohamed724000/kora/pull/2). Le commit de clôture est
@@ -20,8 +21,10 @@ et le merge commit est
 [`d3f837c93044d0b514c2abd732c559cdd6543a96`](https://github.com/Mohamed724000/kora/commit/d3f837c93044d0b514c2abd732c559cdd6543a96).
 Les gates CTO, Product Owner et juridique/licences sont fermés pour le seul
 périmètre verrouillé de S0.3. Aucun lot suivant n’est autorisé par le présent
-état. S0.4 est implémenté et validé localement sur sa branche dédiée, sans
-démarrer S0.5.
+état. S0.4 a été fusionné via la
+[PR #5](https://github.com/Mohamed724000/kora/pull/5), au merge commit
+[`8c3e65e2bcbffb53050b61cab4b953f108491db1`](https://github.com/Mohamed724000/kora/commit/8c3e65e2bcbffb53050b61cab4b953f108491db1).
+S0.5 reste strictement technique et S0.6 n’est pas commencé.
 
 ## Autorités
 
@@ -53,20 +56,37 @@ gouvernent l’exécution.
 
 Le mobile reste hors des workspaces npm conformément à l’ADR-009.
 
+## Fondations S0.4 et S0.5
+
+- S0.4 fournit PostgreSQL et Redis locaux verrouillés par digest, leurs
+  healthchecks, leur cycle de vie et les validations de panne/reprise de l’API.
+- S0.5 ajoute quatre workflows GitHub Actions : qualité Linux, launcher
+  Windows, infrastructure et sécurité.
+- Le contrat OpenAPI reste limité à `/health/live` et `/health/ready` ;
+  aucune route produit n’est introduite.
+- Sentry est désactivé sans DSN. Lorsqu’il est configuré hors dépôt, PII, logs,
+  traces, screenshots et données de requête restent désactivés ou assainis.
+- Le rollback de fondation est décrit dans
+  [FOUNDATION_ROLLBACK.md](docs/operations/FOUNDATION_ROLLBACK.md).
+
 ## Commandes
 
 Sous Windows :
 
-| Commande                  | Effet                                                                |
-| ------------------------- | -------------------------------------------------------------------- |
-| `npm.cmd run env:check`   | Vérifie strictement Node, npm, Flutter et Dart                       |
-| `npm.cmd run format`      | Contrôle Prettier, Prisma et Dart                                    |
-| `npm.cmd run lint`        | Exécute ESLint et Flutter analyze                                    |
-| `npm.cmd run typecheck`   | Exécute TypeScript strict et Dart analyze                            |
-| `npm.cmd test`            | Exécute Vitest, Jest, Node Test et Flutter/goldens                   |
-| `npm.cmd run build`       | Construit les workspaces puis l’APK debug ; iOS uniquement sur macOS |
-| `npm.cmd run db:generate` | Génère explicitement le client Prisma                                |
-| `npm.cmd run licenses`    | Inventorie les licences npm installées                               |
+| Commande                       | Effet                                                                |
+| ------------------------------ | -------------------------------------------------------------------- |
+| `npm.cmd run env:check`        | Vérifie strictement Node, npm, Flutter et Dart                       |
+| `npm.cmd run format`           | Contrôle Prettier, Prisma et Dart                                    |
+| `npm.cmd run lint`             | Exécute ESLint et Flutter analyze                                    |
+| `npm.cmd run typecheck`        | Exécute TypeScript strict et Dart analyze                            |
+| `npm.cmd test`                 | Exécute Vitest, Jest, Node Test et Flutter/goldens                   |
+| `npm.cmd run build`            | Construit les workspaces puis l’APK debug ; iOS uniquement sur macOS |
+| `npm.cmd run db:generate`      | Génère explicitement le client Prisma                                |
+| `npm.cmd run licenses`         | Inventorie les licences npm installées                               |
+| `npm.cmd run test:tooling`     | Teste les garde-fous launcher, CI, OpenAPI et sécurité               |
+| `npm.cmd run ci:validate`      | Vérifie permissions et SHA des workflows                             |
+| `npm.cmd run security:scan`    | Scanne secrets, historique, fichiers et sources de paquets           |
+| `npm.cmd run openapi:validate` | Valide sémantiquement le contrat OpenAPI de fondation                |
 
 Sur macOS et Linux, utiliser `npm` à la place de `npm.cmd`.
 

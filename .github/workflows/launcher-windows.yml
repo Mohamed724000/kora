@@ -1,0 +1,51 @@
+name: Launcher Windows
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: launcher-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  launcher:
+    runs-on: windows-latest
+    timeout-minutes: 75
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Node.js 22.18.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.18.0
+          cache: npm
+      - name: Java 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Flutter 3.44.1
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: 3.44.1
+          channel: stable
+          cache: true
+      - name: Install npm dependencies
+        run: npm.cmd ci
+      - name: Install Flutter dependencies
+        run: flutter pub get --directory apps/mobile
+      - name: Verify toolchain
+        run: npm.cmd run env:check
+      - name: Verify launcher error propagation
+        run: |
+          node --test scripts/run-workspace-task.test.mjs
+          node scripts/ci/verify-launcher-failure.mjs
+      - name: Exercise root launcher
+        run: npm.cmd test

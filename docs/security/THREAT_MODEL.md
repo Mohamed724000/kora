@@ -1,6 +1,6 @@
 # KORA+ Final — Threat Model initial
 
-Statut : **BASELINE DE CONCEPTION + FONDATIONS S0.3 VALIDÉES ET FUSIONNÉES**
+Statut : **BASELINE + S0.4 FUSIONNÉ + CONTRÔLES S0.5 EN VALIDATION**
 
 Ce modèle décrit les frontières et mesures attendues. Sprint 0.3 introduit des
 shells et quelques contrôles de fondation étroits ; aucun contrôle métier,
@@ -31,7 +31,7 @@ financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
 8. CI/CD ↔ environnements et secrets.
 9. Opérateurs ↔ fonctions sensibles et exports.
 
-## Frontières réellement introduites en S0.3
+## Frontières réellement introduites jusqu’à S0.5
 
 - shells mobile, web public et administration sans appel API ni donnée métier ;
 - surface HTTP NestJS limitée à `/health/live` et `/health/ready`, hors du
@@ -44,24 +44,28 @@ financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
 - client Prisma vide et frontière de contrats explicitement vide ;
 - aucune migration, queue BullMQ active, intégration fournisseur, URL média,
   logique financière ou donnée personnelle.
+- PostgreSQL et Redis locaux S0.4, bornés au projet Compose et au loopback ;
+- CI S0.5 en lecture seule sur le dépôt, actions épinglées et jobs bornés ;
+- Sentry minimal API, Web, Admin et Flutter, inactif sans DSN, sans PII, logs,
+  traces, replay, screenshot ni données de requête.
 
 ## Menaces et mesures attendues
 
-| Domaine      | Menaces principales                                      | Mesures attendues / autorités                                                                        | État                                                                                          |
-| ------------ | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Identité/OTP | Brute force, interception, replay, enumeration           | Rate limits, OTP court et haché, rotation session, logs masqués ; ADR-010                            | Not implemented                                                                               |
-| Admin        | Vol de session, MFA contournée, récupération abusive     | TOTP RFC 6238, codes Argon2id, cookies httpOnly, step-up, révocation ; ADR-002/005/008               | Not implemented                                                                               |
-| RBAC         | Escalade verticale/horizontale, champs sensibles         | Contrôle serveur route/action/champ, moindre privilège ; ADR-020                                     | Not implemented                                                                               |
-| Paiement     | Double débit, faux webhook, replay, ordre inversé        | Signature, idempotence, Inbox/Outbox, PaymentAttempts immuables ; ADR-012/015                        | Not implemented                                                                               |
-| Ledger       | Altération, déséquilibre, double comptage                | Append-only, groupes équilibrés, compensation, reconciliation ; ADR-013/014                          | Not implemented                                                                               |
-| Droits       | Accès sans achat, révocation excessive                   | Entitlement permanent ciblé, checks serveur ; ADR-016                                                | Not implemented                                                                               |
-| Média        | URL brute, partage, scraping, logs sensibles             | Stockage privé, descriptor court, PreviewGrant, device binding ; ADR-011/017                         | Not implemented                                                                               |
-| Offline      | Extraction clé/fichier, replay licence, copie appareil   | AES-256-GCM, clé non exportable, licence renouvelable ; ADR-018                                      | Not implemented                                                                               |
-| Audit        | Suppression ou falsification                             | Écriture transactionnelle, blocage UPDATE/DELETE, exports audités ; ADR-019                          | Not implemented                                                                               |
-| Capture      | Enregistrement écran et dispositif externe               | `FLAG_SECURE`, détection/pause iOS, protections en couches sans promesse absolue ; ADR-024           | Not implemented                                                                               |
-| Données/logs | Fuite PII, token ou secret                               | Redaction des champs et messages, `msg` catégoriel, minimisation, contrôle accès, rétention et tests | Foundation validated — CTO technical review passed                                            |
-| Supply chain | Package compromis, licence incompatible                  | Versions verrouillées, revue, audit et provenance                                                    | Remediated and qualified — technical and S0.3 legal/license gates passed for the locked scope |
-| CI/CD        | Secret exposé, artefact altéré, déploiement non autorisé | Moindre privilège, environnements protégés, provenance et rollback                                   | Not implemented                                                                               |
+| Domaine      | Menaces principales                                      | Mesures attendues / autorités                                                                        | État                                                             |
+| ------------ | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Identité/OTP | Brute force, interception, replay, enumeration           | Rate limits, OTP court et haché, rotation session, logs masqués ; ADR-010                            | Not implemented                                                  |
+| Admin        | Vol de session, MFA contournée, récupération abusive     | TOTP RFC 6238, codes Argon2id, cookies httpOnly, step-up, révocation ; ADR-002/005/008               | Not implemented                                                  |
+| RBAC         | Escalade verticale/horizontale, champs sensibles         | Contrôle serveur route/action/champ, moindre privilège ; ADR-020                                     | Not implemented                                                  |
+| Paiement     | Double débit, faux webhook, replay, ordre inversé        | Signature, idempotence, Inbox/Outbox, PaymentAttempts immuables ; ADR-012/015                        | Not implemented                                                  |
+| Ledger       | Altération, déséquilibre, double comptage                | Append-only, groupes équilibrés, compensation, reconciliation ; ADR-013/014                          | Not implemented                                                  |
+| Droits       | Accès sans achat, révocation excessive                   | Entitlement permanent ciblé, checks serveur ; ADR-016                                                | Not implemented                                                  |
+| Média        | URL brute, partage, scraping, logs sensibles             | Stockage privé, descriptor court, PreviewGrant, device binding ; ADR-011/017                         | Not implemented                                                  |
+| Offline      | Extraction clé/fichier, replay licence, copie appareil   | AES-256-GCM, clé non exportable, licence renouvelable ; ADR-018                                      | Not implemented                                                  |
+| Audit        | Suppression ou falsification                             | Écriture transactionnelle, blocage UPDATE/DELETE, exports audités ; ADR-019                          | Not implemented                                                  |
+| Capture      | Enregistrement écran et dispositif externe               | `FLAG_SECURE`, détection/pause iOS, protections en couches sans promesse absolue ; ADR-024           | Not implemented                                                  |
+| Données/logs | Fuite PII, token ou secret                               | Redaction des champs et messages, `msg` catégoriel, minimisation, contrôle accès, rétention et tests | Foundation validated — CTO technical review passed               |
+| Supply chain | Package compromis, licence incompatible                  | Versions verrouillées, revue, audit, provenance, scripts d’installation qualifiés                    | S0.5 candidate — automated local/CI gates, final Actions pending |
+| CI/CD        | Secret exposé, artefact altéré, déploiement non autorisé | Permissions lecture seule, actions épinglées, scans, timeouts et rollback                            | S0.5 candidate — no deployment or write permission               |
 
 ## Risques ouverts et gates
 
@@ -85,7 +89,11 @@ financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
   `THIRD_PARTY_LICENSE_REVIEW_S0_3.md`. Le gate juridique/licences a été
   approuvé pour le seul périmètre verrouillé de S0.3. Toute future dépendance,
   distribution ou release exige une nouvelle évaluation juridique et licences.
-- Docker local inaccessible : blocker S0.4, sans impact sur les fondations S0.3.
+- Les DSN et comptes Sentry restent une configuration externe non créée par le
+  dépôt. Sans DSN, les tests démontrent qu’aucun SDK n’est initialisé.
+- Le scan haute confiance du dépôt et de l’historique complète les contrôles,
+  mais Gitleaks reste indisponible localement et doit être déclaré
+  `NON EXÉCUTÉ`.
 - Fournisseurs OTP/paiement et stratégie stores non approuvés : gate avant
   paiement réel.
 - Textes légaux, droits média et résidence des données : gate avant bêta.

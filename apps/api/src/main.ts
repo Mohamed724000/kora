@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import type { RuntimeConfig } from './config/runtime-config';
 import { createApplication } from './app.factory';
 import { createStructuredLogger } from './observability/structured-logger';
+import { captureSentryException } from './observability/sentry';
 
 async function bootstrap(): Promise<void> {
   const application = await createApplication();
@@ -13,6 +14,7 @@ async function bootstrap(): Promise<void> {
 }
 
 void bootstrap().catch((exception: unknown) => {
+  captureSentryException(exception);
   const logger = createStructuredLogger('fatal');
   logger.fatal(
     {

@@ -14,6 +14,11 @@ export interface RuntimeConfig {
   logging: {
     level: LevelWithSilent;
   };
+  observability: {
+    dsn?: string;
+    environment: string;
+    release?: string;
+  };
   postgresql: {
     host: string;
     port: number;
@@ -65,13 +70,14 @@ function requiredString(
 function optionalString(
   environment: Record<string, string | undefined>,
   field: string,
+  pattern?: RegExp,
 ): ValidationResult<string | undefined> {
   const value = environment[field];
   if (value === undefined || value.length === 0) {
     return { field };
   }
 
-  if (value.trim() !== value) {
+  if (value.trim() !== value || (pattern !== undefined && !pattern.test(value))) {
     return { field };
   }
 
@@ -135,6 +141,13 @@ export function loadRuntimeConfig(environment: Record<string, string | undefined
   const apiHost = requiredString(environment, 'API_HOST', /^(?!.*:\/\/)(?!.*\/)\S+$/);
   const apiPort = integer(environment, 'API_PORT', 1, 65_535);
   const logLevel = enumeration(environment, 'LOG_LEVEL', LOG_LEVELS);
+  const sentryDsn = optionalString(environment, 'SENTRY_DSN', /^https:\/\/[^@\s/]+@[^\s/]+\/\d+$/);
+  const sentryEnvironment = optionalString(
+    environment,
+    'SENTRY_ENVIRONMENT',
+    /^[A-Za-z0-9._-]{1,64}$/,
+  );
+  const sentryRelease = optionalString(environment, 'SENTRY_RELEASE', /^[A-Za-z0-9._-]{1,128}$/);
   const databaseHost = requiredString(environment, 'DATABASE_HOST', /^(?!.*:\/\/)(?!.*\/)\S+$/);
   const databasePort = integer(environment, 'DATABASE_PORT', 1, 65_535);
   const databaseName = requiredString(environment, 'DATABASE_NAME', /^[A-Za-z_][A-Za-z0-9_-]*$/);
@@ -172,6 +185,13 @@ export function loadRuntimeConfig(environment: Record<string, string | undefined
     }
   }
 
+  for (const optional of [sentryDsn, sentryEnvironment, sentryRelease]) {
+    const supplied = environment[optional.field];
+    if (optional.value === undefined && supplied !== undefined && supplied.length > 0) {
+      invalid.push(optional.field);
+    }
+  }
+
   if (invalid.length > 0) {
     throw new ConfigValidationError(invalid);
   }
@@ -191,6 +211,11 @@ export function loadRuntimeConfig(environment: Record<string, string | undefined
     },
     logging: {
       level: logLevel.value as LevelWithSilent,
+    },
+    observability: {
+      environment: sentryEnvironment.value ?? (nodeEnvironment.value as NodeEnvironment),
+      ...(sentryDsn.value === undefined ? {} : { dsn: sentryDsn.value }),
+      ...(sentryRelease.value === undefined ? {} : { release: sentryRelease.value }),
     },
     postgresql: {
       host: databaseHost.value as string,

@@ -21,6 +21,11 @@ interface ErrorResponse {
   timestamp: string;
 }
 
+type ExceptionReporter = (
+  exception: unknown,
+  context: Readonly<{ path: string; requestId: string }>,
+) => void;
+
 const PUBLIC_ERRORS: Readonly<Record<number, ErrorDefinition>> = {
   [HttpStatus.BAD_REQUEST]: {
     code: 'BAD_REQUEST',
@@ -82,7 +87,10 @@ function publicError(status: number): ErrorDefinition {
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
-  constructor(private readonly logger: Logger) {}
+  constructor(
+    private readonly logger: Logger,
+    private readonly reportException: ExceptionReporter = () => undefined,
+  ) {}
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const http = host.switchToHttp();
@@ -111,6 +119,10 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       },
       'Request failed',
     );
+
+    if (status >= 500) {
+      this.reportException(exception, { path, requestId });
+    }
 
     response.statusCode = status;
     response.setHeader('content-type', 'application/json; charset=utf-8');

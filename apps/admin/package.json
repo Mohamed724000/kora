@@ -16,6 +16,8 @@
     "@adminlte/react": "0.3.0",
     "@kora-plus/ui": "0.0.0",
     "@popperjs/core": "2.11.8",
+    "@sentry/node": "10.70.0",
+    "@sentry/react": "10.70.0",
     "@tanstack/react-table": "8.21.3",
     "apexcharts": "4.7.0",
     "bootstrap": "5.3.8",
