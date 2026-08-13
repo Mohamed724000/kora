@@ -3,11 +3,38 @@ import { test } from "node:test";
 
 import {
   findSecretTypes,
+  validateDependabotPolicy,
   validateManifestLockConsistency,
   validateManifestVersions,
   validatePackageLock,
   validateReactTypesSingleton,
 } from "./scan-repository.mjs";
+
+const validDependabotPolicy = `version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    allow:
+      - dependency-name: "*"
+        dependency-type: direct
+        update-types:
+          - version-update:semver-patch
+          - version-update:semver-minor
+  - package-ecosystem: pub
+    directory: /apps/mobile
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    allow:
+      - dependency-name: "*"
+        dependency-type: direct
+        update-types:
+          - version-update:semver-patch
+          - version-update:semver-minor
+`;
 
 test("high-confidence production credentials are detected without returning values", () => {
   assert.deepEqual(
@@ -28,6 +55,51 @@ test("npm sources outside the official registry are rejected", () => {
       },
     }),
     ["unapproved npm source for node_modules/example"],
+  );
+});
+
+test("Dependabot requires direct patch/minor updates for npm and Pub", () => {
+  assert.deepEqual(validateDependabotPolicy(validDependabotPolicy), []);
+});
+
+test("Dependabot rejects the transitive-update gap reproduced by PR #14", () => {
+  assert.deepEqual(
+    validateDependabotPolicy(
+      validDependabotPolicy.replace(
+        "        dependency-type: direct\n        update-types:",
+        "        update-types:",
+      ),
+    ),
+    ["Dependabot npm allow rule must be direct-only"],
+  );
+});
+
+test("Dependabot rejects a Pub allow rule without direct-only enforcement", () => {
+  const pubPolicyStart = validDependabotPolicy.indexOf(
+    "  - package-ecosystem: pub",
+  );
+  assert.deepEqual(
+    validateDependabotPolicy(
+      `${validDependabotPolicy.slice(0, pubPolicyStart)}${validDependabotPolicy
+        .slice(pubPolicyStart)
+        .replace("        dependency-type: direct\n", "")}`,
+    ),
+    ["Dependabot pub allow rule must be direct-only"],
+  );
+});
+
+test("Dependabot rejects major version updates and auto-merge", () => {
+  assert.deepEqual(
+    validateDependabotPolicy(
+      `${validDependabotPolicy.replace(
+        "          - version-update:semver-minor",
+        "          - version-update:semver-major",
+      )}auto-merge: true\n`,
+    ),
+    [
+      "Dependabot npm version updates must be patch/minor only",
+      "Dependabot auto-merge configuration is forbidden",
+    ],
   );
 });
 
