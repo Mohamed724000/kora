@@ -22,6 +22,11 @@ const APPROVED_LICENSES = new Set([
   "Unlicense",
 ]);
 
+const APPROVED_PACKAGE_LICENSES = new Map([
+  ["@img/sharp-libvips-linux-x64@1.3.2", "LGPL-3.0-or-later"],
+  ["@img/sharp-libvips-linuxmusl-x64@1.3.2", "LGPL-3.0-or-later"],
+]);
+
 function licenseFor(manifest, packagePath) {
   if (typeof manifest.license === "string" && manifest.license.length > 0) {
     return manifest.license;
@@ -76,7 +81,9 @@ const packages = Object.entries(lockfile.packages)
 
 const undeclared = packages.filter(({ license }) => license === "UNDECLARED");
 const unapproved = packages.filter(
-  ({ license }) => !APPROVED_LICENSES.has(license),
+  ({ license, name, version }) =>
+    !APPROVED_LICENSES.has(license) &&
+    APPROVED_PACKAGE_LICENSES.get(`${name}@${version}`) !== license,
 );
 const totals = Object.groupBy(packages, ({ license }) => license);
 

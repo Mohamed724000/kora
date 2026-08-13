@@ -97,16 +97,16 @@ Future<void> _loadGoldenFonts() async {
     flutterPackage['rootUri']! as String,
   );
   final flutterSdkRoot = Directory.fromUri(flutterPackageRoot).parent.parent;
-  final fontFile = File.fromUri(
-    flutterSdkRoot.uri.resolve(
-      'bin/cache/artifacts/material_fonts/roboto-regular.ttf',
-    ),
-  );
-  final materialIconsFile = File.fromUri(
-    flutterSdkRoot.uri.resolve(
-      'bin/cache/artifacts/material_fonts/materialicons-regular.otf',
-    ),
-  );
+  final fontFile = _firstExistingFont(flutterSdkRoot, <String>[
+    'bin/cache/artifacts/material_fonts/roboto-regular.ttf',
+    'bin/cache/artifacts/material_fonts/Roboto-Regular.ttf',
+    'bin/cache/dart-sdk/bin/resources/devtools/assets/fonts/Roboto/Roboto-Regular.ttf',
+  ]);
+  final materialIconsFile = _firstExistingFont(flutterSdkRoot, <String>[
+    'bin/cache/artifacts/material_fonts/materialicons-regular.otf',
+    'bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
+    'bin/cache/dart-sdk/bin/resources/devtools/assets/fonts/MaterialIcons-Regular.otf',
+  ]);
 
   if (!fontFile.existsSync() || !materialIconsFile.existsSync()) {
     throw StateError(
@@ -122,6 +122,17 @@ Future<void> _loadGoldenFonts() async {
   await (FontLoader(
     'MaterialIcons',
   )..addFont(Future.value(ByteData.sublistView(materialIconsBytes)))).load();
+}
+
+File _firstExistingFont(Directory flutterSdkRoot, List<String> candidates) {
+  for (final candidate in candidates) {
+    final file = File.fromUri(flutterSdkRoot.uri.resolve(candidate));
+    if (file.existsSync()) {
+      return file;
+    }
+  }
+
+  return File.fromUri(flutterSdkRoot.uri.resolve(candidates.first));
 }
 
 void _configureViewport(WidgetTester tester, Size size) {

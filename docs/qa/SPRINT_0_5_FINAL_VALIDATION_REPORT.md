@@ -25,7 +25,7 @@ commencés.
 
 ## Périmètre exact des fichiers
 
-Le candidat local contient exactement 53 fichiers, rapport inclus :
+Le candidat S0.5 contient exactement 55 fichiers, rapport inclus :
 
 ```text
 .github/dependabot.yml
@@ -56,6 +56,7 @@ apps/mobile/lib/main.dart
 apps/mobile/lib/src/observability/sentry_observability.dart
 apps/mobile/pubspec.lock
 apps/mobile/pubspec.yaml
+apps/mobile/test/golden_test.dart
 apps/mobile/test/sentry_observability_test.dart
 apps/web/app/error.tsx
 apps/web/instrumentation-client.ts
@@ -76,6 +77,7 @@ package.json
 scripts/ci/validate-workflows.mjs
 scripts/ci/validate-workflows.test.mjs
 scripts/ci/verify-launcher-failure.mjs
+scripts/infra/lib.mjs
 scripts/openapi/validate-openapi.mjs
 scripts/openapi/validate-openapi.test.mjs
 scripts/report-licenses.mjs
@@ -132,6 +134,12 @@ chemins S0.4 qualifiés.
 L'inventaire final couvre 1 130 paquets npm : zéro licence non déclarée et zéro
 licence non approuvée. Les audits complet et production retournent zéro
 vulnérabilité.
+
+Sur Linux, npm installe sept paquets optionnels supplémentaires, soit 1 137 au
+total. Les deux variantes `@img/sharp-libvips-linux-x64@1.3.2` et
+`@img/sharp-libvips-linuxmusl-x64@1.3.2` sont sous LGPL-3.0-or-later ; elles sont
+qualifiées nominativement, sans approbation globale de cette licence, selon la
+revue tierce S0.3 déjà acceptée.
 
 ### Flutter
 
@@ -195,7 +203,7 @@ globale.
 | enfant contrôlé code `23` | PASS — rejet vérifié |
 | `npm run ci:validate` | PASS — 4 workflows, 4 actions approuvées |
 | `npm run openapi:validate` | PASS — 2 chemins, 3 schémas, références résolues |
-| `npm run security:scan` | PASS — 304 fichiers avant rapport, historique, immuable 52/52, 5 scripts qualifiés |
+| `npm run security:scan` | PASS — 305 fichiers, historique, immuable 52/52, 5 scripts qualifiés |
 | `npm run build` | PASS — six workspaces npm + APK Flutter debug |
 | `npm run db:generate` | PASS — Prisma Client 7.9.1 |
 | `npm run infra:status` | PASS — PostgreSQL/Redis healthy |
@@ -245,10 +253,15 @@ Aucun finding bloquant ne reste ouvert.
 
 ## GitHub Actions et Draft PR
 
-État avant publication : **PENDING**. La branche n'est pas encore poussée et la
-Draft PR n'est pas encore créée à ce point du rapport. Cette section sera mise à
-jour sur le commit exact après exécution réelle des quatre workflows. La PR
-restera en Draft ; Ready, merge, tag, release et déploiement sont interdits.
+La Draft PR #6 est ouverte vers `main`. Le premier run réel sur
+`6beeae8d2b9c4d22aa87da8703f5088c8a0923ac` a donné : Launcher Windows PASS,
+Infrastructure FAIL, Security FAIL et Quality Linux FAIL. Les logs ont établi
+trois causes déterministes : inspection Docker par tag absent après pull par
+digest, qualification de deux binaires Linux libvips déjà revue en S0.3, et
+variations de casse/emplacement des polices du SDK Flutter Linux. Les correctifs
+restent limités à S0.5 ; un second commit et ses Actions sont en attente.
+
+La PR reste en Draft ; Ready, merge, tag, release et déploiement sont interdits.
 
 ## Limites et dettes résiduelles
 
