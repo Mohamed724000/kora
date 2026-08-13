@@ -5,6 +5,12 @@ import { basename, extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const MAX_TRACKED_BYTES = 10 * 1024 * 1024;
+const DIRECT_DEPENDENCY_SECTIONS = [
+  "dependencies",
+  "devDependencies",
+  "optionalDependencies",
+  "peerDependencies",
+];
 const APPROVED_LARGE_FILES = new Set([
   "docs/source-material/references/adminlte/AdminLTE-master.zip",
 ]);
@@ -133,18 +139,13 @@ export function validatePackageLock(lockfile) {
   return errors;
 }
 
-function validateManifestVersions(repositoryRoot, files, errors) {
-  for (const relativePath of files.filter(
-    (path) => basename(path) === "package.json",
-  )) {
-    const manifest = JSON.parse(
-      readFileSync(resolve(repositoryRoot, relativePath), "utf8"),
-    );
-    for (const section of [
-      "dependencies",
-      "devDependencies",
-      "optionalDependencies",
-    ]) {
+export function validateManifestVersions(manifests) {
+  const errors = [];
+  for (const [workspacePath, manifest] of Object.entries(manifests)) {
+    const relativePath = workspacePath
+      ? `${workspacePath}/package.json`
+      : "package.json";
+    for (const section of DIRECT_DEPENDENCY_SECTIONS) {
       for (const [name, version] of Object.entries(manifest[section] ?? {})) {
         if (
           typeof version !== "string" ||
@@ -157,6 +158,41 @@ function validateManifestVersions(repositoryRoot, files, errors) {
       }
     }
   }
+  return errors;
+}
+
+export function validateManifestLockConsistency(manifests, lockfile) {
+  const errors = [];
+  for (const [workspacePath, manifest] of Object.entries(manifests)) {
+    const lockWorkspace = lockfile.packages?.[workspacePath];
+    const displayPath = workspacePath || ".";
+    if (lockWorkspace === undefined) {
+      errors.push(`package-lock missing workspace metadata for ${displayPath}`);
+      continue;
+    }
+
+    for (const section of DIRECT_DEPENDENCY_SECTIONS) {
+      const manifestDependencies = manifest[section] ?? {};
+      const lockDependencies = lockWorkspace[section] ?? {};
+      for (const [name, specification] of Object.entries(
+        manifestDependencies,
+      )) {
+        if (lockDependencies[name] !== specification) {
+          errors.push(
+            `package-lock mismatch for ${displayPath} ${section} ${name}: package.json=${specification} package-lock.json=${lockDependencies[name] ?? "MISSING"}`,
+          );
+        }
+      }
+      for (const name of Object.keys(lockDependencies)) {
+        if (!(name in manifestDependencies)) {
+          errors.push(
+            `stale package-lock direct dependency for ${displayPath} ${section} ${name}`,
+          );
+        }
+      }
+    }
+  }
+  return errors;
 }
 
 function validatePubLock(repositoryRoot, errors) {
@@ -178,7 +214,12 @@ function validatePubLock(repositoryRoot, errors) {
 
 function verifyImmutableBaseline(repositoryRoot, errors) {
   const manifest = readFileSync(
-    resolve(repositoryRoot, "docs", "governance", "SOURCE_BASELINE_MANIFEST.sha256"),
+    resolve(
+      repositoryRoot,
+      "docs",
+      "governance",
+      "SOURCE_BASELINE_MANIFEST.sha256",
+    ),
     "utf8",
   );
   const entries = manifest
@@ -206,14 +247,29 @@ export function scanRepository(repositoryRoot = process.cwd(), options = {}) {
   const errors = [];
   const files = trackedFiles(repositoryRoot);
   scanTrackedFiles(repositoryRoot, files, errors);
-  validateManifestVersions(repositoryRoot, files, errors);
-  errors.push(
-    ...validatePackageLock(
-      JSON.parse(
-        readFileSync(resolve(repositoryRoot, "package-lock.json"), "utf8"),
-      ),
-    ),
+  const manifests = Object.fromEntries(
+    files
+      .filter((path) => basename(path) === "package.json")
+      .map((relativePath) => {
+        const normalized = normalizePath(relativePath);
+        const workspacePath =
+          normalized === "package.json"
+            ? ""
+            : normalized.slice(0, -"/package.json".length);
+        return [
+          workspacePath,
+          JSON.parse(
+            readFileSync(resolve(repositoryRoot, relativePath), "utf8"),
+          ),
+        ];
+      }),
   );
+  const lockfile = JSON.parse(
+    readFileSync(resolve(repositoryRoot, "package-lock.json"), "utf8"),
+  );
+  errors.push(...validateManifestVersions(manifests));
+  errors.push(...validateManifestLockConsistency(manifests, lockfile));
+  errors.push(...validatePackageLock(lockfile));
   validatePubLock(repositoryRoot, errors);
   const immutableFiles = verifyImmutableBaseline(repositoryRoot, errors);
   if (options.history !== false) {

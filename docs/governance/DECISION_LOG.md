@@ -102,6 +102,19 @@ créent aucune tâche dans `KORA-PLUS-FINAL`.
 Ces décisions n’ajoutent aucune décision produit, financière, juridique ou de
 sécurité métier.
 
+## 2026-08-13 — Gouvernance des dépendances M0.1
+
+| ID          | Nature         | Décision                                                                                                                                                                | Autorité                         | Statut   |
+| ----------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- | -------- |
+| DEC-M0.1-01 | Maintenance    | Les PR Dependabot #7 à #12 sont fermées sans fusion, avec une trace factuelle et sans suppression manuelle de branche.                                                  | Décision CTO M0.1                | Accepted |
+| DEC-M0.1-02 | Dépendances    | Seuls `@types/react@19.2.18`, `flutter_riverpod@3.4.2` et `riverpod@3.4.2` sont réappliqués.                                                                            | Décision CTO M0.1                | Accepted |
+| DEC-M0.1-03 | Dépendances    | `apexcharts@4.7.0`, `typescript-eslint@8.65.0`, la famille NestJS `11.1.28` et `bullmq@5.81.2` restent verrouillés.                                                     | Décision CTO M0.1                | Accepted |
+| DEC-M0.1-04 | Sécurité       | Toute dépendance directe externe utilise une version SemVer exacte et les spécifications manifestes/lock npm doivent être identiques byte-for-byte.                     | Décision CTO M0.1                | Accepted |
+| DEC-M0.1-05 | Automatisation | Les version updates Dependabot sont limitées aux dépendances directes patch/minor ; les security updates restent actives et aucune fusion automatique n'est configurée. | Décision CTO M0.1                | Accepted |
+| DEC-M0.1-06 | Automatisation | `versioning-strategy: increase` reste désactivé faute de garantie sur les pins exacts ; le scanner de dépôt est le gate bloquant.                                       | Décision CTO M0.1 / preuve PR #9 | Accepted |
+
+M0.1 est un gate de maintenance pré-S0.6. Il ne démarre ni S0.6 ni Slice 1.
+
 ## Catégories d’autorité
 
 - **Produit** : vision, économie, marque, contrats et périmètre irréversible ;
