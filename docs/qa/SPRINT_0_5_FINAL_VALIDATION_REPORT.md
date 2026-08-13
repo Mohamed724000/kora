@@ -25,7 +25,7 @@ commencés.
 
 ## Périmètre exact des fichiers
 
-Le candidat S0.5 contient exactement 55 fichiers, rapport inclus :
+Le candidat S0.5 contient exactement 56 fichiers, rapport inclus :
 
 ```text
 .github/dependabot.yml
@@ -72,6 +72,7 @@ docs/qa/REQUIREMENTS_TRACEABILITY_MATRIX.md
 docs/qa/SPRINT_0_5_FINAL_VALIDATION_REPORT.md
 docs/security/THIRD_PARTY_DEPENDENCY_REVIEW_S0_5.md
 docs/security/THREAT_MODEL.md
+infra/redis/entrypoint.sh
 package-lock.json
 package.json
 scripts/ci/validate-workflows.mjs
@@ -232,6 +233,17 @@ Admin 3, API 4 et Flutter 3.
 - Un premier `npm test` sous bac à sable a échoué uniquement sur l'écriture du
   lockfile du SDK Flutter externe. Le même launcher rejoué avec l'accès déjà
   autorisé a passé 61/61, sans PID résiduel.
+- Le premier run GitHub a exposé trois écarts Linux : inspection d'images
+  Docker par tag après un pull par digest, deux variantes libvips optionnelles
+  qualifiées en S0.3 mais absentes de l'installation Windows, et chemins de
+  polices Flutter sensibles à la casse. Les trois corrections ciblées ont été
+  validées localement ; Security et Launcher ont passé au run suivant.
+- Le deuxième run GitHub a ensuite prouvé deux derniers écarts : le script
+  Redis était publié en mode Git `100644`, et les goldens raster produits sous
+  Windows diffèrent de 2,41 à 3,57 % sous Skia Linux malgré les mêmes polices.
+  Le script est désormais publié en `100755`. Les goldens restent stricts sur
+  leur plateforme de référence Windows, couverte par Launcher ; Linux conserve
+  les sept tests Flutter fonctionnels, sans seuil arbitraire ni régénération.
 
 Ces échecs intermédiaires ne sont pas comptés comme PASS ; seuls les contrôles
 finaux réussis figurent comme gates de sortie.
@@ -253,13 +265,21 @@ Aucun finding bloquant ne reste ouvert.
 
 ## GitHub Actions et Draft PR
 
-La Draft PR #6 est ouverte vers `main`. Le premier run réel sur
-`6beeae8d2b9c4d22aa87da8703f5088c8a0923ac` a donné : Launcher Windows PASS,
-Infrastructure FAIL, Security FAIL et Quality Linux FAIL. Les logs ont établi
-trois causes déterministes : inspection Docker par tag absent après pull par
-digest, qualification de deux binaires Linux libvips déjà revue en S0.3, et
-variations de casse/emplacement des polices du SDK Flutter Linux. Les correctifs
-restent limités à S0.5 ; un second commit et ses Actions sont en attente.
+La Draft PR #6 est ouverte vers `main` avec exactement 56 fichiers. Le premier
+run réel sur `6beeae8d2b9c4d22aa87da8703f5088c8a0923ac` a donné : Launcher Windows
+PASS, Infrastructure FAIL, Security FAIL et Quality Linux FAIL.
+
+Le deuxième run sur `c5def6538acebe49440903197a133db204765080` a donné :
+
+- Launcher Windows : PASS en 4 min 02 s, run `31687251109` ;
+- Security : PASS en 1 min 58 s, run `31687251219` ;
+- Infrastructure : FAIL en 1 min 01 s, run `31687251068`, bit exécutable Redis
+  absent ;
+- Quality Linux : FAIL en 2 min 56 s, run `31687251141`, dérive raster des trois
+  goldens Windows uniquement ; tous les autres tests avaient passé.
+
+Le commit correctif final et son exécution réelle des quatre workflows sont en
+attente. Aucun état défaillant n'est présenté comme PASS.
 
 La PR reste en Draft ; Ready, merge, tag, release et déploiement sont interdits.
 
@@ -282,7 +302,7 @@ La PR reste en Draft ; Ready, merge, tag, release et déploiement sont interdits
   le registre locaux mais s'est terminé avec code 0 ; les Actions fourniront
   la mesure Linux propre.
 
-## État de sortie avant publication
+## État de sortie avant validation GitHub finale
 
 - Branche : `chore/s0-5-ci-security-observability`.
 - Base inchangée : `8c3e65e2bcbffb53050b61cab4b953f108491db1`.
@@ -290,5 +310,5 @@ La PR reste en Draft ; Ready, merge, tag, release et déploiement sont interdits
 - Aucun processus de validation orphelin.
 - S0.6 et Slice 1 : non commencés.
 
-Verdict local : **S0.5 LOCAL VALIDATION PASSED — PUBLICATION DRAFT ET ACTIONS
-RÉELLES EN ATTENTE**.
+Verdict intermédiaire : **S0.5 LOCAL VALIDATION PASSED — ACTIONS FINALES EN
+ATTENTE**.
