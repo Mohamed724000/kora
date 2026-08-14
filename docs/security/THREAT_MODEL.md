@@ -1,7 +1,7 @@
 # KORA+ Final — Threat Model initial
 
-Statut : **BASELINE + S0.4 FUSIONNÉ ET CLÔTURÉ + S0.5 TECHNIQUEMENT VALIDÉ,
-DÉCISION CTO EN ATTENTE**
+Statut : **BASELINE + S0.4/S0.5/M0.1/M0.2 FUSIONNÉS ET CLÔTURÉS + S0.6
+FOUNDATION GATE VALIDÉ AVEC RÉSERVES, DÉCISION CTO EN ATTENTE**
 
 Ce modèle décrit les frontières et mesures attendues. Sprint 0.3 introduit des
 shells et quelques contrôles de fondation étroits ; aucun contrôle métier,
@@ -32,7 +32,7 @@ financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
 8. CI/CD ↔ environnements et secrets.
 9. Opérateurs ↔ fonctions sensibles et exports.
 
-## Frontières réellement introduites jusqu’à S0.5
+## Frontières réellement introduites jusqu’à S0.6
 
 - shells mobile, web public et administration sans appel API ni donnée métier ;
 - surface HTTP NestJS limitée à `/health/live` et `/health/ready`, hors du
@@ -49,24 +49,30 @@ financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
 - CI S0.5 en lecture seule sur le dépôt, actions épinglées et jobs bornés ;
 - Sentry minimal API, Web, Admin et Flutter, inactif sans DSN, sans PII, logs,
   traces, replay, screenshot ni données de requête.
+- gates M0.1/M0.2 : pins directs exacts, égalité manifeste/lockfile,
+  singleton `@types/react`, politique Dependabot directe patch/minor et
+  correction `nanoid@3.3.18` ;
+- S0.6 n’ajoute aucune frontière runtime : il rejoue et documente les preuves
+  des fondations sur la baseline
+  `40a224edc1dc018a080b6c188a804e361e96b5ef`.
 
 ## Menaces et mesures attendues
 
-| Domaine      | Menaces principales                                      | Mesures attendues / autorités                                                                        | État                                                           |
-| ------------ | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| Identité/OTP | Brute force, interception, replay, enumeration           | Rate limits, OTP court et haché, rotation session, logs masqués ; ADR-010                            | Not implemented                                                |
-| Admin        | Vol de session, MFA contournée, récupération abusive     | TOTP RFC 6238, codes Argon2id, cookies httpOnly, step-up, révocation ; ADR-002/005/008               | Not implemented                                                |
-| RBAC         | Escalade verticale/horizontale, champs sensibles         | Contrôle serveur route/action/champ, moindre privilège ; ADR-020                                     | Not implemented                                                |
-| Paiement     | Double débit, faux webhook, replay, ordre inversé        | Signature, idempotence, Inbox/Outbox, PaymentAttempts immuables ; ADR-012/015                        | Not implemented                                                |
-| Ledger       | Altération, déséquilibre, double comptage                | Append-only, groupes équilibrés, compensation, reconciliation ; ADR-013/014                          | Not implemented                                                |
-| Droits       | Accès sans achat, révocation excessive                   | Entitlement permanent ciblé, checks serveur ; ADR-016                                                | Not implemented                                                |
-| Média        | URL brute, partage, scraping, logs sensibles             | Stockage privé, descriptor court, PreviewGrant, device binding ; ADR-011/017                         | Not implemented                                                |
-| Offline      | Extraction clé/fichier, replay licence, copie appareil   | AES-256-GCM, clé non exportable, licence renouvelable ; ADR-018                                      | Not implemented                                                |
-| Audit        | Suppression ou falsification                             | Écriture transactionnelle, blocage UPDATE/DELETE, exports audités ; ADR-019                          | Not implemented                                                |
-| Capture      | Enregistrement écran et dispositif externe               | `FLAG_SECURE`, détection/pause iOS, protections en couches sans promesse absolue ; ADR-024           | Not implemented                                                |
-| Données/logs | Fuite PII, token ou secret                               | Redaction des champs et messages, `msg` catégoriel, minimisation, contrôle accès, rétention et tests | Foundation validated — CTO technical review passed             |
-| Supply chain | Package compromis, licence incompatible                  | Versions verrouillées, revue, audit, provenance, scripts d’installation qualifiés                    | S0.5 technically validated — local and final CI gates passed   |
-| CI/CD        | Secret exposé, artefact altéré, déploiement non autorisé | Permissions lecture seule, actions épinglées, scans, timeouts et rollback                            | S0.5 technically validated — no deployment or write permission |
+| Domaine      | Menaces principales                                      | Mesures attendues / autorités                                                                        | État                                                        |
+| ------------ | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Identité/OTP | Brute force, interception, replay, enumeration           | Rate limits, OTP court et haché, rotation session, logs masqués ; ADR-010                            | Not implemented                                             |
+| Admin        | Vol de session, MFA contournée, récupération abusive     | TOTP RFC 6238, codes Argon2id, cookies httpOnly, step-up, révocation ; ADR-002/005/008               | Not implemented                                             |
+| RBAC         | Escalade verticale/horizontale, champs sensibles         | Contrôle serveur route/action/champ, moindre privilège ; ADR-020                                     | Not implemented                                             |
+| Paiement     | Double débit, faux webhook, replay, ordre inversé        | Signature, idempotence, Inbox/Outbox, PaymentAttempts immuables ; ADR-012/015                        | Not implemented                                             |
+| Ledger       | Altération, déséquilibre, double comptage                | Append-only, groupes équilibrés, compensation, reconciliation ; ADR-013/014                          | Not implemented                                             |
+| Droits       | Accès sans achat, révocation excessive                   | Entitlement permanent ciblé, checks serveur ; ADR-016                                                | Not implemented                                             |
+| Média        | URL brute, partage, scraping, logs sensibles             | Stockage privé, descriptor court, PreviewGrant, device binding ; ADR-011/017                         | Not implemented                                             |
+| Offline      | Extraction clé/fichier, replay licence, copie appareil   | AES-256-GCM, clé non exportable, licence renouvelable ; ADR-018                                      | Not implemented                                             |
+| Audit        | Suppression ou falsification                             | Écriture transactionnelle, blocage UPDATE/DELETE, exports audités ; ADR-019                          | Not implemented                                             |
+| Capture      | Enregistrement écran et dispositif externe               | `FLAG_SECURE`, détection/pause iOS, protections en couches sans promesse absolue ; ADR-024           | Not implemented                                             |
+| Données/logs | Fuite PII, token ou secret                               | Redaction des champs et messages, `msg` catégoriel, minimisation, contrôle accès, rétention et tests | Foundation validated locally by S0.6 — no business PII flow |
+| Supply chain | Package compromis, licence incompatible                  | Versions verrouillées, revue, audit, provenance, scripts d’installation qualifiés                    | M0.1/M0.2 merged; S0.6 local audits and scanner passed      |
+| CI/CD        | Secret exposé, artefact altéré, déploiement non autorisé | Permissions lecture seule, actions épinglées, scans, timeouts et rollback                            | S0.5 merged; S0.6 validation pending final Draft PR checks  |
 
 ## Risques ouverts et gates
 
@@ -95,6 +101,23 @@ financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
 - Le scan haute confiance du dépôt et de l’historique complète les contrôles,
   mais Gitleaks reste indisponible localement et doit être déclaré
   `NON EXÉCUTÉ`.
+- Le gate S0.6 confirme zéro vulnérabilité npm complète/production, zéro
+  licence absente ou non approuvée, le manifeste immuable 52/52, une seule
+  installation physique `@types/react@19.2.18`, aucune installation npm
+  imbriquée dans le lockfile, et zéro alerte Secret Scanning ouverte.
+- Secret Scanning et sa push protection sont activés sur GitHub. En revanche,
+  Dependabot Alerts et Dependabot security updates sont désactivés dans les
+  métadonnées du dépôt, et Code Scanning ne possède aucune analyse. S0.6 ne
+  modifie pas ces paramètres ; cette exposition externe reste une réserve à
+  arbitrer par le CTO. La politique versionnée Dependabot directe patch/minor
+  et le scanner bloquant restent opérationnels.
+- Le test Sentry réel reste `NON EXÉCUTÉ` faute de DSN autorisé. Les quatre
+  implémentations restent inactives sans DSN et leurs tests de redaction
+  passent.
+- Le build iOS reste `NON EXÉCUTÉ` sous Windows. L’inspection navigateur
+  interactive S0.6 est également `NON EXÉCUTÉE` car aucun navigateur intégré
+  n’était disponible ; les tests DOM, responsive, accessibilité, captures
+  versionnées et goldens stricts ont néanmoins été rejoués ou inspectés.
 - Fournisseurs OTP/paiement et stratégie stores non approuvés : gate avant
   paiement réel.
 - Textes légaux, droits média et résidence des données : gate avant bêta.

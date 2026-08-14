@@ -2,7 +2,8 @@
 
 KORA+ Final est la clean room de production du produit KORA+. Le dépôt contient
 la baseline documentaire, le contrat du monorepo et les fondations applicatives
-des Sprints 0.3 à 0.5. Aucune fonctionnalité métier n’est implémentée.
+des Sprints 0.3 à 0.5. S0.6 audite ces fondations sans ajouter de fonctionnalité
+métier.
 
 ## État actuel
 
@@ -11,8 +12,11 @@ des Sprints 0.3 à 0.5. Aucune fonctionnalité métier n’est implémentée.
 - Sprint 0.2 : contrat monorepo terminé et validé par la revue CTO.
 - Sprint 0.3 : **Closed and merged**.
 - Sprint 0.4 : **Closed and merged** via la PR #5.
-- Sprint 0.5 : **CI, sécurité et observabilité en cours sur sa branche dédiée**.
-- S0.6 et les slices produit : non commencés.
+- Sprint 0.5 : **Closed and merged** via la PR #6.
+- M0.1 : **Closed and merged** via la PR #13.
+- M0.2 : **Closed and merged** via la PR #22.
+- S0.6 : **Foundation Gate exécuté avec réserves, en attente de revue CTO**.
+- Slice 1 et les fonctionnalités produit : **Not started**.
 
 Sprint 0.3 a été fermé et fusionné via la
 [PR #2](https://github.com/Mohamed724000/kora/pull/2). Le commit de clôture est
@@ -24,7 +28,19 @@ périmètre verrouillé de S0.3. Aucun lot suivant n’est autorisé par le pré
 état. S0.4 a été fusionné via la
 [PR #5](https://github.com/Mohamed724000/kora/pull/5), au merge commit
 [`8c3e65e2bcbffb53050b61cab4b953f108491db1`](https://github.com/Mohamed724000/kora/commit/8c3e65e2bcbffb53050b61cab4b953f108491db1).
-S0.5 reste strictement technique et S0.6 n’est pas commencé.
+S0.5 a été fusionné via la
+[PR #6](https://github.com/Mohamed724000/kora/pull/6), au merge commit
+[`c080ec0529e758203d4326f7ec5b0b0159cbdad7`](https://github.com/Mohamed724000/kora/commit/c080ec0529e758203d4326f7ec5b0b0159cbdad7).
+Les gates de maintenance M0.1 et M0.2 ont ensuite été fusionnés via les
+[PR #13](https://github.com/Mohamed724000/kora/pull/13) et
+[PR #22](https://github.com/Mohamed724000/kora/pull/22), aux merge commits
+[`79ceddc6cbf04b3d213001417da0841044af8206`](https://github.com/Mohamed724000/kora/commit/79ceddc6cbf04b3d213001417da0841044af8206)
+et
+[`40a224edc1dc018a080b6c188a804e361e96b5ef`](https://github.com/Mohamed724000/kora/commit/40a224edc1dc018a080b6c188a804e361e96b5ef).
+Ce dernier commit est la baseline exacte de S0.6. Le
+[rapport du Foundation Gate](docs/qa/SPRINT_0_6_FOUNDATION_GATE_REPORT.md)
+conserve les preuves et les réserves. S0.6 reste en attente de décision CTO et
+Slice 1 n’est pas commencé.
 
 ## Autorités
 

@@ -143,6 +143,20 @@ références #19 et #20 existaient encore au constat final pré-commit. Aucune
 suppression manuelle, recréation de branche ni modification de paramètre GitHub
 n'a été effectuée par l'orchestrateur.
 
+## 2026-08-14 — Foundation Gate S0.6
+
+| ID          | Nature      | Décision                                                                                                                                                                                                                                 | Autorité          | Statut                        |
+| ----------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | ----------------------------- |
+| DEC-S0.6-01 | Traçabilité | S0.4, S0.5, M0.1 et M0.2 sont fusionnés aux SHA exacts `8c3e65e2bcbffb53050b61cab4b953f108491db1`, `c080ec0529e758203d4326f7ec5b0b0159cbdad7`, `79ceddc6cbf04b3d213001417da0841044af8206` et `40a224edc1dc018a080b6c188a804e361e96b5ef`. | Décision CTO S0.6 | Accepted                      |
+| DEC-S0.6-02 | Exécution   | La baseline immuable du gate est le merge M0.2 `40a224edc1dc018a080b6c188a804e361e96b5ef`; S0.6 audite et documente sans corriger ni modifier de fichier technique.                                                                      | Décision CTO S0.6 | Accepted                      |
+| DEC-S0.6-03 | Qualité     | Les gates locaux applicables QA, infrastructure, sécurité et design passent ; le verdict est `PASS WITH RESERVATIONS` et reste soumis à la revue CTO et aux quatre checks de la Draft PR.                                                | Décision CTO S0.6 | Executed — CTO review pending |
+| DEC-S0.6-04 | Réserves    | iOS/macOS, Gitleaks, Sentry réel et l’inspection navigateur interactive sont non exécutés ; Dependabot Alerts/security updates et Code Scanning ne sont pas actifs/configurés sur GitHub. Aucun de ces écarts n’est corrigé dans S0.6.   | Décision CTO S0.6 | Open external/platform limits |
+| DEC-S0.6-05 | Périmètre   | Les 68 exigences produit restent `Not started` / `Not verified`; aucune sécurité métier, route, modèle Prisma, migration ou fonctionnalité Slice 1 n’est déclarée implémentée.                                                           | Décision CTO S0.6 | Accepted                      |
+
+S0.6 valide uniquement les fondations. La Draft PR doit rester Draft ; Ready,
+merge, tag, release, déploiement et démarrage de Slice 1 exigent une nouvelle
+décision CTO.
+
 ## Catégories d’autorité
 
 - **Produit** : vision, économie, marque, contrats et périmètre irréversible ;
