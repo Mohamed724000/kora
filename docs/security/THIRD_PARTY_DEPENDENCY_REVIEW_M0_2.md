@@ -34,20 +34,36 @@ l'avis sans modifier `postcss`, Next.js, Vite, les manifestes de workspace ou
 la topologie du graphe npm. Nano ID reste sous licence MIT, depuis le registre
 npm officiel, sans nouveau script d'installation ni nouvelle dépendance.
 
-## Traitement des PR Dependabot #14 à #16
+## Traitement des PR Dependabot #14 à #21
 
-| PR  | Proposition                                             | État final         | Preuve Security et décision                                                                                                                                                              |
-| --- | ------------------------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| #14 | `tldts-core` 7.4.9 → 7.4.10 dans le lockfile uniquement | Fermée sans fusion | Run `31723111543` rouge sur Nano ID. La PR prouve que l'intention direct-only M0.1 n'était pas effectivement imposée : une transitive a été proposée faute de `dependency-type: direct`. |
-| #15 | `go_router` 17.3.0 → 17.5.0                             | Fermée sans fusion | Run `31723141518` rouge sur Nano ID. La mise à jour courante est reportée hors du hotfix.                                                                                                |
-| #16 | `@testing-library/jest-dom` 7.0.0 → 7.0.1               | Fermée sans fusion | Run `31723160902` rouge sur Nano ID. La mise à jour courante est reportée hors du hotfix.                                                                                                |
+| PR  | Catégorie  | Proposition                                          | Head capturé                               | Run Security  | Décision                |
+| --- | ---------- | ---------------------------------------------------- | ------------------------------------------ | ------------- | ----------------------- |
+| #14 | Transitive | `tldts-core` 7.4.9 → 7.4.10, lockfile uniquement     | `f677ea32a29279f7e54d6dff0bb326d40acc4505` | `31723111543` | Fermée sans fusion      |
+| #15 | Directe    | `go_router` 17.3.0 → 17.5.0                          | `6ec1c60bc7e872d67df35d1669b75eef2bc08c8c` | `31723141518` | Reportée, non fusionnée |
+| #16 | Directe    | `@testing-library/jest-dom` 7.0.0 → 7.0.1            | `9ddb5b33b35128cdfcbda89e7032c9e1d820ed59` | `31723160902` | Reportée, non fusionnée |
+| #17 | Transitive | `axe-core` 4.12.1 → 4.13.0, lockfile uniquement      | `b21890d3d9fef7d627d44e65f25a56d398874258` | `31723210705` | Fermée sans fusion      |
+| #18 | Transitive | `tinyexec` 1.2.4 → 1.3.0, lockfile uniquement        | `a8230414027c6ae21f0163c6cd45c2712f33c845` | `31723227890` | Fermée sans fusion      |
+| #19 | Transitive | `flatted` 3.4.3 → 3.4.4, lockfile uniquement         | `793877e662425abb2df87561a105fe4235922798` | `31723293695` | Fermée sans fusion      |
+| #20 | Transitive | `caniuse-lite` 1.0.30001806 → 1.0.30001809, lockfile | `34a65ca967418cd1804ed3e973cc041ee6109d98` | `31750552893` | Fermée sans fusion      |
+| #21 | Directe    | `eslint-config-next` 16.2.12 → 16.3.0                | `a9a6009e673209802d551432c06dc1f118fa1f54` | `31750573809` | Reportée, non fusionnée |
+
+Les huit runs Security étaient rouges sur la vulnérabilité Nano ID héritée de
+l'ancienne base. #14, #17, #18, #19 et #20 démontrent des propositions
+transitives antérieures à l'application effective de la politique direct-only ;
+elles ne sont ni retenues ni réappliquées automatiquement ou manuellement dans
+M0.2. Les mises à jour directes #15, #16 et #21 sont reportées hors du hotfix,
+vers un futur lot de maintenance explicitement autorisé.
+
+#20 et #21 ont été ouvertes respectivement à 22:35:08 UTC et 22:35:25 UTC,
+avant la publication de la Draft PR #22 à 22:43:58 UTC. Elles utilisaient encore
+la configuration présente sur `main`, pas la politique portée par #22.
 
 Chaque PR a reçu un commentaire de traçabilité propre avant sa fermeture.
 Aucune n'a été fusionnée et aucune commande de suppression de branche n'a été
-exécutée. Les trois références et leurs SHAs ont été capturés avant fermeture ;
-le `git fetch --prune` final a ensuite constaté leur suppression automatique
-par Dependabot. Elles n'ont pas été recréées et aucun paramètre GitHub n'a été
-modifié.
+exécutée. Dependabot avait automatiquement supprimé les références #14 à #18
+et #21 avant le commit R1 ; les références #19 et #20 existaient encore au
+constat final pré-commit. Elles n'ont pas été recréées et aucun paramètre GitHub
+n'a été modifié.
 
 ## Politique Dependabot renforcée
 

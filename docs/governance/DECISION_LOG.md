@@ -125,15 +125,23 @@ M0.1 est un gate de maintenance pré-S0.6. Il ne démarre ni S0.6 ni Slice 1.
 | ----------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | -------- |
 | DEC-M0.2-01 | Sécurité       | L'override racine `nanoid` passe de `3.3.17` à la première version 3.x corrigée `3.3.18` pour fermer `GHSA-2v37-7h3g-55p8`, sans modifier `postcss@8.5.24`.                  | Décision CTO M0.2 / GitHub Advisory | Accepted |
 | DEC-M0.2-02 | Automatisation | Les règles `allow` npm et Pub exigent explicitement `dependency-type: direct` ainsi que patch/minor ; un gate local et ses tests négatifs rendent cette politique bloquante. | Décision CTO M0.2 / preuve PR #14   | Accepted |
-| DEC-M0.2-03 | Maintenance    | Les PR Dependabot #14 à #16 sont fermées sans fusion avec une trace factuelle propre et sans commande de suppression manuelle de branche.                                    | Décision CTO M0.2                   | Accepted |
+| DEC-M0.2-03 | Maintenance    | Les PR Dependabot #14 à #21 sont fermées sans fusion avec une trace factuelle propre et sans commande de suppression manuelle de branche.                                    | Décisions CTO M0.2 et M0.2-R1       | Accepted |
 | DEC-M0.2-04 | Périmètre      | M0.2 reste un hotfix supply-chain : aucune mise à jour courante reportée, fonctionnalité, release, balise, opération de déploiement, S0.6 ou Slice 1 n'est autorisée.        | Décision CTO M0.2                   | Accepted |
 
 La mise à jour postérieure de la fiche GitHub explique que les audits M0.1
 étaient à zéro avant que la branche Nano ID 3.x ne soit intégrée à la plage
 affectée. La revue M0.2 conserve cette chronologie sans réécrire M0.1.
-Après fermeture, Dependabot a supprimé automatiquement les trois références
-distantes #14 à #16 ; aucune suppression manuelle ni modification de paramètre
-GitHub n'a été effectuée par l'orchestrateur.
+Les PR #14, #17, #18, #19 et #20 étaient des propositions transitives générées
+avant l'application de la politique direct-only. Les PR #15, #16 et #21
+étaient des mises à jour directes courantes reportées hors du hotfix. #20 et
+#21 avaient été ouvertes avant la publication de la Draft PR #22 et utilisaient
+encore la configuration présente sur `main`.
+
+Après fermeture, Dependabot a supprimé automatiquement les références
+distantes #14 à #18 et #21 constatées absentes avant le commit R1. Les
+références #19 et #20 existaient encore au constat final pré-commit. Aucune
+suppression manuelle, recréation de branche ni modification de paramètre GitHub
+n'a été effectuée par l'orchestrateur.
 
 ## Catégories d’autorité
 
