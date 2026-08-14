@@ -6,6 +6,8 @@ Branche : `chore/s0-6-foundation-gate`
 
 Baseline exacte : `40a224edc1dc018a080b6c188a804e361e96b5ef`
 
+Head documentaire initial : `d809ff5682257d03cf3a394f9896a4ca08c5a04f`
+
 Verdict : **PASS WITH RESERVATIONS — CTO REVIEW PENDING**
 
 ## Portée et historique vérifié
@@ -225,10 +227,29 @@ six fichiers ; 18 liens Markdown relatifs sont résolus sans manque ; les 20
 tests d’outillage passent ; le scanner final passe sur 309 fichiers avec le
 manifeste 52/52 ; les 68 exigences restent inchangées ; `git diff --check`
 termine avec le code 0. `git fsck --full` termine aussi avec le code 0 et
-signale uniquement 22 objets historiques non référencés (11 commits, 8 blobs
-et 3 trees), autorisés comme non bloquants. Le head documentaire et les
-résultats GitHub Actions sont consignés après publication sans tenter
+signale uniquement des objets historiques non référencés, autorisés comme non
+bloquants. Aucun objet corrompu ou manquant n’est signalé. Le head documentaire
+et les résultats GitHub Actions sont consignés après publication sans tenter
 d’inscrire dans un commit son propre SHA.
+
+## Publication et GitHub Actions
+
+Draft PR : [#28](https://github.com/Mohamed724000/kora/pull/28)
+
+Les quatre workflows déclenchés sur le head documentaire initial exact
+`d809ff5682257d03cf3a394f9896a4ca08c5a04f` sont terminés avec succès :
+
+| Workflow         | Run ID        | Conclusion |
+| ---------------- | ------------- | ---------- |
+| Security         | `31823409647` | success    |
+| Quality Linux    | `31823409637` | success    |
+| Infrastructure   | `31823409666` | success    |
+| Launcher Windows | `31823409673` | success    |
+
+Le commit documentaire suivant contient cette preuve et ne peut inscrire son
+propre SHA dans son contenu. Son SHA exact et les quatre nouveaux run IDs du
+head final sont donc fournis dans le rapport de remise et restent vérifiables
+dans l’état live de la Draft PR #28. Aucun état Ready ou merge n’est demandé.
 
 ## Réserves et risques résiduels
 
