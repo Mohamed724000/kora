@@ -86,3 +86,12 @@ Référence : [Dependabot options reference](https://docs.github.com/en/code-sec
   d'installation et les lockfiles sont des gates de sortie du lot.
 
 S0.6 et Slice 1 ne sont pas commencés.
+
+## Erratum postérieur M0.2
+
+La configuration M0.1 décrivait l'intention « dépendances directes » sans
+inscrire `dependency-type: direct` dans les deux règles `allow`. La PR
+Dependabot #14 a ensuite proposé une mise à jour transitive lockfile-only et a
+révélé cet écart d'application. L'historique M0.1 reste inchangé ; la correction
+et ses preuves sont consignées dans la
+[revue supply-chain M0.2](THIRD_PARTY_DEPENDENCY_REVIEW_M0_2.md).

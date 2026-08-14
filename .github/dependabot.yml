@@ -7,6 +7,7 @@ updates:
     open-pull-requests-limit: 5
     allow:
       - dependency-name: "*"
+        dependency-type: direct
         update-types:
           - version-update:semver-patch
           - version-update:semver-minor
@@ -17,6 +18,7 @@ updates:
     open-pull-requests-limit: 5
     allow:
       - dependency-name: "*"
+        dependency-type: direct
         update-types:
           - version-update:semver-patch
           - version-update:semver-minor

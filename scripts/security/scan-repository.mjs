@@ -15,6 +15,14 @@ const EXACT_SEMVER = /^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/u;
 const REACT_TYPES_PACKAGE = "@types/react";
 const REACT_TYPES_ROOT_PATH = "node_modules/@types/react";
 const REACT_TYPES_WORKSPACES = ["apps/admin", "apps/web", "packages/ui"];
+const DEPENDABOT_ECOSYSTEMS = new Map([
+  ["npm", "/"],
+  ["pub", "/apps/mobile"],
+]);
+const DEPENDABOT_UPDATE_TYPES = new Set([
+  "version-update:semver-patch",
+  "version-update:semver-minor",
+]);
 const APPROVED_LARGE_FILES = new Set([
   "docs/source-material/references/adminlte/AdminLTE-master.zip",
 ]);
@@ -274,6 +282,141 @@ export function validateManifestLockConsistency(manifests, lockfile) {
   return errors;
 }
 
+function yamlScalar(value) {
+  const normalized = value.trim();
+  if (
+    normalized.length >= 2 &&
+    ((normalized.startsWith('"') && normalized.endsWith('"')) ||
+      (normalized.startsWith("'") && normalized.endsWith("'")))
+  ) {
+    return normalized.slice(1, -1);
+  }
+  return normalized;
+}
+
+function dependabotBlocks(content) {
+  const lines = content.replace(/^\uFEFF/u, "").split(/\r?\n/u);
+  const starts = [];
+  for (const [index, line] of lines.entries()) {
+    const match = line.match(/^  - package-ecosystem:\s*(.+?)\s*$/u);
+    if (match) {
+      starts.push({ ecosystem: yamlScalar(match[1]), index });
+    }
+  }
+  return starts.map(({ ecosystem, index }, position) => ({
+    ecosystem,
+    lines: lines.slice(index, starts[position + 1]?.index ?? lines.length),
+  }));
+}
+
+function scalarField(lines, indentation, name) {
+  const prefix = " ".repeat(indentation);
+  const pattern = new RegExp(`^${prefix}${name}:\\s*(.+?)\\s*$`, "u");
+  const values = lines
+    .map((line) => line.match(pattern)?.[1])
+    .filter((value) => value !== undefined)
+    .map(yamlScalar);
+  return values.length === 1 ? values[0] : undefined;
+}
+
+function dependabotAllowRules(lines) {
+  const allowStart = lines.findIndex((line) => line === "    allow:");
+  if (allowStart === -1) {
+    return [];
+  }
+  const allowLines = [];
+  for (const line of lines.slice(allowStart + 1)) {
+    if (/^    \S/u.test(line)) {
+      break;
+    }
+    allowLines.push(line);
+  }
+  const starts = allowLines
+    .map((line, index) => (/^      - \S/u.test(line) ? index : -1))
+    .filter((index) => index !== -1);
+  return starts.map((index, position) => {
+    const rule = allowLines.slice(
+      index,
+      starts[position + 1] ?? allowLines.length,
+    );
+    return [rule[0].replace(/^      - /u, "        "), ...rule.slice(1)];
+  });
+}
+
+function allowRuleUpdateTypes(lines) {
+  const start = lines.findIndex((line) => line === "        update-types:");
+  if (start === -1) {
+    return [];
+  }
+  const values = [];
+  for (const line of lines.slice(start + 1)) {
+    const match = line.match(/^          -\s*(.+?)\s*$/u);
+    if (!match) {
+      break;
+    }
+    values.push(yamlScalar(match[1]));
+  }
+  return values;
+}
+
+export function validateDependabotPolicy(content) {
+  const errors = [];
+  const blocks = dependabotBlocks(content);
+  for (const [ecosystem, directory] of DEPENDABOT_ECOSYSTEMS) {
+    const matching = blocks.filter((block) => block.ecosystem === ecosystem);
+    if (matching.length !== 1) {
+      errors.push(
+        `Dependabot must define exactly one ${ecosystem} update block; found ${matching.length}`,
+      );
+      continue;
+    }
+    const [block] = matching;
+    if (scalarField(block.lines, 4, "directory") !== directory) {
+      errors.push(`Dependabot ${ecosystem} directory must be ${directory}`);
+    }
+    if (scalarField(block.lines, 6, "interval") !== "weekly") {
+      errors.push(`Dependabot ${ecosystem} schedule must be weekly`);
+    }
+
+    const rules = dependabotAllowRules(block.lines);
+    if (rules.length !== 1) {
+      errors.push(
+        `Dependabot ${ecosystem} must define exactly one allow rule; found ${rules.length}`,
+      );
+      continue;
+    }
+    const [rule] = rules;
+    if (scalarField(rule, 8, "dependency-name") !== "*") {
+      errors.push(`Dependabot ${ecosystem} allow rule must match every name`);
+    }
+    if (scalarField(rule, 8, "dependency-type") !== "direct") {
+      errors.push(`Dependabot ${ecosystem} allow rule must be direct-only`);
+    }
+    const updateTypes = allowRuleUpdateTypes(rule);
+    if (
+      updateTypes.length !== DEPENDABOT_UPDATE_TYPES.size ||
+      updateTypes.some((type) => !DEPENDABOT_UPDATE_TYPES.has(type))
+    ) {
+      errors.push(
+        `Dependabot ${ecosystem} version updates must be patch/minor only`,
+      );
+    }
+  }
+
+  const unexpected = blocks
+    .map(({ ecosystem }) => ecosystem)
+    .filter((ecosystem) => !DEPENDABOT_ECOSYSTEMS.has(ecosystem));
+  if (unexpected.length > 0) {
+    errors.push(
+      `unapproved Dependabot ecosystems: ${[...new Set(unexpected)].join(", ")}`,
+    );
+  }
+  if (/^\s*(?:auto-merge|automerge):/mu.test(content)) {
+    errors.push("Dependabot auto-merge configuration is forbidden");
+  }
+  return errors;
+}
+
 function validatePubLock(repositoryRoot, errors) {
   const content = readFileSync(
     resolve(repositoryRoot, "apps", "mobile", "pubspec.lock"),
@@ -350,6 +493,14 @@ export function scanRepository(repositoryRoot = process.cwd(), options = {}) {
   errors.push(...validateManifestLockConsistency(manifests, lockfile));
   errors.push(...validateReactTypesSingleton(manifests, lockfile));
   errors.push(...validatePackageLock(lockfile));
+  errors.push(
+    ...validateDependabotPolicy(
+      readFileSync(
+        resolve(repositoryRoot, ".github", "dependabot.yml"),
+        "utf8",
+      ),
+    ),
+  );
   validatePubLock(repositoryRoot, errors);
   const immutableFiles = verifyImmutableBaseline(repositoryRoot, errors);
   if (options.history !== false) {

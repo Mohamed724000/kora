@@ -91,13 +91,13 @@ créent aucune tâche dans `KORA-PLUS-FINAL`.
 
 ## 2026-08-12 — Exécution technique S0.5
 
-| ID          | Nature    | Décision                                                                                                    | Autorité                                   | Statut   |
-| ----------- | --------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------ | -------- |
-| DEC-S0.5-01 | Technique | S0.4 est la baseline fusionnée exacte `8c3e65e2bcbffb53050b61cab4b953f108491db1`.                           | Décision CTO S0.5                          | Accepted |
-| DEC-S0.5-02 | Technique | Les workflows restent en lecture seule, épinglent les actions par SHA et ne déploient rien.                 | Décision CTO S0.5                          | Accepted |
+| ID          | Nature    | Décision                                                                                                    | Autorité                                    | Statut   |
+| ----------- | --------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------- | -------- |
+| DEC-S0.5-01 | Technique | S0.4 est la baseline fusionnée exacte `8c3e65e2bcbffb53050b61cab4b953f108491db1`.                           | Décision CTO S0.5                           | Accepted |
+| DEC-S0.5-02 | Technique | Les workflows restent en lecture seule, épinglent les actions par SHA et ne déploient rien.                 | Décision CTO S0.5                           | Accepted |
 | DEC-S0.5-03 | Sécurité  | Sentry reste inactif sans DSN, sans PII, logs, traces, replay ou source maps.                               | Décision CTO S0.5 / Engineering `1.13-1.14` | Accepted |
-| DEC-S0.5-04 | Contrat   | OpenAPI reste limité aux deux routes de santé avant Slice 1.                                                | ADR-009 / Décision CTO S0.5                | Accepted |
-| DEC-S0.5-05 | Exécution | La publication s’arrête à une Draft PR ; Ready, merge, tag, release, déploiement et S0.6 restent interdits. | Décision CTO S0.5                          | Accepted |
+| DEC-S0.5-04 | Contrat   | OpenAPI reste limité aux deux routes de santé avant Slice 1.                                                | ADR-009 / Décision CTO S0.5                 | Accepted |
+| DEC-S0.5-05 | Exécution | La publication s’arrête à une Draft PR ; Ready, merge, tag, release, déploiement et S0.6 restent interdits. | Décision CTO S0.5                           | Accepted |
 
 Ces décisions n’ajoutent aucune décision produit, financière, juridique ou de
 sécurité métier.
@@ -118,6 +118,30 @@ sécurité métier.
 physique racine à la même version. Autorité : décision CTO M0.1-R1.
 
 M0.1 est un gate de maintenance pré-S0.6. Il ne démarre ni S0.6 ni Slice 1.
+
+## 2026-08-13 — Hotfix supply-chain M0.2
+
+| ID          | Nature         | Décision                                                                                                                                                                     | Autorité                            | Statut   |
+| ----------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | -------- |
+| DEC-M0.2-01 | Sécurité       | L'override racine `nanoid` passe de `3.3.17` à la première version 3.x corrigée `3.3.18` pour fermer `GHSA-2v37-7h3g-55p8`, sans modifier `postcss@8.5.24`.                  | Décision CTO M0.2 / GitHub Advisory | Accepted |
+| DEC-M0.2-02 | Automatisation | Les règles `allow` npm et Pub exigent explicitement `dependency-type: direct` ainsi que patch/minor ; un gate local et ses tests négatifs rendent cette politique bloquante. | Décision CTO M0.2 / preuve PR #14   | Accepted |
+| DEC-M0.2-03 | Maintenance    | Les PR Dependabot #14 à #21 sont fermées sans fusion avec une trace factuelle propre et sans commande de suppression manuelle de branche.                                    | Décisions CTO M0.2 et M0.2-R1       | Accepted |
+| DEC-M0.2-04 | Périmètre      | M0.2 reste un hotfix supply-chain : aucune mise à jour courante reportée, fonctionnalité, release, balise, opération de déploiement, S0.6 ou Slice 1 n'est autorisée.        | Décision CTO M0.2                   | Accepted |
+
+La mise à jour postérieure de la fiche GitHub explique que les audits M0.1
+étaient à zéro avant que la branche Nano ID 3.x ne soit intégrée à la plage
+affectée. La revue M0.2 conserve cette chronologie sans réécrire M0.1.
+Les PR #14, #17, #18, #19 et #20 étaient des propositions transitives générées
+avant l'application de la politique direct-only. Les PR #15, #16 et #21
+étaient des mises à jour directes courantes reportées hors du hotfix. #20 et
+#21 avaient été ouvertes avant la publication de la Draft PR #22 et utilisaient
+encore la configuration présente sur `main`.
+
+Après fermeture, Dependabot a supprimé automatiquement les références
+distantes #14 à #18 et #21 constatées absentes avant le commit R1. Les
+références #19 et #20 existaient encore au constat final pré-commit. Aucune
+suppression manuelle, recréation de branche ni modification de paramètre GitHub
+n'a été effectuée par l'orchestrateur.
 
 ## Catégories d’autorité
 
