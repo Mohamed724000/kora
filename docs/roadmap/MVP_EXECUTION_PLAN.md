@@ -10,19 +10,21 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 
 ## État des gates et lots
 
-| Gate ou lot          | Objectif                                   | Statut                             |
-| -------------------- | ------------------------------------------ | ---------------------------------- |
-| Gate 0               | Sources approuvées et readiness clean room | Completed                          |
-| Lot 00               | Preflight read-only                        | Completed                          |
-| Lot 00B              | Remédiation documentaire                   | Completed                          |
-| Lot 00C              | Canonicalisation AdminLTE                  | Completed                          |
-| S0.1                 | Gouvernance et Git                         | Completed                          |
-| S0.2                 | Contrat monorepo et versions               | Completed                          |
-| S0.3                 | Fondations applicatives                    | Closed and merged                  |
-| S0.4                 | Infrastructure locale                      | Not started — Docker blocker connu |
-| S0.5                 | CI, sécurité et observabilité              | Not started                        |
-| S0.6                 | Foundation Gate                            | Not started                        |
-| Slice 1 et suivantes | Fonctionnalités produit                    | Not started                        |
+| Gate ou lot          | Objectif                                   | Statut                        |
+| -------------------- | ------------------------------------------ | ----------------------------- |
+| Gate 0               | Sources approuvées et readiness clean room | Completed                     |
+| Lot 00               | Preflight read-only                        | Completed                     |
+| Lot 00B              | Remédiation documentaire                   | Completed                     |
+| Lot 00C              | Canonicalisation AdminLTE                  | Completed                     |
+| S0.1                 | Gouvernance et Git                         | Completed                     |
+| S0.2                 | Contrat monorepo et versions               | Completed                     |
+| S0.3                 | Fondations applicatives                    | Closed and merged             |
+| S0.4                 | Infrastructure locale                      | Closed and merged             |
+| S0.5                 | CI, sécurité et observabilité              | Closed and merged             |
+| M0.1                 | Dependency Governance                      | Closed and merged             |
+| M0.2                 | Supply-chain Security Hotfix               | Closed and merged             |
+| S0.6                 | Foundation Gate                            | Executed — CTO review pending |
+| Slice 1 et suivantes | Fonctionnalités produit                    | Not started                   |
 
 ## Sprint 0 — Clean-room foundation
 
@@ -84,19 +86,20 @@ validation sur macOS reste obligatoire avant toute release iOS.
 
 ### S0.4 — Infrastructure locale
 
-Statut : **Not started — Docker blocker connu**
+Statut : **Closed and merged**
 
 - PostgreSQL et Redis locaux ;
 - health checks et volumes nommés ;
 - reset strictement ciblé ;
 - aucune topologie de production.
 
-Le daemon Docker doit être accessible avant ce lot. Son indisponibilité ne
-remet pas en cause les lots précédents.
+La fusion a été effectuée via la
+[PR #5](https://github.com/Mohamed724000/kora/pull/5), au merge commit
+[`8c3e65e2bcbffb53050b61cab4b953f108491db1`](https://github.com/Mohamed724000/kora/commit/8c3e65e2bcbffb53050b61cab4b953f108491db1).
 
 ### S0.5 — CI, sécurité et observabilité
 
-Statut : **Not started**
+Statut : **Closed and merged**
 
 - mêmes validations en local et CI ;
 - analyse de secrets et dépendances ;
@@ -104,12 +107,26 @@ Statut : **Not started**
 - Sentry sûr sans DSN ;
 - validation OpenAPI et rollback de fondation.
 
+La fusion a été effectuée via la
+[PR #6](https://github.com/Mohamed724000/kora/pull/6), au merge commit
+[`c080ec0529e758203d4326f7ec5b0b0159cbdad7`](https://github.com/Mohamed724000/kora/commit/c080ec0529e758203d4326f7ec5b0b0159cbdad7).
+
+Les gates de maintenance pré-S0.6 M0.1 et M0.2 ont ensuite été fusionnés aux
+merge commits
+[`79ceddc6cbf04b3d213001417da0841044af8206`](https://github.com/Mohamed724000/kora/commit/79ceddc6cbf04b3d213001417da0841044af8206)
+et
+[`40a224edc1dc018a080b6c188a804e361e96b5ef`](https://github.com/Mohamed724000/kora/commit/40a224edc1dc018a080b6c188a804e361e96b5ef).
+
 ### S0.6 — Foundation Gate
 
-Statut : **Not started**
+Statut : **Executed — PASS WITH RESERVATIONS — CTO review pending**
 
 Validation indépendante QA, sécurité et design. Aucun validateur ne corrige
-silencieusement un défaut.
+silencieusement un défaut. La baseline exacte auditée est
+`40a224edc1dc018a080b6c188a804e361e96b5ef`. Les réserves sont limitées aux
+capacités externes ou de plateforme documentées dans le
+[rapport S0.6](../qa/SPRINT_0_6_FOUNDATION_GATE_REPORT.md). Ce gate ne démarre
+ni Slice 1 ni aucune exigence produit.
 
 ## Slice 1 — Audio purchase pilot
 

@@ -21,19 +21,31 @@ et son merge commit est
 Sprint 0.4 est fermé et fusionné via la
 [PR #5](https://github.com/Mohamed724000/kora/pull/5), au merge commit
 [`8c3e65e2bcbffb53050b61cab4b953f108491db1`](https://github.com/Mohamed724000/kora/commit/8c3e65e2bcbffb53050b61cab4b953f108491db1).
+Sprint 0.5 est fermé et fusionné via la
+[PR #6](https://github.com/Mohamed724000/kora/pull/6), au merge commit
+[`c080ec0529e758203d4326f7ec5b0b0159cbdad7`](https://github.com/Mohamed724000/kora/commit/c080ec0529e758203d4326f7ec5b0b0159cbdad7).
+M0.1 et M0.2 sont fermés et fusionnés aux merge commits
+[`79ceddc6cbf04b3d213001417da0841044af8206`](https://github.com/Mohamed724000/kora/commit/79ceddc6cbf04b3d213001417da0841044af8206)
+et
+[`40a224edc1dc018a080b6c188a804e361e96b5ef`](https://github.com/Mohamed724000/kora/commit/40a224edc1dc018a080b6c188a804e361e96b5ef).
+Ce dernier SHA est la baseline exacte du Foundation Gate S0.6.
 
-## Preuves techniques S0.5 hors exigences produit
+## Preuves de fondation S0.5 à S0.6 hors exigences produit
 
-| Fondation        | Implémentation                                  | Vérification                                          |
-| ---------------- | ----------------------------------------------- | ----------------------------------------------------- |
-| CI multi-OS      | `.github/workflows/*.yml`                       | `npm run ci:validate`, Actions réelles de la Draft PR |
-| Launcher Windows | `scripts/run-workspace-task.mjs` inchangé       | tests dédiés + enfant contrôlé code 23                |
-| Supply-chain     | audits, licences, scan dépôt/historique         | `npm run security:scan`, `npm run licenses`           |
-| Observabilité    | SDK désactivés sans DSN, callbacks de redaction | tests API, Web, Admin et Flutter                      |
-| Contrat de santé | `docs/api/openapi.yaml`                         | `npm run openapi:validate`                            |
-| Rollback         | `docs/operations/FOUNDATION_ROLLBACK.md`        | revue documentaire S0.5                               |
+| Fondation               | Implémentation                                  | Vérification                                                 |
+| ----------------------- | ----------------------------------------------- | ------------------------------------------------------------ |
+| CI multi-OS             | `.github/workflows/*.yml`                       | `npm run ci:validate`, Actions réelles de la Draft PR        |
+| Launcher Windows        | `scripts/run-workspace-task.mjs` inchangé       | tests dédiés + enfant contrôlé code 23                       |
+| Supply-chain            | audits, licences, scan dépôt/historique         | `npm run security:scan`, `npm run licenses`, gates M0.1/M0.2 |
+| Observabilité           | SDK désactivés sans DSN, callbacks de redaction | tests API, Web, Admin et Flutter                             |
+| Contrat de santé        | `docs/api/openapi.yaml`                         | `npm run openapi:validate`                                   |
+| Infrastructure locale   | Compose, PostgreSQL, Redis et probes API        | cycle de vie, reset ciblé et transitions de santé S0.6       |
+| QA et design fondations | shells, états, goldens et builds                | trois `npm test`, cinq tests API ciblés et revue S0.6        |
+| Rollback                | `docs/operations/FOUNDATION_ROLLBACK.md`        | revue documentaire S0.5                                      |
 
-Ces preuves ne modifient aucun des 68 statuts produit ci-dessous.
+Ces preuves valident uniquement les fondations. Elles ne modifient aucun des
+68 statuts produit ci-dessous : les 68 restent `Not started` et
+`Not verified`. S0.6 n’implémente aucune sécurité métier.
 
 ## Exigences produit
 
