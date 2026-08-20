@@ -1,7 +1,7 @@
 # KORA+ Final — Threat Model initial
 
-Statut : **BASELINE + S0.4/S0.5/M0.1/M0.2 FUSIONNÉS ET CLÔTURÉS + S0.6
-FOUNDATION GATE VALIDÉ AVEC RÉSERVES, DÉCISION CTO EN ATTENTE**
+Statut : **BASELINE + S0.4/S0.5/M0.1/M0.2/S0.6 FUSIONNÉS ET CLÔTURÉS +
+M0.3 EN VALIDATION FINALE AVANT DRAFT PR**
 
 Ce modèle décrit les frontières et mesures attendues. Sprint 0.3 introduit des
 shells et quelques contrôles de fondation étroits ; aucun contrôle métier,
@@ -52,27 +52,30 @@ financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
 - gates M0.1/M0.2 : pins directs exacts, égalité manifeste/lockfile,
   singleton `@types/react`, politique Dependabot directe patch/minor et
   correction `nanoid@3.3.18` ;
+- gate M0.3 : override exact et ciblé
+  `@prisma/config@7.9.1 > deepmerge-ts@8.0.1`, installation physique unique,
+  refus des versions vulnérables imbriquées et preuve de compatibilité Prisma ;
 - S0.6 n’ajoute aucune frontière runtime : il rejoue et documente les preuves
   des fondations sur la baseline
   `40a224edc1dc018a080b6c188a804e361e96b5ef`.
 
 ## Menaces et mesures attendues
 
-| Domaine      | Menaces principales                                      | Mesures attendues / autorités                                                                        | État                                                        |
-| ------------ | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| Identité/OTP | Brute force, interception, replay, enumeration           | Rate limits, OTP court et haché, rotation session, logs masqués ; ADR-010                            | Not implemented                                             |
-| Admin        | Vol de session, MFA contournée, récupération abusive     | TOTP RFC 6238, codes Argon2id, cookies httpOnly, step-up, révocation ; ADR-002/005/008               | Not implemented                                             |
-| RBAC         | Escalade verticale/horizontale, champs sensibles         | Contrôle serveur route/action/champ, moindre privilège ; ADR-020                                     | Not implemented                                             |
-| Paiement     | Double débit, faux webhook, replay, ordre inversé        | Signature, idempotence, Inbox/Outbox, PaymentAttempts immuables ; ADR-012/015                        | Not implemented                                             |
-| Ledger       | Altération, déséquilibre, double comptage                | Append-only, groupes équilibrés, compensation, reconciliation ; ADR-013/014                          | Not implemented                                             |
-| Droits       | Accès sans achat, révocation excessive                   | Entitlement permanent ciblé, checks serveur ; ADR-016                                                | Not implemented                                             |
-| Média        | URL brute, partage, scraping, logs sensibles             | Stockage privé, descriptor court, PreviewGrant, device binding ; ADR-011/017                         | Not implemented                                             |
-| Offline      | Extraction clé/fichier, replay licence, copie appareil   | AES-256-GCM, clé non exportable, licence renouvelable ; ADR-018                                      | Not implemented                                             |
-| Audit        | Suppression ou falsification                             | Écriture transactionnelle, blocage UPDATE/DELETE, exports audités ; ADR-019                          | Not implemented                                             |
-| Capture      | Enregistrement écran et dispositif externe               | `FLAG_SECURE`, détection/pause iOS, protections en couches sans promesse absolue ; ADR-024           | Not implemented                                             |
-| Données/logs | Fuite PII, token ou secret                               | Redaction des champs et messages, `msg` catégoriel, minimisation, contrôle accès, rétention et tests | Foundation validated locally by S0.6 — no business PII flow |
-| Supply chain | Package compromis, licence incompatible                  | Versions verrouillées, revue, audit, provenance, scripts d’installation qualifiés                    | M0.1/M0.2 merged; S0.6 local audits and scanner passed      |
-| CI/CD        | Secret exposé, artefact altéré, déploiement non autorisé | Permissions lecture seule, actions épinglées, scans, timeouts et rollback                            | S0.5 merged; S0.6 validation pending final Draft PR checks  |
+| Domaine      | Menaces principales                                                                     | Mesures attendues / autorités                                                                             | État                                                                               |
+| ------------ | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Identité/OTP | Brute force, interception, replay, enumeration                                          | Rate limits, OTP court et haché, rotation session, logs masqués ; ADR-010                                 | Not implemented                                                                    |
+| Admin        | Vol de session, MFA contournée, récupération abusive                                    | TOTP RFC 6238, codes Argon2id, cookies httpOnly, step-up, révocation ; ADR-002/005/008                    | Not implemented                                                                    |
+| RBAC         | Escalade verticale/horizontale, champs sensibles                                        | Contrôle serveur route/action/champ, moindre privilège ; ADR-020                                          | Not implemented                                                                    |
+| Paiement     | Double débit, faux webhook, replay, ordre inversé                                       | Signature, idempotence, Inbox/Outbox, PaymentAttempts immuables ; ADR-012/015                             | Not implemented                                                                    |
+| Ledger       | Altération, déséquilibre, double comptage                                               | Append-only, groupes équilibrés, compensation, reconciliation ; ADR-013/014                               | Not implemented                                                                    |
+| Droits       | Accès sans achat, révocation excessive                                                  | Entitlement permanent ciblé, checks serveur ; ADR-016                                                     | Not implemented                                                                    |
+| Média        | URL brute, partage, scraping, logs sensibles                                            | Stockage privé, descriptor court, PreviewGrant, device binding ; ADR-011/017                              | Not implemented                                                                    |
+| Offline      | Extraction clé/fichier, replay licence, copie appareil                                  | AES-256-GCM, clé non exportable, licence renouvelable ; ADR-018                                           | Not implemented                                                                    |
+| Audit        | Suppression ou falsification                                                            | Écriture transactionnelle, blocage UPDATE/DELETE, exports audités ; ADR-019                               | Not implemented                                                                    |
+| Capture      | Enregistrement écran et dispositif externe                                              | `FLAG_SECURE`, détection/pause iOS, protections en couches sans promesse absolue ; ADR-024                | Not implemented                                                                    |
+| Données/logs | Fuite PII, token ou secret                                                              | Redaction des champs et messages, `msg` catégoriel, minimisation, contrôle accès, rétention et tests      | Foundation validated locally by S0.6 — no business PII flow                        |
+| Supply chain | Package compromis, licence incompatible, épuisement de pile lors d’une fusion récursive | Versions verrouillées, revue, audit, provenance, scripts qualifiés, override M0.3 ciblé et gate de graphe | M0.1/M0.2 fusionnés ; gates locaux M0.3 réussis, revues et workflows encore requis |
+| CI/CD        | Secret exposé, artefact altéré, déploiement non autorisé                                | Permissions lecture seule, actions épinglées, scans, timeouts et rollback                                 | S0.5/S0.6 fusionnés ; workflows M0.3 en attente de publication du head final       |
 
 ## Risques ouverts et gates
 
@@ -105,6 +108,13 @@ financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
   licence absente ou non approuvée, le manifeste immuable 52/52, une seule
   installation physique `@types/react@19.2.18`, aucune installation npm
   imbriquée dans le lockfile, et zéro alerte Secret Scanning ouverte.
+- M0.3 traite `GHSA-ggr8-5vv4-36mx` sans modifier Prisma `7.9.1` : le scanner
+  exige une unique installation `deepmerge-ts@8.0.1` sous un override limité à
+  `@prisma/config@7.9.1`. Les tests bornent le comportement récursif dans un
+  processus enfant et vérifient la fusion d’objets ordinaires. La rupture
+  majeure reste interdite pour de futurs usages `Map` ou graphes complexes sans
+  nouvelle qualification. L’override devra être retiré dès qu’une version
+  stable autorisée de Prisma intégrera officiellement une version corrigée.
 - Secret Scanning et sa push protection sont activés sur GitHub. En revanche,
   Dependabot Alerts et Dependabot security updates sont désactivés dans les
   métadonnées du dépôt, et Code Scanning ne possède aucune analyse. S0.6 ne

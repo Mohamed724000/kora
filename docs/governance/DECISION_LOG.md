@@ -145,17 +145,29 @@ n'a été effectuée par l'orchestrateur.
 
 ## 2026-08-14 — Foundation Gate S0.6
 
-| ID          | Nature      | Décision                                                                                                                                                                                                                                 | Autorité          | Statut                        |
-| ----------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | ----------------------------- |
-| DEC-S0.6-01 | Traçabilité | S0.4, S0.5, M0.1 et M0.2 sont fusionnés aux SHA exacts `8c3e65e2bcbffb53050b61cab4b953f108491db1`, `c080ec0529e758203d4326f7ec5b0b0159cbdad7`, `79ceddc6cbf04b3d213001417da0841044af8206` et `40a224edc1dc018a080b6c188a804e361e96b5ef`. | Décision CTO S0.6 | Accepted                      |
-| DEC-S0.6-02 | Exécution   | La baseline immuable du gate est le merge M0.2 `40a224edc1dc018a080b6c188a804e361e96b5ef`; S0.6 audite et documente sans corriger ni modifier de fichier technique.                                                                      | Décision CTO S0.6 | Accepted                      |
-| DEC-S0.6-03 | Qualité     | Les gates locaux applicables QA, infrastructure, sécurité et design passent ; le verdict est `PASS WITH RESERVATIONS` et reste soumis à la revue CTO et aux quatre checks de la Draft PR.                                                | Décision CTO S0.6 | Executed — CTO review pending |
-| DEC-S0.6-04 | Réserves    | iOS/macOS, Gitleaks, Sentry réel et l’inspection navigateur interactive sont non exécutés ; Dependabot Alerts/security updates et Code Scanning ne sont pas actifs/configurés sur GitHub. Aucun de ces écarts n’est corrigé dans S0.6.   | Décision CTO S0.6 | Open external/platform limits |
-| DEC-S0.6-05 | Périmètre   | Les 68 exigences produit restent `Not started` / `Not verified`; aucune sécurité métier, route, modèle Prisma, migration ou fonctionnalité Slice 1 n’est déclarée implémentée.                                                           | Décision CTO S0.6 | Accepted                      |
+| ID          | Nature      | Décision                                                                                                                                                                                                                                 | Autorité                     | Statut                           |
+| ----------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | -------------------------------- |
+| DEC-S0.6-01 | Traçabilité | S0.4, S0.5, M0.1 et M0.2 sont fusionnés aux SHA exacts `8c3e65e2bcbffb53050b61cab4b953f108491db1`, `c080ec0529e758203d4326f7ec5b0b0159cbdad7`, `79ceddc6cbf04b3d213001417da0841044af8206` et `40a224edc1dc018a080b6c188a804e361e96b5ef`. | Décision CTO S0.6            | Accepted                         |
+| DEC-S0.6-02 | Exécution   | La baseline immuable du gate est le merge M0.2 `40a224edc1dc018a080b6c188a804e361e96b5ef`; S0.6 audite et documente sans corriger ni modifier de fichier technique.                                                                      | Décision CTO S0.6            | Accepted                         |
+| DEC-S0.6-03 | Qualité     | Les gates locaux applicables QA, infrastructure, sécurité et design passent ; le verdict est `PASS WITH RESERVATIONS` et reste soumis à la revue CTO et aux quatre checks de la Draft PR.                                                | Décision CTO S0.6            | Executed — closed by DEC-S0.6-06 |
+| DEC-S0.6-04 | Réserves    | iOS/macOS, Gitleaks, Sentry réel et l’inspection navigateur interactive sont non exécutés ; Dependabot Alerts/security updates et Code Scanning ne sont pas actifs/configurés sur GitHub. Aucun de ces écarts n’est corrigé dans S0.6.   | Décision CTO S0.6            | Open external/platform limits    |
+| DEC-S0.6-05 | Périmètre   | Les 68 exigences produit restent `Not started` / `Not verified`; aucune sécurité métier, route, modèle Prisma, migration ou fonctionnalité Slice 1 n’est déclarée implémentée.                                                           | Décision CTO S0.6            | Accepted                         |
+| DEC-S0.6-06 | Clôture     | Sur décision CTO ultérieure, la PR #28 a été fusionnée par merge commit `a602fd38f32d018867c8a058deace0325b4a7c31`, avec parents `40a224edc1dc018a080b6c188a804e361e96b5ef` et `1900e10d4f5c8b7528601d5dfc46b4e7d1fe5cb4`.               | Décision CTO de clôture S0.6 | Accepted — S0.6 closed           |
 
-S0.6 valide uniquement les fondations. La Draft PR doit rester Draft ; Ready,
-merge, tag, release, déploiement et démarrage de Slice 1 exigent une nouvelle
-décision CTO.
+À la date du gate, S0.6 validait uniquement les fondations et la Draft PR devait
+rester Draft. La décision CTO de clôture ultérieure a autorisé exclusivement
+Ready et le merge commit ci-dessus. Elle n’a autorisé ni tag, release,
+déploiement, suppression de branche, ni démarrage de Slice 1.
+
+## 2026-08-20 — Hotfix supply-chain M0.3
+
+| ID          | Nature        | Décision                                                                                                                                                                                              | Autorité                            | Statut   |
+| ----------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | -------- |
+| DEC-M0.3-01 | Sécurité      | `GHSA-ggr8-5vv4-36mx` est corrigée par un override exact limité à `@prisma/config@7.9.1 > deepmerge-ts@8.0.1`; aucun downgrade ou changement de la famille Prisma n’est admis.                        | Décision CTO M0.3 / GitHub Advisory | Accepted |
+| DEC-M0.3-02 | Gouvernance   | Le scanner bloque toute version vulnérable ou imbriquée, tout override global ou en plage, tout élargissement de l’override et toute dérive de Prisma `7.9.1`.                                        | Décision CTO M0.3                   | Accepted |
+| DEC-M0.3-03 | Compatibilité | La rupture majeure `deepmerge-ts` v8 exige des preuves réelles sur la configuration Prisma, la fusion d’objets ordinaires, les graphes récursifs isolés, format, validate et génération déterministe. | Décision CTO M0.3                   | Accepted |
+| DEC-M0.3-04 | Cycle de vie  | L’override temporaire doit être retiré dans un futur lot autorisé dès qu’une version stable qualifiée de Prisma résout officiellement `deepmerge-ts >=8.0.0`.                                         | Décision CTO M0.3                   | Accepted |
+| DEC-M0.3-05 | Isolement     | M0.3 s’exécute dans un second worktree ; les 39 fichiers locaux S1.1 restent intacts et suspendus, et S1.2 reste interdit.                                                                            | Décision CTO M0.3                   | Accepted |
 
 ## Catégories d’autorité
 
