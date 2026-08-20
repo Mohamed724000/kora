@@ -12,7 +12,7 @@ dependencies:
     sdk: flutter
   flutter_riverpod: 3.4.2
   go_router: 17.3.0
-  sentry_flutter: 9.26.0
+  sentry_flutter: 9.27.0
 
 dev_dependencies:
   flutter_lints: 6.0.0
