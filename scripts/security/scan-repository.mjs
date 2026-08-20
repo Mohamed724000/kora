@@ -15,6 +15,14 @@ const EXACT_SEMVER = /^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/u;
 const REACT_TYPES_PACKAGE = "@types/react";
 const REACT_TYPES_ROOT_PATH = "node_modules/@types/react";
 const REACT_TYPES_WORKSPACES = ["apps/admin", "apps/web", "packages/ui"];
+const PRISMA_VERSION = "7.9.1";
+const PRISMA_CONFIG_PATH = "node_modules/@prisma/config";
+const PRISMA_CLIENT_PATH = "node_modules/@prisma/client";
+const PRISMA_PATH = "node_modules/prisma";
+const PRISMA_CONFIG_OVERRIDE = `@prisma/config@${PRISMA_VERSION}`;
+const DEEPMERGE_PACKAGE = "deepmerge-ts";
+const DEEPMERGE_ROOT_PATH = `node_modules/${DEEPMERGE_PACKAGE}`;
+const DEEPMERGE_SAFE_VERSION = "8.0.1";
 const DEPENDABOT_ECOSYSTEMS = new Map([
   ["npm", "/"],
   ["pub", "/apps/mobile"],
@@ -243,6 +251,109 @@ export function validateReactTypesSingleton(manifests, lockfile) {
         `@types/react singleton version mismatch: workspaces=${expectedVersion} package-lock.json=${rootVersion ?? "MISSING"}`,
       );
     }
+  }
+
+  return errors;
+}
+
+function deepmergeInstallations(lockfile) {
+  return Object.entries(lockfile.packages ?? {}).filter(
+    ([packagePath]) =>
+      packagePath === DEEPMERGE_ROOT_PATH ||
+      packagePath.endsWith(`/${DEEPMERGE_ROOT_PATH}`),
+  );
+}
+
+function isVulnerableDeepmergeVersion(version) {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+][A-Za-z0-9.-]+)?$/u.exec(
+    version ?? "",
+  );
+  return match !== null && Number(match[1]) < 8;
+}
+
+export function validatePrismaDeepmergeOverride(manifests, lockfile) {
+  const errors = [];
+  const overrides = manifests[""]?.overrides ?? {};
+  const targetedOverride = overrides[PRISMA_CONFIG_OVERRIDE];
+  const conflictingOverrideSelectors = Object.keys(overrides).filter(
+    (selector) =>
+      selector !== PRISMA_CONFIG_OVERRIDE &&
+      (selector === DEEPMERGE_PACKAGE ||
+        selector.startsWith(`${DEEPMERGE_PACKAGE}@`) ||
+        selector === "@prisma/config" ||
+        selector.startsWith("@prisma/config@")),
+  );
+
+  if (conflictingOverrideSelectors.length > 0) {
+    errors.push(
+      `deepmerge-ts security override must not define parallel global or broadened selector(s): ${conflictingOverrideSelectors.join(", ")}`,
+    );
+  }
+  if (
+    targetedOverride === null ||
+    typeof targetedOverride !== "object" ||
+    Array.isArray(targetedOverride) ||
+    targetedOverride[DEEPMERGE_PACKAGE] !== DEEPMERGE_SAFE_VERSION ||
+    Object.keys(targetedOverride).length !== 1
+  ) {
+    errors.push(
+      "@prisma/config@7.9.1 must override deepmerge-ts to exact version 8.0.1",
+    );
+  }
+
+  const apiManifest = manifests["apps/api"] ?? {};
+  if (
+    apiManifest.dependencies?.["@prisma/client"] !== PRISMA_VERSION ||
+    apiManifest.devDependencies?.prisma !== PRISMA_VERSION
+  ) {
+    errors.push("Prisma and Prisma Client must remain exactly 7.9.1");
+  }
+
+  const packages = lockfile.packages ?? {};
+  if (
+    packages[PRISMA_CONFIG_PATH]?.dependencies?.[DEEPMERGE_PACKAGE] !== "7.1.5"
+  ) {
+    errors.push(
+      "@prisma/config@7.9.1 lock metadata must retain its audited deepmerge-ts 7.1.5 dependency",
+    );
+  }
+  if (
+    packages[PRISMA_CONFIG_PATH]?.version !== PRISMA_VERSION ||
+    packages[PRISMA_PATH]?.version !== PRISMA_VERSION ||
+    packages[PRISMA_CLIENT_PATH]?.version !== PRISMA_VERSION
+  ) {
+    errors.push(
+      "package-lock must resolve Prisma, Prisma Client and @prisma/config to 7.9.1",
+    );
+  }
+
+  const installations = deepmergeInstallations(lockfile);
+  const vulnerable = installations.filter(([, metadata]) =>
+    isVulnerableDeepmergeVersion(metadata.version),
+  );
+  if (vulnerable.length > 0) {
+    errors.push(
+      `vulnerable deepmerge-ts installation(s): ${vulnerable
+        .map(([packagePath, metadata]) => `${packagePath}@${metadata.version}`)
+        .join(", ")}`,
+    );
+  }
+
+  if (
+    installations.length !== 1 ||
+    installations[0]?.[0] !== DEEPMERGE_ROOT_PATH ||
+    installations[0]?.[1]?.version !== DEEPMERGE_SAFE_VERSION
+  ) {
+    errors.push(
+      `deepmerge-ts must have one physical installation at ${DEEPMERGE_ROOT_PATH}@${DEEPMERGE_SAFE_VERSION}; found ${
+        installations
+          .map(
+            ([packagePath, metadata]) =>
+              `${packagePath}@${metadata.version ?? "MISSING"}`,
+          )
+          .join(", ") || "NONE"
+      }`,
+    );
   }
 
   return errors;
@@ -492,6 +603,7 @@ export function scanRepository(repositoryRoot = process.cwd(), options = {}) {
   errors.push(...validateManifestVersions(manifests));
   errors.push(...validateManifestLockConsistency(manifests, lockfile));
   errors.push(...validateReactTypesSingleton(manifests, lockfile));
+  errors.push(...validatePrismaDeepmergeOverride(manifests, lockfile));
   errors.push(...validatePackageLock(lockfile));
   errors.push(
     ...validateDependabotPolicy(

@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { test } from "node:test";
+
+import { deepmerge } from "deepmerge-ts";
 
 import {
   findSecretTypes,
@@ -7,6 +10,7 @@ import {
   validateManifestLockConsistency,
   validateManifestVersions,
   validatePackageLock,
+  validatePrismaDeepmergeOverride,
   validateReactTypesSingleton,
 } from "./scan-repository.mjs";
 
@@ -229,4 +233,193 @@ test("a single root @types/react installation matching workspace pins is accepte
     }),
     [],
   );
+});
+
+const validPrismaDeepmergeManifests = {
+  "": {
+    overrides: {
+      "@prisma/config@7.9.1": { "deepmerge-ts": "8.0.1" },
+    },
+  },
+  "apps/api": {
+    dependencies: { "@prisma/client": "7.9.1" },
+    devDependencies: { prisma: "7.9.1" },
+  },
+};
+
+const validPrismaDeepmergeLock = {
+  packages: {
+    "node_modules/@prisma/client": { version: "7.9.1" },
+    "node_modules/@prisma/config": {
+      dependencies: { "deepmerge-ts": "7.1.5" },
+      version: "7.9.1",
+    },
+    "node_modules/deepmerge-ts": { version: "8.0.1" },
+    "node_modules/prisma": { version: "7.9.1" },
+  },
+};
+
+test("accepts the exact targeted Prisma deepmerge-ts security override", () => {
+  assert.deepEqual(
+    validatePrismaDeepmergeOverride(
+      validPrismaDeepmergeManifests,
+      validPrismaDeepmergeLock,
+    ),
+    [],
+  );
+});
+
+test("rejects the vulnerable deepmerge-ts 7.1.5 resolution", () => {
+  const lockfile = structuredClone(validPrismaDeepmergeLock);
+  lockfile.packages["node_modules/deepmerge-ts"].version = "7.1.5";
+
+  assert.deepEqual(
+    validatePrismaDeepmergeOverride(validPrismaDeepmergeManifests, lockfile),
+    [
+      "vulnerable deepmerge-ts installation(s): node_modules/deepmerge-ts@7.1.5",
+      "deepmerge-ts must have one physical installation at node_modules/deepmerge-ts@8.0.1; found node_modules/deepmerge-ts@7.1.5",
+    ],
+  );
+});
+
+test("rejects any vulnerable nested deepmerge-ts installation", () => {
+  const lockfile = structuredClone(validPrismaDeepmergeLock);
+  lockfile.packages["node_modules/example/node_modules/deepmerge-ts"] = {
+    version: "7.1.5",
+  };
+
+  assert.deepEqual(
+    validatePrismaDeepmergeOverride(validPrismaDeepmergeManifests, lockfile),
+    [
+      "vulnerable deepmerge-ts installation(s): node_modules/example/node_modules/deepmerge-ts@7.1.5",
+      "deepmerge-ts must have one physical installation at node_modules/deepmerge-ts@8.0.1; found node_modules/deepmerge-ts@8.0.1, node_modules/example/node_modules/deepmerge-ts@7.1.5",
+    ],
+  );
+});
+
+test("rejects a ranged Prisma deepmerge-ts override", () => {
+  const manifests = structuredClone(validPrismaDeepmergeManifests);
+  manifests[""].overrides["@prisma/config@7.9.1"]["deepmerge-ts"] = "^8.0.1";
+
+  assert.deepEqual(
+    validatePrismaDeepmergeOverride(manifests, validPrismaDeepmergeLock),
+    ["@prisma/config@7.9.1 must override deepmerge-ts to exact version 8.0.1"],
+  );
+});
+
+test("rejects an override that broadens beyond deepmerge-ts", () => {
+  const manifests = structuredClone(validPrismaDeepmergeManifests);
+  manifests[""].overrides["@prisma/config@7.9.1"].effect = "3.20.0";
+
+  assert.deepEqual(
+    validatePrismaDeepmergeOverride(manifests, validPrismaDeepmergeLock),
+    ["@prisma/config@7.9.1 must override deepmerge-ts to exact version 8.0.1"],
+  );
+});
+
+test("rejects a global deepmerge-ts override", () => {
+  const manifests = structuredClone(validPrismaDeepmergeManifests);
+  manifests[""].overrides["deepmerge-ts"] = "8.0.1";
+
+  assert.deepEqual(
+    validatePrismaDeepmergeOverride(manifests, validPrismaDeepmergeLock),
+    [
+      "deepmerge-ts security override must not define parallel global or broadened selector(s): deepmerge-ts",
+    ],
+  );
+});
+
+test("rejects a version-selected global deepmerge-ts override", () => {
+  const manifests = structuredClone(validPrismaDeepmergeManifests);
+  manifests[""].overrides["deepmerge-ts@7.1.5"] = "8.0.1";
+
+  assert.deepEqual(
+    validatePrismaDeepmergeOverride(manifests, validPrismaDeepmergeLock),
+    [
+      "deepmerge-ts security override must not define parallel global or broadened selector(s): deepmerge-ts@7.1.5",
+    ],
+  );
+});
+
+test("rejects an unversioned parallel Prisma config override", () => {
+  const manifests = structuredClone(validPrismaDeepmergeManifests);
+  manifests[""].overrides["@prisma/config"] = {
+    "deepmerge-ts": "8.0.1",
+  };
+
+  assert.deepEqual(
+    validatePrismaDeepmergeOverride(manifests, validPrismaDeepmergeLock),
+    [
+      "deepmerge-ts security override must not define parallel global or broadened selector(s): @prisma/config",
+    ],
+  );
+});
+
+test("rejects a ranged parallel Prisma config override", () => {
+  const manifests = structuredClone(validPrismaDeepmergeManifests);
+  manifests[""].overrides["@prisma/config@^7.9.1"] = {
+    "deepmerge-ts": "8.0.1",
+  };
+
+  assert.deepEqual(
+    validatePrismaDeepmergeOverride(manifests, validPrismaDeepmergeLock),
+    [
+      "deepmerge-ts security override must not define parallel global or broadened selector(s): @prisma/config@^7.9.1",
+    ],
+  );
+});
+
+test("rejects any change to the pinned Prisma family", () => {
+  const manifests = structuredClone(validPrismaDeepmergeManifests);
+  const lockfile = structuredClone(validPrismaDeepmergeLock);
+  manifests["apps/api"].devDependencies.prisma = "7.9.2";
+  lockfile.packages["node_modules/prisma"].version = "7.9.2";
+
+  assert.deepEqual(validatePrismaDeepmergeOverride(manifests, lockfile), [
+    "Prisma and Prisma Client must remain exactly 7.9.1",
+    "package-lock must resolve Prisma, Prisma Client and @prisma/config to 7.9.1",
+  ]);
+});
+
+test("deepmerge-ts 8 preserves ordinary Prisma-style object merging", () => {
+  assert.deepEqual(
+    deepmerge(
+      {
+        datasource: { url: "postgresql://generate@127.0.0.1:5432/generate" },
+        schema: "prisma/schema.prisma",
+      },
+      {
+        datasource: { shadowDatabaseUrl: "postgresql://shadow" },
+        migrations: { path: "prisma/migrations" },
+      },
+    ),
+    {
+      datasource: {
+        shadowDatabaseUrl: "postgresql://shadow",
+        url: "postgresql://generate@127.0.0.1:5432/generate",
+      },
+      migrations: { path: "prisma/migrations" },
+      schema: "prisma/schema.prisma",
+    },
+  );
+});
+
+test("deepmerge-ts 8 handles a recursive graph in an isolated process", () => {
+  const script = `
+    import { deepmerge } from "deepmerge-ts";
+    const recursive = { label: "root" };
+    recursive.self = recursive;
+    const merged = deepmerge(recursive, { enabled: true });
+    if (merged.label !== "root" || merged.enabled !== true) process.exit(2);
+    if (merged.self !== merged) process.exit(3);
+  `;
+  const child = spawnSync(
+    process.execPath,
+    ["--input-type=module", "--eval", script],
+    { encoding: "utf8", timeout: 5_000 },
+  );
+
+  assert.notEqual(child.error?.code, "ETIMEDOUT");
+  assert.equal(child.signal, null, child.stderr);
+  assert.equal(child.status, 0, child.stderr);
 });
