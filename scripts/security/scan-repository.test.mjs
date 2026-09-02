@@ -307,6 +307,32 @@ test("rejects a ranged Prisma deepmerge-ts override", () => {
   );
 });
 
+test("rejects an exact but unsafe Prisma deepmerge-ts override", () => {
+  const manifests = structuredClone(validPrismaDeepmergeManifests);
+  manifests[""].overrides["@prisma/config@7.9.1"]["deepmerge-ts"] = "7.1.5";
+
+  assert.deepEqual(
+    validatePrismaDeepmergeOverride(manifests, validPrismaDeepmergeLock),
+    ["@prisma/config@7.9.1 must override deepmerge-ts to exact version 8.0.1"],
+  );
+});
+
+test("rejects wildcard, tag and reference Prisma deepmerge-ts overrides", () => {
+  for (const specification of ["*", "latest", "github:example/deepmerge-ts"]) {
+    const manifests = structuredClone(validPrismaDeepmergeManifests);
+    manifests[""].overrides["@prisma/config@7.9.1"]["deepmerge-ts"] =
+      specification;
+
+    assert.deepEqual(
+      validatePrismaDeepmergeOverride(manifests, validPrismaDeepmergeLock),
+      [
+        "@prisma/config@7.9.1 must override deepmerge-ts to exact version 8.0.1",
+      ],
+      specification,
+    );
+  }
+});
+
 test("rejects an override that broadens beyond deepmerge-ts", () => {
   const manifests = structuredClone(validPrismaDeepmergeManifests);
   manifests[""].overrides["@prisma/config@7.9.1"].effect = "3.20.0";
@@ -323,9 +349,7 @@ test("rejects a global deepmerge-ts override", () => {
 
   assert.deepEqual(
     validatePrismaDeepmergeOverride(manifests, validPrismaDeepmergeLock),
-    [
-      "deepmerge-ts security override must not define parallel global or broadened selector(s): deepmerge-ts",
-    ],
+    ["deepmerge-ts security override is forbidden at path: deepmerge-ts"],
   );
 });
 
@@ -335,9 +359,7 @@ test("rejects a version-selected global deepmerge-ts override", () => {
 
   assert.deepEqual(
     validatePrismaDeepmergeOverride(manifests, validPrismaDeepmergeLock),
-    [
-      "deepmerge-ts security override must not define parallel global or broadened selector(s): deepmerge-ts@7.1.5",
-    ],
+    ["deepmerge-ts security override is forbidden at path: deepmerge-ts@7.1.5"],
   );
 });
 
@@ -350,7 +372,8 @@ test("rejects an unversioned parallel Prisma config override", () => {
   assert.deepEqual(
     validatePrismaDeepmergeOverride(manifests, validPrismaDeepmergeLock),
     [
-      "deepmerge-ts security override must not define parallel global or broadened selector(s): @prisma/config",
+      "deepmerge-ts security override is forbidden at path: @prisma/config",
+      "deepmerge-ts security override is forbidden at path: @prisma/config > deepmerge-ts",
     ],
   );
 });
@@ -364,8 +387,75 @@ test("rejects a ranged parallel Prisma config override", () => {
   assert.deepEqual(
     validatePrismaDeepmergeOverride(manifests, validPrismaDeepmergeLock),
     [
-      "deepmerge-ts security override must not define parallel global or broadened selector(s): @prisma/config@^7.9.1",
+      "deepmerge-ts security override is forbidden at path: @prisma/config@^7.9.1",
+      "deepmerge-ts security override is forbidden at path: @prisma/config@^7.9.1 > deepmerge-ts",
     ],
+  );
+});
+
+test("rejects a deepmerge-ts override hidden below another parent", () => {
+  const manifests = structuredClone(validPrismaDeepmergeManifests);
+  manifests[""].overrides["example-parent@1.0.0"] = {
+    "deepmerge-ts": "8.0.1",
+  };
+
+  assert.deepEqual(
+    validatePrismaDeepmergeOverride(manifests, validPrismaDeepmergeLock),
+    [
+      "deepmerge-ts security override is forbidden at path: example-parent@1.0.0 > deepmerge-ts",
+    ],
+  );
+});
+
+test("rejects a contradictory parallel deepmerge-ts occurrence", () => {
+  const manifests = structuredClone(validPrismaDeepmergeManifests);
+  manifests[""].overrides["parallel-parent@2.0.0"] = {
+    "deepmerge-ts@7.1.5": "7.1.5",
+  };
+
+  assert.deepEqual(
+    validatePrismaDeepmergeOverride(manifests, validPrismaDeepmergeLock),
+    [
+      "deepmerge-ts security override is forbidden at path: parallel-parent@2.0.0 > deepmerge-ts@7.1.5",
+    ],
+  );
+});
+
+test("rejects a deepmerge-ts override hidden at stack-unsafe depth", () => {
+  const manifests = structuredClone(validPrismaDeepmergeManifests);
+  const selectors = Array.from(
+    { length: 5_000 },
+    (_, index) => `level-${index}`,
+  );
+  let current = manifests[""].overrides;
+  for (const selector of selectors) {
+    current[selector] = {};
+    current = current[selector];
+  }
+  current["deepmerge-ts@7.1.5"] = "8.0.1";
+
+  assert.deepEqual(
+    validatePrismaDeepmergeOverride(manifests, validPrismaDeepmergeLock),
+    [
+      `deepmerge-ts security override is forbidden at path: ${[
+        ...selectors,
+        "deepmerge-ts@7.1.5",
+      ].join(" > ")}`,
+    ],
+  );
+});
+
+test("accepts unrelated nested overrides without a false positive", () => {
+  const manifests = structuredClone(validPrismaDeepmergeManifests);
+  manifests[""].overrides["unrelated-parent@1.0.0"] = {
+    "unrelated-child@2.0.0": {
+      "another-package": "3.0.0",
+    },
+  };
+
+  assert.deepEqual(
+    validatePrismaDeepmergeOverride(manifests, validPrismaDeepmergeLock),
+    [],
   );
 });
 
@@ -404,14 +494,25 @@ test("deepmerge-ts 8 preserves ordinary Prisma-style object merging", () => {
   );
 });
 
-test("deepmerge-ts 8 handles a recursive graph in an isolated process", () => {
+// Reference: https://github.com/advisories/GHSA-ggr8-5vv4-36mx
+test("deepmerge-ts 8.0.1 safely handles the GHSA-ggr8-5vv4-36mx shape", () => {
+  assert.equal(process.versions.node, "22.18.0");
   const script = `
+    import { readFileSync } from "node:fs";
     import { deepmerge } from "deepmerge-ts";
-    const recursive = { label: "root" };
-    recursive.self = recursive;
-    const merged = deepmerge(recursive, { enabled: true });
-    if (merged.label !== "root" || merged.enabled !== true) process.exit(2);
-    if (merged.self !== merged) process.exit(3);
+    const packageJsonUrl = new URL(
+      "../package.json",
+      import.meta.resolve("deepmerge-ts"),
+    );
+    const packageJson = JSON.parse(readFileSync(packageJsonUrl, "utf8"));
+    if (packageJson.version !== "8.0.1") process.exit(20);
+    const left = {};
+    left.self = left;
+    const right = {};
+    right.self = right;
+    const merged = deepmerge(left, right);
+    if (merged.self !== merged) process.exit(21);
+    process.stdout.write("SAFE:8.0.1:CYCLE_PRESERVED");
   `;
   const child = spawnSync(
     process.execPath,
@@ -419,7 +520,12 @@ test("deepmerge-ts 8 handles a recursive graph in an isolated process", () => {
     { encoding: "utf8", timeout: 5_000 },
   );
 
-  assert.notEqual(child.error?.code, "ETIMEDOUT");
+  assert.notEqual(
+    child.error?.code,
+    "ETIMEDOUT",
+    "deepmerge-ts@8.0.1 timed out",
+  );
   assert.equal(child.signal, null, child.stderr);
   assert.equal(child.status, 0, child.stderr);
+  assert.equal(child.stdout, "SAFE:8.0.1:CYCLE_PRESERVED", child.stderr);
 });

@@ -271,22 +271,68 @@ function isVulnerableDeepmergeVersion(version) {
   return match !== null && Number(match[1]) < 8;
 }
 
+function isObjectRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function targetsOverridePackage(selector, packageName) {
+  return selector === packageName || selector.startsWith(`${packageName}@`);
+}
+
+function formatOverridePath(node) {
+  const selectors = [];
+  for (let current = node; current !== null; current = current.parent) {
+    selectors.push(current.selector);
+  }
+  return selectors.reverse().join(" > ");
+}
+
+function forbiddenDeepmergeOverridePaths(overrides) {
+  if (!isObjectRecord(overrides)) {
+    return [];
+  }
+
+  const forbiddenPaths = [];
+  const pending = [{ entries: overrides, parent: null }];
+
+  while (pending.length > 0) {
+    const { entries, parent } = pending.pop();
+
+    for (const [selector, value] of Object.entries(entries)) {
+      const node = { parent, selector };
+      const isExactPrismaSelector =
+        parent === null && selector === PRISMA_CONFIG_OVERRIDE;
+      const isExactDeepmergeSelector =
+        parent?.parent === null &&
+        parent.selector === PRISMA_CONFIG_OVERRIDE &&
+        selector === DEEPMERGE_PACKAGE;
+
+      if (
+        (targetsOverridePackage(selector, "@prisma/config") &&
+          !isExactPrismaSelector) ||
+        (targetsOverridePackage(selector, DEEPMERGE_PACKAGE) &&
+          !isExactDeepmergeSelector)
+      ) {
+        forbiddenPaths.push(formatOverridePath(node));
+      }
+
+      if (isObjectRecord(value)) {
+        pending.push({ entries: value, parent: node });
+      }
+    }
+  }
+
+  return forbiddenPaths.sort();
+}
+
 export function validatePrismaDeepmergeOverride(manifests, lockfile) {
   const errors = [];
   const overrides = manifests[""]?.overrides ?? {};
   const targetedOverride = overrides[PRISMA_CONFIG_OVERRIDE];
-  const conflictingOverrideSelectors = Object.keys(overrides).filter(
-    (selector) =>
-      selector !== PRISMA_CONFIG_OVERRIDE &&
-      (selector === DEEPMERGE_PACKAGE ||
-        selector.startsWith(`${DEEPMERGE_PACKAGE}@`) ||
-        selector === "@prisma/config" ||
-        selector.startsWith("@prisma/config@")),
-  );
 
-  if (conflictingOverrideSelectors.length > 0) {
+  for (const overridePath of forbiddenDeepmergeOverridePaths(overrides)) {
     errors.push(
-      `deepmerge-ts security override must not define parallel global or broadened selector(s): ${conflictingOverrideSelectors.join(", ")}`,
+      `deepmerge-ts security override is forbidden at path: ${overridePath}`,
     );
   }
   if (
