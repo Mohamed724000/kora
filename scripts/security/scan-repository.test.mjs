@@ -11,6 +11,7 @@ import {
   validateManifestVersions,
   validatePackageLock,
   validatePrismaDeepmergeOverride,
+  validatePrismaMysqlOverride,
   validateReactTypesSingleton,
 } from "./scan-repository.mjs";
 
@@ -528,4 +529,244 @@ test("deepmerge-ts 8.0.1 safely handles the GHSA-ggr8-5vv4-36mx shape", () => {
   assert.equal(child.signal, null, child.stderr);
   assert.equal(child.status, 0, child.stderr);
   assert.equal(child.stdout, "SAFE:8.0.1:CYCLE_PRESERVED", child.stderr);
+});
+
+const validPrismaMysqlManifests = {
+  "": {
+    overrides: {
+      "prisma@7.9.1": { mysql2: "3.22.0" },
+    },
+  },
+  "apps/api": {
+    devDependencies: { prisma: "7.9.1" },
+  },
+};
+
+const validPrismaMysqlLock = {
+  packages: {
+    "node_modules/mysql2": { version: "3.22.0" },
+    "node_modules/prisma": {
+      dependencies: { mysql2: "3.15.3" },
+      version: "7.9.1",
+    },
+  },
+};
+
+test("accepts both exact targeted Prisma security overrides", () => {
+  const manifests = structuredClone(validPrismaDeepmergeManifests);
+  manifests[""].overrides["prisma@7.9.1"] = { mysql2: "3.22.0" };
+  const lockfile = structuredClone(validPrismaDeepmergeLock);
+  lockfile.packages["node_modules/mysql2"] = { version: "3.22.0" };
+  lockfile.packages["node_modules/prisma"].dependencies = {
+    mysql2: "3.15.3",
+  };
+
+  assert.deepEqual(validatePrismaDeepmergeOverride(manifests, lockfile), []);
+  assert.deepEqual(validatePrismaMysqlOverride(manifests, lockfile), []);
+});
+
+test("accepts the exact targeted Prisma mysql2 security override", () => {
+  assert.deepEqual(
+    validatePrismaMysqlOverride(
+      validPrismaMysqlManifests,
+      validPrismaMysqlLock,
+    ),
+    [],
+  );
+});
+
+test("rejects the vulnerable mysql2 3.15.3 resolution", () => {
+  const lockfile = structuredClone(validPrismaMysqlLock);
+  lockfile.packages["node_modules/mysql2"].version = "3.15.3";
+
+  assert.deepEqual(
+    validatePrismaMysqlOverride(validPrismaMysqlManifests, lockfile),
+    [
+      "vulnerable mysql2 installation(s): node_modules/mysql2@3.15.3",
+      "mysql2 must have one physical installation at node_modules/mysql2@3.22.0; found node_modules/mysql2@3.15.3",
+    ],
+  );
+});
+
+test("rejects any vulnerable nested mysql2 installation", () => {
+  const lockfile = structuredClone(validPrismaMysqlLock);
+  lockfile.packages["node_modules/example/node_modules/mysql2"] = {
+    version: "3.15.3",
+  };
+
+  assert.deepEqual(
+    validatePrismaMysqlOverride(validPrismaMysqlManifests, lockfile),
+    [
+      "vulnerable mysql2 installation(s): node_modules/example/node_modules/mysql2@3.15.3",
+      "mysql2 must have one physical installation at node_modules/mysql2@3.22.0; found node_modules/mysql2@3.22.0, node_modules/example/node_modules/mysql2@3.15.3",
+    ],
+  );
+});
+
+test("rejects a ranged Prisma mysql2 override", () => {
+  const manifests = structuredClone(validPrismaMysqlManifests);
+  manifests[""].overrides["prisma@7.9.1"].mysql2 = "^3.22.0";
+
+  assert.deepEqual(
+    validatePrismaMysqlOverride(manifests, validPrismaMysqlLock),
+    ["prisma@7.9.1 must override mysql2 to exact version 3.22.0"],
+  );
+});
+
+test("rejects an exact but unsafe Prisma mysql2 override", () => {
+  const manifests = structuredClone(validPrismaMysqlManifests);
+  manifests[""].overrides["prisma@7.9.1"].mysql2 = "3.15.3";
+
+  assert.deepEqual(
+    validatePrismaMysqlOverride(manifests, validPrismaMysqlLock),
+    ["prisma@7.9.1 must override mysql2 to exact version 3.22.0"],
+  );
+});
+
+test("rejects wildcard, tag and reference Prisma mysql2 overrides", () => {
+  for (const specification of ["*", "latest", "github:sidorares/node-mysql2"]) {
+    const manifests = structuredClone(validPrismaMysqlManifests);
+    manifests[""].overrides["prisma@7.9.1"].mysql2 = specification;
+
+    assert.deepEqual(
+      validatePrismaMysqlOverride(manifests, validPrismaMysqlLock),
+      ["prisma@7.9.1 must override mysql2 to exact version 3.22.0"],
+      specification,
+    );
+  }
+});
+
+test("rejects a Prisma override that broadens beyond mysql2", () => {
+  const manifests = structuredClone(validPrismaMysqlManifests);
+  manifests[""].overrides["prisma@7.9.1"].effect = "3.20.0";
+
+  assert.deepEqual(
+    validatePrismaMysqlOverride(manifests, validPrismaMysqlLock),
+    ["prisma@7.9.1 must override mysql2 to exact version 3.22.0"],
+  );
+});
+
+test("rejects a global mysql2 override", () => {
+  const manifests = structuredClone(validPrismaMysqlManifests);
+  manifests[""].overrides.mysql2 = "3.22.0";
+
+  assert.deepEqual(
+    validatePrismaMysqlOverride(manifests, validPrismaMysqlLock),
+    ["mysql2 security override is forbidden at path: mysql2"],
+  );
+});
+
+test("rejects a version-selected global mysql2 override", () => {
+  const manifests = structuredClone(validPrismaMysqlManifests);
+  manifests[""].overrides["mysql2@3.15.3"] = "3.22.0";
+
+  assert.deepEqual(
+    validatePrismaMysqlOverride(manifests, validPrismaMysqlLock),
+    ["mysql2 security override is forbidden at path: mysql2@3.15.3"],
+  );
+});
+
+test("rejects an unversioned parallel Prisma override", () => {
+  const manifests = structuredClone(validPrismaMysqlManifests);
+  manifests[""].overrides.prisma = { mysql2: "3.22.0" };
+
+  assert.deepEqual(
+    validatePrismaMysqlOverride(manifests, validPrismaMysqlLock),
+    [
+      "mysql2 security override is forbidden at path: prisma",
+      "mysql2 security override is forbidden at path: prisma > mysql2",
+    ],
+  );
+});
+
+test("rejects a ranged parallel Prisma override", () => {
+  const manifests = structuredClone(validPrismaMysqlManifests);
+  manifests[""].overrides["prisma@^7.9.1"] = { mysql2: "3.22.0" };
+
+  assert.deepEqual(
+    validatePrismaMysqlOverride(manifests, validPrismaMysqlLock),
+    [
+      "mysql2 security override is forbidden at path: prisma@^7.9.1",
+      "mysql2 security override is forbidden at path: prisma@^7.9.1 > mysql2",
+    ],
+  );
+});
+
+test("rejects a mysql2 override attached to another parent", () => {
+  const manifests = structuredClone(validPrismaMysqlManifests);
+  manifests[""].overrides["@prisma/client@7.9.1"] = { mysql2: "3.22.0" };
+
+  assert.deepEqual(
+    validatePrismaMysqlOverride(manifests, validPrismaMysqlLock),
+    [
+      "mysql2 security override is forbidden at path: @prisma/client@7.9.1 > mysql2",
+    ],
+  );
+});
+
+test("rejects the approved Prisma selector hidden below another parent", () => {
+  const manifests = structuredClone(validPrismaMysqlManifests);
+  manifests[""].overrides["example-parent@1.0.0"] = {
+    "prisma@7.9.1": { mysql2: "3.22.0" },
+  };
+
+  assert.deepEqual(
+    validatePrismaMysqlOverride(manifests, validPrismaMysqlLock),
+    [
+      "mysql2 security override is forbidden at path: example-parent@1.0.0 > prisma@7.9.1",
+      "mysql2 security override is forbidden at path: example-parent@1.0.0 > prisma@7.9.1 > mysql2",
+    ],
+  );
+});
+
+test("rejects a contradictory parallel mysql2 occurrence", () => {
+  const manifests = structuredClone(validPrismaMysqlManifests);
+  manifests[""].overrides["parallel-parent@2.0.0"] = {
+    "mysql2@3.15.3": "3.15.3",
+  };
+
+  assert.deepEqual(
+    validatePrismaMysqlOverride(manifests, validPrismaMysqlLock),
+    [
+      "mysql2 security override is forbidden at path: parallel-parent@2.0.0 > mysql2@3.15.3",
+    ],
+  );
+});
+
+test("accepts unrelated nested overrides without a mysql2 false positive", () => {
+  const manifests = structuredClone(validPrismaMysqlManifests);
+  manifests[""].overrides["unrelated-parent@1.0.0"] = {
+    "unrelated-child@2.0.0": {
+      "another-package": "3.0.0",
+    },
+  };
+
+  assert.deepEqual(
+    validatePrismaMysqlOverride(manifests, validPrismaMysqlLock),
+    [],
+  );
+});
+
+test("rejects a Prisma version change in the mysql2 override gate", () => {
+  const manifests = structuredClone(validPrismaMysqlManifests);
+  const lockfile = structuredClone(validPrismaMysqlLock);
+  manifests["apps/api"].devDependencies.prisma = "7.9.2";
+  lockfile.packages["node_modules/prisma"].version = "7.9.2";
+
+  assert.deepEqual(validatePrismaMysqlOverride(manifests, lockfile), [
+    "Prisma must remain exactly 7.9.1 for the mysql2 override",
+    "package-lock must resolve Prisma to 7.9.1",
+  ]);
+});
+
+test("rejects changed Prisma mysql2 dependency metadata", () => {
+  const lockfile = structuredClone(validPrismaMysqlLock);
+  lockfile.packages["node_modules/prisma"].dependencies.mysql2 = "3.22.0";
+
+  assert.deepEqual(
+    validatePrismaMysqlOverride(validPrismaMysqlManifests, lockfile),
+    [
+      "prisma@7.9.1 lock metadata must retain its audited mysql2 3.15.3 dependency",
+    ],
+  );
 });
