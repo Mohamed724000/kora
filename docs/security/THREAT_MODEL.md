@@ -1,7 +1,7 @@
 # KORA+ Final — Threat Model initial
 
 Statut : **BASELINE + S0.4/S0.5/M0.1/M0.2/S0.6 FUSIONNÉS ET CLÔTURÉS +
-M0.3-R2 PUBLIÉ ET CONTRÔLÉ SUR LA DRAFT PR #29**
+M0.3-R3 PUBLIÉ SUR LA DRAFT PR #29 + M0.3-R4 VALIDÉ LOCALEMENT**
 
 Ce modèle décrit les frontières et mesures attendues. Sprint 0.3 introduit des
 shells et quelques contrôles de fondation étroits ; aucun contrôle métier,
@@ -32,7 +32,7 @@ financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
 8. CI/CD ↔ environnements et secrets.
 9. Opérateurs ↔ fonctions sensibles et exports.
 
-## Frontières et gates réellement introduits jusqu’à M0.3-R2
+## Frontières et gates réellement introduits jusqu’à M0.3-R4
 
 - shells mobile, web public et administration sans appel API ni donnée métier ;
 - surface HTTP NestJS limitée à `/health/live` et `/health/ready`, hors du
@@ -52,32 +52,39 @@ financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
 - gates M0.1/M0.2 : pins directs exacts, égalité manifeste/lockfile,
   singleton `@types/react`, politique Dependabot directe patch/minor et
   correction `nanoid@3.3.18` ;
-- gates M0.3/R1/R2 : overrides exacts et ciblés
+- gates M0.3/R1/R2/R4 : overrides exacts et ciblés
   `@prisma/config@7.9.1 > deepmerge-ts@8.0.1` et
-  `prisma@7.9.1 > mysql2@3.22.0`, installations physiques uniques, refus des
-  variantes vulnérables, globales, élargies ou rattachées à un autre parent,
-  et preuve de compatibilité avec Prisma `7.9.1` ;
+  `prisma@7.9.1 > mysql2@3.23.1`, plus `fast-uri@3.1.6` sous
+  `ajv@8.18.0` et `qs@6.16.0` sous ses trois parents exacts. Les installations
+  physiques sont uniques ; les variantes vulnérables, globales, élargies,
+  parallèles, mal versionnées ou rattachées à un autre parent sont refusées,
+  avec preuve de compatibilité Prisma `7.9.1` ;
 - S0.6 n’ajoute aucune frontière runtime : il rejoue et documente les preuves
   des fondations sur la baseline
   `40a224edc1dc018a080b6c188a804e361e96b5ef`.
 
+Chronologie supply-chain : M0.3 corrige `deepmerge-ts`; R1 durcit le gate; R2
+corrige le premier avis `mysql2`; R3 publie la réconciliation documentaire; R4
+traite localement les nouveaux avis de Security #44. R4 n’ajoute aucune
+frontière métier ou runtime.
+
 ## Menaces et mesures attendues
 
-| Domaine      | Menaces principales                                                                                          | Mesures attendues / autorités                                                                                        | État                                                                                      |
-| ------------ | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Identité/OTP | Brute force, interception, replay, enumeration                                                               | Rate limits, OTP court et haché, rotation session, logs masqués ; ADR-010                                            | Not implemented                                                                           |
-| Admin        | Vol de session, MFA contournée, récupération abusive                                                         | TOTP RFC 6238, codes Argon2id, cookies httpOnly, step-up, révocation ; ADR-002/005/008                               | Not implemented                                                                           |
-| RBAC         | Escalade verticale/horizontale, champs sensibles                                                             | Contrôle serveur route/action/champ, moindre privilège ; ADR-020                                                     | Not implemented                                                                           |
-| Paiement     | Double débit, faux webhook, replay, ordre inversé                                                            | Signature, idempotence, Inbox/Outbox, PaymentAttempts immuables ; ADR-012/015                                        | Not implemented                                                                           |
-| Ledger       | Altération, déséquilibre, double comptage                                                                    | Append-only, groupes équilibrés, compensation, reconciliation ; ADR-013/014                                          | Not implemented                                                                           |
-| Droits       | Accès sans achat, révocation excessive                                                                       | Entitlement permanent ciblé, checks serveur ; ADR-016                                                                | Not implemented                                                                           |
-| Média        | URL brute, partage, scraping, logs sensibles                                                                 | Stockage privé, descriptor court, PreviewGrant, device binding ; ADR-011/017                                         | Not implemented                                                                           |
-| Offline      | Extraction clé/fichier, replay licence, copie appareil                                                       | AES-256-GCM, clé non exportable, licence renouvelable ; ADR-018                                                      | Not implemented                                                                           |
-| Audit        | Suppression ou falsification                                                                                 | Écriture transactionnelle, blocage UPDATE/DELETE, exports audités ; ADR-019                                          | Not implemented                                                                           |
-| Capture      | Enregistrement écran et dispositif externe                                                                   | `FLAG_SECURE`, détection/pause iOS, protections en couches sans promesse absolue ; ADR-024                           | Not implemented                                                                           |
-| Données/logs | Fuite PII, token ou secret                                                                                   | Redaction des champs et messages, `msg` catégoriel, minimisation, contrôle accès, rétention et tests                 | Foundation validated locally by S0.6 — no business PII flow                               |
-| Supply chain | Package compromis, licence incompatible, épuisement de pile ou vulnérabilité d’une dépendance SQL transitive | Versions verrouillées, revue, audit, provenance, scripts qualifiés, deux overrides parents exacts et gates de graphe | M0.1/M0.2 fusionnés ; M0.3-R2 publié, audits à zéro, licences contrôlées et scanner 49/49 |
-| CI/CD        | Secret exposé, artefact altéré, déploiement non autorisé                                                     | Permissions lecture seule, actions épinglées, scans, timeouts et rollback                                            | S0.5/S0.6 fusionnés ; quatre workflows #43 `success` sur le head M0.3-R2 exact            |
+| Domaine      | Menaces principales                                                                            | Mesures attendues / autorités                                                                                     | État                                                                                      |
+| ------------ | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Identité/OTP | Brute force, interception, replay, enumeration                                                 | Rate limits, OTP court et haché, rotation session, logs masqués ; ADR-010                                         | Not implemented                                                                           |
+| Admin        | Vol de session, MFA contournée, récupération abusive                                           | TOTP RFC 6238, codes Argon2id, cookies httpOnly, step-up, révocation ; ADR-002/005/008                            | Not implemented                                                                           |
+| RBAC         | Escalade verticale/horizontale, champs sensibles                                               | Contrôle serveur route/action/champ, moindre privilège ; ADR-020                                                  | Not implemented                                                                           |
+| Paiement     | Double débit, faux webhook, replay, ordre inversé                                              | Signature, idempotence, Inbox/Outbox, PaymentAttempts immuables ; ADR-012/015                                     | Not implemented                                                                           |
+| Ledger       | Altération, déséquilibre, double comptage                                                      | Append-only, groupes équilibrés, compensation, reconciliation ; ADR-013/014                                       | Not implemented                                                                           |
+| Droits       | Accès sans achat, révocation excessive                                                         | Entitlement permanent ciblé, checks serveur ; ADR-016                                                             | Not implemented                                                                           |
+| Média        | URL brute, partage, scraping, logs sensibles                                                   | Stockage privé, descriptor court, PreviewGrant, device binding ; ADR-011/017                                      | Not implemented                                                                           |
+| Offline      | Extraction clé/fichier, replay licence, copie appareil                                         | AES-256-GCM, clé non exportable, licence renouvelable ; ADR-018                                                   | Not implemented                                                                           |
+| Audit        | Suppression ou falsification                                                                   | Écriture transactionnelle, blocage UPDATE/DELETE, exports audités ; ADR-019                                       | Not implemented                                                                           |
+| Capture      | Enregistrement écran et dispositif externe                                                     | `FLAG_SECURE`, détection/pause iOS, protections en couches sans promesse absolue ; ADR-024                        | Not implemented                                                                           |
+| Données/logs | Fuite PII, token ou secret                                                                     | Redaction des champs et messages, `msg` catégoriel, minimisation, contrôle accès, rétention et tests              | Foundation validated locally by S0.6 — no business PII flow                               |
+| Supply chain | Package compromis, licence incompatible, épuisement de pile, SSRF ou déni de service transitif | Versions verrouillées, revue, audit, provenance, scripts qualifiés, six chemins parents exacts et gates de graphe | M0.3-R4 local : audits à zéro, licences contrôlées et scanner 65/65                       |
+| CI/CD        | Secret exposé, artefact altéré, déploiement non autorisé                                       | Permissions lecture seule, actions épinglées, scans, timeouts et rollback                                         | R3 : trois workflows #44 réussis ; Security #44 échoue sur les avis traités localement R4 |
 
 ## Risques ouverts et gates
 
@@ -127,15 +134,37 @@ financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
   vulnérable ou supplémentaire et toute variante d’override hors de ce chemin.
   Les audits complet et production sont à zéro ; le contrôle couvre 1 129
   paquets sans licence absente ou non approuvée.
-- Les deux overrides restent des mesures temporaires. Chacun devra être retiré
-  séparément lorsqu’une version stable autorisée de Prisma intégrera
-  officiellement la dépendance corrigée correspondante. Tout nouveau graphe
-  exige de rejouer audits, licences, tests de scanner et qualification Prisma.
+- Le 2026-09-03, Security #44 sur le head R3 a révélé sept avis uniques : quatre
+  high sur `fast-uri@3.1.5`, un moderate sur `mysql2@3.22.0` et deux moderate
+  sur `qs@6.15.3`. La propagation du graphe totalise 11 nœuds (7 high,
+  4 moderate). Ils couvrent confusion d’hôte/SSRF lors de la normalisation
+  d’URI, bombe de décompression du protocole MySQL compressé et dénis de
+  service par parsing de query string. R4 impose `fast-uri@3.1.6` sous `ajv@8.18.0`,
+  `mysql2@3.23.1` sous `prisma@7.9.1`, et `qs@6.16.0` sous
+  `body-parser@2.3.0`, `express@5.2.1` et `superagent@10.3.0`. Les trois
+  installations physiques sont uniques et les audits complet/production
+  concluent à zéro vulnérabilité.
+- Le scanner R4 vérifie les parents et chemins de lock exacts, les versions
+  corrigées, l’absence d’installation parallèle et toutes les formes
+  d’override global, rangé, wildcard, tag, référence, mal versionné, élargi ou
+  rattaché à un autre parent. Les 49 tests antérieurs restent actifs ; le
+  scanner passe 65/65 et l’outillage 72/72. Prisma, Prisma Client et
+  `@prisma/config` restent `7.9.1`; `deepmerge-ts` reste `8.0.1`.
+- Les overrides restent des mesures temporaires. Chacun devra être retiré
+  séparément lorsqu’un parent amont autorisé intégrera officiellement la
+  dépendance corrigée correspondante. Tout nouveau graphe exige de rejouer
+  audits, licences, tests de scanner et qualification Prisma.
 - L’état M0.3-R2 contrôlé est le head
   `68027ed15948228ceef7277ad1fa0a47761751e2`, avec le lockfile SHA-256
   `2041E52ECFB25092FADC32EE207C84DED22E9805233CCEA38889170CD1D08742`.
   Les quatre workflows #43 (`Security`, `Quality Linux`, `Infrastructure` et
   `Launcher Windows`) ont tous conclu `success` sur ce head exact.
+- Le head R3 publié est `4b5b914d213e3b3803affc15d0139fe898efcd0f`.
+  Sur les workflows #44, Infrastructure, Quality Linux et Launcher Windows
+  concluent `success`; Security conclut `failure` uniquement sur les 11 nœuds
+  d’audit ci-dessus. L’état local R4 utilise le lockfile SHA-256
+  `E47CEA6A6853ABBDEB5A82A1D537C9C9DA92486D7A9F2EC72891A7A4101E2044`,
+  sans relance de #44 ni mutation de la Draft PR #29.
 - Secret Scanning et sa push protection sont activés sur GitHub. En revanche,
   Dependabot Alerts et Dependabot security updates sont désactivés dans les
   métadonnées du dépôt, et Code Scanning ne possède aucune analyse. S0.6 ne

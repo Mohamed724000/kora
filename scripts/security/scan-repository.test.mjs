@@ -10,8 +10,10 @@ import {
   validateManifestLockConsistency,
   validateManifestVersions,
   validatePackageLock,
+  validateAjvFastUriOverride,
   validatePrismaDeepmergeOverride,
   validatePrismaMysqlOverride,
+  validateQsOverrides,
   validateReactTypesSingleton,
 } from "./scan-repository.mjs";
 
@@ -534,7 +536,7 @@ test("deepmerge-ts 8.0.1 safely handles the GHSA-ggr8-5vv4-36mx shape", () => {
 const validPrismaMysqlManifests = {
   "": {
     overrides: {
-      "prisma@7.9.1": { mysql2: "3.22.0" },
+      "prisma@7.9.1": { mysql2: "3.23.1" },
     },
   },
   "apps/api": {
@@ -544,7 +546,7 @@ const validPrismaMysqlManifests = {
 
 const validPrismaMysqlLock = {
   packages: {
-    "node_modules/mysql2": { version: "3.22.0" },
+    "node_modules/mysql2": { version: "3.23.1" },
     "node_modules/prisma": {
       dependencies: { mysql2: "3.15.3" },
       version: "7.9.1",
@@ -554,9 +556,9 @@ const validPrismaMysqlLock = {
 
 test("accepts both exact targeted Prisma security overrides", () => {
   const manifests = structuredClone(validPrismaDeepmergeManifests);
-  manifests[""].overrides["prisma@7.9.1"] = { mysql2: "3.22.0" };
+  manifests[""].overrides["prisma@7.9.1"] = { mysql2: "3.23.1" };
   const lockfile = structuredClone(validPrismaDeepmergeLock);
-  lockfile.packages["node_modules/mysql2"] = { version: "3.22.0" };
+  lockfile.packages["node_modules/mysql2"] = { version: "3.23.1" };
   lockfile.packages["node_modules/prisma"].dependencies = {
     mysql2: "3.15.3",
   };
@@ -583,7 +585,7 @@ test("rejects the vulnerable mysql2 3.15.3 resolution", () => {
     validatePrismaMysqlOverride(validPrismaMysqlManifests, lockfile),
     [
       "vulnerable mysql2 installation(s): node_modules/mysql2@3.15.3",
-      "mysql2 must have one physical installation at node_modules/mysql2@3.22.0; found node_modules/mysql2@3.15.3",
+      "mysql2 must have one physical installation at node_modules/mysql2@3.23.1; found node_modules/mysql2@3.15.3",
     ],
   );
 });
@@ -598,18 +600,18 @@ test("rejects any vulnerable nested mysql2 installation", () => {
     validatePrismaMysqlOverride(validPrismaMysqlManifests, lockfile),
     [
       "vulnerable mysql2 installation(s): node_modules/example/node_modules/mysql2@3.15.3",
-      "mysql2 must have one physical installation at node_modules/mysql2@3.22.0; found node_modules/mysql2@3.22.0, node_modules/example/node_modules/mysql2@3.15.3",
+      "mysql2 must have one physical installation at node_modules/mysql2@3.23.1; found node_modules/mysql2@3.23.1, node_modules/example/node_modules/mysql2@3.15.3",
     ],
   );
 });
 
 test("rejects a ranged Prisma mysql2 override", () => {
   const manifests = structuredClone(validPrismaMysqlManifests);
-  manifests[""].overrides["prisma@7.9.1"].mysql2 = "^3.22.0";
+  manifests[""].overrides["prisma@7.9.1"].mysql2 = "^3.23.1";
 
   assert.deepEqual(
     validatePrismaMysqlOverride(manifests, validPrismaMysqlLock),
-    ["prisma@7.9.1 must override mysql2 to exact version 3.22.0"],
+    ["prisma@7.9.1 must override mysql2 to exact version 3.23.1"],
   );
 });
 
@@ -619,7 +621,7 @@ test("rejects an exact but unsafe Prisma mysql2 override", () => {
 
   assert.deepEqual(
     validatePrismaMysqlOverride(manifests, validPrismaMysqlLock),
-    ["prisma@7.9.1 must override mysql2 to exact version 3.22.0"],
+    ["prisma@7.9.1 must override mysql2 to exact version 3.23.1"],
   );
 });
 
@@ -630,7 +632,7 @@ test("rejects wildcard, tag and reference Prisma mysql2 overrides", () => {
 
     assert.deepEqual(
       validatePrismaMysqlOverride(manifests, validPrismaMysqlLock),
-      ["prisma@7.9.1 must override mysql2 to exact version 3.22.0"],
+      ["prisma@7.9.1 must override mysql2 to exact version 3.23.1"],
       specification,
     );
   }
@@ -642,13 +644,13 @@ test("rejects a Prisma override that broadens beyond mysql2", () => {
 
   assert.deepEqual(
     validatePrismaMysqlOverride(manifests, validPrismaMysqlLock),
-    ["prisma@7.9.1 must override mysql2 to exact version 3.22.0"],
+    ["prisma@7.9.1 must override mysql2 to exact version 3.23.1"],
   );
 });
 
 test("rejects a global mysql2 override", () => {
   const manifests = structuredClone(validPrismaMysqlManifests);
-  manifests[""].overrides.mysql2 = "3.22.0";
+  manifests[""].overrides.mysql2 = "3.23.1";
 
   assert.deepEqual(
     validatePrismaMysqlOverride(manifests, validPrismaMysqlLock),
@@ -658,7 +660,7 @@ test("rejects a global mysql2 override", () => {
 
 test("rejects a version-selected global mysql2 override", () => {
   const manifests = structuredClone(validPrismaMysqlManifests);
-  manifests[""].overrides["mysql2@3.15.3"] = "3.22.0";
+  manifests[""].overrides["mysql2@3.15.3"] = "3.23.1";
 
   assert.deepEqual(
     validatePrismaMysqlOverride(manifests, validPrismaMysqlLock),
@@ -668,7 +670,7 @@ test("rejects a version-selected global mysql2 override", () => {
 
 test("rejects an unversioned parallel Prisma override", () => {
   const manifests = structuredClone(validPrismaMysqlManifests);
-  manifests[""].overrides.prisma = { mysql2: "3.22.0" };
+  manifests[""].overrides.prisma = { mysql2: "3.23.1" };
 
   assert.deepEqual(
     validatePrismaMysqlOverride(manifests, validPrismaMysqlLock),
@@ -681,7 +683,7 @@ test("rejects an unversioned parallel Prisma override", () => {
 
 test("rejects a ranged parallel Prisma override", () => {
   const manifests = structuredClone(validPrismaMysqlManifests);
-  manifests[""].overrides["prisma@^7.9.1"] = { mysql2: "3.22.0" };
+  manifests[""].overrides["prisma@^7.9.1"] = { mysql2: "3.23.1" };
 
   assert.deepEqual(
     validatePrismaMysqlOverride(manifests, validPrismaMysqlLock),
@@ -694,7 +696,7 @@ test("rejects a ranged parallel Prisma override", () => {
 
 test("rejects a mysql2 override attached to another parent", () => {
   const manifests = structuredClone(validPrismaMysqlManifests);
-  manifests[""].overrides["@prisma/client@7.9.1"] = { mysql2: "3.22.0" };
+  manifests[""].overrides["@prisma/client@7.9.1"] = { mysql2: "3.23.1" };
 
   assert.deepEqual(
     validatePrismaMysqlOverride(manifests, validPrismaMysqlLock),
@@ -707,7 +709,7 @@ test("rejects a mysql2 override attached to another parent", () => {
 test("rejects the approved Prisma selector hidden below another parent", () => {
   const manifests = structuredClone(validPrismaMysqlManifests);
   manifests[""].overrides["example-parent@1.0.0"] = {
-    "prisma@7.9.1": { mysql2: "3.22.0" },
+    "prisma@7.9.1": { mysql2: "3.23.1" },
   };
 
   assert.deepEqual(
@@ -761,7 +763,7 @@ test("rejects a Prisma version change in the mysql2 override gate", () => {
 
 test("rejects changed Prisma mysql2 dependency metadata", () => {
   const lockfile = structuredClone(validPrismaMysqlLock);
-  lockfile.packages["node_modules/prisma"].dependencies.mysql2 = "3.22.0";
+  lockfile.packages["node_modules/prisma"].dependencies.mysql2 = "3.23.1";
 
   assert.deepEqual(
     validatePrismaMysqlOverride(validPrismaMysqlManifests, lockfile),
@@ -769,4 +771,317 @@ test("rejects changed Prisma mysql2 dependency metadata", () => {
       "prisma@7.9.1 lock metadata must retain its audited mysql2 3.15.3 dependency",
     ],
   );
+});
+
+test("rejects mysql2 3.22.0 after the R4 advisory update", () => {
+  const lockfile = structuredClone(validPrismaMysqlLock);
+  lockfile.packages["node_modules/mysql2"].version = "3.22.0";
+
+  assert.deepEqual(
+    validatePrismaMysqlOverride(validPrismaMysqlManifests, lockfile),
+    [
+      "vulnerable mysql2 installation(s): node_modules/mysql2@3.22.0",
+      "mysql2 must have one physical installation at node_modules/mysql2@3.23.1; found node_modules/mysql2@3.22.0",
+    ],
+  );
+});
+
+test("rejects a different unapproved mysql2 version", () => {
+  const lockfile = structuredClone(validPrismaMysqlLock);
+  lockfile.packages["node_modules/mysql2"].version = "3.23.2";
+
+  assert.deepEqual(
+    validatePrismaMysqlOverride(validPrismaMysqlManifests, lockfile),
+    [
+      "mysql2 must have one physical installation at node_modules/mysql2@3.23.1; found node_modules/mysql2@3.23.2",
+    ],
+  );
+});
+
+test("rejects a missing mysql2 installation", () => {
+  const lockfile = structuredClone(validPrismaMysqlLock);
+  delete lockfile.packages["node_modules/mysql2"];
+
+  assert.deepEqual(
+    validatePrismaMysqlOverride(validPrismaMysqlManifests, lockfile),
+    [
+      "mysql2 must have one physical installation at node_modules/mysql2@3.23.1; found NONE",
+    ],
+  );
+});
+
+test("rejects a fixed mysql2 installation at the wrong physical path", () => {
+  const lockfile = structuredClone(validPrismaMysqlLock);
+  delete lockfile.packages["node_modules/mysql2"];
+  lockfile.packages["node_modules/example/node_modules/mysql2"] = {
+    version: "3.23.1",
+  };
+
+  assert.deepEqual(
+    validatePrismaMysqlOverride(validPrismaMysqlManifests, lockfile),
+    [
+      "mysql2 must have one physical installation at node_modules/mysql2@3.23.1; found node_modules/example/node_modules/mysql2@3.23.1",
+    ],
+  );
+});
+
+test("rejects an additional mysql2 lock parent", () => {
+  const lockfile = structuredClone(validPrismaMysqlLock);
+  lockfile.packages["node_modules/example"] = {
+    devDependencies: { mysql2: "3.23.1" },
+    version: "1.0.0",
+  };
+
+  assert.deepEqual(
+    validatePrismaMysqlOverride(validPrismaMysqlManifests, lockfile),
+    ["mysql2 has an unapproved lock parent: node_modules/example"],
+  );
+});
+
+const validAjvFastUriManifests = {
+  "": {
+    overrides: {
+      "ajv@8.18.0": { "fast-uri": "3.1.6" },
+    },
+  },
+};
+
+const validAjvFastUriLock = {
+  packages: {
+    "node_modules/ajv": {
+      dependencies: { "fast-uri": "^3.0.1" },
+      version: "8.18.0",
+    },
+    "node_modules/fast-uri": { version: "3.1.6" },
+  },
+};
+
+test("accepts the exact targeted ajv fast-uri security override", () => {
+  assert.deepEqual(
+    validateAjvFastUriOverride(validAjvFastUriManifests, validAjvFastUriLock),
+    [],
+  );
+});
+
+test("rejects vulnerable and different fast-uri resolutions", () => {
+  const vulnerableLock = structuredClone(validAjvFastUriLock);
+  vulnerableLock.packages["node_modules/fast-uri"].version = "3.1.5";
+  assert.deepEqual(
+    validateAjvFastUriOverride(validAjvFastUriManifests, vulnerableLock),
+    [
+      "vulnerable fast-uri installation(s): node_modules/fast-uri@3.1.5",
+      "fast-uri must have one physical installation at node_modules/fast-uri@3.1.6; found node_modules/fast-uri@3.1.5",
+    ],
+  );
+
+  const differentLock = structuredClone(validAjvFastUriLock);
+  differentLock.packages["node_modules/fast-uri"].version = "3.1.7";
+  assert.deepEqual(
+    validateAjvFastUriOverride(validAjvFastUriManifests, differentLock),
+    [
+      "fast-uri must have one physical installation at node_modules/fast-uri@3.1.6; found node_modules/fast-uri@3.1.7",
+    ],
+  );
+});
+
+test("rejects missing, duplicate and misplaced fast-uri installations", () => {
+  const missingLock = structuredClone(validAjvFastUriLock);
+  delete missingLock.packages["node_modules/fast-uri"];
+  assert.deepEqual(
+    validateAjvFastUriOverride(validAjvFastUriManifests, missingLock),
+    [
+      "fast-uri must have one physical installation at node_modules/fast-uri@3.1.6; found NONE",
+    ],
+  );
+
+  const duplicateLock = structuredClone(validAjvFastUriLock);
+  duplicateLock.packages["node_modules/example/node_modules/fast-uri"] = {
+    version: "3.1.6",
+  };
+  assert.deepEqual(
+    validateAjvFastUriOverride(validAjvFastUriManifests, duplicateLock),
+    [
+      "fast-uri must have one physical installation at node_modules/fast-uri@3.1.6; found node_modules/fast-uri@3.1.6, node_modules/example/node_modules/fast-uri@3.1.6",
+    ],
+  );
+
+  const misplacedLock = structuredClone(validAjvFastUriLock);
+  delete misplacedLock.packages["node_modules/fast-uri"];
+  misplacedLock.packages["node_modules/example/node_modules/fast-uri"] = {
+    version: "3.1.6",
+  };
+  assert.deepEqual(
+    validateAjvFastUriOverride(validAjvFastUriManifests, misplacedLock),
+    [
+      "fast-uri must have one physical installation at node_modules/fast-uri@3.1.6; found node_modules/example/node_modules/fast-uri@3.1.6",
+    ],
+  );
+});
+
+test("rejects widened, malformed and parallel fast-uri overrides", () => {
+  for (const specification of [
+    "^3.1.6",
+    "*",
+    "latest",
+    "github:fastify/fast-uri",
+  ]) {
+    const manifests = structuredClone(validAjvFastUriManifests);
+    manifests[""].overrides["ajv@8.18.0"]["fast-uri"] = specification;
+    assert.deepEqual(
+      validateAjvFastUriOverride(manifests, validAjvFastUriLock),
+      ["ajv@8.18.0 must override fast-uri to exact version 3.1.6"],
+      specification,
+    );
+  }
+
+  const global = structuredClone(validAjvFastUriManifests);
+  global[""].overrides["fast-uri"] = "3.1.6";
+  assert.deepEqual(validateAjvFastUriOverride(global, validAjvFastUriLock), [
+    "fast-uri security override is forbidden at path: fast-uri",
+  ]);
+
+  const parallel = structuredClone(validAjvFastUriManifests);
+  parallel[""].overrides["ajv@^8.18.0"] = { "fast-uri": "3.1.6" };
+  assert.deepEqual(validateAjvFastUriOverride(parallel, validAjvFastUriLock), [
+    "fast-uri security override is forbidden at path: ajv@^8.18.0",
+    "fast-uri security override is forbidden at path: ajv@^8.18.0 > fast-uri",
+  ]);
+});
+
+test("rejects a broadened fast-uri parent and an unapproved lock parent", () => {
+  const manifests = structuredClone(validAjvFastUriManifests);
+  manifests[""].overrides["ajv@8.18.0"].example = "1.0.0";
+  const lockfile = structuredClone(validAjvFastUriLock);
+  lockfile.packages["node_modules/example"] = {
+    dependencies: { "fast-uri": "^3.0.1" },
+    version: "1.0.0",
+  };
+
+  assert.deepEqual(validateAjvFastUriOverride(manifests, lockfile), [
+    "ajv@8.18.0 must override fast-uri to exact version 3.1.6",
+    "fast-uri has an unapproved lock parent: node_modules/example",
+  ]);
+});
+
+const validQsManifests = {
+  "": {
+    overrides: {
+      "body-parser@2.3.0": { qs: "6.16.0" },
+      "express@5.2.1": { qs: "6.16.0" },
+      "superagent@10.3.0": { qs: "6.16.0" },
+    },
+  },
+};
+
+const validQsLock = {
+  packages: {
+    "node_modules/body-parser": {
+      dependencies: { qs: "^6.15.2" },
+      version: "2.3.0",
+    },
+    "node_modules/express": {
+      dependencies: { qs: "^6.14.0" },
+      version: "5.2.1",
+    },
+    "node_modules/qs": { version: "6.16.0" },
+    "node_modules/superagent": {
+      dependencies: { qs: "^6.14.1" },
+      version: "10.3.0",
+    },
+  },
+};
+
+test("accepts the three exact targeted qs security overrides", () => {
+  assert.deepEqual(validateQsOverrides(validQsManifests, validQsLock), []);
+});
+
+test("rejects vulnerable and different qs resolutions", () => {
+  const vulnerableLock = structuredClone(validQsLock);
+  vulnerableLock.packages["node_modules/qs"].version = "6.15.3";
+  assert.deepEqual(validateQsOverrides(validQsManifests, vulnerableLock), [
+    "vulnerable qs installation(s): node_modules/qs@6.15.3",
+    "qs must have one physical installation at node_modules/qs@6.16.0; found node_modules/qs@6.15.3",
+  ]);
+
+  const differentLock = structuredClone(validQsLock);
+  differentLock.packages["node_modules/qs"].version = "6.16.1";
+  assert.deepEqual(validateQsOverrides(validQsManifests, differentLock), [
+    "qs must have one physical installation at node_modules/qs@6.16.0; found node_modules/qs@6.16.1",
+  ]);
+});
+
+test("rejects missing, duplicate and misplaced qs installations", () => {
+  const missingLock = structuredClone(validQsLock);
+  delete missingLock.packages["node_modules/qs"];
+  assert.deepEqual(validateQsOverrides(validQsManifests, missingLock), [
+    "qs must have one physical installation at node_modules/qs@6.16.0; found NONE",
+  ]);
+
+  const duplicateLock = structuredClone(validQsLock);
+  duplicateLock.packages["node_modules/example/node_modules/qs"] = {
+    version: "6.16.0",
+  };
+  assert.deepEqual(validateQsOverrides(validQsManifests, duplicateLock), [
+    "qs must have one physical installation at node_modules/qs@6.16.0; found node_modules/qs@6.16.0, node_modules/example/node_modules/qs@6.16.0",
+  ]);
+
+  const misplacedLock = structuredClone(validQsLock);
+  delete misplacedLock.packages["node_modules/qs"];
+  misplacedLock.packages["node_modules/example/node_modules/qs"] = {
+    version: "6.16.0",
+  };
+  assert.deepEqual(validateQsOverrides(validQsManifests, misplacedLock), [
+    "qs must have one physical installation at node_modules/qs@6.16.0; found node_modules/example/node_modules/qs@6.16.0",
+  ]);
+});
+
+test("rejects widened, malformed and global qs overrides", () => {
+  for (const specification of ["^6.16.0", "*", "latest", "github:ljharb/qs"]) {
+    const manifests = structuredClone(validQsManifests);
+    manifests[""].overrides["express@5.2.1"].qs = specification;
+    assert.deepEqual(validateQsOverrides(manifests, validQsLock), [
+      "express@5.2.1 must override qs to exact version 6.16.0",
+    ]);
+  }
+
+  const global = structuredClone(validQsManifests);
+  global[""].overrides.qs = "6.16.0";
+  assert.deepEqual(validateQsOverrides(global, validQsLock), [
+    "qs security override is forbidden at path: qs",
+  ]);
+});
+
+test("rejects wrong qs parents, broadened parents and parallel paths", () => {
+  const wrongParent = structuredClone(validQsManifests);
+  wrongParent[""].overrides["example@1.0.0"] = { qs: "6.16.0" };
+  assert.deepEqual(validateQsOverrides(wrongParent, validQsLock), [
+    "qs security override is forbidden at path: example@1.0.0 > qs",
+  ]);
+
+  const broadened = structuredClone(validQsManifests);
+  broadened[""].overrides["express@5.2.1"].example = "1.0.0";
+  assert.deepEqual(validateQsOverrides(broadened, validQsLock), [
+    "express@5.2.1 must override qs to exact version 6.16.0",
+  ]);
+
+  const parallel = structuredClone(validQsManifests);
+  parallel[""].overrides["express@^5.2.1"] = { qs: "6.16.0" };
+  assert.deepEqual(validateQsOverrides(parallel, validQsLock), [
+    "qs security override is forbidden at path: express@^5.2.1",
+    "qs security override is forbidden at path: express@^5.2.1 > qs",
+  ]);
+});
+
+test("rejects changed qs parent metadata and an unapproved lock parent", () => {
+  const lockfile = structuredClone(validQsLock);
+  lockfile.packages["node_modules/express"].dependencies.qs = "6.16.0";
+  lockfile.packages["node_modules/example"] = {
+    optionalDependencies: { qs: "6.16.0" },
+    version: "1.0.0",
+  };
+
+  assert.deepEqual(validateQsOverrides(validQsManifests, lockfile), [
+    "express@5.2.1 lock metadata must retain its audited qs ^6.14.0 dependency",
+    "qs has an unapproved lock parent: node_modules/example",
+  ]);
 });
