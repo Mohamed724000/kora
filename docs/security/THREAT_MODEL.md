@@ -1,7 +1,7 @@
 # KORA+ Final — Threat Model initial
 
 Statut : **BASELINE + S0.4/S0.5/M0.1/M0.2/S0.6 FUSIONNÉS ET CLÔTURÉS +
-M0.3 EN VALIDATION FINALE AVANT DRAFT PR**
+M0.3-R2 PUBLIÉ ET CONTRÔLÉ SUR LA DRAFT PR #29**
 
 Ce modèle décrit les frontières et mesures attendues. Sprint 0.3 introduit des
 shells et quelques contrôles de fondation étroits ; aucun contrôle métier,
@@ -32,7 +32,7 @@ financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
 8. CI/CD ↔ environnements et secrets.
 9. Opérateurs ↔ fonctions sensibles et exports.
 
-## Frontières réellement introduites jusqu’à S0.6
+## Frontières et gates réellement introduits jusqu’à M0.3-R2
 
 - shells mobile, web public et administration sans appel API ni donnée métier ;
 - surface HTTP NestJS limitée à `/health/live` et `/health/ready`, hors du
@@ -52,30 +52,32 @@ financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
 - gates M0.1/M0.2 : pins directs exacts, égalité manifeste/lockfile,
   singleton `@types/react`, politique Dependabot directe patch/minor et
   correction `nanoid@3.3.18` ;
-- gate M0.3 : override exact et ciblé
-  `@prisma/config@7.9.1 > deepmerge-ts@8.0.1`, installation physique unique,
-  refus des versions vulnérables imbriquées et preuve de compatibilité Prisma ;
+- gates M0.3/R1/R2 : overrides exacts et ciblés
+  `@prisma/config@7.9.1 > deepmerge-ts@8.0.1` et
+  `prisma@7.9.1 > mysql2@3.22.0`, installations physiques uniques, refus des
+  variantes vulnérables, globales, élargies ou rattachées à un autre parent,
+  et preuve de compatibilité avec Prisma `7.9.1` ;
 - S0.6 n’ajoute aucune frontière runtime : il rejoue et documente les preuves
   des fondations sur la baseline
   `40a224edc1dc018a080b6c188a804e361e96b5ef`.
 
 ## Menaces et mesures attendues
 
-| Domaine      | Menaces principales                                                                     | Mesures attendues / autorités                                                                             | État                                                                               |
-| ------------ | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| Identité/OTP | Brute force, interception, replay, enumeration                                          | Rate limits, OTP court et haché, rotation session, logs masqués ; ADR-010                                 | Not implemented                                                                    |
-| Admin        | Vol de session, MFA contournée, récupération abusive                                    | TOTP RFC 6238, codes Argon2id, cookies httpOnly, step-up, révocation ; ADR-002/005/008                    | Not implemented                                                                    |
-| RBAC         | Escalade verticale/horizontale, champs sensibles                                        | Contrôle serveur route/action/champ, moindre privilège ; ADR-020                                          | Not implemented                                                                    |
-| Paiement     | Double débit, faux webhook, replay, ordre inversé                                       | Signature, idempotence, Inbox/Outbox, PaymentAttempts immuables ; ADR-012/015                             | Not implemented                                                                    |
-| Ledger       | Altération, déséquilibre, double comptage                                               | Append-only, groupes équilibrés, compensation, reconciliation ; ADR-013/014                               | Not implemented                                                                    |
-| Droits       | Accès sans achat, révocation excessive                                                  | Entitlement permanent ciblé, checks serveur ; ADR-016                                                     | Not implemented                                                                    |
-| Média        | URL brute, partage, scraping, logs sensibles                                            | Stockage privé, descriptor court, PreviewGrant, device binding ; ADR-011/017                              | Not implemented                                                                    |
-| Offline      | Extraction clé/fichier, replay licence, copie appareil                                  | AES-256-GCM, clé non exportable, licence renouvelable ; ADR-018                                           | Not implemented                                                                    |
-| Audit        | Suppression ou falsification                                                            | Écriture transactionnelle, blocage UPDATE/DELETE, exports audités ; ADR-019                               | Not implemented                                                                    |
-| Capture      | Enregistrement écran et dispositif externe                                              | `FLAG_SECURE`, détection/pause iOS, protections en couches sans promesse absolue ; ADR-024                | Not implemented                                                                    |
-| Données/logs | Fuite PII, token ou secret                                                              | Redaction des champs et messages, `msg` catégoriel, minimisation, contrôle accès, rétention et tests      | Foundation validated locally by S0.6 — no business PII flow                        |
-| Supply chain | Package compromis, licence incompatible, épuisement de pile lors d’une fusion récursive | Versions verrouillées, revue, audit, provenance, scripts qualifiés, override M0.3 ciblé et gate de graphe | M0.1/M0.2 fusionnés ; gates locaux M0.3 réussis, revues et workflows encore requis |
-| CI/CD        | Secret exposé, artefact altéré, déploiement non autorisé                                | Permissions lecture seule, actions épinglées, scans, timeouts et rollback                                 | S0.5/S0.6 fusionnés ; workflows M0.3 en attente de publication du head final       |
+| Domaine      | Menaces principales                                                                                          | Mesures attendues / autorités                                                                                        | État                                                                                      |
+| ------------ | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Identité/OTP | Brute force, interception, replay, enumeration                                                               | Rate limits, OTP court et haché, rotation session, logs masqués ; ADR-010                                            | Not implemented                                                                           |
+| Admin        | Vol de session, MFA contournée, récupération abusive                                                         | TOTP RFC 6238, codes Argon2id, cookies httpOnly, step-up, révocation ; ADR-002/005/008                               | Not implemented                                                                           |
+| RBAC         | Escalade verticale/horizontale, champs sensibles                                                             | Contrôle serveur route/action/champ, moindre privilège ; ADR-020                                                     | Not implemented                                                                           |
+| Paiement     | Double débit, faux webhook, replay, ordre inversé                                                            | Signature, idempotence, Inbox/Outbox, PaymentAttempts immuables ; ADR-012/015                                        | Not implemented                                                                           |
+| Ledger       | Altération, déséquilibre, double comptage                                                                    | Append-only, groupes équilibrés, compensation, reconciliation ; ADR-013/014                                          | Not implemented                                                                           |
+| Droits       | Accès sans achat, révocation excessive                                                                       | Entitlement permanent ciblé, checks serveur ; ADR-016                                                                | Not implemented                                                                           |
+| Média        | URL brute, partage, scraping, logs sensibles                                                                 | Stockage privé, descriptor court, PreviewGrant, device binding ; ADR-011/017                                         | Not implemented                                                                           |
+| Offline      | Extraction clé/fichier, replay licence, copie appareil                                                       | AES-256-GCM, clé non exportable, licence renouvelable ; ADR-018                                                      | Not implemented                                                                           |
+| Audit        | Suppression ou falsification                                                                                 | Écriture transactionnelle, blocage UPDATE/DELETE, exports audités ; ADR-019                                          | Not implemented                                                                           |
+| Capture      | Enregistrement écran et dispositif externe                                                                   | `FLAG_SECURE`, détection/pause iOS, protections en couches sans promesse absolue ; ADR-024                           | Not implemented                                                                           |
+| Données/logs | Fuite PII, token ou secret                                                                                   | Redaction des champs et messages, `msg` catégoriel, minimisation, contrôle accès, rétention et tests                 | Foundation validated locally by S0.6 — no business PII flow                               |
+| Supply chain | Package compromis, licence incompatible, épuisement de pile ou vulnérabilité d’une dépendance SQL transitive | Versions verrouillées, revue, audit, provenance, scripts qualifiés, deux overrides parents exacts et gates de graphe | M0.1/M0.2 fusionnés ; M0.3-R2 publié, audits à zéro, licences contrôlées et scanner 49/49 |
+| CI/CD        | Secret exposé, artefact altéré, déploiement non autorisé                                                     | Permissions lecture seule, actions épinglées, scans, timeouts et rollback                                            | S0.5/S0.6 fusionnés ; quatre workflows #43 `success` sur le head M0.3-R2 exact            |
 
 ## Risques ouverts et gates
 
@@ -110,11 +112,30 @@ financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
   imbriquée dans le lockfile, et zéro alerte Secret Scanning ouverte.
 - M0.3 traite `GHSA-ggr8-5vv4-36mx` sans modifier Prisma `7.9.1` : le scanner
   exige une unique installation `deepmerge-ts@8.0.1` sous un override limité à
-  `@prisma/config@7.9.1`. Les tests bornent le comportement récursif dans un
-  processus enfant et vérifient la fusion d’objets ordinaires. La rupture
-  majeure reste interdite pour de futurs usages `Map` ou graphes complexes sans
-  nouvelle qualification. L’override devra être retiré dès qu’une version
-  stable autorisée de Prisma intégrera officiellement une version corrigée.
+  `@prisma/config@7.9.1`. M0.3-R1 durcit le parcours des overrides et rejette
+  les variantes globales, élargies, en plage, parallèles ou mal rattachées. Les
+  tests bornent le comportement récursif dans un processus enfant et vérifient
+  la fusion d’objets ordinaires. La rupture majeure reste interdite pour de
+  futurs usages `Map` ou graphes complexes sans nouvelle qualification.
+- M0.3-R2 traite `GHSA-3f6p-5ww8-9rcr`, qui permet à un serveur MySQL
+  malveillant ou à un intermédiaire réseau de provoquer l’envoi d’identifiants
+  en clair via `mysql_clear_password`. Il maintient `prisma` et
+  `@prisma/client` en `7.9.1` et remplace
+  uniquement leur résolution transitive `mysql2@3.15.3` par `3.22.0`, sous le
+  parent exact `prisma@7.9.1`. Le graphe ajoute `sql-escaper@1.5.1` et retire
+  `seq-queue@0.0.5` et `sqlstring@2.3.3`. Le scanner rejette toute installation
+  vulnérable ou supplémentaire et toute variante d’override hors de ce chemin.
+  Les audits complet et production sont à zéro ; le contrôle couvre 1 129
+  paquets sans licence absente ou non approuvée.
+- Les deux overrides restent des mesures temporaires. Chacun devra être retiré
+  séparément lorsqu’une version stable autorisée de Prisma intégrera
+  officiellement la dépendance corrigée correspondante. Tout nouveau graphe
+  exige de rejouer audits, licences, tests de scanner et qualification Prisma.
+- L’état M0.3-R2 contrôlé est le head
+  `68027ed15948228ceef7277ad1fa0a47761751e2`, avec le lockfile SHA-256
+  `2041E52ECFB25092FADC32EE207C84DED22E9805233CCEA38889170CD1D08742`.
+  Les quatre workflows #43 (`Security`, `Quality Linux`, `Infrastructure` et
+  `Launcher Windows`) ont tous conclu `success` sur ce head exact.
 - Secret Scanning et sa push protection sont activés sur GitHub. En revanche,
   Dependabot Alerts et Dependabot security updates sont désactivés dans les
   métadonnées du dépôt, et Code Scanning ne possède aucune analyse. S0.6 ne

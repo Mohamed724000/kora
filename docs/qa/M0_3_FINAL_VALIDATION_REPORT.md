@@ -1,25 +1,33 @@
-# KORA+ — Rapport final de validation M0.3
+# KORA+ — Rapport final de validation M0.3, R1 et R2
 
-Date : 2026-08-20
-Lot : M0.3 — remédiation supply-chain `deepmerge-ts`
+Date initiale : 2026-08-20
+Réconciliation documentaire : 2026-09-02
+Lot : M0.3 — remédiations supply-chain `deepmerge-ts` et `mysql2`
 Base : `a602fd38f32d018867c8a058deace0325b4a7c31`
 Branche : `chore/m0-3-deepmerge-ts-security-hotfix`
+Head M0.3-R2 publié : `68027ed15948228ceef7277ad1fa0a47761751e2`
 
-Statut : **validation locale et trois revues indépendantes réussies — quatre
-workflows du head publié encore requis avant revue CTO**.
+Statut : **M0.3-R2 publié sur la Draft PR #29 ; quatre workflows #43 réussis
+sur le head exact ; réconciliation documentaire M0.3-R3 validée localement et
+en attente d’une décision CTO de commit**.
 
-Le commit qui contient ce rapport ne peut pas s’auto-référencer. Le head exact
-et les identifiants des workflows sont donc portés par la Draft PR et par le
-compte rendu d’exécution.
+## Chronologie publiée
 
-## Périmètre candidat
+1. M0.3 — `2a45184509081876ece99816d4c1a3b957ff1438` — correction ciblée
+   `deepmerge-ts` ;
+2. M0.3-R1 — `4a3bc1c4f481587826c92e759a833c43ca9e48e4` — durcissement du
+   scanner et des tests de régression ;
+3. M0.3-R2 — `68027ed15948228ceef7277ad1fa0a47761751e2` — correction ciblée
+   `mysql2`, parent direct R1.
 
-- override ciblé `@prisma/config@7.9.1 > deepmerge-ts@8.0.1` ;
-- lockfile npm régénéré avec Node `22.18.0` et npm `10.9.3` ;
-- scanner supply-chain et tests positifs/négatifs ;
-- revue tierce M0.3, Decision Log, Threat Model et présent rapport.
+## Périmètre cumulatif publié
 
-Le diff candidat contient exactement huit fichiers autorisés :
+M0.3 a introduit l’override ciblé
+`@prisma/config@7.9.1 > deepmerge-ts@8.0.1`. M0.3-R1 a durci le scanner
+contre les variantes d’override et les graphes de lockfile non autorisés.
+M0.3-R2 a ajouté l’override ciblé
+`prisma@7.9.1 > mysql2@3.22.0`, sans changer Prisma. Les trois commits publiés
+sur la PR #29 touchent toujours exactement huit fichiers :
 
 1. `package.json` ;
 2. `package-lock.json` ;
@@ -30,75 +38,90 @@ Le diff candidat contient exactement huit fichiers autorisés :
 7. `docs/governance/DECISION_LOG.md` ;
 8. `docs/security/THREAT_MODEL.md`.
 
-Aucun code applicatif, OpenAPI, modèle métier Prisma, migration, workflow,
-manifest workspace, lockfile Flutter, infrastructure ou contenu S1.1 n’est
-modifié. `DECISION_LOG.md` et `THREAT_MODEL.md` sont des chemins vivants
-communs aux deux worktrees, mais leurs hunks M0.3 sont autonomes et les copies
-locales S1.1 restent identiques octet par octet.
+Aucun code applicatif, contrat OpenAPI, modèle métier Prisma, migration,
+workflow, manifeste workspace, lockfile Flutter, infrastructure ou contenu
+S1.1 n’est modifié. M0.3-R3 réconcilie localement uniquement les quatre
+documents déjà présents dans cette liste ; il n’ajoute aucun fichier et n’est
+pas encore commité ni publié.
 
 ## Résolution et déterminisme
 
-Résolution initiale :
+Résolution initiale de M0.3 :
 
 ```text
 prisma@7.9.1 → @prisma/config@7.9.1 → deepmerge-ts@7.1.5
 ```
 
-Résolution finale :
+Résolution finale publiée après M0.3-R2 :
 
 ```text
 prisma@7.9.1 → @prisma/config@7.9.1 → deepmerge-ts@8.0.1 overridden
+prisma@7.9.1 → mysql2@3.22.0 overridden → sql-escaper@1.5.1
 ```
 
-- SHA-256 initial de `package-lock.json` :
-  `54448CA65A03D32F590733D9F6C4E189E9A6455884EFB46923850F9060672492` ;
-- SHA-256 final de `package-lock.json` :
-  `108E02A505CA331DFAEFD08EF61249A5162F89A77124DCD6260DB7C9187D7EA4` ;
+- SHA-256 publié de `package-lock.json` :
+  `2041E52ECFB25092FADC32EE207C84DED22E9805233CCEA38889170CD1D08742` ;
 - SHA-256 inchangé de `apps/mobile/pubspec.lock` :
   `44C54ADEE80B74F8860D7CC87158FEDAD520F60DB0BD918D8D19BEF5A8326B7E`.
 
-Deux `npm ci` successifs ont installé chacun 1 136 paquets avec un audit
-intégré à zéro. Le SHA-256 npm est resté identique après chacune des deux
-installations. Le lockfile Flutter est également resté identique après
-`flutter pub get`.
+Deux `npm ci` successifs avec Node `22.18.0` et npm `10.9.3` ont installé
+chacun 1 135 paquets. L’empreinte du lockfile est restée identique après les
+deux installations, et les audits intégrés ont signalé zéro vulnérabilité.
 
-Le diff lockfile remplace uniquement le nœud physique racine
-`node_modules/deepmerge-ts@7.1.5` par `8.0.1`, avec son URL, son intégrité et
-ses deux métadonnées de financement. Aucun paquet n’est ajouté ou supprimé et
-aucune autre version ni topologie ne change.
+Le diff cumulatif du lockfile remplace `deepmerge-ts@7.1.5` par `8.0.1`, puis
+`mysql2@3.15.3` par `3.22.0`. Pour cette dernière transition, il ajoute
+`sql-escaper@1.5.1` et retire `seq-queue@0.0.5` et `sqlstring@2.3.3`. Aucune
+autre version, dépendance ou topologie sans rapport n’est modifiée. Les
+métadonnées publiées de `@prisma/config@7.9.1` et `prisma@7.9.1` continuent
+respectivement de déclarer `deepmerge-ts@7.1.5` et `mysql2@3.15.3` ; les deux
+résolutions corrigées proviennent donc uniquement des overrides parents
+exacts.
 
-## Résultats locaux
+## Preuves finales reproductibles
 
-| Contrôle                         | Résultat                                                                                                                                                  |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| versions                         | PASS — Node `22.18.0`, npm `10.9.3`, Flutter `3.44.1`, Dart `3.12.1`                                                                                      |
-| registre npm et avis GitHub      | PASS — `8.0.1`, BSD-3-Clause, non déprécié, provenance/signatures présentes, correctif déclaré à partir de `8.0.0`                                        |
-| deux installations déterministes | PASS — 2 × 1 136 paquets, empreinte finale stable                                                                                                         |
-| `npm ls --all`                   | PASS — code 0                                                                                                                                             |
-| graphe `deepmerge-ts`            | PASS — une seule installation physique `8.0.1` sous `@prisma/config@7.9.1`                                                                                |
-| famille Prisma                   | PASS — `prisma`, `@prisma/client` et `@prisma/config` restent en `7.9.1`                                                                                  |
-| audits complet et production     | PASS — 0 vulnérabilité chacun                                                                                                                             |
-| licences                         | PASS — 1 130 paquets, 0 licence absente, 0 non approuvée                                                                                                  |
-| scanner dépôt et historique      | PASS — 311 fichiers, manifeste immuable 52/52, 5 scripts qualifiés                                                                                        |
-| tests scanner ciblés             | PASS — 25/25, dont fixtures vulnérable/corrigée, installation imbriquée, plage, sélecteurs globaux/parallèles, changement Prisma et graphe récursif isolé |
-| tests d’outillage                | PASS — 32/32                                                                                                                                              |
-| format global                    | PASS — npm et 15 fichiers Flutter, 0 diff généré                                                                                                          |
-| lint global                      | PASS — tous workspaces ; Flutter `analyze`, 0 problème                                                                                                    |
-| typecheck global                 | PASS — tous workspaces et Flutter                                                                                                                         |
-| tests globaux                    | PASS — 61 tests : Web 10, Admin 13, API 22, contrats 1, config 1, UI 4, Flutter 10                                                                        |
-| test API historique              | PASS — 5 exécutions indépendantes, chacune 9/9                                                                                                            |
-| builds npm                       | PASS — Web, Admin, API, contrats, config et UI, code 0                                                                                                    |
-| APK Flutter debug                | PASS — build direct, code 0, 161 072 371 octets, SHA-256 `53E2D131738FB40A9A02D8B51898443782AF460B1D62E061C97279B2DD714501`                               |
-| OpenAPI                          | PASS — 2 chemins, 3 schémas, références résolues                                                                                                          |
-| validation CI                    | PASS — 4 workflows, 4 actions approuvées et épinglées                                                                                                     |
-| launcher                         | PASS — le code enfant contrôlé `23` est correctement propagé comme échec                                                                                  |
-| Prisma réel                      | PASS — chargement config, format, validate et deux generate                                                                                               |
-| déterminisme Prisma              | PASS — deux générations identiques, empreinte agrégée `4DC00A32821A673C758F8EDF2DC8B2CAF0B959637740DA6AEB5C1015A5B32F69`                                  |
-| infrastructure                   | PASS — images verrouillées, sécurité Compose, santé, persistance, reset ciblé et idempotence                                                              |
-| santé API                        | PASS — live/ready, 3 pannes Redis, 3 pannes PostgreSQL, récupérations et reset, même PID API, aucune fuite de secret ou DSN                               |
-| nettoyage runtime                | PASS — pile et réseau KORA+ arrêtés, volumes conservés, aucun processus build/API M0.3 résiduel                                                           |
-| `git diff --check`               | PASS — aucune erreur                                                                                                                                      |
-| `git fsck --full`                | PASS — aucune corruption ; uniquement des objets historiques non référencés                                                                               |
+Les résultats techniques ci-dessous sont les preuves cumulatives publiées de
+M0.3, R1 et R2. Le micro-lot R3 ne les réexécute pas : il ne lance que les
+contrôles documentaires explicitement autorisés.
+
+| Contrôle                         | Résultat final publié                                                                                                    |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| versions                         | PASS — Node `22.18.0`, npm `10.9.3`, Flutter `3.44.1`, Dart `3.12.1`                                                     |
+| deux installations déterministes | PASS — 2 × 1 135 paquets, lockfile final stable                                                                          |
+| `npm ls --all`                   | PASS — code 0, graphe complet valide                                                                                     |
+| graphe `deepmerge-ts`            | PASS — une seule installation physique `8.0.1`, imposée uniquement sous `@prisma/config@7.9.1`                           |
+| graphe `mysql2`                  | PASS — une seule installation physique `3.22.0`, imposée uniquement sous `prisma@7.9.1`                                  |
+| famille Prisma                   | PASS — `prisma`, `@prisma/client` et `@prisma/config` restent en `7.9.1`                                                 |
+| audits complet et production     | PASS — 0 vulnérabilité dans chaque audit                                                                                 |
+| licences                         | PASS — 1 129 paquets, 0 licence absente, 0 licence non approuvée ; notices inchangées après contrôle                     |
+| scanner ciblé                    | PASS — 49/49, avec cas positifs et négatifs pour les deux overrides et leurs parents exacts                              |
+| tests d’outillage                | PASS — 56/56                                                                                                             |
+| tests globaux                    | PASS — 61/61 : Web 10, Admin 13, API 22, contrats 1, config 1, UI 4, Flutter 10                                          |
+| format, lint et typecheck        | PASS — workspaces npm et Flutter applicables                                                                             |
+| builds npm                       | PASS — Web, Admin, API, contrats, config et UI                                                                           |
+| APK Flutter debug                | PASS — build direct, 161 072 371 octets, SHA-256 `53E2D131738FB40A9A02D8B51898443782AF460B1D62E061C97279B2DD714501`      |
+| OpenAPI                          | PASS — 2 chemins, 3 schémas, références résolues                                                                         |
+| Prisma réel                      | PASS — chargement config, format, validate et deux generate                                                              |
+| déterminisme Prisma              | PASS — deux générations identiques, empreinte agrégée `4DC00A32821A673C758F8EDF2DC8B2CAF0B959637740DA6AEB5C1015A5B32F69` |
+| infrastructure et santé API      | PASS — contrôles S0.4/S0.6 applicables, pannes et récupérations bornées, aucune fuite de secret ou DSN                   |
+| nettoyage runtime                | PASS — aucun processus build/API M0.3 résiduel                                                                           |
+| `git diff --check`               | PASS — aucune erreur sur l’état R2 publié                                                                                |
+| intégrité Git                    | PASS — chaîne de trois commits et huit fichiers contrôlée                                                                |
+
+## Publication contrôlée
+
+Les quatre workflows GitHub Actions portant le numéro d’exécution `43` sont
+terminés avec `success` sur le head exact
+`68027ed15948228ceef7277ad1fa0a47761751e2` :
+
+| Workflow           | Run ID        | Conclusion |
+| ------------------ | ------------- | ---------- |
+| `Infrastructure`   | `33628257911` | `success`  |
+| `Launcher Windows` | `33628257887` | `success`  |
+| `Security`         | `33628257867` | `success`  |
+| `Quality Linux`    | `33628257884` | `success`  |
+
+La PR #29 est ouverte, Draft, non fusionnée et sans conflit. À l’état R2
+publié, elle contient trois commits et huit fichiers.
 
 ## Incidents conservés
 
@@ -108,6 +131,11 @@ aucune autre version ni topologie ne change.
   physique `7.1.5`, marqué `invalid` ; cet état n’a pas été retenu.
 - `npm update deepmerge-ts --package-lock-only --ignore-scripts`, sans force,
   a réévalué uniquement le nœud autorisé et ramené l’audit à zéro.
+- La correction `mysql2` a modifié la topologie transitive attendue :
+  `sql-escaper` a été ajouté et `seq-queue` ainsi que `sqlstring` ont été
+  retirés. Ce changement du graphe est intentionnel et borné à
+  `mysql2@3.22.0` ; il n’a pas été masqué comme une simple variation de
+  métadonnées.
 - L’empreinte du client Prisma avant la première génération n’existait pas car
   `node_modules/.prisma/client` n’était pas encore créé. Seules les deux
   générations successives existantes et identiques constituent la preuve.
@@ -123,33 +151,41 @@ aucune autre version ni topologie ne change.
 
 Aucun échec intermédiaire n’est déclaré PASS.
 
-## Revues indépendantes
+## Limites non fonctionnelles
 
-| Revue                         | Verdict final | Résultat                                                                                                                                                                                                                            |
-| ----------------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| supply-chain et compatibilité | PASS          | Override, registre, avis, graphe, lockfile, audits, licences et compatibilité v8 vérifiés. Le finding initial sur trois sélecteurs parallèles non bloqués a été corrigé ; scanner 25/25, outillage 32/32 et nouvelle revue réussis. |
-| Prisma/API et non-régression  | PASS          | Famille Prisma 7.9.1, configuration réelle, schéma, API 22/22, OpenAPI et absence de diff applicatif/métier vérifiés après le durcissement.                                                                                         |
-| intégrité Git et périmètre    | PASS          | Huit fichiers exacts, index vide, 0/0 face à `origin/main`, aucun état Git transitoire et 39/39 fichiers S1.1 inchangés. Le statut S0.6 obsolète trouvé lors de la première lecture a été réconcilié puis revérifié.                |
+- Les overrides sont temporaires et doivent être retirés dans un futur lot
+  autorisé lorsqu’une version stable qualifiée de Prisma résoudra officiellement
+  les deux dépendances corrigées.
+- La qualification `deepmerge-ts` couvre les objets utilisés par la
+  configuration Prisma et un graphe récursif borné. Un futur usage de `Map` ou
+  de graphes complexes exige une nouvelle qualification.
+- Gitleaks, le test Sentry avec DSN réel, le build iOS/macOS et l’inspection
+  navigateur interactive restent `NON EXÉCUTÉS` pour les raisons consignées au
+  Foundation Gate ; M0.3 ne prétend pas les remplacer.
+- Les états du registre npm et des avis de sécurité sont temporels. Un futur
+  lot doit refaire audit, licences et provenance avant toute nouvelle
+  modification de dépendance ou release.
 
-Réserves non bloquantes des reviewers : le test récursif versionné couvre un
-graphe auto-référencé unique, tandis que le scénario exact à deux graphes de
-l’avis a été vérifié séparément en lecture seule ; une future utilisation de
-`Map` ou d’autres structures complexes exigera une nouvelle qualification ;
-les ajouts S1.1 aux deux documents vivants devront être réconciliés avec les
-hunks M0.3 lors de la reprise autorisée de S1.1.
+## Historique des revues techniques publiées
 
-## Publication
+| Étape   | Objet                                                                                                 | Conclusion publiée                                                                                                          |
+| ------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| M0.3    | correction `deepmerge-ts`, compatibilité Prisma et preuves locales                                    | PASS après correction des findings initiaux                                                                                 |
+| M0.3-R1 | parcours itératif et rejet des variantes globales, élargies, en plage ou rattachées à un autre parent | PASS — scanner 31/31 et outillage 38/38 à R1                                                                                |
+| M0.3-R2 | correction `mysql2`, reproductibilité, audits, licences, gouvernance et périmètre                     | PASS — cumul porté à 49/49 et 56/56 ; publication au head `68027ed15948228ceef7277ad1fa0a47761751e2` et workflows #43 verts |
 
-Les identifiants des quatre workflows GitHub (`Security`, `Quality Linux`,
-`Infrastructure`, `Launcher Windows`) ne seront connus qu’après publication du
-head final. Toute exécution non terminée avec succès reste non validée.
+Les réserves non bloquantes des revues publiées sont conservées dans les
+limites ci-dessus. Les trois revues documentaires indépendantes M0.3-R3 sont
+consignées dans le compte rendu d’exécution local ; elles ne remplacent pas les
+preuves techniques publiées.
 
 ## Préservation S1.1
 
 Avant la création du worktree M0.3, les 39 fichiers S1.1 ont été inventoriés
-avec taille et SHA-256. Ils ont été revérifiés identiques immédiatement après
-création puis une troisième fois après toutes les validations locales : 39/39
-fichiers sont identiques octet par octet. Le worktree original reste sur
+avec taille et SHA-256. Au préflight M0.3-R3, les 39/39 fichiers sont encore
+identiques octet par octet et leur empreinte agrégée reste
+`8957cbf3ff27110af162f53c72e0c129860f0fcdfb8bfddab1ae3714a1d9c6dc`.
+Le worktree original reste sur
 `feat/s1-1-audio-contract-data-ux-gate` au HEAD
 `a602fd38f32d018867c8a058deace0325b4a7c31`, avec index vide et lockfiles
 inchangés. S1.1 reste suspendu et S1.2 n’est pas commencé.

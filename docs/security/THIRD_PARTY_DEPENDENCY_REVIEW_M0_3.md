@@ -1,8 +1,10 @@
-# KORA+ — Revue supply-chain M0.3
+# KORA+ — Revue supply-chain M0.3, R1 et R2
 
-Date : 2026-08-20
-Lot : M0.3 — remédiation `deepmerge-ts`
+Date initiale : 2026-08-20
+Réconciliation documentaire : 2026-09-02
+Lot : M0.3 — remédiations `deepmerge-ts` et `mysql2`
 Base : `a602fd38f32d018867c8a058deace0325b4a7c31`
+Head M0.3-R2 publié : `68027ed15948228ceef7277ad1fa0a47761751e2`
 
 ## Apparition du blocage
 
@@ -22,6 +24,27 @@ graphes récursifs. La première version corrigée déclarée est `8.0.0`.
 
 Référence primaire :
 [GHSA-ggr8-5vv4-36mx](https://github.com/advisories/GHSA-ggr8-5vv4-36mx).
+
+Après la publication de M0.3-R1, une nouvelle alerte transitive haute a été
+attribuée à l’unique chaîne suivante :
+
+```text
+prisma@7.9.1
+└─ mysql2@3.15.3
+```
+
+L’avis `GHSA-3f6p-5ww8-9rcr`, de sévérité haute, couvre `mysql2 < 3.22.0`.
+Un serveur MySQL malveillant ou un intermédiaire réseau peut demander le
+plugin `mysql_clear_password` et obtenir des identifiants en clair lorsque la
+connexion n’est pas protégée par TLS. La première version corrigée déclarée
+est `3.22.0`.
+
+Référence primaire :
+[GHSA-3f6p-5ww8-9rcr](https://github.com/advisories/GHSA-3f6p-5ww8-9rcr).
+
+La décision CTO M0.3-R2 a imposé la correction minimale
+`prisma@7.9.1 > mysql2@3.22.0`, sans modifier Prisma ni remplacer cette
+solution par une montée majeure.
 
 ## Qualification de `deepmerge-ts@8.0.1`
 
@@ -43,53 +66,82 @@ registre npm :
 exacte `deepmerge-ts@7.1.5`. Le correctif reste donc un override ciblé, et non
 une modification du paquet Prisma.
 
+## Qualification de `mysql2@3.22.0`
+
+La version imposée par la décision CTO M0.3-R2 est résolue une seule fois dans
+le lockfile :
+
+- version : `3.22.0` ;
+- source : `https://registry.npmjs.org/mysql2/-/mysql2-3.22.0.tgz` ;
+- intégrité :
+  `sha512-4jaJYBObj7FhD3lnZhqX1yDMuZN4mQNz+IolDySDXT7fbozMBpeGQNcuWXKUqo4ahkAEfkjUHPjnwuDI0/6VKw==` ;
+- licence : `MIT` ;
+- moteur : Node `>=8.0`, compatible avec Node `22.18.0` ;
+- parent approuvé unique : `prisma@7.9.1`.
+
+`prisma@7.9.1` conserve dans ses métadonnées verrouillées la dépendance exacte
+`mysql2@3.15.3`. L’override ciblé force uniquement sa résolution physique vers
+`3.22.0`. Prisma et Prisma Client restent strictement en `7.9.1`.
+
 ## Correction minimale
 
-Le manifeste racine ajoute exclusivement :
+Le manifeste racine contient exactement les deux overrides parents suivants :
 
 ```json
 {
   "overrides": {
     "@prisma/config@7.9.1": {
       "deepmerge-ts": "8.0.1"
+    },
+    "prisma@7.9.1": {
+      "mysql2": "3.22.0"
     }
   }
 }
 ```
 
-Le lockfile remplace une seule installation physique :
+Le lockfile final résout les deux installations physiques corrigées :
 
 ```text
 node_modules/deepmerge-ts@7.1.5
 → node_modules/deepmerge-ts@8.0.1
+
+node_modules/mysql2@3.15.3
+→ node_modules/mysql2@3.22.0
+  └─ node_modules/sql-escaper@1.5.1
 ```
 
-Les seules métadonnées nouvelles sont l’intégrité, l’URL de tarball et les
-deux entrées de financement publiées par `8.0.1`. Aucune entrée de paquet n’est
-ajoutée ou supprimée. `prisma`, `@prisma/client` et `@prisma/config` restent
-exactement en `7.9.1`.
+Le changement `mysql2` ajoute `sql-escaper@1.5.1` et retire
+`seq-queue@0.0.5` ainsi que `sqlstring@2.3.3`. Aucun autre paquet physique
+n’est ajouté, supprimé ou changé de version. `prisma`, `@prisma/client` et
+`@prisma/config` restent exactement en `7.9.1`. Le SHA-256 publié de
+`package-lock.json` est
+`2041E52ECFB25092FADC32EE207C84DED22E9805233CCEA38889170CD1D08742`.
 
 ## Gate versionné
 
-Le scanner bloque désormais :
+Le scanner n’autorise que les deux chemins exacts :
 
-- l’absence de l’override exact et ciblé ;
-- toute plage SemVer à la place de `8.0.1` ;
-- tout override global de `deepmerge-ts` ;
-- tout élargissement de l’objet d’override à une autre dépendance ;
-- toute modification de `prisma` ou `@prisma/client` ;
-- toute résolution lockfile différente de Prisma `7.9.1` ;
-- toute installation physique supplémentaire ou imbriquée de `deepmerge-ts` ;
-- toute installation vulnérable `<8.0.0`.
+```text
+@prisma/config@7.9.1 > deepmerge-ts = 8.0.1
+prisma@7.9.1 > mysql2 = 3.22.0
+```
 
-Les fixtures couvrent explicitement `7.1.5` en négatif, `8.0.1` en positif,
-une installation vulnérable imbriquée, une plage, un override global exact ou
-sélectionné par version, des sélecteurs Prisma parallèles non versionnés ou en
-plage, et un changement de Prisma.
+Pour chacun, il bloque l’absence, une plage, un wildcard, un tag, une référence
+externe, un sélecteur global ou parallèle, un parent non versionné ou mal
+versionné, un rattachement à un autre parent et tout élargissement de l’objet
+d’override. Il exige également Prisma et Prisma Client `7.9.1`, les métadonnées
+amont verrouillées `deepmerge-ts@7.1.5` et `mysql2@3.15.3`, ainsi qu’une seule
+installation physique racine de chaque version corrigée. Toute installation
+vulnérable ou imbriquée supplémentaire est bloquante.
 
-Ce gate est temporaire. Il doit être retiré dans un futur lot explicitement
-autorisé dès qu’une version stable qualifiée de Prisma n’embarque plus une
-contrainte vulnérable et résout officiellement `deepmerge-ts >=8.0.0`.
+Les 49/49 tests ciblés couvrent les états conformes et les variantes négatives
+des deux chemins. Avec les autres contrôles du scanner, l’outillage totalise
+56/56 tests.
+
+Ces gates sont temporaires. Chacun doit être retiré séparément dans un futur
+lot explicitement autorisé lorsqu’une version stable qualifiée de Prisma
+résoudra officiellement la dépendance corrigée correspondante.
 
 ## Compatibilité de la rupture majeure
 
@@ -110,11 +162,33 @@ Les différences de comportement de la v8 sur les `Map`, graphes récursifs et
 limites de profondeur ne sont pas utilisées par la configuration KORA+
 actuelle. Leur introduction future exige une nouvelle qualification.
 
+La mise à jour `mysql2` reste transitive et n’altère ni le schéma Prisma ni le
+code applicatif. La compatibilité a été contrôlée par `npm ls --all`, le
+chargement de la configuration, `prisma validate`, deux `prisma generate`, les
+61/61 tests globaux et les builds applicables. Deux installations propres ont
+résolu chacune 1 135 paquets avec la même empreinte de lockfile. Les audits npm
+complet et production ont tous deux conclu à zéro vulnérabilité.
+
+## Licences et notices
+
+Le contrôle final porte sur 1 129 paquets : zéro licence absente et zéro
+licence non approuvée. `mysql2@3.22.0` et le nouveau transitif
+`sql-escaper@1.5.1` sont tous deux sous licence MIT. Le remplacement retire
+`seq-queue@0.0.5` et `sqlstring@2.3.3`. Le contrôle de distribution n’a exigé
+aucune modification de `THIRD_PARTY_NOTICES.md`, qui reste inchangé.
+
+Cette conclusion vaut uniquement pour le graphe verrouillé par le SHA-256
+`2041E52ECFB25092FADC32EE207C84DED22E9805233CCEA38889170CD1D08742`.
+Toute future modification du graphe ou release exige un nouveau contrôle des
+licences et notices.
+
 ## Isolement de S1.1
 
 M0.3 est exécuté dans le worktree frère `KORA-PLUS-M0-3`. Le worktree S1.1
 reste sur `feat/s1-1-audio-contract-data-ux-gate`, suspendu avec ses 39 fichiers
-locaux. Aucun contenu S1.1, modèle métier Prisma, migration, contrat OpenAPI,
+locaux. Leur empreinte agrégée contrôlée est
+`8957cbf3ff27110af162f53c72e0c129860f0fcdfb8bfddab1ae3714a1d9c6dc`.
+Aucun contenu S1.1, modèle métier Prisma, migration, contrat OpenAPI,
 code applicatif ou design n’est repris dans le diff M0.3. Les deux documents
 vivants `DECISION_LOG.md` et `THREAT_MODEL.md` existent dans les deux worktrees,
 mais les hunks M0.3 sont autonomes et le contenu local S1.1 original demeure
