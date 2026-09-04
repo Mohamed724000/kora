@@ -468,6 +468,13 @@ export function validatePrismaDeepmergeOverride(manifests, lockfile) {
       "package-lock must resolve Prisma, Prisma Client and @prisma/config to 7.9.1",
     );
   }
+  for (const parentPath of unexpectedDependencyParentPaths(
+    lockfile,
+    DEEPMERGE_PACKAGE,
+    [PRISMA_CONFIG_PATH],
+  )) {
+    errors.push(`deepmerge-ts has an unapproved lock parent: ${parentPath}`);
+  }
 
   const installations = deepmergeInstallations(lockfile);
   const vulnerable = installations.filter(([, metadata]) =>

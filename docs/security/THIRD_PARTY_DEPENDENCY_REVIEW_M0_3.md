@@ -1,10 +1,12 @@
-# KORA+ — Revue supply-chain M0.3 à R4
+# KORA+ — Revue supply-chain M0.3 à R5
 
 Date initiale : 2026-08-20
 Réconciliation documentaire R4 : 2026-09-03
+Réconciliation documentaire R5 : 2026-09-04
 Lot : M0.3 — remédiations `deepmerge-ts`, `mysql2`, `fast-uri` et `qs`
 Base : `a602fd38f32d018867c8a058deace0325b4a7c31`
-Head M0.3-R3 publié : `4b5b914d213e3b3803affc15d0139fe898efcd0f`
+Head publié de référence lors du contrôle local R5 (M0.3-R4) :
+`205a4c2264cc99c065da81799ecfcc7f433e24d0`
 
 ## Chronologie
 
@@ -12,8 +14,11 @@ Head M0.3-R3 publié : `4b5b914d213e3b3803affc15d0139fe898efcd0f`
 - R1 durcit le parcours et les tests du scanner ;
 - R2 corrige le premier avis `mysql2` sans changer Prisma ;
 - R3 publie la réconciliation des quatre documents vivants ;
-- R4 remédie localement les avis `fast-uri`, `mysql2` et `qs` révélés par
-  Security #44, sans commit ni mutation GitHub.
+- R4 remédie les avis `fast-uri`, `mysql2` et `qs` révélés par Security #44,
+  puis est publié avec quatre workflows #45 verts ;
+- au contrôle local prépublication du 2026-09-04, R5 corrige l’exclusivité du
+  parent de lock `deepmerge-ts` et réconcilie les preuves publiées R4 ; les
+  métadonnées de publication font foi dans GitHub.
 
 ## Apparition du blocage
 
@@ -206,9 +211,26 @@ n’est ajouté, supprimé ou changé de version. `prisma`, `@prisma/client` et
 `@prisma/config` restent exactement en `7.9.1`. R4 n’ajoute ni ne retire aucun
 paquet physique. Il change seulement les trois versions ci-dessus et la
 contrainte déclarée `sql-escaper` de `^1.3.3` à `^1.5.1`, sans modifier sa
-résolution `1.5.1`. Le SHA-256 local R4 de
+résolution `1.5.1`. Le SHA-256 publié R4 de
 `package-lock.json` est
 `E47CEA6A6853ABBDEB5A82A1D537C9C9DA92486D7A9F2EC72891A7A4101E2044`.
+
+## Publication R4
+
+Le commit R4 `205a4c2264cc99c065da81799ecfcc7f433e24d0` est le cinquième
+commit de la Draft PR #29, dont le périmètre cumulatif reste limité à huit
+fichiers. Les quatre workflows #45 portant ce head exact ont réussi :
+
+| Workflow           | Run ID        | Conclusion |
+| ------------------ | ------------- | ---------- |
+| `Infrastructure`   | `33755877761` | `success`  |
+| `Launcher Windows` | `33755877765` | `success`  |
+| `Security`         | `33755877754` | `success`  |
+| `Quality Linux`    | `33755877780` | `success`  |
+
+Ces éléments décrivent l’état publié R4 qui servait de référence au contrôle
+local R5 du 2026-09-04. Cette preuve prépublication ne s’auto-référence pas :
+les métadonnées de publication R5 font foi dans GitHub.
 
 ## Gate versionné
 
@@ -232,11 +254,14 @@ ainsi qu’une seule installation physique racine de chaque version corrigée.
 Toute installation vulnérable ou imbriquée supplémentaire, tout parent de lock
 non approuvé et toute dérive de Prisma sont bloquants.
 
-Les 65/65 tests ciblés couvrent les états conformes et les variantes négatives,
-dont version antérieure ou différente, paquet absent, installation multiple,
-mauvais parent ou chemin, override élargi, global, parallèle, rangé, wildcard,
-tag ou référence. Les 49 gates antérieurs sont conservés. Avec les autres
-contrôles, l’outillage totalise 72/72 tests.
+R4 a publié 65/65 tests ciblés. R5 conserve ces tests et ajoute un test négatif
+paramétré qui injecte un parent `deepmerge-ts` supplémentaire dans chacune des
+sections `dependencies`, `devDependencies`, `optionalDependencies` et
+`peerDependencies`. Le validator n’autorise désormais que
+`node_modules/@prisma/config` comme parent de lock de `deepmerge-ts`. Le scanner
+ciblé passe 66/66 et l’outillage 73/73 ; aucune version antérieure, absence,
+installation multiple, mauvais parent ou chemin, variante élargie, globale,
+parallèle, rangée, wildcard, tag ou référence n’est acceptée.
 
 Ces gates sont temporaires. Chacun doit être retiré séparément dans un futur
 lot explicitement autorisé lorsque son parent amont résoudra officiellement la
@@ -284,9 +309,9 @@ licences et notices.
 
 ## Isolement de S1.1
 
-M0.3 est exécuté dans le worktree frère `KORA-PLUS-M0-3`. Le worktree S1.1
-reste sur `feat/s1-1-audio-contract-data-ux-gate`, suspendu avec ses 39 fichiers
-locaux. Leur empreinte agrégée contrôlée est
+M0.3 est exécuté dans le worktree frère `KORA-PLUS-M0-3`. Au préflight R5, le
+worktree S1.1 reste sur `feat/s1-1-audio-contract-data-ux-gate`, suspendu avec
+ses 39 fichiers locaux. Leur empreinte agrégée contrôlée est
 `8957cbf3ff27110af162f53c72e0c129860f0fcdfb8bfddab1ae3714a1d9c6dc`.
 Aucun contenu S1.1, modèle métier Prisma, migration, contrat OpenAPI,
 code applicatif ou design n’est repris dans le diff M0.3. Les deux documents

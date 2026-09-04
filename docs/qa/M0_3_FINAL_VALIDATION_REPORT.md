@@ -1,15 +1,19 @@
-# KORA+ — Rapport de validation M0.3, R1, R2, R3 et R4
+# KORA+ — Rapport de validation M0.3, R1, R2, R3, R4 et R5
 
 Date initiale : 2026-08-20
 Réconciliation documentaire R4 : 2026-09-03
+Réconciliation documentaire R5 : 2026-09-04
 Lot : M0.3 — remédiations supply-chain `deepmerge-ts`, `mysql2`, `fast-uri` et `qs`
 Base : `a602fd38f32d018867c8a058deace0325b4a7c31`
 Branche : `chore/m0-3-deepmerge-ts-security-hotfix`
-Head M0.3-R3 publié : `4b5b914d213e3b3803affc15d0139fe898efcd0f`
+Head publié de référence lors du contrôle local R5 (M0.3-R4) :
+`205a4c2264cc99c065da81799ecfcc7f433e24d0`
 
-Statut : **M0.3-R4 remédié et validé localement, sans commit ni mutation
-GitHub ; Draft PR #29 toujours ouverte au head R3 ; décision CTO de commit
-requise**.
+Statut de la preuve prépublication datée du 2026-09-04 : **M0.3-R4 était publié
+sur la Draft PR #29 avec quatre workflows #45 verts ; M0.3-R5 corrigeait et
+validait localement le dernier écart du gate `deepmerge-ts` et réconciliait les
+preuves publiées. Les métadonnées de publication R5 ne sont pas
+auto-référencées dans ce rapport et font foi dans GitHub.**
 
 ## Chronologie cumulative
 
@@ -21,20 +25,24 @@ requise**.
    `mysql2`, parent direct R1 ;
 4. M0.3-R3 — `4b5b914d213e3b3803affc15d0139fe898efcd0f` — réconciliation
    documentaire, parent direct R2 ;
-5. M0.3-R4 — état local non commité — remédiation des nouveaux avis
-   `fast-uri`, `mysql2` et `qs` révélés par Security #44 le 2026-09-03.
+5. M0.3-R4 — `205a4c2264cc99c065da81799ecfcc7f433e24d0` — remédiation des
+   nouveaux avis `fast-uri`, `mysql2` et `qs`, parent direct R3 ;
+6. M0.3-R5 — contrôle local prépublication du 2026-09-04 — exclusivité du
+   parent de lock `deepmerge-ts` et réconciliation de l’état publié R4 ; les
+   métadonnées de publication font foi dans GitHub.
 
-## Périmètre cumulatif et local R4
+## Périmètre cumulatif R4 et qualification prépublication R5
 
 M0.3 a introduit l’override ciblé
 `@prisma/config@7.9.1 > deepmerge-ts@8.0.1`. M0.3-R1 a durci le scanner
 contre les variantes d’override et les graphes de lockfile non autorisés.
 M0.3-R2 a ajouté l’override ciblé
 `prisma@7.9.1 > mysql2@3.22.0`, sans changer Prisma. R3 a publié uniquement la
-réconciliation des documents. R4 remplace la cible `mysql2` par `3.23.1` et
+réconciliation des documents. R4 a remplacé la cible `mysql2` par `3.23.1` et
 ajoute les overrides parents exacts nécessaires à `fast-uri@3.1.6` et
-`qs@6.16.0`. Les quatre commits publiés sur la PR #29 et le diff local R4
-restent limités aux mêmes huit fichiers :
+`qs@6.16.0`. Au contrôle local prépublication du 2026-09-04, les cinq commits
+alors publiés sur la PR #29 et les changements R5 restaient limités aux mêmes
+huit fichiers cumulatifs :
 
 1. `package.json` ;
 2. `package-lock.json` ;
@@ -46,10 +54,12 @@ restent limités aux mêmes huit fichiers :
 8. `docs/security/THREAT_MODEL.md`.
 
 Aucun code applicatif, contrat OpenAPI, modèle métier Prisma, migration,
-workflow, manifeste workspace, lockfile Flutter, infrastructure ou contenu
-S1.1 n’est modifié. R4 modifie localement les quatre fichiers techniques et les
-quatre documents de cette liste, sans nouveau fichier. `THIRD_PARTY_NOTICES.md`
-reste inchangé.
+workflow, manifeste workspace, lockfile, infrastructure ou contenu S1.1 n’est
+modifié par R5. Lors de sa qualification locale préalable à publication, le
+micro-lot R5 touchait uniquement le scanner, son fichier de tests et les quatre
+documents M0.3 de cette liste, sans nouveau fichier.
+`package.json`, `package-lock.json`, `apps/mobile/pubspec.lock` et
+`THIRD_PARTY_NOTICES.md` restent inchangés depuis R4.
 
 ## Résolution et déterminisme
 
@@ -66,7 +76,7 @@ prisma@7.9.1 → @prisma/config@7.9.1 → deepmerge-ts@8.0.1 overridden
 prisma@7.9.1 → mysql2@3.22.0 overridden → sql-escaper@1.5.1
 ```
 
-Résolution locale après M0.3-R4 :
+Résolution publiée après M0.3-R4 :
 
 ```text
 @nestjs/cli@11.0.24 / @prisma/dev@0.24.17
@@ -79,7 +89,7 @@ prisma@7.9.1 → mysql2@3.23.1 overridden → sql-escaper@1.5.1
 prisma@7.9.1 → @prisma/config@7.9.1 → deepmerge-ts@8.0.1 overridden
 ```
 
-- SHA-256 local R4 de `package-lock.json` :
+- SHA-256 publié R4 de `package-lock.json` :
   `E47CEA6A6853ABBDEB5A82A1D537C9C9DA92486D7A9F2EC72891A7A4101E2044` ;
 - SHA-256 inchangé de `apps/mobile/pubspec.lock` :
   `44C54ADEE80B74F8860D7CC87158FEDAD520F60DB0BD918D8D19BEF5A8326B7E`.
@@ -102,13 +112,14 @@ exacts. R4 ne crée ni ne retire aucun paquet physique : il change uniquement
 `^1.5.1`, mais la résolution physique reste `sql-escaper@1.5.1`. Il n’existe
 aucun churn transitif sans rapport.
 
-## Preuves finales reproductibles
+## Preuves R4 reproductibles et validation locale R5
 
-Les résultats techniques ci-dessous sont les preuves locales R4. Ils remplacent
-les quantités R2 pour le graphe en cours, sans modifier les preuves historiques
-publiées de M0.3 à R3.
+Les résultats applicatifs et de dépendances ci-dessous sont les preuves locales
+ayant qualifié R4 avant sa publication. R5 ne modifie ni manifestes, ni
+lockfiles, ni dépendances, ni code applicatif ; il rejoue seulement les
+contrôles ciblés par son gate et conserve les preuves historiques antérieures.
 
-| Contrôle                         | Résultat local R4                                                                                                                       |
+| Contrôle                         | Résultat applicable                                                                                                                     |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | versions                         | PASS — Node `22.18.0`, npm `10.9.3`, Flutter `3.44.1`, Dart `3.12.1`                                                                    |
 | deux installations déterministes | PASS — 2 × 1 135 paquets, lockfile final stable                                                                                         |
@@ -120,8 +131,8 @@ publiées de M0.3 à R3.
 | famille Prisma                   | PASS — `prisma`, `@prisma/client` et `@prisma/config` restent en `7.9.1`                                                                |
 | audits complet et production     | PASS — 0 vulnérabilité dans chaque audit                                                                                                |
 | licences                         | PASS — 1 129 paquets, 0 licence absente, 0 licence non approuvée ; notices inchangées après contrôle                                    |
-| scanner ciblé                    | PASS — 65/65, dont 49 gates antérieurs conservés et 16 tests R4 positifs/négatifs                                                       |
-| tests d’outillage                | PASS — 72/72                                                                                                                            |
+| scanner ciblé                    | PASS R5 — 66/66 : 65 tests R4 conservés et 1 test paramétré sur les quatre sections de dépendances                                      |
+| tests d’outillage                | PASS R5 — 73/73                                                                                                                         |
 | tests globaux                    | PASS — 61/61 : Web 10, Admin 13, API 22, contrats 1, config 1, UI 4, Flutter 10                                                         |
 | format, lint et typecheck        | PASS — workspaces npm et Flutter applicables                                                                                            |
 | builds npm                       | PASS — Web, Admin, API, contrats, config et UI                                                                                          |
@@ -132,8 +143,8 @@ publiées de M0.3 à R3.
 | déterminisme Prisma              | PASS — deux générations de 16 fichiers identiques, empreinte agrégée `CE05EF02BD41633B1594EA7964A7962A6BB4E07FA8CB890FF342075BF9CF74E5` |
 | infrastructure et santé API      | PASS — contrôles S0.4/S0.6 applicables, pannes et récupérations bornées, aucune fuite de secret ou DSN                                  |
 | nettoyage runtime                | PASS — aucun processus build/API M0.3 résiduel                                                                                          |
-| `git diff --check`               | PASS — aucune erreur sur l’état local R4                                                                                                |
-| intégrité Git                    | PASS — head R3 inchangé, index vide, huit fichiers R4 uniquement, aucun commit local                                                    |
+| `git diff --check`               | PASS — aucune erreur lors du contrôle local prépublication R5                                                                           |
+| intégrité Git                    | PASS prépublication R5 — baseline R4 `205a4c2264cc99c065da81799ecfcc7f433e24d0`, index vide et six fichiers autorisés uniquement        |
 
 ## Publication contrôlée
 
@@ -160,12 +171,23 @@ exact `4b5b914d213e3b3803affc15d0139fe898efcd0f` :
 
 Security #44 échoue uniquement à l’étape d’audit npm : 11 nœuds vulnérables,
 répartis en 7 high et 4 moderate. Les étapes suivantes du job sont sautées par
-arrêt immédiat ; aucune autre défaillance de workflow n’est observée. R4 traite
-localement cette cause sans relancer #44.
+arrêt immédiat ; aucune autre défaillance de workflow n’est observée. Cet état
+reste une preuve historique : R4 en a traité la cause, puis les quatre nouveaux
+workflows #45 ont tous réussi sur le head publié
+`205a4c2264cc99c065da81799ecfcc7f433e24d0` :
 
-La PR #29 est ouverte, Draft, non fusionnée et sans conflit. Au head R3
-publié, elle contient quatre commits et huit fichiers. R4 ne modifie ni la PR,
-ni son statut, ni sa description.
+| Workflow           | Run ID        | Conclusion |
+| ------------------ | ------------- | ---------- |
+| `Infrastructure`   | `33755877761` | `success`  |
+| `Launcher Windows` | `33755877765` | `success`  |
+| `Security`         | `33755877754` | `success`  |
+| `Quality Linux`    | `33755877780` | `success`  |
+
+Lors du contrôle local préalable à la publication R5, la PR #29 était ouverte,
+Draft, non fusionnée et sans conflit. Au head R4 publié, elle contenait cinq
+commits et huit fichiers, et sa description présentait l’état cumulatif jusqu’à
+R4. Cette observation est une preuve historique ; les métadonnées de
+publication R5 font foi dans GitHub et ne sont pas auto-référencées ici.
 
 ## Incidents conservés
 
@@ -228,17 +250,19 @@ Aucun échec intermédiaire n’est déclaré PASS.
 | M0.3-R1 | parcours itératif et rejet des variantes globales, élargies, en plage ou rattachées à un autre parent | PASS — scanner 31/31 et outillage 38/38 à R1                                                                                |
 | M0.3-R2 | correction `mysql2`, reproductibilité, audits, licences, gouvernance et périmètre                     | PASS — cumul porté à 49/49 et 56/56 ; publication au head `68027ed15948228ceef7277ad1fa0a47761751e2` et workflows #43 verts |
 | M0.3-R3 | réconciliation des quatre documents vivants sans changement technique                                 | PASS — publication au head `4b5b914d213e3b3803affc15d0139fe898efcd0f`                                                       |
-| M0.3-R4 | nouveaux avis `fast-uri`, `mysql2` et `qs`, gates, reproductibilité et documentation                  | PASS local — scanner 65/65, outillage 72/72, tests globaux 61/61 ; trois revues indépendantes requises avant décision CTO   |
+| M0.3-R4 | nouveaux avis `fast-uri`, `mysql2` et `qs`, gates, reproductibilité et documentation                  | PASS — publication au head `205a4c2264cc99c065da81799ecfcc7f433e24d0` et quatre workflows #45 verts                         |
+| M0.3-R5 | parent de lock exclusif `deepmerge-ts` et réconciliation des preuves publiées R4                      | PASS prépublication du 2026-09-04 — scanner 66/66 et outillage 73/73                                                        |
 
 Les réserves non bloquantes des revues publiées sont conservées dans les
-limites ci-dessus. Les conclusions des trois revues indépendantes R4 sont
-réconciliées dans le compte rendu d’exécution local avant la décision CTO de
-commit ; elles ne remplacent pas les preuves techniques.
+limites ci-dessus. Les conclusions des revues indépendantes R4 ont été
+réconciliées avant sa publication. Les revues R5 consignées ici constituent les
+preuves locales historiques ayant précédé la décision de publication ; leur
+conclusion technique reste applicable.
 
 ## Préservation S1.1
 
 Avant la création du worktree M0.3, les 39 fichiers S1.1 ont été inventoriés
-avec taille et SHA-256. Au préflight et au postflight local M0.3-R4, les 39/39 fichiers sont encore
+avec taille et SHA-256. Au préflight R5, les 39/39 fichiers sont encore
 identiques octet par octet et leur empreinte agrégée reste
 `8957cbf3ff27110af162f53c72e0c129860f0fcdfb8bfddab1ae3714a1d9c6dc`.
 Le worktree original reste sur

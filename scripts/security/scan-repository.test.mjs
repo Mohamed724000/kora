@@ -300,6 +300,28 @@ test("rejects any vulnerable nested deepmerge-ts installation", () => {
   );
 });
 
+test("rejects an additional deepmerge-ts lock parent in every dependency section", () => {
+  for (const section of [
+    "dependencies",
+    "devDependencies",
+    "optionalDependencies",
+    "peerDependencies",
+  ]) {
+    const lockfile = structuredClone(validPrismaDeepmergeLock);
+    const parentPath = `node_modules/example-${section}`;
+    lockfile.packages[parentPath] = {
+      [section]: { "deepmerge-ts": "8.0.1" },
+      version: "1.0.0",
+    };
+
+    assert.deepEqual(
+      validatePrismaDeepmergeOverride(validPrismaDeepmergeManifests, lockfile),
+      [`deepmerge-ts has an unapproved lock parent: ${parentPath}`],
+      section,
+    );
+  }
+});
+
 test("rejects a ranged Prisma deepmerge-ts override", () => {
   const manifests = structuredClone(validPrismaDeepmergeManifests);
   manifests[""].overrides["@prisma/config@7.9.1"]["deepmerge-ts"] = "^8.0.1";
