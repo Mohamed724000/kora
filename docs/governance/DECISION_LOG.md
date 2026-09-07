@@ -159,6 +159,24 @@ rester Draft. La décision CTO de clôture ultérieure a autorisé exclusivement
 Ready et le merge commit ci-dessus. Elle n’a autorisé ni tag, release,
 déploiement, suppression de branche, ni démarrage de Slice 1.
 
+## 2026-08-15 — Slice 1 / S1.1 Audio Pilot Contract, Data & Experience Gate
+
+| ID          | Nature      | Décision                                                                                                                                                                                                                         | Autorité          | Statut                           |
+| ----------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | -------------------------------- |
+| DEC-S1.1-01 | Contrat     | OpenAPI est la source unique des 29 chemins et 35 opérations du pilote audio ; les types partagés sont générés seulement après validation et un contrôle de dérive est bloquant.                                                 | Décision CTO S1.1 | Proposed — historical S1.1 draft |
+| DEC-S1.1-02 | Données     | Le schéma Prisma est une cible de conception sans migration, seed, mutation de base ni prétention d’application runtime.                                                                                                         | Décision CTO S1.1 | Proposed — historical S1.1 draft |
+| DEC-S1.1-03 | Finance     | FCFA et points de base sont des entiers, la devise cible est XOF ; les relations composites lient Order, tentative, événement réussi, Settlement, ligne et Entitlement ; le reste est une précondition transactionnelle runtime. | ADR-012 à ADR-016 | Proposed — historical S1.1 draft |
+| DEC-S1.1-04 | Média       | Processing et publication sont indépendants ; publication exige master audio et cover READY à leurs versions exactes ; les capabilities sont courtes, non persistables et non journalisables.                                    | ADR-011/017       | Proposed — historical S1.1 draft |
+| DEC-S1.1-05 | Expérience  | Le mobile reste guest-first, sombre et à cinq onglets ; le mini-lecteur exige un média actif ; le Web public ne lit, ne preview ni ne transige.                                                                                  | ADR-010/017       | Proposed — historical S1.1 draft |
+| DEC-S1.1-06 | Paiement    | S1.1 ne présente que `SANDBOX_NEUTRAL` et ne contracte, intègre ou simule aucun fournisseur de production.                                                                                                                       | Décision CTO S1.1 | Proposed — historical S1.1 draft |
+| DEC-S1.1-07 | Design      | Les primitives Flutter et administration sont réelles et testées ; les fixtures restent confinées aux tests et goldens, jamais au runtime.                                                                                       | Décision CTO S1.1 | Proposed — historical S1.1 draft |
+| DEC-S1.1-08 | Publication | Le lot s’arrête à une Draft PR ; aucune route métier, migration, Ready, fusion, release, déploiement ou S1.2 n’est autorisé.                                                                                                     | Décision CTO S1.1 | Proposed — historical S1.1 draft |
+| DEC-S1.1-09 | Sécurité    | Les mutations admin exigent bearer court, RBAC, audit transactionnel et idempotence dédiée ; un replay de préparation réémet une capability sans persister le token brut.                                                        | ADR-019/020       | Proposed — historical S1.1 draft |
+
+Dans l’instantané historique du 2026-08-15, ces propositions S1.1 décrivaient
+uniquement le travail local alors non publié. Elles ne constituaient pas encore
+des décisions acceptées ni une clôture du lot.
+
 ## 2026-08-20 — Hotfix supply-chain M0.3
 
 | ID          | Nature         | Décision                                                                                                                                                                                                                                                                                                                   | Autorité                               | Statut                                       |
@@ -189,9 +207,37 @@ est publié au head consigné par DEC-M0.3-17 avec quatre workflows #45 verts.
 La validation locale du 2026-09-04 consignée par DEC-M0.3-18 a qualifié la
 correction R5 du dernier écart de gate avant publication. Les métadonnées de
 publication, qui ne sont pas auto-référencées dans cette preuve, font foi dans
-GitHub. S1.1 reste préservé à 39/39 avec l’empreinte agrégée
+GitHub. Au moment de cette validation M0.3, S1.1 était préservé à 39/39 avec
+l’empreinte agrégée
 `8957cbf3ff27110af162f53c72e0c129860f0fcdfb8bfddab1ae3714a1d9c6dc`, et
 S1.2 n’est pas démarré.
+
+## 2026-08-20 — Arbitrage financier S1.1
+
+| ID          | Nature    | Décision                                                                                                                                                                                                                            | Autorité                 | Statut                    |
+| ----------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ | ------------------------- |
+| DEC-S1.1-10 | Arrondi   | Proposition historique d’un `ROUND_HALF_UP` au Settlement entier, sans report fractionnaire. Cette proposition n’a jamais été publiée ni fusionnée et est remplacée par la décision Product Owner DEC-S1.1-13.                      | Arbitrage CTO 2026-08-20 | Superseded by DEC-S1.1-13 |
+| DEC-S1.1-11 | Intégrité | Proposition historique de relations composites et d’un rang d’allocation. La protection composite reste requise, mais le rang lié au largest-remainder est remplacé par la chaîne structurelle et les préconditions de DEC-S1.1-14. | Arbitrage CTO 2026-08-20 | Superseded by DEC-S1.1-14 |
+| DEC-S1.1-12 | Reversal  | Proposition historique où le complément plateforme absorbait le reliquat du Settlement courant. Elle est remplacée : le reliquat appartient à l’artiste et toute correction future reste compensatoire, sans réécriture.            | Arbitrage CTO 2026-08-20 | Superseded by DEC-S1.1-13 |
+
+Cet arbitrage historique n’a été ni publié ni fusionné. Les propositions
+incompatibles sont remplacées par les décisions finales ci-dessous.
+
+## 2026-09-07 — Décisions finales finance et intégrité S1.1
+
+| ID          | Nature       | Décision                                                                                                                                                                                                                                                                                                                                             | Autorité                             | Statut                            |
+| ----------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | --------------------------------- |
+| DEC-S1.1-13 | Fractions    | `FLOOR_SETTLEMENT_WITH_ARTIST_CARRY_V1` est la règle officielle. KORA+ paie les FCFA entiers ; chaque reliquat de numérateur appartient au même artiste, sort d’un `ArtistSettlement` et entre exactement une fois dans son successeur immédiat. Aucun `ROUND_HALF_UP`, abandon plateforme ou transfert entre artistes n’est autorisé.               | Décision Product Owner du 2026-09-07 | Accepted — S1.1 contract decision |
+| DEC-S1.1-14 | Intégrité    | Chaque `ArtistEarning` est relié par clé composite au même `ArtistSettlement`, `Settlement`, `OrderItem`, `AudioContent` et artiste. Le prédécesseur du carry est unique, du même artiste et ordonné par séquence ; une transaction future doit le verrouiller et exécuter les préconditions de correspondance, conservation et consommation unique. | Décision CTO du 2026-09-07           | Accepted — S1.1 contract decision |
+| DEC-S1.1-15 | Immutabilité | Les relations financières cibles utilisent `Restrict`, les données finalisées restent append-only et toute correction future crée des écritures compensatoires. S1.1 fournit uniquement modèle, contrat, validateur et preuve pure : aucune migration, route, transaction ou exécution financière réelle n’est livrée.                               | ADR-013/014 et décision CTO S1.1     | Accepted — S1.1 contract decision |
+
+Ces décisions S1.1 sont acceptées indépendamment du statut Git de leur
+publication et remplacent les propositions historiques incompatibles
+DEC-S1.1-10 à DEC-S1.1-12. Lors de la validation locale du 2026-09-07, aucun
+commit, push ou changement GitHub S1.1 n’avait encore été effectué et S1.2
+n’avait pas été commencé. Cet état est un instantané historique de
+prépublication ; tout statut ultérieur fait foi dans l’historique Git et dans la
+Draft PR correspondante.
 
 ## Catégories d’autorité
 

@@ -86,16 +86,49 @@ abstract final class KoraTheme {
     iconTheme: const IconThemeData(color: KoraColors.ivory, size: 24),
     iconButtonTheme: IconButtonThemeData(
       style: ButtonStyle(
-        minimumSize: WidgetStateProperty.all(const Size(44, 44)),
+        minimumSize: WidgetStateProperty.all(const Size(48, 48)),
+      ),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        backgroundColor: KoraColors.gold,
+        foregroundColor: KoraColors.background,
+        minimumSize: const Size(48, 48),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
         foregroundColor: KoraColors.ivory,
-        minimumSize: const Size(44, 44),
+        minimumSize: const Size(48, 48),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         side: const BorderSide(color: KoraColors.gold),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: KoraColors.surface,
+      labelStyle: const TextStyle(color: KoraColors.ivory),
+      hintStyle: const TextStyle(color: KoraColors.muted),
+      helperStyle: const TextStyle(color: KoraColors.muted),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFF4B4950)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFF4B4950)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: KoraColors.gold, width: 2),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: KoraColors.error, width: 2),
       ),
     ),
   );

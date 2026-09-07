@@ -7,5 +7,6 @@ abstract final class KoraColors {
   static const Color ivory = Color(0xFFF5F1E8);
   static const Color muted = Color(0xFF9A968C);
   static const Color success = Color(0xFF3FA66A);
+  static const Color warning = Color(0xFFE7B85A);
   static const Color error = Color(0xFFD9564A);
 }

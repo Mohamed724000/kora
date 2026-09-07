@@ -10,21 +10,23 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 
 ## État des gates et lots
 
-| Gate ou lot          | Objectif                                   | Statut                        |
-| -------------------- | ------------------------------------------ | ----------------------------- |
-| Gate 0               | Sources approuvées et readiness clean room | Completed                     |
-| Lot 00               | Preflight read-only                        | Completed                     |
-| Lot 00B              | Remédiation documentaire                   | Completed                     |
-| Lot 00C              | Canonicalisation AdminLTE                  | Completed                     |
-| S0.1                 | Gouvernance et Git                         | Completed                     |
-| S0.2                 | Contrat monorepo et versions               | Completed                     |
-| S0.3                 | Fondations applicatives                    | Closed and merged             |
-| S0.4                 | Infrastructure locale                      | Closed and merged             |
-| S0.5                 | CI, sécurité et observabilité              | Closed and merged             |
-| M0.1                 | Dependency Governance                      | Closed and merged             |
-| M0.2                 | Supply-chain Security Hotfix               | Closed and merged             |
-| S0.6                 | Foundation Gate                            | Executed — CTO review pending |
-| Slice 1 et suivantes | Fonctionnalités produit                    | Not started                   |
+| Gate ou lot      | Objectif                                     | Statut                           |
+| ---------------- | -------------------------------------------- | -------------------------------- |
+| Gate 0           | Sources approuvées et readiness clean room   | Completed                        |
+| Lot 00           | Preflight read-only                          | Completed                        |
+| Lot 00B          | Remédiation documentaire                     | Completed                        |
+| Lot 00C          | Canonicalisation AdminLTE                    | Completed                        |
+| S0.1             | Gouvernance et Git                           | Completed                        |
+| S0.2             | Contrat monorepo et versions                 | Completed                        |
+| S0.3             | Fondations applicatives                      | Closed and merged                |
+| S0.4             | Infrastructure locale                        | Closed and merged                |
+| S0.5             | CI, sécurité et observabilité                | Closed and merged                |
+| M0.1             | Dependency Governance                        | Closed and merged                |
+| M0.2             | Supply-chain Security Hotfix                 | Closed and merged                |
+| S0.6             | Foundation Gate                              | Closed and merged                |
+| Slice 1 / S1.1   | Contrats, données cibles et expérience audio | Implemented — CTO review pending |
+| Slice 1 / S1.2+  | Fonctionnalités runtime du pilote            | Not started                      |
+| Slices suivantes | Fonctionnalités produit ultérieures          | Not started                      |
 
 ## Sprint 0 — Clean-room foundation
 
@@ -119,18 +121,19 @@ et
 
 ### S0.6 — Foundation Gate
 
-Statut : **Executed — PASS WITH RESERVATIONS — CTO review pending**
+Statut : **Closed and merged — PASS WITH RESERVATIONS accepted**
 
 Validation indépendante QA, sécurité et design. Aucun validateur ne corrige
 silencieusement un défaut. La baseline exacte auditée est
 `40a224edc1dc018a080b6c188a804e361e96b5ef`. Les réserves sont limitées aux
 capacités externes ou de plateforme documentées dans le
-[rapport S0.6](../qa/SPRINT_0_6_FOUNDATION_GATE_REPORT.md). Ce gate ne démarre
-ni Slice 1 ni aucune exigence produit.
+[rapport S0.6](../qa/SPRINT_0_6_FOUNDATION_GATE_REPORT.md). La PR #28 a été
+fusionnée au commit `a602fd38f32d018867c8a058deace0325b4a7c31`. Ce gate ne
+démarrait ni Slice 1 ni aucune exigence produit.
 
 ## Slice 1 — Audio purchase pilot
 
-Statut : **Not started**
+Statut : **In progress — S1.1 implemented, CTO review pending — S1.2 not started**
 
 Parcours cible :
 
@@ -149,6 +152,30 @@ Travaux contract-first :
 - E2E et réconciliation.
 
 Gate : un achat audio sandbox complet, réconcilié, sans URL média brute.
+
+### S1.1 — Audio Pilot Contract, Data & Experience Gate
+
+Livré sans runtime métier ni migration :
+
+- contrat OpenAPI des 29 chemins et 35 opérations du pilote, erreurs, clients,
+  transitions et invariants ;
+- types partagés générés et gate de dérive ;
+- schéma Prisma cible à 30 modèles, sans migration ni seed ;
+- machines d’état et invariants finance/média documentés et testés ;
+- politique artiste `FLOOR_SETTLEMENT_WITH_ARTIST_CARRY_V1` prouvée en `BigInt`
+  par artiste et Settlement, avec carry séquencé, relations composites et audit
+  cible ;
+- primitives Flutter premium, mobile guest-first et golden Windows à 341 px ;
+- primitives administration light-only, accessibles et responsives ;
+- Threat Model et traçabilité réconciliés.
+
+Les détails sont consignés dans le
+[contrat et modèle S1.1](../architecture/SLICE_1_1_AUDIO_PILOT_CONTRACT_AND_DATA_MODEL.md),
+le [système d’expérience](../ux/SLICE_1_1_AUDIO_EXPERIENCE_SYSTEM.md) et le
+[rapport de gate](../qa/SLICE_1_1_CONTRACT_DATA_UX_GATE_REPORT.md).
+
+S1.2 reste **Not started** : aucun catalogue, auth, paiement, webhook, upload,
+Entitlement ou playback runtime n’est livré par S1.1.
 
 ## Slices suivantes
 
