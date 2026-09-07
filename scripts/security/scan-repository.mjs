@@ -15,6 +15,55 @@ const EXACT_SEMVER = /^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/u;
 const REACT_TYPES_PACKAGE = "@types/react";
 const REACT_TYPES_ROOT_PATH = "node_modules/@types/react";
 const REACT_TYPES_WORKSPACES = ["apps/admin", "apps/web", "packages/ui"];
+const PRISMA_VERSION = "7.9.1";
+const PRISMA_CONFIG_PATH = "node_modules/@prisma/config";
+const PRISMA_CLIENT_PATH = "node_modules/@prisma/client";
+const PRISMA_PATH = "node_modules/prisma";
+const PRISMA_CONFIG_OVERRIDE = `@prisma/config@${PRISMA_VERSION}`;
+const DEEPMERGE_PACKAGE = "deepmerge-ts";
+const DEEPMERGE_ROOT_PATH = `node_modules/${DEEPMERGE_PACKAGE}`;
+const DEEPMERGE_SAFE_VERSION = "8.0.1";
+const PRISMA_OVERRIDE = `prisma@${PRISMA_VERSION}`;
+const MYSQL_PACKAGE = "mysql2";
+const MYSQL_ROOT_PATH = `node_modules/${MYSQL_PACKAGE}`;
+const MYSQL_DECLARED_VERSION = "3.15.3";
+const MYSQL_SAFE_VERSION = "3.23.1";
+const FAST_URI_PACKAGE = "fast-uri";
+const FAST_URI_ROOT_PATH = `node_modules/${FAST_URI_PACKAGE}`;
+const FAST_URI_SAFE_VERSION = "3.1.6";
+const FAST_URI_PARENT = {
+  declaredVersion: "^3.0.1",
+  packageName: "ajv",
+  packagePath: "node_modules/ajv",
+  selector: "ajv@8.18.0",
+  version: "8.18.0",
+};
+const QS_PACKAGE = "qs";
+const QS_ROOT_PATH = `node_modules/${QS_PACKAGE}`;
+const QS_SAFE_VERSION = "6.16.0";
+const QS_PARENTS = [
+  {
+    declaredVersion: "^6.15.2",
+    packageName: "body-parser",
+    packagePath: "node_modules/body-parser",
+    selector: "body-parser@2.3.0",
+    version: "2.3.0",
+  },
+  {
+    declaredVersion: "^6.14.0",
+    packageName: "express",
+    packagePath: "node_modules/express",
+    selector: "express@5.2.1",
+    version: "5.2.1",
+  },
+  {
+    declaredVersion: "^6.14.1",
+    packageName: "superagent",
+    packagePath: "node_modules/superagent",
+    selector: "superagent@10.3.0",
+    version: "10.3.0",
+  },
+];
 const DEPENDABOT_ECOSYSTEMS = new Map([
   ["npm", "/"],
   ["pub", "/apps/mobile"],
@@ -243,6 +292,530 @@ export function validateReactTypesSingleton(manifests, lockfile) {
         `@types/react singleton version mismatch: workspaces=${expectedVersion} package-lock.json=${rootVersion ?? "MISSING"}`,
       );
     }
+  }
+
+  return errors;
+}
+
+function deepmergeInstallations(lockfile) {
+  return Object.entries(lockfile.packages ?? {}).filter(
+    ([packagePath]) =>
+      packagePath === DEEPMERGE_ROOT_PATH ||
+      packagePath.endsWith(`/${DEEPMERGE_ROOT_PATH}`),
+  );
+}
+
+function isVulnerableDeepmergeVersion(version) {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+][A-Za-z0-9.-]+)?$/u.exec(
+    version ?? "",
+  );
+  return match !== null && Number(match[1]) < 8;
+}
+
+function isObjectRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function targetsOverridePackage(selector, packageName) {
+  return selector === packageName || selector.startsWith(`${packageName}@`);
+}
+
+function formatOverridePath(node) {
+  const selectors = [];
+  for (let current = node; current !== null; current = current.parent) {
+    selectors.push(current.selector);
+  }
+  return selectors.reverse().join(" > ");
+}
+
+function forbiddenTargetedOverridePaths(
+  overrides,
+  { childPackage, parentPackage, parentSelector },
+) {
+  if (!isObjectRecord(overrides)) {
+    return [];
+  }
+
+  const forbiddenPaths = [];
+  const pending = [{ entries: overrides, parent: null }];
+
+  while (pending.length > 0) {
+    const { entries, parent } = pending.pop();
+
+    for (const [selector, value] of Object.entries(entries)) {
+      const node = { parent, selector };
+      const isExactParentSelector =
+        parent === null && selector === parentSelector;
+      const isExactChildSelector =
+        parent?.parent === null &&
+        parent.selector === parentSelector &&
+        selector === childPackage;
+
+      if (
+        (targetsOverridePackage(selector, parentPackage) &&
+          !isExactParentSelector) ||
+        (targetsOverridePackage(selector, childPackage) &&
+          !isExactChildSelector)
+      ) {
+        forbiddenPaths.push(formatOverridePath(node));
+      }
+
+      if (isObjectRecord(value)) {
+        pending.push({ entries: value, parent: node });
+      }
+    }
+  }
+
+  return forbiddenPaths.sort();
+}
+
+function forbiddenMultiParentOverridePaths(
+  overrides,
+  { childPackage, approvedParents },
+) {
+  if (!isObjectRecord(overrides)) {
+    return [];
+  }
+
+  const approvedSelectors = new Set(
+    approvedParents.map(({ selector }) => selector),
+  );
+  const parentPackages = new Set(
+    approvedParents.map(({ packageName }) => packageName),
+  );
+  const forbiddenPaths = [];
+  const pending = [{ entries: overrides, parent: null }];
+
+  while (pending.length > 0) {
+    const { entries, parent } = pending.pop();
+
+    for (const [selector, value] of Object.entries(entries)) {
+      const node = { parent, selector };
+      const isApprovedParent =
+        parent === null && approvedSelectors.has(selector);
+      const isApprovedChild =
+        parent?.parent === null &&
+        approvedSelectors.has(parent.selector) &&
+        selector === childPackage;
+      const targetsParent = [...parentPackages].some((packageName) =>
+        targetsOverridePackage(selector, packageName),
+      );
+
+      if (
+        (targetsParent && !isApprovedParent) ||
+        (targetsOverridePackage(selector, childPackage) && !isApprovedChild)
+      ) {
+        forbiddenPaths.push(formatOverridePath(node));
+      }
+
+      if (isObjectRecord(value)) {
+        pending.push({ entries: value, parent: node });
+      }
+    }
+  }
+
+  return forbiddenPaths.sort();
+}
+
+export function validatePrismaDeepmergeOverride(manifests, lockfile) {
+  const errors = [];
+  const overrides = manifests[""]?.overrides ?? {};
+  const targetedOverride = overrides[PRISMA_CONFIG_OVERRIDE];
+
+  for (const overridePath of forbiddenTargetedOverridePaths(overrides, {
+    childPackage: DEEPMERGE_PACKAGE,
+    parentPackage: "@prisma/config",
+    parentSelector: PRISMA_CONFIG_OVERRIDE,
+  })) {
+    errors.push(
+      `deepmerge-ts security override is forbidden at path: ${overridePath}`,
+    );
+  }
+  if (
+    targetedOverride === null ||
+    typeof targetedOverride !== "object" ||
+    Array.isArray(targetedOverride) ||
+    targetedOverride[DEEPMERGE_PACKAGE] !== DEEPMERGE_SAFE_VERSION ||
+    Object.keys(targetedOverride).length !== 1
+  ) {
+    errors.push(
+      "@prisma/config@7.9.1 must override deepmerge-ts to exact version 8.0.1",
+    );
+  }
+
+  const apiManifest = manifests["apps/api"] ?? {};
+  if (
+    apiManifest.dependencies?.["@prisma/client"] !== PRISMA_VERSION ||
+    apiManifest.devDependencies?.prisma !== PRISMA_VERSION
+  ) {
+    errors.push("Prisma and Prisma Client must remain exactly 7.9.1");
+  }
+
+  const packages = lockfile.packages ?? {};
+  if (
+    packages[PRISMA_CONFIG_PATH]?.dependencies?.[DEEPMERGE_PACKAGE] !== "7.1.5"
+  ) {
+    errors.push(
+      "@prisma/config@7.9.1 lock metadata must retain its audited deepmerge-ts 7.1.5 dependency",
+    );
+  }
+  if (
+    packages[PRISMA_CONFIG_PATH]?.version !== PRISMA_VERSION ||
+    packages[PRISMA_PATH]?.version !== PRISMA_VERSION ||
+    packages[PRISMA_CLIENT_PATH]?.version !== PRISMA_VERSION
+  ) {
+    errors.push(
+      "package-lock must resolve Prisma, Prisma Client and @prisma/config to 7.9.1",
+    );
+  }
+  for (const parentPath of unexpectedDependencyParentPaths(
+    lockfile,
+    DEEPMERGE_PACKAGE,
+    [PRISMA_CONFIG_PATH],
+  )) {
+    errors.push(`deepmerge-ts has an unapproved lock parent: ${parentPath}`);
+  }
+
+  const installations = deepmergeInstallations(lockfile);
+  const vulnerable = installations.filter(([, metadata]) =>
+    isVulnerableDeepmergeVersion(metadata.version),
+  );
+  if (vulnerable.length > 0) {
+    errors.push(
+      `vulnerable deepmerge-ts installation(s): ${vulnerable
+        .map(([packagePath, metadata]) => `${packagePath}@${metadata.version}`)
+        .join(", ")}`,
+    );
+  }
+
+  if (
+    installations.length !== 1 ||
+    installations[0]?.[0] !== DEEPMERGE_ROOT_PATH ||
+    installations[0]?.[1]?.version !== DEEPMERGE_SAFE_VERSION
+  ) {
+    errors.push(
+      `deepmerge-ts must have one physical installation at ${DEEPMERGE_ROOT_PATH}@${DEEPMERGE_SAFE_VERSION}; found ${
+        installations
+          .map(
+            ([packagePath, metadata]) =>
+              `${packagePath}@${metadata.version ?? "MISSING"}`,
+          )
+          .join(", ") || "NONE"
+      }`,
+    );
+  }
+
+  return errors;
+}
+
+function mysqlInstallations(lockfile) {
+  return Object.entries(lockfile.packages ?? {}).filter(
+    ([packagePath]) =>
+      packagePath === MYSQL_ROOT_PATH ||
+      packagePath.endsWith(`/${MYSQL_ROOT_PATH}`),
+  );
+}
+
+function unexpectedDependencyParentPaths(
+  lockfile,
+  childPackage,
+  approvedParentPaths,
+) {
+  const approved = new Set(approvedParentPaths);
+  return Object.entries(lockfile.packages ?? {})
+    .filter(([, metadata]) =>
+      DIRECT_DEPENDENCY_SECTIONS.some((section) =>
+        Object.prototype.hasOwnProperty.call(
+          metadata[section] ?? {},
+          childPackage,
+        ),
+      ),
+    )
+    .map(([packagePath]) => packagePath || "<root>")
+    .filter((packagePath) => !approved.has(packagePath))
+    .sort();
+}
+
+function isVulnerableMysqlVersion(version) {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+][A-Za-z0-9.-]+)?$/u.exec(
+    version ?? "",
+  );
+  if (match === null) {
+    return false;
+  }
+
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  const patch = Number(match[3]);
+  return (
+    major < 3 || (major === 3 && (minor < 23 || (minor === 23 && patch < 1)))
+  );
+}
+
+export function validatePrismaMysqlOverride(manifests, lockfile) {
+  const errors = [];
+  const overrides = manifests[""]?.overrides ?? {};
+  const targetedOverride = overrides[PRISMA_OVERRIDE];
+
+  for (const overridePath of forbiddenTargetedOverridePaths(overrides, {
+    childPackage: MYSQL_PACKAGE,
+    parentPackage: "prisma",
+    parentSelector: PRISMA_OVERRIDE,
+  })) {
+    errors.push(
+      `mysql2 security override is forbidden at path: ${overridePath}`,
+    );
+  }
+  if (
+    targetedOverride === null ||
+    typeof targetedOverride !== "object" ||
+    Array.isArray(targetedOverride) ||
+    targetedOverride[MYSQL_PACKAGE] !== MYSQL_SAFE_VERSION ||
+    Object.keys(targetedOverride).length !== 1
+  ) {
+    errors.push("prisma@7.9.1 must override mysql2 to exact version 3.23.1");
+  }
+
+  const apiManifest = manifests["apps/api"] ?? {};
+  if (apiManifest.devDependencies?.prisma !== PRISMA_VERSION) {
+    errors.push("Prisma must remain exactly 7.9.1 for the mysql2 override");
+  }
+
+  const packages = lockfile.packages ?? {};
+  if (
+    packages[PRISMA_PATH]?.dependencies?.[MYSQL_PACKAGE] !==
+    MYSQL_DECLARED_VERSION
+  ) {
+    errors.push(
+      "prisma@7.9.1 lock metadata must retain its audited mysql2 3.15.3 dependency",
+    );
+  }
+  if (packages[PRISMA_PATH]?.version !== PRISMA_VERSION) {
+    errors.push("package-lock must resolve Prisma to 7.9.1");
+  }
+  for (const parentPath of unexpectedDependencyParentPaths(
+    lockfile,
+    MYSQL_PACKAGE,
+    [PRISMA_PATH],
+  )) {
+    errors.push(`mysql2 has an unapproved lock parent: ${parentPath}`);
+  }
+
+  const installations = mysqlInstallations(lockfile);
+  const vulnerable = installations.filter(([, metadata]) =>
+    isVulnerableMysqlVersion(metadata.version),
+  );
+  if (vulnerable.length > 0) {
+    errors.push(
+      `vulnerable mysql2 installation(s): ${vulnerable
+        .map(([packagePath, metadata]) => `${packagePath}@${metadata.version}`)
+        .join(", ")}`,
+    );
+  }
+
+  if (
+    installations.length !== 1 ||
+    installations[0]?.[0] !== MYSQL_ROOT_PATH ||
+    installations[0]?.[1]?.version !== MYSQL_SAFE_VERSION
+  ) {
+    errors.push(
+      `mysql2 must have one physical installation at ${MYSQL_ROOT_PATH}@${MYSQL_SAFE_VERSION}; found ${
+        installations
+          .map(
+            ([packagePath, metadata]) =>
+              `${packagePath}@${metadata.version ?? "MISSING"}`,
+          )
+          .join(", ") || "NONE"
+      }`,
+    );
+  }
+
+  return errors;
+}
+
+function fastUriInstallations(lockfile) {
+  return Object.entries(lockfile.packages ?? {}).filter(
+    ([packagePath]) =>
+      packagePath === FAST_URI_ROOT_PATH ||
+      packagePath.endsWith(`/${FAST_URI_ROOT_PATH}`),
+  );
+}
+
+function isVulnerableFastUriVersion(version) {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+][A-Za-z0-9.-]+)?$/u.exec(
+    version ?? "",
+  );
+  if (match === null) {
+    return false;
+  }
+
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  const patch = Number(match[3]);
+  return major === 3 && (minor < 1 || (minor === 1 && patch < 6));
+}
+
+export function validateAjvFastUriOverride(manifests, lockfile) {
+  const errors = [];
+  const overrides = manifests[""]?.overrides ?? {};
+  const targetedOverride = overrides[FAST_URI_PARENT.selector];
+
+  for (const overridePath of forbiddenMultiParentOverridePaths(overrides, {
+    childPackage: FAST_URI_PACKAGE,
+    approvedParents: [FAST_URI_PARENT],
+  })) {
+    errors.push(
+      `fast-uri security override is forbidden at path: ${overridePath}`,
+    );
+  }
+  if (
+    !isObjectRecord(targetedOverride) ||
+    targetedOverride[FAST_URI_PACKAGE] !== FAST_URI_SAFE_VERSION ||
+    Object.keys(targetedOverride).length !== 1
+  ) {
+    errors.push("ajv@8.18.0 must override fast-uri to exact version 3.1.6");
+  }
+
+  const packages = lockfile.packages ?? {};
+  const parentMetadata = packages[FAST_URI_PARENT.packagePath];
+  if (
+    parentMetadata?.version !== FAST_URI_PARENT.version ||
+    parentMetadata?.dependencies?.[FAST_URI_PACKAGE] !==
+      FAST_URI_PARENT.declaredVersion
+  ) {
+    errors.push(
+      "ajv@8.18.0 lock metadata must retain its audited fast-uri ^3.0.1 dependency",
+    );
+  }
+  for (const parentPath of unexpectedDependencyParentPaths(
+    lockfile,
+    FAST_URI_PACKAGE,
+    [FAST_URI_PARENT.packagePath],
+  )) {
+    errors.push(`fast-uri has an unapproved lock parent: ${parentPath}`);
+  }
+
+  const installations = fastUriInstallations(lockfile);
+  const vulnerable = installations.filter(([, metadata]) =>
+    isVulnerableFastUriVersion(metadata.version),
+  );
+  if (vulnerable.length > 0) {
+    errors.push(
+      `vulnerable fast-uri installation(s): ${vulnerable
+        .map(([packagePath, metadata]) => `${packagePath}@${metadata.version}`)
+        .join(", ")}`,
+    );
+  }
+  if (
+    installations.length !== 1 ||
+    installations[0]?.[0] !== FAST_URI_ROOT_PATH ||
+    installations[0]?.[1]?.version !== FAST_URI_SAFE_VERSION
+  ) {
+    errors.push(
+      `fast-uri must have one physical installation at ${FAST_URI_ROOT_PATH}@${FAST_URI_SAFE_VERSION}; found ${
+        installations
+          .map(
+            ([packagePath, metadata]) =>
+              `${packagePath}@${metadata.version ?? "MISSING"}`,
+          )
+          .join(", ") || "NONE"
+      }`,
+    );
+  }
+
+  return errors;
+}
+
+function qsInstallations(lockfile) {
+  return Object.entries(lockfile.packages ?? {}).filter(
+    ([packagePath]) =>
+      packagePath === QS_ROOT_PATH || packagePath.endsWith(`/${QS_ROOT_PATH}`),
+  );
+}
+
+function isVulnerableQsVersion(version) {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+][A-Za-z0-9.-]+)?$/u.exec(
+    version ?? "",
+  );
+  if (match === null) {
+    return false;
+  }
+
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  const patch = Number(match[3]);
+  const atLeast225 =
+    major > 2 || (major === 2 && (minor > 2 || (minor === 2 && patch >= 5)));
+  const before616 = major < 6 || (major === 6 && minor < 16);
+  return atLeast225 && before616;
+}
+
+export function validateQsOverrides(manifests, lockfile) {
+  const errors = [];
+  const overrides = manifests[""]?.overrides ?? {};
+
+  for (const overridePath of forbiddenMultiParentOverridePaths(overrides, {
+    childPackage: QS_PACKAGE,
+    approvedParents: QS_PARENTS,
+  })) {
+    errors.push(`qs security override is forbidden at path: ${overridePath}`);
+  }
+  for (const parent of QS_PARENTS) {
+    const targetedOverride = overrides[parent.selector];
+    if (
+      !isObjectRecord(targetedOverride) ||
+      targetedOverride[QS_PACKAGE] !== QS_SAFE_VERSION ||
+      Object.keys(targetedOverride).length !== 1
+    ) {
+      errors.push(
+        `${parent.selector} must override qs to exact version ${QS_SAFE_VERSION}`,
+      );
+    }
+
+    const parentMetadata = lockfile.packages?.[parent.packagePath];
+    if (
+      parentMetadata?.version !== parent.version ||
+      parentMetadata?.dependencies?.[QS_PACKAGE] !== parent.declaredVersion
+    ) {
+      errors.push(
+        `${parent.selector} lock metadata must retain its audited qs ${parent.declaredVersion} dependency`,
+      );
+    }
+  }
+  for (const parentPath of unexpectedDependencyParentPaths(
+    lockfile,
+    QS_PACKAGE,
+    QS_PARENTS.map(({ packagePath }) => packagePath),
+  )) {
+    errors.push(`qs has an unapproved lock parent: ${parentPath}`);
+  }
+
+  const installations = qsInstallations(lockfile);
+  const vulnerable = installations.filter(([, metadata]) =>
+    isVulnerableQsVersion(metadata.version),
+  );
+  if (vulnerable.length > 0) {
+    errors.push(
+      `vulnerable qs installation(s): ${vulnerable
+        .map(([packagePath, metadata]) => `${packagePath}@${metadata.version}`)
+        .join(", ")}`,
+    );
+  }
+  if (
+    installations.length !== 1 ||
+    installations[0]?.[0] !== QS_ROOT_PATH ||
+    installations[0]?.[1]?.version !== QS_SAFE_VERSION
+  ) {
+    errors.push(
+      `qs must have one physical installation at ${QS_ROOT_PATH}@${QS_SAFE_VERSION}; found ${
+        installations
+          .map(
+            ([packagePath, metadata]) =>
+              `${packagePath}@${metadata.version ?? "MISSING"}`,
+          )
+          .join(", ") || "NONE"
+      }`,
+    );
   }
 
   return errors;
@@ -492,6 +1065,10 @@ export function scanRepository(repositoryRoot = process.cwd(), options = {}) {
   errors.push(...validateManifestVersions(manifests));
   errors.push(...validateManifestLockConsistency(manifests, lockfile));
   errors.push(...validateReactTypesSingleton(manifests, lockfile));
+  errors.push(...validatePrismaDeepmergeOverride(manifests, lockfile));
+  errors.push(...validatePrismaMysqlOverride(manifests, lockfile));
+  errors.push(...validateAjvFastUriOverride(manifests, lockfile));
+  errors.push(...validateQsOverrides(manifests, lockfile));
   errors.push(...validatePackageLock(lockfile));
   errors.push(
     ...validateDependabotPolicy(
