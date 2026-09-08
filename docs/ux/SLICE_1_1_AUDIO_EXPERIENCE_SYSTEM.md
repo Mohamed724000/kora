@@ -37,6 +37,11 @@ suffixe `FCFA`. Le composant paiement est explicitement sandbox et indique
 qu’aucun débit réel n’a lieu. Les états pending, success et failed sont
 expliqués par texte et symbole, jamais seulement par couleur.
 
+Les espacements, dimensions tactiles, tailles d’icônes, rayons et métriques
+typographiques des primitives sont centralisés dans `KoraSpacing`,
+`KoraDimensions`, `KoraRadii` et `KoraTypography`. Les valeurs visuelles restent
+inchangées ; les composants ne portent plus de dimensions ad hoc.
+
 ## Administration claire uniquement
 
 `@kora-plus/ui` expose des primitives étroites et light-only :
@@ -59,6 +64,12 @@ de toggle sombre.
 - actions mobiles de 48 × 48 dp minimum ;
 - champs avec libellé, aide, erreur textuelle et clavier approprié ;
 - sémantique explicite pour artiste, prix, statut, lecteur et paiement ;
+- moyen de paiement exposé comme radio coché/non coché, mutuellement exclusif,
+  avec un seul libellé et une action de sélection ;
+- titre, artiste et état « en lecture/en pause » annoncés une seule fois par
+  lecteur, séparément de l’action lire/pause ;
+- succès paiement, erreur/chargement et hors connexion exposés comme régions
+  vivantes sans dupliquer leurs descendants ;
 - focus clavier admin natif renforcé par un contour de 3 px ;
 - aide, erreur, obligation et invalidité reliées au contrôle admin par les
   attributs ARIA correspondants ;
@@ -84,6 +95,17 @@ retry, taille tactile, reduced motion, et toutes les primitives majeures à
 341 px/200 %. Le golden sans mini-lecteur réaffirme les cinq onglets après
 navigation. Les tests DOM admin vérifient formulaire, associations ARIA, six
 statuts, progression, checklist non chromatique et erreur actionnable.
+
+Les nouveaux libellés d’état du lecteur sont fournis par l’appelant afin que le
+futur runtime puisse les obtenir de la couche de localisation. S1.1 ne prétend
+pas livrer l’intégration complète `AppLocalizations` : celle-ci reste un gate du
+lot runtime mobile planifié. Aucun manifeste, package de localisation ou
+dépendance n’est ajouté par ce lot contract-first.
+
+L’appelant fournit les deux libellés localisables « lecture » et « pause » ; le
+composant sélectionne lui-même celui qui correspond à `isPlaying`. L’état vide,
+les lecteurs actifs, leurs textes statiques et leurs actions forment des nœuds
+sémantiques distincts afin d’éviter toute annonce dupliquée.
 
 ## Limites volontaires
 

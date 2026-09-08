@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/kora_colors.dart';
+import '../theme/kora_theme.dart';
 import 'kora_actions.dart';
 
 enum KoraExperienceState { loading, empty, error, offline }
@@ -40,11 +41,12 @@ class KoraExperienceStateView extends StatelessWidget {
       explicitChildNodes: true,
       liveRegion:
           state == KoraExperienceState.loading ||
-          state == KoraExperienceState.error,
+          state == KoraExperienceState.error ||
+          state == KoraExperienceState.offline,
       label: '$label. $title. $message',
       child: Center(
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(KoraSpacing.xxxl),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
@@ -55,18 +57,24 @@ class KoraExperienceStateView extends StatelessWidget {
                     if (state == KoraExperienceState.loading &&
                         !disableAnimations)
                       const SizedBox.square(
-                        dimension: 48,
-                        child: CircularProgressIndicator(strokeWidth: 3),
+                        dimension: KoraDimensions.emptyStateIcon,
+                        child: CircularProgressIndicator(
+                          strokeWidth: KoraDimensions.loadingStroke,
+                        ),
                       )
                     else
-                      Icon(icon, color: KoraColors.gold, size: 48),
-                    const SizedBox(height: 16),
+                      Icon(
+                        icon,
+                        color: KoraColors.gold,
+                        size: KoraDimensions.emptyStateIcon,
+                      ),
+                    const SizedBox(height: KoraSpacing.xl),
                     Text(
                       title,
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: KoraSpacing.sm),
                     Text(
                       message,
                       textAlign: TextAlign.center,
@@ -76,7 +84,7 @@ class KoraExperienceStateView extends StatelessWidget {
                 ),
               ),
               if (canRetry && onRetry != null) ...<Widget>[
-                const SizedBox(height: 20),
+                const SizedBox(height: KoraSpacing.xxl),
                 KoraActionButton(
                   label: 'Réessayer',
                   onPressed: onRetry,

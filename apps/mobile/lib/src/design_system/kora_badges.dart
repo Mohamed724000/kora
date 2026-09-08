@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/kora_colors.dart';
+import '../theme/kora_theme.dart';
 
 enum KoraStatusTone { neutral, information, success, warning, error }
 
@@ -34,15 +35,18 @@ class KoraStatusBadge extends StatelessWidget {
           decoration: BoxDecoration(
             color: color.withValues(alpha: 0.12),
             border: Border.all(color: color.withValues(alpha: 0.75)),
-            borderRadius: BorderRadius.circular(999),
+            borderRadius: BorderRadius.circular(KoraRadii.pill),
           ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            padding: const EdgeInsets.symmetric(
+              horizontal: KoraSpacing.md,
+              vertical: KoraSpacing.xs,
+            ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                Icon(icon, color: color, size: 16),
-                const SizedBox(width: 6),
+                Icon(icon, color: color, size: KoraDimensions.iconXs),
+                const SizedBox(width: KoraSpacing.xs),
                 Flexible(
                   child: Text(
                     label,

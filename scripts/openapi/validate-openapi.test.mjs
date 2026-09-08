@@ -26,6 +26,15 @@ function documentFixture() {
   return structuredClone(sourceDocument);
 }
 
+function replaceWithinModel(source, modelName, original, replacement) {
+  const pattern = new RegExp(`model ${modelName} \\{[\\s\\S]*?\\n\\}`);
+  const model = pattern.exec(source)?.[0];
+  assert.ok(model, `fixture must include ${modelName}`);
+  const updatedModel = model.replace(original, replacement);
+  assert.notEqual(updatedModel, model, `fixture must mutate ${modelName}`);
+  return source.replace(model, updatedModel);
+}
+
 function earningCandidate({
   basis = 101n,
   bps = 2_000n,
@@ -98,13 +107,462 @@ function predecessorFrom(result, consumedByArtistSettlementId = null) {
 test("the S1.1 OpenAPI and Prisma target contracts are semantically valid", () => {
   const result = readAndValidateOpenApi();
 
-  assert.equal(result.openapi.paths, 29);
-  assert.equal(result.openapi.invariants, 11);
+  assert.equal(result.openapi.paths, 32);
+  assert.equal(result.openapi.invariants, 14);
   assert.equal(result.openapi.references, "resolved");
   assert.ok(result.openapi.schemas >= 50);
   assert.equal(result.prisma.models, 30);
   assert.ok(result.prisma.integerFinancialFields >= 10);
-  assert.equal(EXPECTED_PATHS.length, 29);
+  assert.equal(EXPECTED_PATHS.length, 32);
+});
+
+test("requires phone and password before registration or login OTP", () => {
+  for (const schemaName of [
+    "RegisterCustomerRequest",
+    "LoginCustomerRequest",
+  ]) {
+    const document = documentFixture();
+    document.components.schemas[schemaName].required = ["device", "phone"];
+
+    assert.throws(
+      () => validateOpenApiDocument(document),
+      /must require phone, password and device/,
+    );
+  }
+});
+
+test("rejects an unapproved registration field outside the exact auth context", () => {
+  const document = documentFixture();
+  document.components.schemas.RegisterCustomerRequest.properties.fullName = {
+    type: "string",
+  };
+
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /must require phone, password and device/,
+  );
+});
+
+test("rejects an unknown required registration field", () => {
+  const document = documentFixture();
+  document.components.schemas.RegisterCustomerRequest.required.push(
+    "displayName",
+  );
+
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /must require phone, password and device/,
+  );
+});
+
+for (const [schemaName, field] of [
+  ["OtpChallenge", "pendingPasswordHash"],
+  ["OtpChallenge", "codeHash"],
+  ["Session", "refreshTokenHash"],
+  ["CustomerDeviceRegistration", "fingerprintHash"],
+  ["Session", "credentialHash"],
+  ["Session", "refreshTokenDigest"],
+  ["Session", "passwordHashV2"],
+]) {
+  test(`rejects public server authentication field ${schemaName}.${field}`, () => {
+    const document = documentFixture();
+    document.components.schemas[schemaName].properties[field] = {
+      type: "string",
+    };
+
+    assert.throws(
+      () => validateOpenApiDocument(document),
+      new RegExp(`forbidden public field ${field}`),
+    );
+  });
+}
+
+test("rejects a password added to the public Session result", () => {
+  const document = documentFixture();
+  document.components.schemas.Session.properties.password = { type: "string" };
+
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /Session must expose only the exact bounded public token result/,
+  );
+});
+
+for (const [schemaName, error] of [
+  ["StepUpVerification", /exact safe result/],
+  ["Session", /exact bounded public token result/],
+  ["DeviceSummary", /exact safe session metadata/],
+  [
+    "DeviceListEnvelope",
+    /exact \{data, meta\} success envelope|exact bounded safe device list/,
+  ],
+]) {
+  test(`rejects an extra field on auth result ${schemaName}`, () => {
+    const document = documentFixture();
+    document.components.schemas[schemaName].properties.unapproved = {
+      type: "string",
+    };
+
+    assert.throws(() => validateOpenApiDocument(document), error);
+  });
+}
+
+test("rejects an extra refresh-session input", () => {
+  const document = documentFixture();
+  document.components.schemas.RefreshSessionRequest.properties.unapproved = {
+    type: "string",
+  };
+
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /expose only the bounded refresh token/,
+  );
+});
+
+test("rejects auth envelopes that wrap another payload", () => {
+  const document = documentFixture();
+  document.components.schemas.SessionEnvelope.properties.data.$ref =
+    "#/components/schemas/DeviceSummary";
+
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /SessionEnvelope must wrap only its exact safe auth payload/,
+  );
+});
+
+for (const [schemaName, error] of [
+  ["OtpChallenge", /exact safe public shape/],
+  [
+    "OtpVerificationRequest",
+    /consume only the password-verified challenge code/,
+  ],
+  ["StepUpChallengeRequest", /limited to account security and artist payout/],
+  ["StepUpVerificationRequest", /exact OTP code input/],
+]) {
+  test(`rejects extensible public auth schema ${schemaName}`, () => {
+    const document = documentFixture();
+    document.components.schemas[schemaName].additionalProperties = true;
+
+    assert.throws(() => validateOpenApiDocument(document), error);
+  });
+}
+
+test("rejects an extra step-up verification input", () => {
+  const document = documentFixture();
+  document.components.schemas.StepUpVerificationRequest.properties.sessionId = {
+    type: "string",
+  };
+
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /exact OTP code input/,
+  );
+});
+
+test("accepts international E.164 and rejects ambiguous local phones", () => {
+  assert.equal(
+    validateSchemaInstance(sourceDocument, "E164Phone", "+22370000000"),
+    true,
+  );
+  assert.equal(
+    validateSchemaInstance(sourceDocument, "E164Phone", "+33612345678"),
+    true,
+  );
+  for (const phone of ["70000000", "22370000000", "+02370000000"]) {
+    assert.throws(
+      () => validateSchemaInstance(sourceDocument, "E164Phone", phone),
+      /required pattern/,
+    );
+  }
+});
+
+for (const [path, operationId] of [
+  ["/api/v1/auth/step-up/challenges", "createCustomerStepUpChallenge"],
+  [
+    "/api/v1/auth/step-up/challenges/{challengeId}/verify",
+    "verifyCustomerStepUp",
+  ],
+]) {
+  for (const replacement of [
+    undefined,
+    [],
+    [{ adminSession: [] }],
+    [{ providerSignature: [] }],
+  ]) {
+    test(`rejects ${operationId} security substitution ${JSON.stringify(replacement)}`, () => {
+      const document = documentFixture();
+      const operation = document.paths[path].post;
+      if (replacement === undefined) delete operation.security;
+      else operation.security = replacement;
+
+      assert.throws(
+        () => validateOpenApiDocument(document),
+        new RegExp(`${operationId} requires customerBearer exactly`),
+      );
+    });
+  }
+}
+
+for (const [name, path, method] of [
+  ["customer", "/api/v1/orders", "post"],
+  ["admin", "/api/v1/admin/audio-content", "post"],
+  ["provider", "/api/v1/payment-webhooks/{provider}", "post"],
+]) {
+  test(`rejects an anonymous OR alternative on a ${name} operation`, () => {
+    const document = documentFixture();
+    document.paths[path][method].security.push({});
+
+    assert.throws(
+      () => validateOpenApiDocument(document),
+      /requires customerBearer exactly|requires the short-lived admin access credential|requires the sandbox provider signature/,
+    );
+  });
+}
+
+test("rejects root security that changes explicitly public operations", () => {
+  const document = documentFixture();
+  document.security = [{ customerBearer: [] }];
+
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /root security is forbidden/,
+  );
+});
+
+test("rejects an additional method on a health path", () => {
+  const document = documentFixture();
+  document.paths["/health/live"].post = {
+    operationId: "unexpectedHealthMutation",
+    summary: "Must not exist.",
+    "x-kora-clients": ["operations"],
+    responses: { 204: { description: "Must not exist." } },
+  };
+
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /exact approved inventory/,
+  );
+});
+
+test("rejects security on an exact public health operation", () => {
+  const document = documentFixture();
+  document.paths["/health/live"].get.security = [{ adminSession: [] }, {}];
+
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /exact public health operation/,
+  );
+});
+
+test("rejects an unclassified mobile business operation", () => {
+  const document = documentFixture();
+  const operation = structuredClone(
+    document.paths["/api/v1/catalog/audio"].get,
+  );
+  operation.operationId = "unclassifiedMobileOperation";
+  operation["x-kora-clients"] = ["mobile"];
+  document.paths["/api/v1/catalog/audio"].post = operation;
+  document["x-kora-operation-errors"].unclassifiedMobileOperation = [
+    "VALIDATION_ERROR",
+  ];
+
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /exact approved inventory|must belong to exactly one approved authorization class/,
+  );
+});
+
+test("rejects customerBearer scheme drift", () => {
+  const document = documentFixture();
+  document.components.securitySchemes.customerBearer.bearerFormat = "opaque";
+
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /exact HTTP bearer JWT scheme/,
+  );
+});
+
+test("rejects adminSession format drift", () => {
+  const document = documentFixture();
+  document.components.securitySchemes.adminSession.bearerFormat = "opaque";
+
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /short-lived bearer access credential/,
+  );
+});
+
+test("rejects providerSignature outside the approved header", () => {
+  const document = documentFixture();
+  document.components.securitySchemes.providerSignature.in = "query";
+
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /exact sandbox signature header/,
+  );
+});
+
+test("rejects a customer operation made public", () => {
+  const document = documentFixture();
+  delete document.paths["/api/v1/orders"].post.security;
+
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /createCustomerOrder requires customerBearer exactly/,
+  );
+});
+
+test("rejects a public auth operation protected by a substituted scheme", () => {
+  const document = documentFixture();
+  document.paths["/api/v1/auth/login"].post.security = [{ customerBearer: [] }];
+
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /loginCustomer must be an exact public operation/,
+  );
+});
+
+test("rejects a successful business response without data and meta", () => {
+  const document = documentFixture();
+  document.components.schemas.OrderEnvelope.required = ["data"];
+
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /exact \{data, meta\} success envelope/,
+  );
+});
+
+test("rejects a successful business response without required data", () => {
+  const document = documentFixture();
+  document.components.schemas.OrderEnvelope.required = ["meta"];
+
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /exact \{data, meta\} success envelope/,
+  );
+});
+
+test("rejects an extensible success envelope with an extra property", () => {
+  const document = documentFixture();
+  const envelope = document.components.schemas.OrderEnvelope;
+  envelope.additionalProperties = true;
+  envelope.properties.debug = { type: "string" };
+
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /exact \{data, meta\} success envelope/,
+  );
+});
+
+test("rejects a successful business response with an unrelated meta schema", () => {
+  const document = documentFixture();
+  document.components.schemas.OrderEnvelope.properties.meta.$ref =
+    "#/components/schemas/ErrorDetails";
+
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /exact \{data, meta\} success envelope/,
+  );
+});
+
+test("rejects an error response without required details", () => {
+  const document = documentFixture();
+  document.components.schemas.ErrorResponse.properties.error.required = [
+    "code",
+    "message",
+  ];
+
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /exact \{code, message, details\} error body/,
+  );
+});
+
+test("rejects an extensible error body", () => {
+  const document = documentFixture();
+  document.components.schemas.ErrorResponse.properties.error.additionalProperties = true;
+
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /exact \{code, message, details\} error body/,
+  );
+});
+
+test("rejects sensitive or undeclared error details", () => {
+  assert.throws(
+    () =>
+      validateSchemaInstance(sourceDocument, "ErrorDetails", {
+        refreshToken: "secret-value",
+      }),
+    /rejects property refreshToken/,
+  );
+});
+
+test("rejects a public registration account-existence oracle", () => {
+  const document = documentFixture();
+  document.components.schemas.ErrorCode.enum.push("AUTH_PHONE_ALREADY_USED");
+  document["x-kora-error-statuses"].AUTH_PHONE_ALREADY_USED = 409;
+  document["x-kora-operation-errors"].registerCustomer.push(
+    "AUTH_PHONE_ALREADY_USED",
+  );
+  document.paths["/api/v1/auth/register"].post.responses["409"] = {
+    $ref: "#/components/responses/ClientError",
+  };
+
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /must not reveal account existence/,
+  );
+});
+
+for (const [operationId, path, code, status] of [
+  ["registerCustomer", "/api/v1/auth/register", "ACCOUNT_EXISTS", "400"],
+  ["loginCustomer", "/api/v1/auth/login", "USER_DISABLED", "401"],
+]) {
+  test(`rejects account-existence alias ${code} on ${operationId}`, () => {
+    const document = documentFixture();
+    document.components.schemas.ErrorCode.enum.push(code);
+    document["x-kora-error-statuses"][code] = Number(status);
+    document["x-kora-operation-errors"][operationId].push(code);
+    assert.ok(document.paths[path].post.responses[status]);
+
+    assert.throws(
+      () => validateOpenApiDocument(document),
+      /must not reveal account existence/,
+    );
+  });
+}
+
+for (const precondition of [
+  "AUTH_PUBLIC_OUTCOMES_DO_NOT_REVEAL_ACCOUNT_EXISTENCE",
+  "AUTH_OTP_CHALLENGE_BINDS_HASHED_DEVICE_FINGERPRINT_AND_PLATFORM",
+  "AUTH_REGISTER_CHALLENGE_BINDS_PENDING_PASSWORD_HASH",
+  "AUTH_LOGIN_CHALLENGE_BINDS_PASSWORD_VERIFIED_CUSTOMER",
+  "AUTH_STEP_UP_CHALLENGE_BINDS_EXISTING_CUSTOMER_SESSION",
+]) {
+  test(`rejects removal of auth precondition ${precondition}`, () => {
+    const document = documentFixture();
+    document["x-kora-transaction-preconditions"] = document[
+      "x-kora-transaction-preconditions"
+    ].filter((value) => value !== precondition);
+
+    assert.throws(
+      () => validateOpenApiDocument(document),
+      /transaction-precondition set is incomplete/,
+    );
+  });
+}
+
+test("rejects OTP verification that accepts a replacement device", () => {
+  const document = documentFixture();
+  const schema = document.components.schemas.OtpVerificationRequest;
+  schema.properties.device = {
+    $ref: "#/components/schemas/CustomerDeviceRegistration",
+  };
+
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /consume only the password-verified challenge code/,
+  );
 });
 
 test("the shared TypeScript boundary is generated from the current OpenAPI", async () => {
@@ -637,27 +1095,229 @@ test("rejects an Entitlement that can exist before Settlement", () => {
   );
 });
 
+test("rejects a customer session bound to another customer's device", () => {
+  const invalid = replaceWithinModel(
+    prismaSource,
+    "CustomerSession",
+    /device\s+CustomerDevice\s+@relation\(fields: \[deviceId, customerId\], references: \[id, customerId\], onDelete: Restrict, onUpdate: Restrict\)/,
+    "device CustomerDevice @relation(fields: [deviceId], references: [id])",
+  );
+
+  assert.notEqual(invalid, prismaSource);
+  assert.throws(
+    () => validatePrismaTargetSchema(invalid),
+    /CustomerSession must bind its device to the same customer/,
+  );
+});
+
+test("rejects removal of the device tenant candidate key", () => {
+  const invalid = replaceWithinModel(
+    prismaSource,
+    "CustomerDevice",
+    "@@unique([id, customerId])",
+    "@@index([id, customerId])",
+  );
+
+  assert.throws(
+    () => validatePrismaTargetSchema(invalid),
+    /CustomerSession must bind its device to the same customer/,
+  );
+});
+
+test("rejects removal of the session tenant candidate key", () => {
+  const invalid = replaceWithinModel(
+    prismaSource,
+    "CustomerSession",
+    "@@unique([id, customerId])",
+    "@@index([id, customerId])",
+  );
+
+  assert.throws(
+    () => validatePrismaTargetSchema(invalid),
+    /CustomerSession must bind its device to the same customer/,
+  );
+});
+
+for (const [name, modelName, original, replacement, error] of [
+  [
+    "customer password hash",
+    "Customer",
+    /passwordHash\s+String/,
+    "passwordDigest String",
+    /server-side password hash/,
+  ],
+  [
+    "unique rotating refresh hash",
+    "CustomerSession",
+    /refreshTokenHash\s+String\s+@unique/,
+    "refreshTokenHash String",
+    /rotating refresh hashes/,
+  ],
+  [
+    "OTP step-up freshness",
+    "CustomerSession",
+    /lastOtpStepUpAt\s+DateTime\?/,
+    "lastOtpStepUp String?",
+    /OTP step-up freshness/,
+  ],
+  [
+    "OTP code hash",
+    "OtpChallenge",
+    /codeHash\s+String/,
+    "codeDigest String",
+    /bounded password, customer, session and hashed-device context/,
+  ],
+  [
+    "pending registration password hash",
+    "OtpChallenge",
+    /pendingPasswordHash\s+String\?/,
+    "pendingPasswordDigest String?",
+    /bounded password, customer, session and hashed-device context/,
+  ],
+  [
+    "password verification timestamp",
+    "OtpChallenge",
+    /passwordVerifiedAt\s+DateTime\?/,
+    "credentialCheckedAt DateTime?",
+    /bounded password, customer, session and hashed-device context/,
+  ],
+  [
+    "hashed device fingerprint",
+    "OtpChallenge",
+    /deviceFingerprintHash\s+String/,
+    "deviceFingerprint String",
+    /bounded password, customer, session and hashed-device context/,
+  ],
+  [
+    "device platform",
+    "OtpChallenge",
+    /devicePlatform\s+DevicePlatform/,
+    "devicePlatform String",
+    /bounded password, customer, session and hashed-device context/,
+  ],
+]) {
+  test(`rejects removal of ${name}`, () => {
+    const invalid = replaceWithinModel(
+      prismaSource,
+      modelName,
+      original,
+      replacement,
+    );
+
+    assert.throws(() => validatePrismaTargetSchema(invalid), error);
+  });
+}
+
+for (const [name, original, replacement] of [
+  [
+    "customer",
+    /customer\s+Customer\?\s+@relation\(fields: \[customerId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/,
+    "customer Customer? @relation(fields: [customerId], references: [id])",
+  ],
+  [
+    "session",
+    /session\s+CustomerSession\?\s+@relation\(fields: \[sessionId, customerId\], references: \[id, customerId\], onDelete: Restrict, onUpdate: Restrict\)/,
+    "session CustomerSession? @relation(fields: [sessionId], references: [id])",
+  ],
+]) {
+  test(`rejects an OTP challenge detached from its ${name} context`, () => {
+    const invalid = replaceWithinModel(
+      prismaSource,
+      "OtpChallenge",
+      original,
+      replacement,
+    );
+
+    assert.throws(
+      () => validatePrismaTargetSchema(invalid),
+      /bounded password, customer, session and hashed-device context/,
+    );
+  });
+}
+
+for (const [name, original, replacement] of [
+  [
+    "entitlement",
+    /entitlement\s+Entitlement\s+@relation\(fields: \[entitlementId, customerId\], references: \[id, customerId\], onDelete: Restrict, onUpdate: Restrict\)/,
+    "entitlement Entitlement @relation(fields: [entitlementId], references: [id])",
+  ],
+  [
+    "device",
+    /device\s+CustomerDevice\s+@relation\(fields: \[deviceId, customerId\], references: \[id, customerId\], onDelete: Restrict, onUpdate: Restrict\)/,
+    "device CustomerDevice @relation(fields: [deviceId], references: [id])",
+  ],
+]) {
+  test(`rejects a purchased descriptor bound to another customer's ${name}`, () => {
+    const invalid = replaceWithinModel(
+      prismaSource,
+      "PurchasedPlaybackDescriptor",
+      original,
+      replacement,
+    );
+
+    assert.notEqual(invalid, prismaSource);
+    assert.throws(
+      () => validatePrismaTargetSchema(invalid),
+      /PurchasedPlaybackDescriptor must bind entitlement and device to the same customer/,
+    );
+  });
+}
+
+test("rejects an idempotency record bound to another customer's order", () => {
+  const invalid = replaceWithinModel(
+    prismaSource,
+    "IdempotencyRecord",
+    /order\s+Order\?\s+@relation\(fields: \[orderId, customerId\], references: \[id, customerId\], onDelete: Restrict, onUpdate: Restrict\)/,
+    "order Order? @relation(fields: [orderId], references: [id])",
+  );
+
+  assert.notEqual(invalid, prismaSource);
+  assert.throws(
+    () => validatePrismaTargetSchema(invalid),
+    /idempotency records must scope actors/,
+  );
+});
+
+test("rejects removal of the order tenant candidate key", () => {
+  const invalid = replaceWithinModel(
+    prismaSource,
+    "Order",
+    "@@unique([id, customerId])",
+    "@@index([id, customerId])",
+  );
+
+  assert.throws(
+    () => validatePrismaTargetSchema(invalid),
+    /idempotency records must scope actors/,
+  );
+});
+
+test("rejects removal of the entitlement tenant candidate key", () => {
+  const invalid = replaceWithinModel(
+    prismaSource,
+    "Entitlement",
+    "@@unique([id, customerId])",
+    "@@index([id, customerId])",
+  );
+
+  assert.throws(
+    () => validatePrismaTargetSchema(invalid),
+    /Entitlement must require a settlement and match its order item, content and customer/,
+  );
+});
+
 test("rejects any overwrite method on PaymentAttempt", () => {
   const document = documentFixture();
-  document.paths[
-    "/api/v1/orders/{orderId}/payment-attempts/{paymentAttemptId}"
-  ].patch = {
-    operationId: "overwritePaymentAttempt",
-    summary: "Invalid overwrite.",
-    "x-kora-clients": ["mobile"],
-    security: [{ customerBearer: [] }],
-    responses: {
-      200: { description: "Invalid." },
-      401: { $ref: "#/components/responses/ClientError" },
-    },
-  };
-  document["x-kora-operation-errors"].overwritePaymentAttempt = [
-    "AUTH_REQUIRED",
-  ];
+  const item =
+    document.paths[
+      "/api/v1/orders/{orderId}/payment-attempts/{paymentAttemptId}"
+    ];
+  item.patch = structuredClone(item.get);
+  delete item.get;
 
   assert.throws(
     () => validateOpenApiDocument(document),
-    /cannot be overwritten/,
+    /exact approved inventory|cannot be overwritten/,
   );
 });
 

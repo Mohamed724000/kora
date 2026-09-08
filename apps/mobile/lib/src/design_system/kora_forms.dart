@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../theme/kora_colors.dart';
+import '../theme/kora_theme.dart';
 
 class KoraMaliPhoneField extends StatelessWidget {
   const KoraMaliPhoneField({
@@ -35,7 +36,7 @@ class KoraMaliPhoneField extends StatelessWidget {
         helperText: '8 chiffres, sans le préfixe pays',
         errorText: errorText,
         prefixIcon: const SizedBox(
-          width: 68,
+          width: KoraDimensions.phonePrefixWidth,
           child: Center(
             child: Text(
               '+223',
@@ -84,7 +85,7 @@ class KoraOtpField extends StatelessWidget {
           if (value.length == 6) onCompleted?.call(value);
         },
         style: Theme.of(context).textTheme.titleLarge?.copyWith(
-          letterSpacing: 10,
+          letterSpacing: KoraDimensions.otpLetterSpacing,
           fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
         ),
         decoration: InputDecoration(
@@ -113,15 +114,25 @@ class KoraSandboxPaymentMethod extends StatelessWidget {
   Widget build(BuildContext context) {
     return Semantics(
       label: 'Moyen de paiement sandbox de démonstration',
-      selected: selected,
+      button: true,
+      checked: selected,
+      inMutuallyExclusiveGroup: true,
+      excludeSemantics: true,
+      onTap: () => onSelected(true),
       child: Card(
         child: InkWell(
-          onTap: () => onSelected(!selected),
-          borderRadius: BorderRadius.circular(16),
+          excludeFromSemantics: true,
+          onTap: () => onSelected(true),
+          borderRadius: BorderRadius.circular(KoraRadii.card),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 64),
+            constraints: const BoxConstraints(
+              minHeight: KoraDimensions.paymentMethodMinHeight,
+            ),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.symmetric(
+                horizontal: KoraSpacing.lg,
+                vertical: KoraSpacing.sm,
+              ),
               child: Row(
                 children: <Widget>[
                   Icon(
@@ -131,7 +142,7 @@ class KoraSandboxPaymentMethod extends StatelessWidget {
                     color: selected ? KoraColors.gold : KoraColors.muted,
                   ),
                   const Icon(Icons.account_balance_wallet_outlined),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: KoraSpacing.md),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,

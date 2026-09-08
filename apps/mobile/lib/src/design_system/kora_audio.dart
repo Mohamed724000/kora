@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/kora_colors.dart';
+import '../theme/kora_theme.dart';
 
 class KoraPrice extends StatelessWidget {
   const KoraPrice({required this.amountCfa, this.compact = false, super.key});
@@ -62,14 +63,17 @@ class KoraArtistIdentity extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             CircleAvatar(
-              radius: 18,
+              radius: KoraDimensions.artistAvatarRadius,
               foregroundImage: image,
-              backgroundColor: const Color(0xFF2A292E),
+              backgroundColor: KoraColors.surfaceBorder,
               child: image == null
-                  ? const Icon(Icons.person_outline, size: 20)
+                  ? const Icon(
+                      Icons.person_outline,
+                      size: KoraDimensions.iconMd,
+                    )
                   : null,
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: KoraSpacing.md),
             Flexible(
               child: Text(
                 name,
@@ -79,8 +83,12 @@ class KoraArtistIdentity extends StatelessWidget {
               ),
             ),
             if (isVerified) ...<Widget>[
-              const SizedBox(width: 6),
-              const Icon(Icons.verified, color: KoraColors.gold, size: 18),
+              const SizedBox(width: KoraSpacing.xs),
+              const Icon(
+                Icons.verified,
+                color: KoraColors.gold,
+                size: KoraDimensions.iconSm,
+              ),
             ],
           ],
         ),
@@ -118,12 +126,12 @@ class KoraAudioCard extends StatelessWidget {
         child: InkWell(
           onTap: onOpen,
           child: Padding(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(KoraSpacing.lg),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: <Widget>[
                 _AudioArtwork(image: artwork),
-                const SizedBox(width: 12),
+                const SizedBox(width: KoraSpacing.lg),
                 Expanded(
                   child: ExcludeSemantics(
                     child: Column(
@@ -131,7 +139,7 @@ class KoraAudioCard extends StatelessWidget {
                       children: <Widget>[
                         if (badge != null) ...<Widget>[
                           badge!,
-                          const SizedBox(height: 8),
+                          const SizedBox(height: KoraSpacing.sm),
                         ],
                         Text(
                           title,
@@ -139,20 +147,20 @@ class KoraAudioCard extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: KoraSpacing.xxs),
                         Text(
                           artistName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: KoraSpacing.sm),
                         KoraPrice(amountCfa: amountCfa, compact: true),
                       ],
                     ),
                   ),
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: KoraSpacing.xxs),
                 const ExcludeSemantics(
                   child: Icon(Icons.chevron_right, color: KoraColors.muted),
                 ),
@@ -173,18 +181,22 @@ class _AudioArtwork extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 80,
-      height: 80,
+      width: KoraDimensions.compactArtwork,
+      height: KoraDimensions.compactArtwork,
       decoration: BoxDecoration(
-        color: const Color(0xFF242329),
-        borderRadius: BorderRadius.circular(12),
+        color: KoraColors.artworkSurface,
+        borderRadius: BorderRadius.circular(KoraRadii.control),
         image: image == null
             ? null
             : DecorationImage(image: image!, fit: BoxFit.cover),
       ),
       alignment: Alignment.center,
       child: image == null
-          ? const Icon(Icons.graphic_eq, color: KoraColors.gold, size: 32)
+          ? const Icon(
+              Icons.graphic_eq,
+              color: KoraColors.gold,
+              size: KoraDimensions.iconXxl,
+            )
           : null,
     );
   }
@@ -204,12 +216,16 @@ class KoraPurchaseLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final useStackedLayout = MediaQuery.textScalerOf(context).scale(16) >= 24;
+    final useStackedLayout =
+        MediaQuery.textScalerOf(
+          context,
+        ).scale(KoraTypography.layoutProbeFontSize) >=
+        KoraTypography.largeTextLayoutThreshold;
     final identity = Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         const Icon(Icons.music_note, color: KoraColors.gold),
-        const SizedBox(width: 12),
+        const SizedBox(width: KoraSpacing.lg),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -226,13 +242,13 @@ class KoraPurchaseLine extends StatelessWidget {
       label: '$title, $artistName, $amountCfa francs CFA',
       child: ExcludeSemantics(
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
+          padding: const EdgeInsets.symmetric(vertical: KoraSpacing.lg),
           child: useStackedLayout
               ? Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
                     identity,
-                    const SizedBox(height: 8),
+                    const SizedBox(height: KoraSpacing.sm),
                     Align(
                       alignment: Alignment.centerRight,
                       child: KoraPrice(amountCfa: amountCfa, compact: true),
@@ -243,7 +259,7 @@ class KoraPurchaseLine extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Expanded(child: identity),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: KoraSpacing.sm),
                     KoraPrice(amountCfa: amountCfa, compact: true),
                   ],
                 ),
@@ -269,18 +285,22 @@ class KoraReceiptSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final useStackedTotal = MediaQuery.textScalerOf(context).scale(16) >= 24;
+    final useStackedTotal =
+        MediaQuery.textScalerOf(
+          context,
+        ).scale(KoraTypography.layoutProbeFontSize) >=
+        KoraTypography.largeTextLayoutThreshold;
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(KoraSpacing.xl),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             Row(
               children: <Widget>[
                 const Icon(Icons.receipt_long, color: KoraColors.gold),
-                const SizedBox(width: 10),
+                const SizedBox(width: KoraSpacing.md),
                 Expanded(
                   child: Text(
                     'Reçu $reference',
@@ -289,17 +309,17 @@ class KoraReceiptSummary extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: KoraSpacing.xxs),
             Text(
               purchasedAtLabel,
               style: Theme.of(context).textTheme.bodyMedium,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: KoraSpacing.lg),
             const Divider(),
             ...children,
             const Divider(),
             Padding(
-              padding: const EdgeInsets.only(top: 12),
+              padding: const EdgeInsets.only(top: KoraSpacing.lg),
               child: useStackedTotal
                   ? Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -308,7 +328,7 @@ class KoraReceiptSummary extends StatelessWidget {
                           'Total',
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: KoraSpacing.xxs),
                         Align(
                           alignment: Alignment.centerRight,
                           child: KoraPrice(amountCfa: totalCfa),

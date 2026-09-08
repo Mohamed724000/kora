@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/kora_colors.dart';
+import '../theme/kora_theme.dart';
 import 'kora_actions.dart';
 
 class KoraPlayableMedia {
@@ -24,45 +25,58 @@ class KoraMiniPlayer extends StatelessWidget {
     required this.media,
     required this.onOpen,
     required this.onTogglePlayback,
+    required this.playingStateLabel,
+    required this.pausedStateLabel,
     super.key,
   });
 
   final KoraPlayableMedia? media;
   final VoidCallback onOpen;
   final VoidCallback onTogglePlayback;
+  final String playingStateLabel;
+  final String pausedStateLabel;
 
   @override
   Widget build(BuildContext context) {
     final activeMedia = media;
     if (activeMedia == null) return const SizedBox.shrink();
+    final playbackStateLabel = activeMedia.isPlaying
+        ? playingStateLabel
+        : pausedStateLabel;
 
-    return Semantics(
-      container: true,
-      label: 'Mini-lecteur. ${activeMedia.title}, ${activeMedia.artistName}',
-      child: DecoratedBox(
-        key: const Key('mini-player'),
-        decoration: const BoxDecoration(
-          color: KoraColors.surface,
-          border: Border(top: BorderSide(color: KoraColors.gold)),
-        ),
-        child: SafeArea(
-          top: false,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 72),
-            child: Row(
-              children: <Widget>[
-                Expanded(
+    return DecoratedBox(
+      key: const Key('mini-player'),
+      decoration: const BoxDecoration(
+        color: KoraColors.surface,
+        border: Border(top: BorderSide(color: KoraColors.gold)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+            minHeight: KoraDimensions.miniPlayerMinHeight,
+          ),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: Semantics(
+                  button: true,
+                  excludeSemantics: true,
+                  label:
+                      'Mini-lecteur. ${activeMedia.title}, ${activeMedia.artistName}. $playbackStateLabel',
+                  onTap: onOpen,
                   child: InkWell(
+                    excludeFromSemantics: true,
                     onTap: onOpen,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 10,
+                        horizontal: KoraSpacing.xl,
+                        vertical: KoraSpacing.md,
                       ),
                       child: Row(
                         children: <Widget>[
                           const Icon(Icons.graphic_eq, color: KoraColors.gold),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: KoraSpacing.lg),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -90,16 +104,16 @@ class KoraMiniPlayer extends StatelessWidget {
                     ),
                   ),
                 ),
-                IconButton(
-                  onPressed: onTogglePlayback,
-                  tooltip: activeMedia.isPlaying ? 'Mettre en pause' : 'Lire',
-                  icon: Icon(
-                    activeMedia.isPlaying ? Icons.pause : Icons.play_arrow,
-                  ),
+              ),
+              IconButton(
+                onPressed: onTogglePlayback,
+                tooltip: activeMedia.isPlaying ? 'Mettre en pause' : 'Lire',
+                icon: Icon(
+                  activeMedia.isPlaying ? Icons.pause : Icons.play_arrow,
                 ),
-                const SizedBox(width: 8),
-              ],
-            ),
+              ),
+              const SizedBox(width: KoraSpacing.sm),
+            ],
           ),
         ),
       ),
@@ -111,12 +125,16 @@ class KoraFullPlayer extends StatelessWidget {
   const KoraFullPlayer({
     required this.media,
     required this.onTogglePlayback,
+    required this.playingStateLabel,
+    required this.pausedStateLabel,
     this.onBrowse,
     super.key,
   });
 
   final KoraPlayableMedia? media;
   final VoidCallback onTogglePlayback;
+  final String playingStateLabel;
+  final String pausedStateLabel;
   final VoidCallback? onBrowse;
 
   @override
@@ -125,32 +143,40 @@ class KoraFullPlayer extends StatelessWidget {
     if (activeMedia == null) {
       return Semantics(
         container: true,
+        explicitChildNodes: true,
         label:
             'Lecteur vide. Choisissez un titre dans Découvrir ou Mes achats.',
         child: Center(
           child: Padding(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(KoraSpacing.xxxl),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                const Icon(
-                  Icons.headphones_outlined,
-                  color: KoraColors.gold,
-                  size: 56,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Prêt à écouter ?',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Choisissez un titre dans Découvrir ou retrouvez vos achats.',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyMedium,
+                ExcludeSemantics(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      const Icon(
+                        Icons.headphones_outlined,
+                        color: KoraColors.gold,
+                        size: KoraDimensions.emptyPlayerIcon,
+                      ),
+                      const SizedBox(height: KoraSpacing.xl),
+                      Text(
+                        'Prêt à écouter ?',
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                      const SizedBox(height: KoraSpacing.sm),
+                      Text(
+                        'Choisissez un titre dans Découvrir ou retrouvez vos achats.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ],
+                  ),
                 ),
                 if (onBrowse != null) ...<Widget>[
-                  const SizedBox(height: 20),
+                  const SizedBox(height: KoraSpacing.xxl),
                   KoraActionButton(
                     label: 'Découvrir les titres',
                     onPressed: onBrowse,
@@ -164,54 +190,66 @@ class KoraFullPlayer extends StatelessWidget {
       );
     }
 
+    final playbackStateLabel = activeMedia.isPlaying
+        ? playingStateLabel
+        : pausedStateLabel;
+
     return Semantics(
       container: true,
-      label: 'Lecteur. ${activeMedia.title}, ${activeMedia.artistName}',
+      explicitChildNodes: true,
+      label:
+          'Lecteur. ${activeMedia.title}, ${activeMedia.artistName}. $playbackStateLabel',
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(KoraSpacing.xxxl),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            AspectRatio(
-              aspectRatio: 1,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: const Color(0xFF242329),
-                  borderRadius: BorderRadius.circular(24),
-                  image: activeMedia.artwork == null
-                      ? null
-                      : DecorationImage(
-                          image: activeMedia.artwork!,
-                          fit: BoxFit.cover,
-                        ),
-                ),
-                child: activeMedia.artwork == null
-                    ? const Center(
-                        child: Icon(
-                          Icons.graphic_eq,
-                          color: KoraColors.gold,
-                          size: 72,
-                        ),
-                      )
-                    : null,
+            ExcludeSemantics(
+              child: Column(
+                children: <Widget>[
+                  AspectRatio(
+                    aspectRatio: 1,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: KoraColors.artworkSurface,
+                        borderRadius: BorderRadius.circular(KoraRadii.artwork),
+                        image: activeMedia.artwork == null
+                            ? null
+                            : DecorationImage(
+                                image: activeMedia.artwork!,
+                                fit: BoxFit.cover,
+                              ),
+                      ),
+                      child: activeMedia.artwork == null
+                          ? const Center(
+                              child: Icon(
+                                Icons.graphic_eq,
+                                color: KoraColors.gold,
+                                size: KoraDimensions.fullPlayerIcon,
+                              ),
+                            )
+                          : null,
+                    ),
+                  ),
+                  const SizedBox(height: KoraSpacing.xxxl),
+                  Text(
+                    activeMedia.title,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                  const SizedBox(height: KoraSpacing.xs),
+                  Text(
+                    activeMedia.artistName,
+                    style: Theme.of(context).textTheme.bodyLarge,
+                  ),
+                  const SizedBox(height: KoraSpacing.xxxl),
+                ],
               ),
             ),
-            const SizedBox(height: 24),
-            Text(
-              activeMedia.title,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
-            const SizedBox(height: 6),
-            Text(
-              activeMedia.artistName,
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
-            const SizedBox(height: 24),
             IconButton.filled(
               onPressed: onTogglePlayback,
               tooltip: activeMedia.isPlaying ? 'Mettre en pause' : 'Lire',
-              iconSize: 32,
+              iconSize: KoraDimensions.iconXxl,
               icon: Icon(
                 activeMedia.isPlaying ? Icons.pause : Icons.play_arrow,
               ),

@@ -239,6 +239,21 @@ n’avait pas été commencé. Cet état est un instantané historique de
 prépublication ; tout statut ultérieur fait foi dans l’historique Git et dans la
 Draft PR correspondante.
 
+## 2026-09-08 — Correctifs locaux S1.1-R1 issus de la revue CTO
+
+| ID          | Nature           | Décision                                                                                                                                                                                                                                                                                                                                                                                                                                     | Autorité                   | Statut                                |
+| ----------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ------------------------------------- |
+| DEC-S1.1-16 | Authentification | Le contrat client sépare inscription et connexion, exige téléphone E.164 et mot de passe avant OTP, protège le step-up par la session existante et impose la création atomique de la seule session active avec révocation des précédentes. Le challenge conserve un contexte serveur borné et l’inscription ne révèle pas l’existence du téléphone. Access 15 minutes, refresh 30 jours rotatif à usage unique, replay révoquant la famille. | ADR-010 / revue CTO S1.1   | Accepted — S1.1 contract decision     |
+| DEC-S1.1-17 | Isolation        | Session/appareil, descripteur/droit/appareil et idempotence/commande utilisent des relations composites de même client avec `Restrict`. Toute réponse métier avec corps suit une enveloppe fermée `{data, meta}` et toute erreur suit `{error: {code, message, details}}` avec détails fermés non sensibles ; les classes de sécurité sont exactes, sans alternative anonyme.                                                                | Revue CTO S1.1             | Accepted — S1.1 contract decision     |
+| DEC-S1.1-18 | Accessibilité    | Paiement sandbox expose un radio exclusif actionnable ; succès paiement et hors connexion sont des régions vivantes ; les lecteurs séparent description, état dérivé de `isPlaying` et action sans répéter titre/artiste, y compris à vide. Dimensions, espacements, rayons et typographie sont centralisés dans les tokens Flutter existants.                                                                                               | Revue CTO S1.1             | Accepted — S1.1 contract decision     |
+| DEC-S1.1-19 | Localisation     | L’intégration complète `AppLocalizations` est formellement différée au lot runtime mobile planifié. S1.1-R1 n’ajoute ni dépendance, manifeste ni infrastructure i18n et fournit les nouveaux libellés d’état par l’appelant ; il ne prétend pas livrer la localisation complète.                                                                                                                                                             | Gouvernance S1.1 / roadmap | Accepted — deferred runtime execution |
+
+Au point de décision CTO du 2026-09-08, S1.1-R1 avait achevé sa validation
+locale avant tout commit, push ou changement de la Draft PR #36. Ce constat est
+une preuve historique de prépublication ; la publication ultérieure est
+enregistrée séparément dans l’historique Git et dans la PR. S1.2 restait non
+démarré à cet instant.
+
 ## Catégories d’autorité
 
 - **Produit** : vision, économie, marque, contrats et périmètre irréversible ;

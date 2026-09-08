@@ -6,6 +6,18 @@
     "description": "S1.1 contract-first target for the audio pilot. No runtime implementation, production provider, migration or media location is supplied by this contract."
   },
   "x-kora-scope": "S1.1_AUDIO_PILOT_CONTRACT_DATA_UX_GATE",
+  "x-kora-authentication-policy": {
+    "primaryFlow": "PHONE_PASSWORD_THEN_OTP",
+    "registrationOperation": "registerCustomer",
+    "loginOperation": "loginCustomer",
+    "otpVerificationOperation": "verifyCustomerOtp",
+    "stepUpFlow": "EXISTING_CUSTOMER_SESSION_THEN_OTP",
+    "accessTokenLifetimeMinutes": 15,
+    "refreshTokenLifetimeDays": 30,
+    "refreshTokenUse": "SINGLE_USE_ROTATING",
+    "refreshReplayResponse": "REVOKE_SESSION_FAMILY",
+    "successfulLoginSessionPolicy": "ATOMICALLY_REVOKE_ALL_PRIOR_ACTIVE_CUSTOMER_SESSIONS"
+  },
   "x-kora-invariants": [
     "ORDER_PRECEDES_PAYMENT_ATTEMPT",
     "PAYMENT_ATTEMPT_APPEND_ONLY",
@@ -17,49 +29,30 @@
     "ARCHIVED_CONTENT_VISIBLE_TO_ENTITLED_HOLDER",
     "PREVIEW_GRANT_NEVER_ENTITLEMENT",
     "MEDIA_IDENTIFIERS_PRIVATE",
-    "ARTIST_SETTLEMENT_CARRY_SAME_ARTIST_SINGLE_USE"
+    "ARTIST_SETTLEMENT_CARRY_SAME_ARTIST_SINGLE_USE",
+    "CUSTOMER_AUTH_PASSWORD_THEN_OTP",
+    "CUSTOMER_SESSION_SINGLE_DEVICE",
+    "CUSTOMER_STEP_UP_REQUIRES_EXISTING_SESSION"
   ],
   "x-kora-state-machines": {
     "Order": {
       "initial": "CREATED",
-      "terminal": [
-        "SETTLED",
-        "CANCELLED"
-      ],
+      "terminal": ["SETTLED", "CANCELLED"],
       "currentStateSource": "LATEST_APPEND_ONLY_EVENT",
       "transitions": {
-        "CREATED": [
-          "PAYMENT_PENDING",
-          "CANCELLED"
-        ],
-        "PAYMENT_PENDING": [
-          "SETTLED",
-          "CANCELLED"
-        ],
+        "CREATED": ["PAYMENT_PENDING", "CANCELLED"],
+        "PAYMENT_PENDING": ["SETTLED", "CANCELLED"],
         "SETTLED": [],
         "CANCELLED": []
       }
     },
     "PaymentAttempt": {
       "initial": "CREATED",
-      "terminal": [
-        "SUCCEEDED",
-        "FAILED",
-        "CANCELLED",
-        "EXPIRED"
-      ],
+      "terminal": ["SUCCEEDED", "FAILED", "CANCELLED", "EXPIRED"],
       "currentStateSource": "LATEST_APPEND_ONLY_EVENT",
       "transitions": {
-        "CREATED": [
-          "PENDING",
-          "CANCELLED"
-        ],
-        "PENDING": [
-          "SUCCEEDED",
-          "FAILED",
-          "CANCELLED",
-          "EXPIRED"
-        ],
+        "CREATED": ["PENDING", "CANCELLED"],
+        "PENDING": ["SUCCEEDED", "FAILED", "CANCELLED", "EXPIRED"],
         "SUCCEEDED": [],
         "FAILED": [],
         "CANCELLED": [],
@@ -68,57 +61,30 @@
     },
     "MediaAsset": {
       "initial": "PREPARING",
-      "terminal": [
-        "READY",
-        "FAILED"
-      ],
+      "terminal": ["READY", "FAILED"],
       "transitions": {
-        "PREPARING": [
-          "UPLOAD_PENDING",
-          "FAILED"
-        ],
-        "UPLOAD_PENDING": [
-          "PROCESSING",
-          "FAILED"
-        ],
-        "PROCESSING": [
-          "READY",
-          "FAILED"
-        ],
+        "PREPARING": ["UPLOAD_PENDING", "FAILED"],
+        "UPLOAD_PENDING": ["PROCESSING", "FAILED"],
+        "PROCESSING": ["READY", "FAILED"],
         "READY": [],
         "FAILED": []
       }
     },
     "AudioEditorial": {
       "initial": "DRAFT",
-      "terminal": [
-        "ARCHIVED"
-      ],
+      "terminal": ["ARCHIVED"],
       "transitions": {
-        "DRAFT": [
-          "PUBLISHED"
-        ],
-        "PUBLISHED": [
-          "ARCHIVED"
-        ],
+        "DRAFT": ["PUBLISHED"],
+        "PUBLISHED": ["ARCHIVED"],
         "ARCHIVED": []
       }
     },
     "PaymentWebhookInbox": {
       "initial": "RECEIVED",
-      "terminal": [
-        "PROCESSED",
-        "REJECTED"
-      ],
+      "terminal": ["PROCESSED", "REJECTED"],
       "transitions": {
-        "RECEIVED": [
-          "PROCESSING",
-          "REJECTED"
-        ],
-        "PROCESSING": [
-          "PROCESSED",
-          "REJECTED"
-        ],
+        "RECEIVED": ["PROCESSING", "REJECTED"],
+        "PROCESSING": ["PROCESSED", "REJECTED"],
         "PROCESSED": [],
         "REJECTED": []
       }
@@ -137,7 +103,15 @@
     "ARTIST_SETTLEMENT_PREDECESSOR_CARRY_CONSUMED_ONCE_WITH_LOCK",
     "ARTIST_EARNING_ALLOCATION_FOLLOWS_FLOOR_SETTLEMENT_WITH_ARTIST_CARRY_V1",
     "ARTIST_SETTLEMENT_EXACT_NUMERATOR_IS_CONSERVED",
-    "SETTLEMENT_ARTIST_AND_PLATFORM_AMOUNTS_CONSERVE_DISTRIBUTABLE_CFA"
+    "SETTLEMENT_ARTIST_AND_PLATFORM_AMOUNTS_CONSERVE_DISTRIBUTABLE_CFA",
+    "AUTH_PASSWORD_VERIFICATION_PRECEDES_OTP_CHALLENGE",
+    "AUTH_PUBLIC_OUTCOMES_DO_NOT_REVEAL_ACCOUNT_EXISTENCE",
+    "AUTH_OTP_CHALLENGE_BINDS_HASHED_DEVICE_FINGERPRINT_AND_PLATFORM",
+    "AUTH_REGISTER_CHALLENGE_BINDS_PENDING_PASSWORD_HASH",
+    "AUTH_LOGIN_CHALLENGE_BINDS_PASSWORD_VERIFIED_CUSTOMER",
+    "AUTH_STEP_UP_CHALLENGE_BINDS_EXISTING_CUSTOMER_SESSION",
+    "AUTH_SESSION_CREATION_ATOMICALLY_REVOKES_PRIOR_ACTIVE_CUSTOMER_SESSIONS",
+    "AUTH_STEP_UP_REQUIRES_AND_PRESERVES_EXISTING_CUSTOMER_SESSION"
   ],
   "x-kora-financial-policies": {
     "artistEarningAllocation": {
@@ -154,18 +128,17 @@
       "reversal": "APPEND_COMPENSATION_NO_REWRITE"
     }
   },
-  "x-kora-required-publication-media-kinds": [
-    "AUDIO_MASTER",
-    "COVER_IMAGE"
-  ],
+  "x-kora-required-publication-media-kinds": ["AUDIO_MASTER", "COVER_IMAGE"],
   "x-kora-error-statuses": {
     "VALIDATION_ERROR": 400,
     "AUTH_REQUIRED": 401,
     "AUTH_SESSION_REVOKED": 401,
     "AUTH_REFRESH_REUSED": 401,
+    "AUTH_INVALID_CREDENTIALS": 401,
     "OTP_INVALID": 400,
     "OTP_EXPIRED": 410,
     "OTP_TOO_MANY_ATTEMPTS": 429,
+    "OTP_ALREADY_CONSUMED": 409,
     "CONTENT_NOT_FOUND": 404,
     "CONTENT_MEDIA_NOT_READY": 409,
     "ORDER_NOT_FOUND": 404,
@@ -191,20 +164,33 @@
     "ARTIST_CONFLICT": 409
   },
   "x-kora-operation-errors": {
-    "listPublicAudioCatalog": [
-      "VALIDATION_ERROR"
-    ],
-    "getPublicAudioContent": [
-      "CONTENT_NOT_FOUND"
-    ],
-    "requestCustomerOtp": [
+    "listPublicAudioCatalog": ["VALIDATION_ERROR"],
+    "getPublicAudioContent": ["CONTENT_NOT_FOUND"],
+    "registerCustomer": ["VALIDATION_ERROR", "RATE_LIMITED"],
+    "loginCustomer": [
       "VALIDATION_ERROR",
+      "AUTH_INVALID_CREDENTIALS",
       "RATE_LIMITED"
     ],
     "verifyCustomerOtp": [
       "OTP_INVALID",
       "OTP_EXPIRED",
       "OTP_TOO_MANY_ATTEMPTS",
+      "OTP_ALREADY_CONSUMED",
+      "RATE_LIMITED"
+    ],
+    "createCustomerStepUpChallenge": [
+      "AUTH_REQUIRED",
+      "AUTH_SESSION_REVOKED",
+      "RATE_LIMITED"
+    ],
+    "verifyCustomerStepUp": [
+      "AUTH_REQUIRED",
+      "AUTH_SESSION_REVOKED",
+      "OTP_INVALID",
+      "OTP_EXPIRED",
+      "OTP_TOO_MANY_ATTEMPTS",
+      "OTP_ALREADY_CONSUMED",
       "RATE_LIMITED"
     ],
     "refreshCustomerSession": [
@@ -212,16 +198,9 @@
       "AUTH_SESSION_REVOKED",
       "AUTH_REFRESH_REUSED"
     ],
-    "revokeCurrentCustomerSession": [
-      "AUTH_REQUIRED"
-    ],
-    "listCustomerDevices": [
-      "AUTH_REQUIRED"
-    ],
-    "listCustomerOrders": [
-      "AUTH_REQUIRED",
-      "VALIDATION_ERROR"
-    ],
+    "revokeCurrentCustomerSession": ["AUTH_REQUIRED"],
+    "listCustomerDevices": ["AUTH_REQUIRED"],
+    "listCustomerOrders": ["AUTH_REQUIRED", "VALIDATION_ERROR"],
     "createCustomerOrder": [
       "VALIDATION_ERROR",
       "AUTH_REQUIRED",
@@ -229,10 +208,7 @@
       "ALREADY_ENTITLED",
       "IDEMPOTENCY_CONFLICT"
     ],
-    "getCustomerOrder": [
-      "AUTH_REQUIRED",
-      "ORDER_NOT_FOUND"
-    ],
+    "getCustomerOrder": ["AUTH_REQUIRED", "ORDER_NOT_FOUND"],
     "listPaymentAttempts": [
       "AUTH_REQUIRED",
       "ORDER_NOT_FOUND",
@@ -247,26 +223,18 @@
       "INVALID_STATE_TRANSITION",
       "PAYMENT_PROVIDER_UNAVAILABLE"
     ],
-    "getPaymentAttempt": [
-      "AUTH_REQUIRED",
-      "PAYMENT_ATTEMPT_NOT_FOUND"
-    ],
+    "getPaymentAttempt": ["AUTH_REQUIRED", "PAYMENT_ATTEMPT_NOT_FOUND"],
     "getOrderReceipt": [
       "AUTH_REQUIRED",
       "ORDER_NOT_FOUND",
       "INVALID_STATE_TRANSITION"
     ],
-    "listOperationalPaymentProviders": [
-      "AUTH_REQUIRED"
-    ],
+    "listOperationalPaymentProviders": ["AUTH_REQUIRED"],
     "acceptPaymentWebhook": [
       "PAYMENT_WEBHOOK_INVALID",
       "PROVIDER_SIGNATURE_INVALID"
     ],
-    "listEntitledAudioLibrary": [
-      "AUTH_REQUIRED",
-      "VALIDATION_ERROR"
-    ],
+    "listEntitledAudioLibrary": ["AUTH_REQUIRED", "VALIDATION_ERROR"],
     "createAnonymousPreviewGrant": [
       "CONTENT_NOT_FOUND",
       "PREVIEW_NOT_AVAILABLE",
@@ -284,11 +252,7 @@
       "DEVICE_NOT_REGISTERED",
       "INVALID_STATE_TRANSITION"
     ],
-    "listAdminArtists": [
-      "AUTH_REQUIRED",
-      "FORBIDDEN",
-      "VALIDATION_ERROR"
-    ],
+    "listAdminArtists": ["AUTH_REQUIRED", "FORBIDDEN", "VALIDATION_ERROR"],
     "createAdminArtist": [
       "AUTH_REQUIRED",
       "FORBIDDEN",
@@ -296,11 +260,7 @@
       "ARTIST_CONFLICT",
       "IDEMPOTENCY_CONFLICT"
     ],
-    "getAdminArtist": [
-      "AUTH_REQUIRED",
-      "FORBIDDEN",
-      "ARTIST_NOT_FOUND"
-    ],
+    "getAdminArtist": ["AUTH_REQUIRED", "FORBIDDEN", "ARTIST_NOT_FOUND"],
     "updateAdminArtist": [
       "AUTH_REQUIRED",
       "FORBIDDEN",
@@ -309,11 +269,7 @@
       "ARTIST_CONFLICT",
       "IDEMPOTENCY_CONFLICT"
     ],
-    "listAdminAudioContent": [
-      "AUTH_REQUIRED",
-      "FORBIDDEN",
-      "VALIDATION_ERROR"
-    ],
+    "listAdminAudioContent": ["AUTH_REQUIRED", "FORBIDDEN", "VALIDATION_ERROR"],
     "createAdminAudioContent": [
       "AUTH_REQUIRED",
       "FORBIDDEN",
@@ -321,11 +277,7 @@
       "ARTIST_NOT_FOUND",
       "IDEMPOTENCY_CONFLICT"
     ],
-    "getAdminAudioContent": [
-      "AUTH_REQUIRED",
-      "FORBIDDEN",
-      "CONTENT_NOT_FOUND"
-    ],
+    "getAdminAudioContent": ["AUTH_REQUIRED", "FORBIDDEN", "CONTENT_NOT_FOUND"],
     "updateAdminAudioContent": [
       "AUTH_REQUIRED",
       "FORBIDDEN",
@@ -370,41 +322,24 @@
       "INVALID_STATE_TRANSITION"
     ]
   },
-  "servers": [
-    {
-      "url": "/",
-      "description": "Relative contract root only"
-    }
-  ],
+  "servers": [{ "url": "/", "description": "Relative contract root only" }],
   "paths": {
     "/health/live": {
       "get": {
         "operationId": "healthLiveness",
         "summary": "Reports API process liveness.",
-        "x-kora-clients": [
-          "operations"
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/LivenessOk"
-          }
-        }
+        "x-kora-clients": ["operations"],
+        "responses": { "200": { "$ref": "#/components/responses/LivenessOk" } }
       }
     },
     "/health/ready": {
       "get": {
         "operationId": "healthReadiness",
         "summary": "Reports PostgreSQL and Redis readiness.",
-        "x-kora-clients": [
-          "operations"
-        ],
+        "x-kora-clients": ["operations"],
         "responses": {
-          "200": {
-            "$ref": "#/components/responses/Readiness"
-          },
-          "503": {
-            "$ref": "#/components/responses/Readiness"
-          }
+          "200": { "$ref": "#/components/responses/Readiness" },
+          "503": { "$ref": "#/components/responses/Readiness" }
         }
       }
     },
@@ -412,18 +347,11 @@
       "get": {
         "operationId": "listPublicAudioCatalog",
         "summary": "Lists published audio without exposing media locations.",
-        "x-kora-clients": [
-          "mobile",
-          "web"
-        ],
+        "x-kora-clients": ["mobile", "web"],
         "x-kora-pagination": "cursor",
         "parameters": [
-          {
-            "$ref": "#/components/parameters/Cursor"
-          },
-          {
-            "$ref": "#/components/parameters/Limit"
-          }
+          { "$ref": "#/components/parameters/Cursor" },
+          { "$ref": "#/components/parameters/Limit" }
         ],
         "responses": {
           "200": {
@@ -436,9 +364,7 @@
               }
             }
           },
-          "400": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "400": { "$ref": "#/components/responses/ClientError" }
         }
       }
     },
@@ -446,15 +372,8 @@
       "get": {
         "operationId": "getPublicAudioContent",
         "summary": "Gets public audio metadata and preview availability.",
-        "x-kora-clients": [
-          "mobile",
-          "web"
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/ContentId"
-          }
-        ],
+        "x-kora-clients": ["mobile", "web"],
+        "parameters": [{ "$ref": "#/components/parameters/ContentId" }],
         "responses": {
           "200": {
             "description": "Published audio metadata.",
@@ -466,32 +385,28 @@
               }
             }
           },
-          "404": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "404": { "$ref": "#/components/responses/ClientError" }
         }
       }
     },
-    "/api/v1/auth/otp/challenges": {
+    "/api/v1/auth/register": {
       "post": {
-        "operationId": "requestCustomerOtp",
-        "summary": "Creates a phone OTP challenge with a bounded lifetime.",
-        "x-kora-clients": [
-          "mobile"
-        ],
+        "operationId": "registerCustomer",
+        "summary": "Verifies an international phone and password before issuing a registration OTP challenge.",
+        "x-kora-clients": ["mobile"],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/OtpChallengeRequest"
+                "$ref": "#/components/schemas/RegisterCustomerRequest"
               }
             }
           }
         },
         "responses": {
           "202": {
-            "description": "Challenge accepted without disclosing phone registration state.",
+            "description": "Indistinguishable registration outcome. An eligible request receives a password-bound challenge; an existing or ineligible account is never disclosed.",
             "content": {
               "application/json": {
                 "schema": {
@@ -500,27 +415,49 @@
               }
             }
           },
-          "400": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "429": {
-            "$ref": "#/components/responses/ClientError"
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "429": { "$ref": "#/components/responses/ClientError" }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "operationId": "loginCustomer",
+        "summary": "Verifies an international phone and password before issuing a login OTP challenge.",
+        "x-kora-clients": ["mobile"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginCustomerRequest"
+              }
+            }
           }
+        },
+        "responses": {
+          "202": {
+            "description": "Password-verified login challenge accepted without disclosing account details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OtpChallengeEnvelope"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "429": { "$ref": "#/components/responses/ClientError" }
         }
       }
     },
     "/api/v1/auth/otp/challenges/{challengeId}/verify": {
       "post": {
         "operationId": "verifyCustomerOtp",
-        "summary": "Consumes an OTP challenge and creates a device-bound session.",
-        "x-kora-clients": [
-          "mobile"
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/ChallengeId"
-          }
-        ],
+        "summary": "Consumes a prior password-verified registration or login OTP challenge and atomically creates the sole active device-bound session.",
+        "x-kora-clients": ["mobile"],
+        "parameters": [{ "$ref": "#/components/parameters/ChallengeId" }],
         "requestBody": {
           "required": true,
           "content": {
@@ -542,15 +479,78 @@
               }
             }
           },
-          "400": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "410": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "429": {
-            "$ref": "#/components/responses/ClientError"
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "409": { "$ref": "#/components/responses/ClientError" },
+          "410": { "$ref": "#/components/responses/ClientError" },
+          "429": { "$ref": "#/components/responses/ClientError" }
+        }
+      }
+    },
+    "/api/v1/auth/step-up/challenges": {
+      "post": {
+        "operationId": "createCustomerStepUpChallenge",
+        "summary": "Creates an OTP step-up challenge for an authenticated customer session.",
+        "x-kora-clients": ["mobile"],
+        "security": [{ "customerBearer": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StepUpChallengeRequest"
+              }
+            }
           }
+        },
+        "responses": {
+          "202": {
+            "description": "Step-up challenge issued to the verified phone of the current customer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OtpChallengeEnvelope"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "429": { "$ref": "#/components/responses/ClientError" }
+        }
+      }
+    },
+    "/api/v1/auth/step-up/challenges/{challengeId}/verify": {
+      "post": {
+        "operationId": "verifyCustomerStepUp",
+        "summary": "Consumes an OTP step-up challenge while preserving the existing authenticated session.",
+        "x-kora-clients": ["mobile"],
+        "security": [{ "customerBearer": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ChallengeId" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StepUpVerificationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Current session step-up verified; no replacement session is issued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepUpVerificationEnvelope"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "409": { "$ref": "#/components/responses/ClientError" },
+          "410": { "$ref": "#/components/responses/ClientError" },
+          "429": { "$ref": "#/components/responses/ClientError" }
         }
       }
     },
@@ -558,9 +558,7 @@
       "post": {
         "operationId": "refreshCustomerSession",
         "summary": "Rotates a single-use refresh token for its session family.",
-        "x-kora-clients": [
-          "mobile"
-        ],
+        "x-kora-clients": ["mobile"],
         "requestBody": {
           "required": true,
           "content": {
@@ -582,9 +580,7 @@
               }
             }
           },
-          "401": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "401": { "$ref": "#/components/responses/ClientError" }
         }
       }
     },
@@ -592,21 +588,11 @@
       "delete": {
         "operationId": "revokeCurrentCustomerSession",
         "summary": "Idempotently revokes the current device-bound session.",
-        "x-kora-clients": [
-          "mobile"
-        ],
-        "security": [
-          {
-            "customerBearer": []
-          }
-        ],
+        "x-kora-clients": ["mobile"],
+        "security": [{ "customerBearer": [] }],
         "responses": {
-          "204": {
-            "description": "Session revoked or already absent."
-          },
-          "401": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "204": { "description": "Session revoked or already absent." },
+          "401": { "$ref": "#/components/responses/ClientError" }
         }
       }
     },
@@ -614,14 +600,8 @@
       "get": {
         "operationId": "listCustomerDevices",
         "summary": "Lists registered devices with safe session metadata.",
-        "x-kora-clients": [
-          "mobile"
-        ],
-        "security": [
-          {
-            "customerBearer": []
-          }
-        ],
+        "x-kora-clients": ["mobile"],
+        "security": [{ "customerBearer": [] }],
         "responses": {
           "200": {
             "description": "Registered devices.",
@@ -633,9 +613,7 @@
               }
             }
           },
-          "401": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "401": { "$ref": "#/components/responses/ClientError" }
         }
       }
     },
@@ -643,59 +621,33 @@
       "get": {
         "operationId": "listCustomerOrders",
         "summary": "Lists the customer order history.",
-        "x-kora-clients": [
-          "mobile"
-        ],
+        "x-kora-clients": ["mobile"],
         "x-kora-pagination": "cursor",
-        "security": [
-          {
-            "customerBearer": []
-          }
-        ],
+        "security": [{ "customerBearer": [] }],
         "parameters": [
-          {
-            "$ref": "#/components/parameters/Cursor"
-          },
-          {
-            "$ref": "#/components/parameters/Limit"
-          }
+          { "$ref": "#/components/parameters/Cursor" },
+          { "$ref": "#/components/parameters/Limit" }
         ],
         "responses": {
           "200": {
             "description": "Bounded order page.",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OrderPage"
-                }
+                "schema": { "$ref": "#/components/schemas/OrderPage" }
               }
             }
           },
-          "400": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "401": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" }
         }
       },
       "post": {
         "operationId": "createCustomerOrder",
         "summary": "Creates an immutable priced order before any payment attempt.",
-        "x-kora-clients": [
-          "mobile"
-        ],
+        "x-kora-clients": ["mobile"],
         "x-kora-idempotent": true,
-        "security": [
-          {
-            "customerBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/IdempotencyKey"
-          }
-        ],
+        "security": [{ "customerBearer": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
         "requestBody": {
           "required": true,
           "content": {
@@ -717,18 +669,10 @@
               }
             }
           },
-          "400": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "401": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "404": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "409": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "404": { "$ref": "#/components/responses/ClientError" },
+          "409": { "$ref": "#/components/responses/ClientError" }
         }
       }
     },
@@ -736,19 +680,9 @@
       "get": {
         "operationId": "getCustomerOrder",
         "summary": "Gets immutable order pricing and derived order state.",
-        "x-kora-clients": [
-          "mobile"
-        ],
-        "security": [
-          {
-            "customerBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/OrderId"
-          }
-        ],
+        "x-kora-clients": ["mobile"],
+        "security": [{ "customerBearer": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/OrderId" }],
         "responses": {
           "200": {
             "description": "Owned order detail.",
@@ -760,12 +694,8 @@
               }
             }
           },
-          "401": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "404": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "404": { "$ref": "#/components/responses/ClientError" }
         }
       }
     },
@@ -773,25 +703,13 @@
       "get": {
         "operationId": "listPaymentAttempts",
         "summary": "Lists the complete immutable attempt history with bounded cursor pagination.",
-        "x-kora-clients": [
-          "mobile"
-        ],
+        "x-kora-clients": ["mobile"],
         "x-kora-pagination": "cursor",
-        "security": [
-          {
-            "customerBearer": []
-          }
-        ],
+        "security": [{ "customerBearer": [] }],
         "parameters": [
-          {
-            "$ref": "#/components/parameters/OrderId"
-          },
-          {
-            "$ref": "#/components/parameters/Cursor"
-          },
-          {
-            "$ref": "#/components/parameters/Limit"
-          }
+          { "$ref": "#/components/parameters/OrderId" },
+          { "$ref": "#/components/parameters/Cursor" },
+          { "$ref": "#/components/parameters/Limit" }
         ],
         "responses": {
           "200": {
@@ -804,37 +722,21 @@
               }
             }
           },
-          "400": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "401": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "404": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "404": { "$ref": "#/components/responses/ClientError" }
         }
       },
       "post": {
         "operationId": "createPaymentAttempt",
         "summary": "Creates a new immutable sandbox payment attempt for an existing order.",
-        "x-kora-clients": [
-          "mobile"
-        ],
+        "x-kora-clients": ["mobile"],
         "x-kora-idempotent": true,
         "x-kora-append-only": true,
-        "security": [
-          {
-            "customerBearer": []
-          }
-        ],
+        "security": [{ "customerBearer": [] }],
         "parameters": [
-          {
-            "$ref": "#/components/parameters/OrderId"
-          },
-          {
-            "$ref": "#/components/parameters/IdempotencyKey"
-          }
+          { "$ref": "#/components/parameters/OrderId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
         ],
         "requestBody": {
           "required": true,
@@ -857,21 +759,11 @@
               }
             }
           },
-          "400": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "401": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "404": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "409": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "503": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "404": { "$ref": "#/components/responses/ClientError" },
+          "409": { "$ref": "#/components/responses/ClientError" },
+          "503": { "$ref": "#/components/responses/ClientError" }
         }
       }
     },
@@ -879,21 +771,11 @@
       "get": {
         "operationId": "getPaymentAttempt",
         "summary": "Gets the derived state and immutable history of one attempt.",
-        "x-kora-clients": [
-          "mobile"
-        ],
-        "security": [
-          {
-            "customerBearer": []
-          }
-        ],
+        "x-kora-clients": ["mobile"],
+        "security": [{ "customerBearer": [] }],
         "parameters": [
-          {
-            "$ref": "#/components/parameters/OrderId"
-          },
-          {
-            "$ref": "#/components/parameters/PaymentAttemptId"
-          }
+          { "$ref": "#/components/parameters/OrderId" },
+          { "$ref": "#/components/parameters/PaymentAttemptId" }
         ],
         "responses": {
           "200": {
@@ -906,12 +788,8 @@
               }
             }
           },
-          "401": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "404": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "404": { "$ref": "#/components/responses/ClientError" }
         }
       }
     },
@@ -919,19 +797,9 @@
       "get": {
         "operationId": "getOrderReceipt",
         "summary": "Gets a settled order receipt without payment credentials or document location.",
-        "x-kora-clients": [
-          "mobile"
-        ],
-        "security": [
-          {
-            "customerBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/OrderId"
-          }
-        ],
+        "x-kora-clients": ["mobile"],
+        "security": [{ "customerBearer": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/OrderId" }],
         "responses": {
           "200": {
             "description": "Immutable receipt metadata.",
@@ -943,15 +811,9 @@
               }
             }
           },
-          "401": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "404": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "409": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "404": { "$ref": "#/components/responses/ClientError" },
+          "409": { "$ref": "#/components/responses/ClientError" }
         }
       }
     },
@@ -959,14 +821,8 @@
       "get": {
         "operationId": "listOperationalPaymentProviders",
         "summary": "Lists only configured and operational sandbox providers.",
-        "x-kora-clients": [
-          "mobile"
-        ],
-        "security": [
-          {
-            "customerBearer": []
-          }
-        ],
+        "x-kora-clients": ["mobile"],
+        "security": [{ "customerBearer": [] }],
         "responses": {
           "200": {
             "description": "Operational providers only.",
@@ -978,9 +834,7 @@
               }
             }
           },
-          "401": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "401": { "$ref": "#/components/responses/ClientError" }
         }
       }
     },
@@ -988,21 +842,11 @@
       "post": {
         "operationId": "acceptPaymentWebhook",
         "summary": "Authenticates then durably persists a provider event before acknowledgement.",
-        "x-kora-clients": [
-          "provider"
-        ],
+        "x-kora-clients": ["provider"],
         "x-kora-idempotent": true,
         "x-kora-durable-before-ack": true,
-        "security": [
-          {
-            "providerSignature": []
-          }
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Provider"
-          }
-        ],
+        "security": [{ "providerSignature": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/Provider" }],
         "requestBody": {
           "required": true,
           "content": {
@@ -1024,12 +868,8 @@
               }
             }
           },
-          "400": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "401": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" }
         }
       }
     },
@@ -1037,41 +877,25 @@
       "get": {
         "operationId": "listEntitledAudioLibrary",
         "summary": "Lists permanent purchase entitlements, including archived catalog content.",
-        "x-kora-clients": [
-          "mobile"
-        ],
+        "x-kora-clients": ["mobile"],
         "x-kora-pagination": "cursor",
         "x-kora-includes-archived-entitlements": true,
-        "security": [
-          {
-            "customerBearer": []
-          }
-        ],
+        "security": [{ "customerBearer": [] }],
         "parameters": [
-          {
-            "$ref": "#/components/parameters/Cursor"
-          },
-          {
-            "$ref": "#/components/parameters/Limit"
-          }
+          { "$ref": "#/components/parameters/Cursor" },
+          { "$ref": "#/components/parameters/Limit" }
         ],
         "responses": {
           "200": {
             "description": "Entitlement-driven library page.",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LibraryPage"
-                }
+                "schema": { "$ref": "#/components/schemas/LibraryPage" }
               }
             }
           },
-          "400": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "401": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" }
         }
       }
     },
@@ -1079,17 +903,11 @@
       "post": {
         "operationId": "createAnonymousPreviewGrant",
         "summary": "Issues an anonymous device/IP/rate-limited mobile preview grant, never an entitlement.",
-        "x-kora-clients": [
-          "mobile"
-        ],
+        "x-kora-clients": ["mobile"],
         "x-kora-grant-type": "PREVIEW_ONLY",
         "parameters": [
-          {
-            "$ref": "#/components/parameters/ContentId"
-          },
-          {
-            "$ref": "#/components/parameters/AnonymousDeviceId"
-          }
+          { "$ref": "#/components/parameters/ContentId" },
+          { "$ref": "#/components/parameters/AnonymousDeviceId" }
         ],
         "responses": {
           "201": {
@@ -1102,12 +920,8 @@
               }
             }
           },
-          "404": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "429": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "404": { "$ref": "#/components/responses/ClientError" },
+          "429": { "$ref": "#/components/responses/ClientError" }
         }
       }
     },
@@ -1115,18 +929,12 @@
       "post": {
         "operationId": "exchangePreviewGrantForPlaybackDescriptor",
         "summary": "Exchanges a valid preview grant for an opaque short-lived descriptor.",
-        "x-kora-clients": [
-          "mobile"
-        ],
+        "x-kora-clients": ["mobile"],
         "x-kora-non-persistable-response": true,
         "x-kora-non-loggable-response": true,
         "parameters": [
-          {
-            "$ref": "#/components/parameters/PreviewGrantId"
-          },
-          {
-            "$ref": "#/components/parameters/AnonymousDeviceId"
-          }
+          { "$ref": "#/components/parameters/PreviewGrantId" },
+          { "$ref": "#/components/parameters/AnonymousDeviceId" }
         ],
         "responses": {
           "201": {
@@ -1139,15 +947,9 @@
               }
             }
           },
-          "401": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "410": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "429": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "410": { "$ref": "#/components/responses/ClientError" },
+          "429": { "$ref": "#/components/responses/ClientError" }
         }
       }
     },
@@ -1155,21 +957,11 @@
       "post": {
         "operationId": "createPurchasedPlaybackDescriptor",
         "summary": "Issues an opaque descriptor after entitlement, session and device checks.",
-        "x-kora-clients": [
-          "mobile"
-        ],
+        "x-kora-clients": ["mobile"],
         "x-kora-non-persistable-response": true,
         "x-kora-non-loggable-response": true,
-        "security": [
-          {
-            "customerBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/ContentId"
-          }
-        ],
+        "security": [{ "customerBearer": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ContentId" }],
         "requestBody": {
           "required": true,
           "content": {
@@ -1191,18 +983,10 @@
               }
             }
           },
-          "400": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "401": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "403": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "409": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "409": { "$ref": "#/components/responses/ClientError" }
         }
       }
     },
@@ -1210,27 +994,13 @@
       "get": {
         "operationId": "listAdminArtists",
         "summary": "Lists artists available for content assignment.",
-        "x-kora-clients": [
-          "admin"
-        ],
-        "x-kora-roles": [
-          "SUPER_ADMIN",
-          "CONTENT_EDITOR",
-          "SUPPORT"
-        ],
+        "x-kora-clients": ["admin"],
+        "x-kora-roles": ["SUPER_ADMIN", "CONTENT_EDITOR", "SUPPORT"],
         "x-kora-pagination": "cursor",
-        "security": [
-          {
-            "adminSession": []
-          }
-        ],
+        "security": [{ "adminSession": [] }],
         "parameters": [
-          {
-            "$ref": "#/components/parameters/Cursor"
-          },
-          {
-            "$ref": "#/components/parameters/Limit"
-          }
+          { "$ref": "#/components/parameters/Cursor" },
+          { "$ref": "#/components/parameters/Limit" }
         ],
         "responses": {
           "200": {
@@ -1243,39 +1013,20 @@
               }
             }
           },
-          "400": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "401": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "403": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" }
         }
       },
       "post": {
         "operationId": "createAdminArtist",
         "summary": "Creates an artist identity for future audio assignment.",
-        "x-kora-clients": [
-          "admin"
-        ],
-        "x-kora-roles": [
-          "SUPER_ADMIN",
-          "CONTENT_EDITOR"
-        ],
+        "x-kora-clients": ["admin"],
+        "x-kora-roles": ["SUPER_ADMIN", "CONTENT_EDITOR"],
         "x-kora-idempotent": true,
         "x-kora-transactional-audit": true,
-        "security": [
-          {
-            "adminSession": []
-          }
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/IdempotencyKey"
-          }
-        ],
+        "security": [{ "adminSession": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
         "requestBody": {
           "required": true,
           "content": {
@@ -1297,18 +1048,10 @@
               }
             }
           },
-          "400": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "401": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "403": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "409": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "409": { "$ref": "#/components/responses/ClientError" }
         }
       }
     },
@@ -1316,24 +1059,10 @@
       "get": {
         "operationId": "getAdminArtist",
         "summary": "Gets an artist identity for content administration.",
-        "x-kora-clients": [
-          "admin"
-        ],
-        "x-kora-roles": [
-          "SUPER_ADMIN",
-          "CONTENT_EDITOR",
-          "SUPPORT"
-        ],
-        "security": [
-          {
-            "adminSession": []
-          }
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/ArtistId"
-          }
-        ],
+        "x-kora-clients": ["admin"],
+        "x-kora-roles": ["SUPER_ADMIN", "CONTENT_EDITOR", "SUPPORT"],
+        "security": [{ "adminSession": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ArtistId" }],
         "responses": {
           "200": {
             "description": "Artist detail.",
@@ -1345,41 +1074,22 @@
               }
             }
           },
-          "401": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "403": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "404": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "404": { "$ref": "#/components/responses/ClientError" }
         }
       },
       "patch": {
         "operationId": "updateAdminArtist",
         "summary": "Updates artist metadata with transactional audit.",
-        "x-kora-clients": [
-          "admin"
-        ],
-        "x-kora-roles": [
-          "SUPER_ADMIN",
-          "CONTENT_EDITOR"
-        ],
+        "x-kora-clients": ["admin"],
+        "x-kora-roles": ["SUPER_ADMIN", "CONTENT_EDITOR"],
         "x-kora-idempotent": true,
         "x-kora-transactional-audit": true,
-        "security": [
-          {
-            "adminSession": []
-          }
-        ],
+        "security": [{ "adminSession": [] }],
         "parameters": [
-          {
-            "$ref": "#/components/parameters/ArtistId"
-          },
-          {
-            "$ref": "#/components/parameters/IdempotencyKey"
-          }
+          { "$ref": "#/components/parameters/ArtistId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
         ],
         "requestBody": {
           "required": true,
@@ -1402,21 +1112,11 @@
               }
             }
           },
-          "400": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "401": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "403": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "404": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "409": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "404": { "$ref": "#/components/responses/ClientError" },
+          "409": { "$ref": "#/components/responses/ClientError" }
         }
       }
     },
@@ -1424,27 +1124,13 @@
       "get": {
         "operationId": "listAdminAudioContent",
         "summary": "Lists draft, published and archived audio for authorized administrators.",
-        "x-kora-clients": [
-          "admin"
-        ],
-        "x-kora-roles": [
-          "SUPER_ADMIN",
-          "CONTENT_EDITOR",
-          "SUPPORT"
-        ],
+        "x-kora-clients": ["admin"],
+        "x-kora-roles": ["SUPER_ADMIN", "CONTENT_EDITOR", "SUPPORT"],
         "x-kora-pagination": "cursor",
-        "security": [
-          {
-            "adminSession": []
-          }
-        ],
+        "security": [{ "adminSession": [] }],
         "parameters": [
-          {
-            "$ref": "#/components/parameters/Cursor"
-          },
-          {
-            "$ref": "#/components/parameters/Limit"
-          }
+          { "$ref": "#/components/parameters/Cursor" },
+          { "$ref": "#/components/parameters/Limit" }
         ],
         "responses": {
           "200": {
@@ -1457,39 +1143,20 @@
               }
             }
           },
-          "400": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "401": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "403": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" }
         }
       },
       "post": {
         "operationId": "createAdminAudioContent",
         "summary": "Creates draft audio metadata without publishing it.",
-        "x-kora-clients": [
-          "admin"
-        ],
-        "x-kora-roles": [
-          "SUPER_ADMIN",
-          "CONTENT_EDITOR"
-        ],
+        "x-kora-clients": ["admin"],
+        "x-kora-roles": ["SUPER_ADMIN", "CONTENT_EDITOR"],
         "x-kora-idempotent": true,
         "x-kora-transactional-audit": true,
-        "security": [
-          {
-            "adminSession": []
-          }
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/IdempotencyKey"
-          }
-        ],
+        "security": [{ "adminSession": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
         "requestBody": {
           "required": true,
           "content": {
@@ -1511,21 +1178,11 @@
               }
             }
           },
-          "400": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "401": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "403": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "404": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "409": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "404": { "$ref": "#/components/responses/ClientError" },
+          "409": { "$ref": "#/components/responses/ClientError" }
         }
       }
     },
@@ -1533,24 +1190,10 @@
       "get": {
         "operationId": "getAdminAudioContent",
         "summary": "Gets editorial and media-processing states separately.",
-        "x-kora-clients": [
-          "admin"
-        ],
-        "x-kora-roles": [
-          "SUPER_ADMIN",
-          "CONTENT_EDITOR",
-          "SUPPORT"
-        ],
-        "security": [
-          {
-            "adminSession": []
-          }
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/ContentId"
-          }
-        ],
+        "x-kora-clients": ["admin"],
+        "x-kora-roles": ["SUPER_ADMIN", "CONTENT_EDITOR", "SUPPORT"],
+        "security": [{ "adminSession": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ContentId" }],
         "responses": {
           "200": {
             "description": "Admin audio detail.",
@@ -1562,41 +1205,22 @@
               }
             }
           },
-          "401": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "403": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "404": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "404": { "$ref": "#/components/responses/ClientError" }
         }
       },
       "patch": {
         "operationId": "updateAdminAudioContent",
         "summary": "Updates editable metadata without mutating publication or media-processing state.",
-        "x-kora-clients": [
-          "admin"
-        ],
-        "x-kora-roles": [
-          "SUPER_ADMIN",
-          "CONTENT_EDITOR"
-        ],
+        "x-kora-clients": ["admin"],
+        "x-kora-roles": ["SUPER_ADMIN", "CONTENT_EDITOR"],
         "x-kora-idempotent": true,
         "x-kora-transactional-audit": true,
-        "security": [
-          {
-            "adminSession": []
-          }
-        ],
+        "security": [{ "adminSession": [] }],
         "parameters": [
-          {
-            "$ref": "#/components/parameters/ContentId"
-          },
-          {
-            "$ref": "#/components/parameters/IdempotencyKey"
-          }
+          { "$ref": "#/components/parameters/ContentId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
         ],
         "requestBody": {
           "required": true,
@@ -1619,21 +1243,11 @@
               }
             }
           },
-          "400": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "401": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "403": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "404": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "409": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "404": { "$ref": "#/components/responses/ClientError" },
+          "409": { "$ref": "#/components/responses/ClientError" }
         }
       }
     },
@@ -1641,28 +1255,15 @@
       "post": {
         "operationId": "publishAdminAudioContent",
         "summary": "Publishes only against the exact version of a ready required media asset.",
-        "x-kora-clients": [
-          "admin"
-        ],
-        "x-kora-roles": [
-          "SUPER_ADMIN",
-          "CONTENT_EDITOR"
-        ],
+        "x-kora-clients": ["admin"],
+        "x-kora-roles": ["SUPER_ADMIN", "CONTENT_EDITOR"],
         "x-kora-idempotent": true,
         "x-kora-precondition": "MEDIA_ASSET_READY_AT_EXPECTED_VERSION",
         "x-kora-transactional-audit": true,
-        "security": [
-          {
-            "adminSession": []
-          }
-        ],
+        "security": [{ "adminSession": [] }],
         "parameters": [
-          {
-            "$ref": "#/components/parameters/ContentId"
-          },
-          {
-            "$ref": "#/components/parameters/IdempotencyKey"
-          }
+          { "$ref": "#/components/parameters/ContentId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
         ],
         "requestBody": {
           "required": true,
@@ -1685,18 +1286,10 @@
               }
             }
           },
-          "401": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "403": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "404": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "409": {
-            "$ref": "#/components/responses/PublishConflict"
-          }
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "404": { "$ref": "#/components/responses/ClientError" },
+          "409": { "$ref": "#/components/responses/PublishConflict" }
         }
       }
     },
@@ -1704,28 +1297,15 @@
       "post": {
         "operationId": "archiveAdminAudioContent",
         "summary": "Removes content from public discovery without deleting buyer access.",
-        "x-kora-clients": [
-          "admin"
-        ],
-        "x-kora-roles": [
-          "SUPER_ADMIN",
-          "CONTENT_EDITOR"
-        ],
+        "x-kora-clients": ["admin"],
+        "x-kora-roles": ["SUPER_ADMIN", "CONTENT_EDITOR"],
         "x-kora-idempotent": true,
         "x-kora-preserves-entitlements": true,
         "x-kora-transactional-audit": true,
-        "security": [
-          {
-            "adminSession": []
-          }
-        ],
+        "security": [{ "adminSession": [] }],
         "parameters": [
-          {
-            "$ref": "#/components/parameters/ContentId"
-          },
-          {
-            "$ref": "#/components/parameters/IdempotencyKey"
-          }
+          { "$ref": "#/components/parameters/ContentId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
         ],
         "requestBody": {
           "required": true,
@@ -1748,18 +1328,10 @@
               }
             }
           },
-          "401": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "403": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "404": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "409": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "404": { "$ref": "#/components/responses/ClientError" },
+          "409": { "$ref": "#/components/responses/ClientError" }
         }
       }
     },
@@ -1767,25 +1339,12 @@
       "post": {
         "operationId": "createPrivateMediaAsset",
         "summary": "Creates private media-asset metadata without exposing storage or provider identifiers.",
-        "x-kora-clients": [
-          "admin"
-        ],
-        "x-kora-roles": [
-          "SUPER_ADMIN",
-          "CONTENT_EDITOR"
-        ],
+        "x-kora-clients": ["admin"],
+        "x-kora-roles": ["SUPER_ADMIN", "CONTENT_EDITOR"],
         "x-kora-idempotent": true,
         "x-kora-transactional-audit": true,
-        "security": [
-          {
-            "adminSession": []
-          }
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/IdempotencyKey"
-          }
-        ],
+        "security": [{ "adminSession": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
         "requestBody": {
           "required": true,
           "content": {
@@ -1807,21 +1366,11 @@
               }
             }
           },
-          "400": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "401": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "403": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "404": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "409": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "404": { "$ref": "#/components/responses/ClientError" },
+          "409": { "$ref": "#/components/responses/ClientError" }
         }
       }
     },
@@ -1829,24 +1378,10 @@
       "get": {
         "operationId": "getPrivateMediaAssetStatus",
         "summary": "Gets safe processing status for a private media asset.",
-        "x-kora-clients": [
-          "admin"
-        ],
-        "x-kora-roles": [
-          "SUPER_ADMIN",
-          "CONTENT_EDITOR",
-          "SUPPORT"
-        ],
-        "security": [
-          {
-            "adminSession": []
-          }
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/MediaAssetId"
-          }
-        ],
+        "x-kora-clients": ["admin"],
+        "x-kora-roles": ["SUPER_ADMIN", "CONTENT_EDITOR", "SUPPORT"],
+        "security": [{ "adminSession": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/MediaAssetId" }],
         "responses": {
           "200": {
             "description": "Safe processing metadata only.",
@@ -1858,15 +1393,9 @@
               }
             }
           },
-          "401": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "403": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "404": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "404": { "$ref": "#/components/responses/ClientError" }
         }
       }
     },
@@ -1874,30 +1403,17 @@
       "post": {
         "operationId": "preparePrivateMediaAssetUpload",
         "summary": "Creates an opaque, expiring upload preparation token for a private asset.",
-        "x-kora-clients": [
-          "admin"
-        ],
-        "x-kora-roles": [
-          "SUPER_ADMIN",
-          "CONTENT_EDITOR"
-        ],
+        "x-kora-clients": ["admin"],
+        "x-kora-roles": ["SUPER_ADMIN", "CONTENT_EDITOR"],
         "x-kora-idempotent": true,
         "x-kora-non-persistable-response": true,
         "x-kora-non-loggable-response": true,
         "x-kora-idempotent-replay": "REISSUE_SHORT_LIVED_CAPABILITY_FOR_SAME_MEDIA_ASSET_WITHOUT_PERSISTING_TOKEN",
         "x-kora-transactional-audit": true,
-        "security": [
-          {
-            "adminSession": []
-          }
-        ],
+        "security": [{ "adminSession": [] }],
         "parameters": [
-          {
-            "$ref": "#/components/parameters/MediaAssetId"
-          },
-          {
-            "$ref": "#/components/parameters/IdempotencyKey"
-          }
+          { "$ref": "#/components/parameters/MediaAssetId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
         ],
         "requestBody": {
           "required": true,
@@ -1920,21 +1436,11 @@
               }
             }
           },
-          "400": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "401": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "403": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "404": {
-            "$ref": "#/components/responses/ClientError"
-          },
-          "409": {
-            "$ref": "#/components/responses/ClientError"
-          }
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "404": { "$ref": "#/components/responses/ClientError" },
+          "409": { "$ref": "#/components/responses/ClientError" }
         }
       }
     }
@@ -1963,11 +1469,7 @@
         "name": "cursor",
         "in": "query",
         "required": false,
-        "schema": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 512
-        }
+        "schema": { "type": "string", "minLength": 1, "maxLength": 512 }
       },
       "Limit": {
         "name": "limit",
@@ -1984,85 +1486,61 @@
         "name": "Idempotency-Key",
         "in": "header",
         "required": true,
-        "schema": {
-          "type": "string",
-          "minLength": 16,
-          "maxLength": 128
-        }
+        "schema": { "type": "string", "minLength": 16, "maxLength": 128 }
       },
       "AnonymousDeviceId": {
         "name": "X-Kora-Anonymous-Device",
         "in": "header",
         "required": true,
-        "schema": {
-          "type": "string",
-          "minLength": 16,
-          "maxLength": 128
-        }
+        "schema": { "type": "string", "minLength": 16, "maxLength": 128 }
       },
       "ArtistId": {
         "name": "artistId",
         "in": "path",
         "required": true,
-        "schema": {
-          "$ref": "#/components/schemas/Identifier"
-        }
+        "schema": { "$ref": "#/components/schemas/Identifier" }
       },
       "ContentId": {
         "name": "contentId",
         "in": "path",
         "required": true,
-        "schema": {
-          "$ref": "#/components/schemas/Identifier"
-        }
+        "schema": { "$ref": "#/components/schemas/Identifier" }
       },
       "OrderId": {
         "name": "orderId",
         "in": "path",
         "required": true,
-        "schema": {
-          "$ref": "#/components/schemas/Identifier"
-        }
+        "schema": { "$ref": "#/components/schemas/Identifier" }
       },
       "PaymentAttemptId": {
         "name": "paymentAttemptId",
         "in": "path",
         "required": true,
-        "schema": {
-          "$ref": "#/components/schemas/Identifier"
-        }
+        "schema": { "$ref": "#/components/schemas/Identifier" }
       },
       "PreviewGrantId": {
         "name": "previewGrantId",
         "in": "path",
         "required": true,
-        "schema": {
-          "$ref": "#/components/schemas/Identifier"
-        }
+        "schema": { "$ref": "#/components/schemas/Identifier" }
       },
       "MediaAssetId": {
         "name": "mediaAssetId",
         "in": "path",
         "required": true,
-        "schema": {
-          "$ref": "#/components/schemas/Identifier"
-        }
+        "schema": { "$ref": "#/components/schemas/Identifier" }
       },
       "ChallengeId": {
         "name": "challengeId",
         "in": "path",
         "required": true,
-        "schema": {
-          "$ref": "#/components/schemas/Identifier"
-        }
+        "schema": { "$ref": "#/components/schemas/Identifier" }
       },
       "Provider": {
         "name": "provider",
         "in": "path",
         "required": true,
-        "schema": {
-          "$ref": "#/components/schemas/PaymentProvider"
-        }
+        "schema": { "$ref": "#/components/schemas/PaymentProvider" }
       }
     },
     "responses": {
@@ -2070,9 +1548,7 @@
         "description": "Process is live.",
         "content": {
           "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/LivenessResponse"
-            }
+            "schema": { "$ref": "#/components/schemas/LivenessResponse" }
           }
         }
       },
@@ -2080,9 +1556,7 @@
         "description": "Dependency readiness state.",
         "content": {
           "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/ReadinessResponse"
-            }
+            "schema": { "$ref": "#/components/schemas/ReadinessResponse" }
           }
         }
       },
@@ -2090,9 +1564,7 @@
         "description": "Stable safe client-facing error.",
         "content": {
           "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/ErrorResponse"
-            }
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" }
           }
         }
       },
@@ -2100,33 +1572,21 @@
         "description": "Publication precondition, state or idempotency conflict.",
         "content": {
           "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/PublishConflictError"
-            }
+            "schema": { "$ref": "#/components/schemas/PublishConflictError" }
           }
         }
       }
     },
     "schemas": {
-      "Identifier": {
-        "type": "string",
-        "format": "uuid"
-      },
-      "Timestamp": {
-        "type": "string",
-        "format": "date-time"
-      },
+      "Identifier": { "type": "string", "format": "uuid" },
+      "Timestamp": { "type": "string", "format": "date-time" },
       "MoneyCfa": {
         "type": "integer",
         "minimum": 0,
         "maximum": 2147483647,
         "description": "Whole CFA francs only; no decimal subunit."
       },
-      "BasisPoints": {
-        "type": "integer",
-        "minimum": 0,
-        "maximum": 10000
-      },
+      "BasisPoints": { "type": "integer", "minimum": 0, "maximum": 10000 },
       "ArtistEarningAllocationPolicyVersion": {
         "type": "string",
         "const": "FLOOR_SETTLEMENT_WITH_ARTIST_CARRY_V1"
@@ -2147,30 +1607,16 @@
           "settlementId"
         ],
         "properties": {
-          "settlementId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "artistSettlementId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "orderId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "orderItemId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "audioContentId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "artistId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
+          "settlementId": { "$ref": "#/components/schemas/Identifier" },
+          "artistSettlementId": { "$ref": "#/components/schemas/Identifier" },
+          "orderId": { "$ref": "#/components/schemas/Identifier" },
+          "orderItemId": { "$ref": "#/components/schemas/Identifier" },
+          "audioContentId": { "$ref": "#/components/schemas/Identifier" },
+          "artistId": { "$ref": "#/components/schemas/Identifier" },
           "policy": {
             "$ref": "#/components/schemas/ArtistEarningAllocationPolicyVersion"
           },
-          "frozenBasisCfa": {
-            "$ref": "#/components/schemas/MoneyCfa"
-          },
+          "frozenBasisCfa": { "$ref": "#/components/schemas/MoneyCfa" },
           "artistRevenueShareBps": {
             "$ref": "#/components/schemas/BasisPoints"
           },
@@ -2199,25 +1645,16 @@
           "settlementId"
         ],
         "properties": {
-          "settlementId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "artistSettlementId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "artistId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
+          "settlementId": { "$ref": "#/components/schemas/Identifier" },
+          "artistSettlementId": { "$ref": "#/components/schemas/Identifier" },
+          "artistId": { "$ref": "#/components/schemas/Identifier" },
           "settlementSequence": {
             "type": "string",
             "pattern": "^[1-9][0-9]*$",
             "description": "Strict per-artist sequence serialized without loss."
           },
           "previousArtistSettlementId": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "uuid"
           },
           "policy": {
@@ -2228,17 +1665,9 @@
             "minimum": 0,
             "maximum": 9999
           },
-          "exactEarningsNumerator": {
-            "type": "string",
-            "pattern": "^[0-9]+$"
-          },
-          "exactNumerator": {
-            "type": "string",
-            "pattern": "^[0-9]+$"
-          },
-          "payableAmountCfa": {
-            "$ref": "#/components/schemas/MoneyCfa"
-          },
+          "exactEarningsNumerator": { "type": "string", "pattern": "^[0-9]+$" },
+          "exactNumerator": { "type": "string", "pattern": "^[0-9]+$" },
+          "payableAmountCfa": { "$ref": "#/components/schemas/MoneyCfa" },
           "carryOutNumerator": {
             "type": "integer",
             "minimum": 0,
@@ -2257,92 +1686,51 @@
       "CursorMeta": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "hasMore",
-          "nextCursor"
-        ],
+        "required": ["hasMore", "nextCursor"],
         "properties": {
-          "hasMore": {
-            "type": "boolean"
-          },
-          "nextCursor": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "maxLength": 512
-          }
+          "hasMore": { "type": "boolean" },
+          "nextCursor": { "type": ["string", "null"], "maxLength": 512 }
+        }
+      },
+      "ResponseMeta": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["requestId"],
+        "properties": {
+          "requestId": { "type": "string", "minLength": 8, "maxLength": 128 }
         }
       },
       "LivenessResponse": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "status"
-        ],
-        "properties": {
-          "status": {
-            "type": "string",
-            "const": "live"
-          }
-        }
+        "required": ["status"],
+        "properties": { "status": { "type": "string", "const": "live" } }
       },
       "DependencyHealth": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "latencyMs",
-          "status"
-        ],
+        "required": ["latencyMs", "status"],
         "properties": {
-          "latencyMs": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "reason": {
-            "type": "string",
-            "const": "unavailable"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "up",
-              "down"
-            ]
-          }
+          "latencyMs": { "type": "integer", "minimum": 0 },
+          "reason": { "type": "string", "const": "unavailable" },
+          "status": { "type": "string", "enum": ["up", "down"] }
         }
       },
       "ReadinessResponse": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "checks",
-          "status"
-        ],
+        "required": ["checks", "status"],
         "properties": {
           "checks": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "postgresql",
-              "redis"
-            ],
+            "required": ["postgresql", "redis"],
             "properties": {
-              "postgresql": {
-                "$ref": "#/components/schemas/DependencyHealth"
-              },
-              "redis": {
-                "$ref": "#/components/schemas/DependencyHealth"
-              }
+              "postgresql": { "$ref": "#/components/schemas/DependencyHealth" },
+              "redis": { "$ref": "#/components/schemas/DependencyHealth" }
             }
           },
-          "status": {
-            "type": "string",
-            "enum": [
-              "ready",
-              "not_ready"
-            ]
-          }
+          "status": { "type": "string", "enum": ["ready", "not_ready"] }
         }
       },
       "ErrorCode": {
@@ -2352,9 +1740,11 @@
           "AUTH_REQUIRED",
           "AUTH_SESSION_REVOKED",
           "AUTH_REFRESH_REUSED",
+          "AUTH_INVALID_CREDENTIALS",
           "OTP_INVALID",
           "OTP_EXPIRED",
           "OTP_TOO_MANY_ATTEMPTS",
+          "OTP_ALREADY_CONSUMED",
           "CONTENT_NOT_FOUND",
           "CONTENT_MEDIA_NOT_READY",
           "ORDER_NOT_FOUND",
@@ -2380,45 +1770,58 @@
           "ARTIST_CONFLICT"
         ]
       },
+      "ErrorDetails": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Closed non-sensitive error context. Secrets, identifiers, raw provider payloads and media locations are forbidden.",
+        "properties": {
+          "field": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,79}$"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "CONFLICT",
+              "EXPIRED",
+              "INVALID_FORMAT",
+              "INVALID_STATE",
+              "NOT_AVAILABLE",
+              "OUT_OF_RANGE",
+              "RATE_LIMITED",
+              "REQUIRED"
+            ]
+          },
+          "retryAfterSeconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 86400
+          }
+        }
+      },
       "ErrorResponse": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "error",
-          "requestId"
-        ],
+        "required": ["error", "requestId"],
         "properties": {
           "error": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "code",
-              "message"
-            ],
+            "required": ["code", "details", "message"],
             "properties": {
-              "code": {
-                "$ref": "#/components/schemas/ErrorCode"
-              },
-              "message": {
-                "type": "string",
-                "maxLength": 160
-              },
-              "retryable": {
-                "type": "boolean",
-                "default": false
-              }
+              "code": { "$ref": "#/components/schemas/ErrorCode" },
+              "message": { "type": "string", "maxLength": 160 },
+              "details": { "$ref": "#/components/schemas/ErrorDetails" },
+              "retryable": { "type": "boolean", "default": false }
             }
           },
-          "requestId": {
-            "type": "string",
-            "minLength": 8,
-            "maxLength": 128
-          }
+          "requestId": { "type": "string", "minLength": 8, "maxLength": 128 }
         },
         "examples": [
           {
             "error": {
               "code": "CONTENT_NOT_FOUND",
+              "details": {},
               "message": "Contenu introuvable.",
               "retryable": false
             },
@@ -2429,18 +1832,12 @@
       "PublishConflictError": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "error",
-          "requestId"
-        ],
+        "required": ["error", "requestId"],
         "properties": {
           "error": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "code",
-              "message"
-            ],
+            "required": ["code", "details", "message"],
             "properties": {
               "code": {
                 "type": "string",
@@ -2450,39 +1847,21 @@
                   "INVALID_STATE_TRANSITION"
                 ]
               },
-              "message": {
-                "type": "string",
-                "maxLength": 160
-              },
-              "retryable": {
-                "type": "boolean"
-              }
+              "message": { "type": "string", "maxLength": 160 },
+              "details": { "$ref": "#/components/schemas/ErrorDetails" },
+              "retryable": { "type": "boolean" }
             }
           },
-          "requestId": {
-            "type": "string",
-            "minLength": 8,
-            "maxLength": 128
-          }
+          "requestId": { "type": "string", "minLength": 8, "maxLength": 128 }
         }
       },
       "AudioEditorialState": {
         "type": "string",
-        "enum": [
-          "DRAFT",
-          "PUBLISHED",
-          "ARCHIVED"
-        ]
+        "enum": ["DRAFT", "PUBLISHED", "ARCHIVED"]
       },
       "MediaProcessingStatus": {
         "type": "string",
-        "enum": [
-          "PREPARING",
-          "UPLOAD_PENDING",
-          "PROCESSING",
-          "READY",
-          "FAILED"
-        ]
+        "enum": ["PREPARING", "UPLOAD_PENDING", "PROCESSING", "READY", "FAILED"]
       },
       "AudioCatalogItem": {
         "type": "object",
@@ -2497,33 +1876,17 @@
           "title"
         ],
         "properties": {
-          "contentId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "title": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 120
-          },
-          "artist": {
-            "$ref": "#/components/schemas/ArtistSummary"
-          },
-          "priceCfa": {
-            "$ref": "#/components/schemas/MoneyCfa"
-          },
+          "contentId": { "$ref": "#/components/schemas/Identifier" },
+          "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "artist": { "$ref": "#/components/schemas/ArtistSummary" },
+          "priceCfa": { "$ref": "#/components/schemas/MoneyCfa" },
           "durationSeconds": {
             "type": "integer",
             "minimum": 1,
             "maximum": 86400
           },
-          "previewAvailable": {
-            "type": "boolean"
-          },
-          "previewSeconds": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 120
-          }
+          "previewAvailable": { "type": "boolean" },
+          "previewSeconds": { "type": "integer", "minimum": 1, "maximum": 120 }
         },
         "examples": [
           {
@@ -2554,115 +1917,97 @@
           "title"
         ],
         "properties": {
-          "contentId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "title": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 120
-          },
-          "description": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "maxLength": 1000
-          },
-          "artist": {
-            "$ref": "#/components/schemas/ArtistSummary"
-          },
-          "priceCfa": {
-            "$ref": "#/components/schemas/MoneyCfa"
-          },
+          "contentId": { "$ref": "#/components/schemas/Identifier" },
+          "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "description": { "type": ["string", "null"], "maxLength": 1000 },
+          "artist": { "$ref": "#/components/schemas/ArtistSummary" },
+          "priceCfa": { "$ref": "#/components/schemas/MoneyCfa" },
           "durationSeconds": {
             "type": "integer",
             "minimum": 1,
             "maximum": 86400
           },
-          "previewAvailable": {
-            "type": "boolean"
-          },
-          "previewSeconds": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 120
-          }
+          "previewAvailable": { "type": "boolean" },
+          "previewSeconds": { "type": "integer", "minimum": 1, "maximum": 120 }
         }
       },
       "ArtistSummary": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "artistId",
-          "stageName"
-        ],
+        "required": ["artistId", "stageName"],
         "properties": {
-          "artistId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "stageName": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 80
-          }
+          "artistId": { "$ref": "#/components/schemas/Identifier" },
+          "stageName": { "type": "string", "minLength": 1, "maxLength": 80 }
         }
       },
       "AudioCatalogPage": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "data",
-          "meta"
-        ],
+        "required": ["data", "meta"],
         "properties": {
           "data": {
             "type": "array",
             "maxItems": 50,
-            "items": {
-              "$ref": "#/components/schemas/AudioCatalogItem"
-            }
+            "items": { "$ref": "#/components/schemas/AudioCatalogItem" }
           },
-          "meta": {
-            "$ref": "#/components/schemas/CursorMeta"
-          }
+          "meta": { "$ref": "#/components/schemas/CursorMeta" }
         }
       },
       "AudioContentEnvelope": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "data"
-        ],
+        "required": ["data", "meta"],
         "properties": {
-          "data": {
-            "$ref": "#/components/schemas/AudioContentDetail"
+          "data": { "$ref": "#/components/schemas/AudioContentDetail" },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
+        }
+      },
+      "E164Phone": {
+        "type": "string",
+        "pattern": "^\\+[1-9][0-9]{7,14}$",
+        "example": "+22370000000",
+        "description": "International E.164 phone. The product defaults country selection to Mali (+223), but local numbers without an explicit plus-prefixed country code are rejected as ambiguous."
+      },
+      "CustomerPassword": {
+        "type": "string",
+        "minLength": 8,
+        "maxLength": 128,
+        "writeOnly": true
+      },
+      "CustomerDeviceRegistration": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["fingerprint", "platform"],
+        "properties": {
+          "fingerprint": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 128
+          },
+          "platform": { "type": "string", "enum": ["ANDROID", "IOS"] }
+        }
+      },
+      "RegisterCustomerRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["device", "password", "phone"],
+        "properties": {
+          "phone": { "$ref": "#/components/schemas/E164Phone" },
+          "password": { "$ref": "#/components/schemas/CustomerPassword" },
+          "device": {
+            "$ref": "#/components/schemas/CustomerDeviceRegistration"
           }
         }
       },
-      "MaliPhone": {
-        "type": "string",
-        "pattern": "^\\+223[0-9]{8}$",
-        "description": "Verified Mali phone in E.164 form."
-      },
-      "OtpChallengeRequest": {
+      "LoginCustomerRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "phone",
-          "purpose"
-        ],
+        "required": ["device", "password", "phone"],
         "properties": {
-          "phone": {
-            "$ref": "#/components/schemas/MaliPhone"
-          },
-          "purpose": {
-            "type": "string",
-            "enum": [
-              "REGISTER",
-              "LOGIN",
-              "STEP_UP"
-            ]
+          "phone": { "$ref": "#/components/schemas/E164Phone" },
+          "password": { "$ref": "#/components/schemas/CustomerPassword" },
+          "device": {
+            "$ref": "#/components/schemas/CustomerDeviceRegistration"
           }
         }
       },
@@ -2672,76 +2017,77 @@
         "required": [
           "challengeId",
           "expiresAt",
-          "retryAfterSeconds"
+          "retryAfterSeconds",
+          "purpose"
         ],
         "properties": {
-          "challengeId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "expiresAt": {
-            "$ref": "#/components/schemas/Timestamp"
-          },
+          "challengeId": { "$ref": "#/components/schemas/Identifier" },
+          "expiresAt": { "$ref": "#/components/schemas/Timestamp" },
           "retryAfterSeconds": {
             "type": "integer",
             "minimum": 0,
             "maximum": 300
+          },
+          "purpose": {
+            "type": "string",
+            "enum": ["REGISTER", "LOGIN", "STEP_UP"]
           }
         }
       },
       "OtpChallengeEnvelope": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "data"
-        ],
+        "required": ["data", "meta"],
         "properties": {
-          "data": {
-            "$ref": "#/components/schemas/OtpChallenge"
-          }
+          "data": { "$ref": "#/components/schemas/OtpChallenge" },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
         }
       },
       "OtpVerificationRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "code",
-          "device"
-        ],
+        "required": ["code"],
+        "properties": { "code": { "type": "string", "pattern": "^[0-9]{6}$" } }
+      },
+      "StepUpChallengeRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["purpose"],
         "properties": {
-          "code": {
+          "purpose": {
             "type": "string",
-            "pattern": "^[0-9]{6}$"
-          },
-          "device": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "fingerprint",
-              "platform"
-            ],
-            "properties": {
-              "fingerprint": {
-                "type": "string",
-                "minLength": 32,
-                "maxLength": 128
-              },
-              "platform": {
-                "type": "string",
-                "enum": [
-                  "ANDROID",
-                  "IOS"
-                ]
-              }
-            }
+            "enum": ["ACCOUNT_SECURITY", "ARTIST_PAYOUT"]
           }
+        }
+      },
+      "StepUpVerificationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code"],
+        "properties": { "code": { "type": "string", "pattern": "^[0-9]{6}$" } }
+      },
+      "StepUpVerification": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sessionId", "verifiedAt"],
+        "properties": {
+          "sessionId": { "$ref": "#/components/schemas/Identifier" },
+          "verifiedAt": { "$ref": "#/components/schemas/Timestamp" }
+        }
+      },
+      "StepUpVerificationEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data", "meta"],
+        "properties": {
+          "data": { "$ref": "#/components/schemas/StepUpVerification" },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
         }
       },
       "RefreshSessionRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "refreshToken"
-        ],
+        "required": ["refreshToken"],
         "properties": {
           "refreshToken": {
             "type": "string",
@@ -2763,12 +2109,8 @@
           "sessionId"
         ],
         "properties": {
-          "sessionId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "deviceId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
+          "sessionId": { "$ref": "#/components/schemas/Identifier" },
+          "deviceId": { "$ref": "#/components/schemas/Identifier" },
           "accessToken": {
             "type": "string",
             "minLength": 32,
@@ -2781,24 +2123,17 @@
             "maxLength": 4096,
             "description": "Single-use secret; store only in platform secure storage and never log."
           },
-          "accessExpiresAt": {
-            "$ref": "#/components/schemas/Timestamp"
-          },
-          "refreshExpiresAt": {
-            "$ref": "#/components/schemas/Timestamp"
-          }
+          "accessExpiresAt": { "$ref": "#/components/schemas/Timestamp" },
+          "refreshExpiresAt": { "$ref": "#/components/schemas/Timestamp" }
         }
       },
       "SessionEnvelope": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "data"
-        ],
+        "required": ["data", "meta"],
         "properties": {
-          "data": {
-            "$ref": "#/components/schemas/Session"
-          }
+          "data": { "$ref": "#/components/schemas/Session" },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
         }
       },
       "DeviceSummary": {
@@ -2812,116 +2147,58 @@
           "registeredAt"
         ],
         "properties": {
-          "deviceId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "platform": {
-            "type": "string",
-            "enum": [
-              "ANDROID",
-              "IOS"
-            ]
-          },
-          "registeredAt": {
-            "$ref": "#/components/schemas/Timestamp"
-          },
-          "lastSeenAt": {
-            "$ref": "#/components/schemas/Timestamp"
-          },
-          "current": {
-            "type": "boolean"
-          }
+          "deviceId": { "$ref": "#/components/schemas/Identifier" },
+          "platform": { "type": "string", "enum": ["ANDROID", "IOS"] },
+          "registeredAt": { "$ref": "#/components/schemas/Timestamp" },
+          "lastSeenAt": { "$ref": "#/components/schemas/Timestamp" },
+          "current": { "type": "boolean" }
         }
       },
       "DeviceListEnvelope": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "data"
-        ],
+        "required": ["data", "meta"],
         "properties": {
           "data": {
             "type": "array",
             "maxItems": 20,
-            "items": {
-              "$ref": "#/components/schemas/DeviceSummary"
-            }
-          }
+            "items": { "$ref": "#/components/schemas/DeviceSummary" }
+          },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
         }
       },
       "OrderState": {
         "type": "string",
-        "enum": [
-          "CREATED",
-          "PAYMENT_PENDING",
-          "SETTLED",
-          "CANCELLED"
-        ]
+        "enum": ["CREATED", "PAYMENT_PENDING", "SETTLED", "CANCELLED"]
       },
       "CreateOrderRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "contentId"
-        ],
+        "required": ["contentId"],
         "properties": {
-          "contentId": {
-            "$ref": "#/components/schemas/Identifier"
-          }
+          "contentId": { "$ref": "#/components/schemas/Identifier" }
         }
       },
       "OrderLine": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "contentId",
-          "orderItemId",
-          "title",
-          "unitPriceCfa"
-        ],
+        "required": ["contentId", "orderItemId", "title", "unitPriceCfa"],
         "properties": {
-          "orderItemId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "contentId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "title": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 120
-          },
-          "unitPriceCfa": {
-            "$ref": "#/components/schemas/MoneyCfa"
-          }
+          "orderItemId": { "$ref": "#/components/schemas/Identifier" },
+          "contentId": { "$ref": "#/components/schemas/Identifier" },
+          "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "unitPriceCfa": { "$ref": "#/components/schemas/MoneyCfa" }
         }
       },
       "OrderStateEvent": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "recordedAt",
-          "sequence",
-          "state"
-        ],
+        "required": ["recordedAt", "sequence", "state"],
         "properties": {
-          "sequence": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "state": {
-            "$ref": "#/components/schemas/OrderState"
-          },
-          "recordedAt": {
-            "$ref": "#/components/schemas/Timestamp"
-          },
-          "reasonCode": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "maxLength": 80
-          }
+          "sequence": { "type": "integer", "minimum": 1 },
+          "state": { "$ref": "#/components/schemas/OrderState" },
+          "recordedAt": { "$ref": "#/components/schemas/Timestamp" },
+          "reasonCode": { "type": ["string", "null"], "maxLength": 80 }
         }
       },
       "Order": {
@@ -2938,37 +2215,22 @@
           "totalCfa"
         ],
         "properties": {
-          "orderId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "currency": {
-            "type": "string",
-            "const": "XOF"
-          },
-          "totalCfa": {
-            "$ref": "#/components/schemas/MoneyCfa"
-          },
-          "state": {
-            "$ref": "#/components/schemas/OrderState"
-          },
-          "createdAt": {
-            "$ref": "#/components/schemas/Timestamp"
-          },
+          "orderId": { "$ref": "#/components/schemas/Identifier" },
+          "currency": { "type": "string", "const": "XOF" },
+          "totalCfa": { "$ref": "#/components/schemas/MoneyCfa" },
+          "state": { "$ref": "#/components/schemas/OrderState" },
+          "createdAt": { "$ref": "#/components/schemas/Timestamp" },
           "items": {
             "type": "array",
             "minItems": 1,
             "maxItems": 20,
-            "items": {
-              "$ref": "#/components/schemas/OrderLine"
-            }
+            "items": { "$ref": "#/components/schemas/OrderLine" }
           },
           "stateHistory": {
             "type": "array",
             "minItems": 1,
             "maxItems": 100,
-            "items": {
-              "$ref": "#/components/schemas/OrderStateEvent"
-            }
+            "items": { "$ref": "#/components/schemas/OrderStateEvent" }
           }
         },
         "examples": [
@@ -3000,39 +2262,26 @@
       "OrderEnvelope": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "data"
-        ],
+        "required": ["data", "meta"],
         "properties": {
-          "data": {
-            "$ref": "#/components/schemas/Order"
-          }
+          "data": { "$ref": "#/components/schemas/Order" },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
         }
       },
       "OrderPage": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "data",
-          "meta"
-        ],
+        "required": ["data", "meta"],
         "properties": {
           "data": {
             "type": "array",
             "maxItems": 50,
-            "items": {
-              "$ref": "#/components/schemas/Order"
-            }
+            "items": { "$ref": "#/components/schemas/Order" }
           },
-          "meta": {
-            "$ref": "#/components/schemas/CursorMeta"
-          }
+          "meta": { "$ref": "#/components/schemas/CursorMeta" }
         }
       },
-      "PaymentProvider": {
-        "type": "string",
-        "const": "SANDBOX_NEUTRAL"
-      },
+      "PaymentProvider": { "type": "string", "const": "SANDBOX_NEUTRAL" },
       "PaymentAttemptState": {
         "type": "string",
         "enum": [
@@ -3047,41 +2296,20 @@
       "CreatePaymentAttemptRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "provider"
-        ],
+        "required": ["provider"],
         "properties": {
-          "provider": {
-            "$ref": "#/components/schemas/PaymentProvider"
-          }
+          "provider": { "$ref": "#/components/schemas/PaymentProvider" }
         }
       },
       "PaymentAttemptEvent": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "recordedAt",
-          "sequence",
-          "state"
-        ],
+        "required": ["recordedAt", "sequence", "state"],
         "properties": {
-          "sequence": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "state": {
-            "$ref": "#/components/schemas/PaymentAttemptState"
-          },
-          "recordedAt": {
-            "$ref": "#/components/schemas/Timestamp"
-          },
-          "safeReasonCode": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "maxLength": 80
-          }
+          "sequence": { "type": "integer", "minimum": 1 },
+          "state": { "$ref": "#/components/schemas/PaymentAttemptState" },
+          "recordedAt": { "$ref": "#/components/schemas/Timestamp" },
+          "safeReasonCode": { "type": ["string", "null"], "maxLength": 80 }
         }
       },
       "PaymentAttempt": {
@@ -3100,99 +2328,57 @@
           "state"
         ],
         "properties": {
-          "paymentAttemptId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "orderId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "provider": {
-            "$ref": "#/components/schemas/PaymentProvider"
-          },
-          "amountCfa": {
-            "$ref": "#/components/schemas/MoneyCfa"
-          },
-          "currency": {
-            "type": "string",
-            "const": "XOF"
-          },
-          "state": {
-            "$ref": "#/components/schemas/PaymentAttemptState"
-          },
-          "createdAt": {
-            "$ref": "#/components/schemas/Timestamp"
-          },
+          "paymentAttemptId": { "$ref": "#/components/schemas/Identifier" },
+          "orderId": { "$ref": "#/components/schemas/Identifier" },
+          "provider": { "$ref": "#/components/schemas/PaymentProvider" },
+          "amountCfa": { "$ref": "#/components/schemas/MoneyCfa" },
+          "currency": { "type": "string", "const": "XOF" },
+          "state": { "$ref": "#/components/schemas/PaymentAttemptState" },
+          "createdAt": { "$ref": "#/components/schemas/Timestamp" },
           "events": {
             "type": "array",
             "minItems": 1,
             "maxItems": 100,
-            "items": {
-              "$ref": "#/components/schemas/PaymentAttemptEvent"
-            }
+            "items": { "$ref": "#/components/schemas/PaymentAttemptEvent" }
           }
         }
       },
       "PaymentAttemptEnvelope": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "data"
-        ],
+        "required": ["data", "meta"],
         "properties": {
-          "data": {
-            "$ref": "#/components/schemas/PaymentAttempt"
-          }
+          "data": { "$ref": "#/components/schemas/PaymentAttempt" },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
         }
       },
       "PaymentAttemptPage": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "data",
-          "meta"
-        ],
+        "required": ["data", "meta"],
         "properties": {
           "data": {
             "type": "array",
             "maxItems": 50,
-            "items": {
-              "$ref": "#/components/schemas/PaymentAttempt"
-            }
+            "items": { "$ref": "#/components/schemas/PaymentAttempt" }
           },
-          "meta": {
-            "$ref": "#/components/schemas/CursorMeta"
-          }
+          "meta": { "$ref": "#/components/schemas/CursorMeta" }
         }
       },
       "OperationalPaymentProvider": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "code",
-          "displayName",
-          "status"
-        ],
+        "required": ["code", "displayName", "status"],
         "properties": {
-          "code": {
-            "type": "string",
-            "const": "SANDBOX_NEUTRAL"
-          },
-          "displayName": {
-            "type": "string",
-            "const": "Paiement sandbox"
-          },
-          "status": {
-            "type": "string",
-            "const": "OPERATIONAL"
-          }
+          "code": { "type": "string", "const": "SANDBOX_NEUTRAL" },
+          "displayName": { "type": "string", "const": "Paiement sandbox" },
+          "status": { "type": "string", "const": "OPERATIONAL" }
         }
       },
       "OperationalProviderListEnvelope": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "data"
-        ],
+        "required": ["data", "meta"],
         "properties": {
           "data": {
             "type": "array",
@@ -3201,7 +2387,8 @@
             "items": {
               "$ref": "#/components/schemas/OperationalPaymentProvider"
             }
-          }
+          },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
         }
       },
       "PaymentWebhookRequest": {
@@ -3216,60 +2403,31 @@
           "state"
         ],
         "properties": {
-          "eventId": {
-            "type": "string",
-            "minLength": 8,
-            "maxLength": 128
-          },
-          "paymentAttemptId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "amountCfa": {
-            "$ref": "#/components/schemas/MoneyCfa"
-          },
-          "currency": {
-            "type": "string",
-            "const": "XOF"
-          },
-          "state": {
-            "$ref": "#/components/schemas/PaymentAttemptState"
-          },
-          "occurredAt": {
-            "$ref": "#/components/schemas/Timestamp"
-          }
+          "eventId": { "type": "string", "minLength": 8, "maxLength": 128 },
+          "paymentAttemptId": { "$ref": "#/components/schemas/Identifier" },
+          "amountCfa": { "$ref": "#/components/schemas/MoneyCfa" },
+          "currency": { "type": "string", "const": "XOF" },
+          "state": { "$ref": "#/components/schemas/PaymentAttemptState" },
+          "occurredAt": { "$ref": "#/components/schemas/Timestamp" }
         }
       },
       "WebhookAccepted": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "duplicate",
-          "inboxEventId",
-          "received"
-        ],
+        "required": ["duplicate", "inboxEventId", "received"],
         "properties": {
-          "inboxEventId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "received": {
-            "type": "boolean",
-            "const": true
-          },
-          "duplicate": {
-            "type": "boolean"
-          }
+          "inboxEventId": { "$ref": "#/components/schemas/Identifier" },
+          "received": { "type": "boolean", "const": true },
+          "duplicate": { "type": "boolean" }
         }
       },
       "WebhookAcceptedEnvelope": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "data"
-        ],
+        "required": ["data", "meta"],
         "properties": {
-          "data": {
-            "$ref": "#/components/schemas/WebhookAccepted"
-          }
+          "data": { "$ref": "#/components/schemas/WebhookAccepted" },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
         }
       },
       "Receipt": {
@@ -3285,42 +2443,26 @@
           "totalCfa"
         ],
         "properties": {
-          "receiptId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "orderId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "totalCfa": {
-            "$ref": "#/components/schemas/MoneyCfa"
-          },
-          "currency": {
-            "type": "string",
-            "const": "XOF"
-          },
-          "paidAt": {
-            "$ref": "#/components/schemas/Timestamp"
-          },
+          "receiptId": { "$ref": "#/components/schemas/Identifier" },
+          "orderId": { "$ref": "#/components/schemas/Identifier" },
+          "totalCfa": { "$ref": "#/components/schemas/MoneyCfa" },
+          "currency": { "type": "string", "const": "XOF" },
+          "paidAt": { "$ref": "#/components/schemas/Timestamp" },
           "items": {
             "type": "array",
             "minItems": 1,
             "maxItems": 20,
-            "items": {
-              "$ref": "#/components/schemas/OrderLine"
-            }
+            "items": { "$ref": "#/components/schemas/OrderLine" }
           }
         }
       },
       "ReceiptEnvelope": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "data"
-        ],
+        "required": ["data", "meta"],
         "properties": {
-          "data": {
-            "$ref": "#/components/schemas/Receipt"
-          }
+          "data": { "$ref": "#/components/schemas/Receipt" },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
         }
       },
       "LibraryAudioItem": {
@@ -3336,27 +2478,12 @@
           "title"
         ],
         "properties": {
-          "entitlementId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "audioContentId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "title": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 120
-          },
-          "artist": {
-            "$ref": "#/components/schemas/ArtistSummary"
-          },
-          "source": {
-            "type": "string",
-            "const": "PURCHASE"
-          },
-          "grantedAt": {
-            "$ref": "#/components/schemas/Timestamp"
-          },
+          "entitlementId": { "$ref": "#/components/schemas/Identifier" },
+          "audioContentId": { "$ref": "#/components/schemas/Identifier" },
+          "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "artist": { "$ref": "#/components/schemas/ArtistSummary" },
+          "source": { "type": "string", "const": "PURCHASE" },
+          "grantedAt": { "$ref": "#/components/schemas/Timestamp" },
           "archived": {
             "type": "boolean",
             "description": "True content remains accessible here although excluded from public catalog."
@@ -3366,21 +2493,14 @@
       "LibraryPage": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "data",
-          "meta"
-        ],
+        "required": ["data", "meta"],
         "properties": {
           "data": {
             "type": "array",
             "maxItems": 50,
-            "items": {
-              "$ref": "#/components/schemas/LibraryAudioItem"
-            }
+            "items": { "$ref": "#/components/schemas/LibraryAudioItem" }
           },
-          "meta": {
-            "$ref": "#/components/schemas/CursorMeta"
-          }
+          "meta": { "$ref": "#/components/schemas/CursorMeta" }
         }
       },
       "PreviewGrant": {
@@ -3393,44 +2513,31 @@
           "previewGrantId"
         ],
         "properties": {
-          "previewGrantId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "audioContentId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
+          "previewGrantId": { "$ref": "#/components/schemas/Identifier" },
+          "audioContentId": { "$ref": "#/components/schemas/Identifier" },
           "maxDurationSeconds": {
             "type": "integer",
             "minimum": 1,
             "maximum": 120
           },
-          "expiresAt": {
-            "$ref": "#/components/schemas/Timestamp"
-          }
+          "expiresAt": { "$ref": "#/components/schemas/Timestamp" }
         }
       },
       "PreviewGrantEnvelope": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "data"
-        ],
+        "required": ["data", "meta"],
         "properties": {
-          "data": {
-            "$ref": "#/components/schemas/PreviewGrant"
-          }
+          "data": { "$ref": "#/components/schemas/PreviewGrant" },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
         }
       },
       "PurchasedPlaybackRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "deviceId"
-        ],
+        "required": ["deviceId"],
         "properties": {
-          "deviceId": {
-            "$ref": "#/components/schemas/Identifier"
-          }
+          "deviceId": { "$ref": "#/components/schemas/Identifier" }
         }
       },
       "PlaybackDescriptor": {
@@ -3439,12 +2546,7 @@
         "readOnly": true,
         "x-kora-non-persistable": true,
         "x-kora-non-loggable": true,
-        "required": [
-          "descriptor",
-          "expiresAt",
-          "expiresInSeconds",
-          "protocol"
-        ],
+        "required": ["descriptor", "expiresAt", "expiresInSeconds", "protocol"],
         "properties": {
           "descriptor": {
             "type": "string",
@@ -3452,110 +2554,63 @@
             "maxLength": 4096,
             "description": "Opaque media capability. Never persist or log; contains no reusable media location."
           },
-          "protocol": {
-            "type": "string",
-            "const": "HLS"
-          },
+          "protocol": { "type": "string", "const": "HLS" },
           "expiresInSeconds": {
             "type": "integer",
             "minimum": 1,
             "maximum": 300
           },
-          "expiresAt": {
-            "$ref": "#/components/schemas/Timestamp"
-          }
+          "expiresAt": { "$ref": "#/components/schemas/Timestamp" }
         }
       },
       "PlaybackDescriptorEnvelope": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "data"
-        ],
+        "required": ["data", "meta"],
         "properties": {
-          "data": {
-            "$ref": "#/components/schemas/PlaybackDescriptor"
-          }
+          "data": { "$ref": "#/components/schemas/PlaybackDescriptor" },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
         }
       },
       "UpsertArtistRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "stageName",
-          "status"
-        ],
+        "required": ["stageName", "status"],
         "properties": {
-          "stageName": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 80
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "ACTIVE",
-              "SUSPENDED"
-            ]
-          }
+          "stageName": { "type": "string", "minLength": 1, "maxLength": 80 },
+          "status": { "type": "string", "enum": ["ACTIVE", "SUSPENDED"] }
         }
       },
       "AdminArtist": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "artistId",
-          "stageName",
-          "status"
-        ],
+        "required": ["artistId", "stageName", "status"],
         "properties": {
-          "artistId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "stageName": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 80
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "ACTIVE",
-              "SUSPENDED"
-            ]
-          }
+          "artistId": { "$ref": "#/components/schemas/Identifier" },
+          "stageName": { "type": "string", "minLength": 1, "maxLength": 80 },
+          "status": { "type": "string", "enum": ["ACTIVE", "SUSPENDED"] }
         }
       },
       "AdminArtistEnvelope": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "data"
-        ],
+        "required": ["data", "meta"],
         "properties": {
-          "data": {
-            "$ref": "#/components/schemas/AdminArtist"
-          }
+          "data": { "$ref": "#/components/schemas/AdminArtist" },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
         }
       },
       "AdminArtistPage": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "data",
-          "meta"
-        ],
+        "required": ["data", "meta"],
         "properties": {
           "data": {
             "type": "array",
             "maxItems": 50,
-            "items": {
-              "$ref": "#/components/schemas/AdminArtist"
-            }
+            "items": { "$ref": "#/components/schemas/AdminArtist" }
           },
-          "meta": {
-            "$ref": "#/components/schemas/CursorMeta"
-          }
+          "meta": { "$ref": "#/components/schemas/CursorMeta" }
         }
       },
       "UpsertAudioContentRequest": {
@@ -3569,44 +2624,19 @@
           "title"
         ],
         "properties": {
-          "artistId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "title": {
-            "type": "string",
-            "minLength": 2,
-            "maxLength": 120
-          },
-          "description": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "maxLength": 1000
-          },
-          "priceCfa": {
-            "$ref": "#/components/schemas/MoneyCfa"
-          },
-          "previewSeconds": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 120
-          }
+          "artistId": { "$ref": "#/components/schemas/Identifier" },
+          "title": { "type": "string", "minLength": 2, "maxLength": 120 },
+          "description": { "type": ["string", "null"], "maxLength": 1000 },
+          "priceCfa": { "$ref": "#/components/schemas/MoneyCfa" },
+          "previewSeconds": { "type": "integer", "minimum": 1, "maximum": 120 }
         }
       },
       "PublishAudioContentRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "reason",
-          "requiredMediaAssets"
-        ],
+        "required": ["reason", "requiredMediaAssets"],
         "properties": {
-          "reason": {
-            "type": "string",
-            "minLength": 3,
-            "maxLength": 240
-          },
+          "reason": { "type": "string", "minLength": 3, "maxLength": 240 },
           "requiredMediaAssets": {
             "type": "array",
             "minItems": 2,
@@ -3619,14 +2649,8 @@
               {
                 "contains": {
                   "type": "object",
-                  "required": [
-                    "kind"
-                  ],
-                  "properties": {
-                    "kind": {
-                      "const": "AUDIO_MASTER"
-                    }
-                  }
+                  "required": ["kind"],
+                  "properties": { "kind": { "const": "AUDIO_MASTER" } }
                 },
                 "minContains": 1,
                 "maxContains": 1
@@ -3634,14 +2658,8 @@
               {
                 "contains": {
                   "type": "object",
-                  "required": [
-                    "kind"
-                  ],
-                  "properties": {
-                    "kind": {
-                      "const": "COVER_IMAGE"
-                    }
-                  }
+                  "required": ["kind"],
+                  "properties": { "kind": { "const": "COVER_IMAGE" } }
                 },
                 "minContains": 1,
                 "maxContains": 1
@@ -3660,38 +2678,21 @@
           "kind"
         ],
         "properties": {
-          "expectedMediaAssetId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "expectedMediaAssetVersion": {
-            "type": "integer",
-            "minimum": 1
-          },
+          "expectedMediaAssetId": { "$ref": "#/components/schemas/Identifier" },
+          "expectedMediaAssetVersion": { "type": "integer", "minimum": 1 },
           "kind": {
             "type": "string",
-            "enum": [
-              "AUDIO_MASTER",
-              "COVER_IMAGE"
-            ]
+            "enum": ["AUDIO_MASTER", "COVER_IMAGE"]
           },
-          "checksumSha256": {
-            "type": "string",
-            "pattern": "^[a-f0-9]{64}$"
-          }
+          "checksumSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
         }
       },
       "ArchiveAudioContentRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "reason"
-        ],
+        "required": ["reason"],
         "properties": {
-          "reason": {
-            "type": "string",
-            "minLength": 3,
-            "maxLength": 240
-          }
+          "reason": { "type": "string", "minLength": 3, "maxLength": 240 }
         }
       },
       "AdminAudioContent": {
@@ -3707,174 +2708,99 @@
           "title"
         ],
         "properties": {
-          "contentId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
-          "title": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 120
-          },
-          "description": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "maxLength": 1000
-          },
-          "artist": {
-            "$ref": "#/components/schemas/ArtistSummary"
-          },
-          "priceCfa": {
-            "$ref": "#/components/schemas/MoneyCfa"
-          },
-          "previewSeconds": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 120
-          },
+          "contentId": { "$ref": "#/components/schemas/Identifier" },
+          "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "description": { "type": ["string", "null"], "maxLength": 1000 },
+          "artist": { "$ref": "#/components/schemas/ArtistSummary" },
+          "priceCfa": { "$ref": "#/components/schemas/MoneyCfa" },
+          "previewSeconds": { "type": "integer", "minimum": 1, "maximum": 120 },
           "editorialState": {
             "$ref": "#/components/schemas/AudioEditorialState"
           },
           "mediaAssets": {
             "type": "array",
             "maxItems": 20,
-            "items": {
-              "$ref": "#/components/schemas/MediaAssetStatus"
-            }
+            "items": { "$ref": "#/components/schemas/MediaAssetStatus" }
           }
         }
       },
       "AdminAudioEnvelope": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "data"
-        ],
+        "required": ["data", "meta"],
         "properties": {
-          "data": {
-            "$ref": "#/components/schemas/AdminAudioContent"
-          }
+          "data": { "$ref": "#/components/schemas/AdminAudioContent" },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
         }
       },
       "AdminAudioPage": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "data",
-          "meta"
-        ],
+        "required": ["data", "meta"],
         "properties": {
           "data": {
             "type": "array",
             "maxItems": 50,
-            "items": {
-              "$ref": "#/components/schemas/AdminAudioContent"
-            }
+            "items": { "$ref": "#/components/schemas/AdminAudioContent" }
           },
-          "meta": {
-            "$ref": "#/components/schemas/CursorMeta"
-          }
+          "meta": { "$ref": "#/components/schemas/CursorMeta" }
         }
       },
       "CreateMediaAssetRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "audioContentId",
-          "checksumSha256",
-          "kind"
-        ],
+        "required": ["audioContentId", "checksumSha256", "kind"],
         "properties": {
-          "audioContentId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
+          "audioContentId": { "$ref": "#/components/schemas/Identifier" },
           "kind": {
             "type": "string",
-            "enum": [
-              "AUDIO_MASTER",
-              "COVER_IMAGE"
-            ]
+            "enum": ["AUDIO_MASTER", "COVER_IMAGE"]
           },
-          "checksumSha256": {
-            "type": "string",
-            "pattern": "^[a-f0-9]{64}$"
-          }
+          "checksumSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
         }
       },
       "PrepareMediaAssetRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "byteLength",
-          "checksumSha256"
-        ],
+        "required": ["byteLength", "checksumSha256"],
         "properties": {
           "byteLength": {
             "type": "integer",
             "minimum": 1,
             "maximum": 1073741824
           },
-          "checksumSha256": {
-            "type": "string",
-            "pattern": "^[a-f0-9]{64}$"
-          }
+          "checksumSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
         }
       },
       "MediaAssetStatus": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "kind",
-          "mediaAssetId",
-          "processingStatus",
-          "version"
-        ],
+        "required": ["kind", "mediaAssetId", "processingStatus", "version"],
         "properties": {
-          "mediaAssetId": {
-            "$ref": "#/components/schemas/Identifier"
-          },
+          "mediaAssetId": { "$ref": "#/components/schemas/Identifier" },
           "kind": {
             "type": "string",
-            "enum": [
-              "AUDIO_MASTER",
-              "COVER_IMAGE"
-            ]
+            "enum": ["AUDIO_MASTER", "COVER_IMAGE"]
           },
           "processingStatus": {
             "$ref": "#/components/schemas/MediaProcessingStatus"
           },
-          "version": {
-            "type": "integer",
-            "minimum": 1
-          },
+          "version": { "type": "integer", "minimum": 1 },
           "durationSeconds": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "minimum": 1,
             "maximum": 86400
           },
-          "safeFailureCode": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "maxLength": 80
-          }
+          "safeFailureCode": { "type": ["string", "null"], "maxLength": 80 }
         }
       },
       "MediaAssetEnvelope": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "data"
-        ],
+        "required": ["data", "meta"],
         "properties": {
-          "data": {
-            "$ref": "#/components/schemas/MediaAssetStatus"
-          }
+          "data": { "$ref": "#/components/schemas/MediaAssetStatus" },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
         }
       },
       "MediaPreparation": {
@@ -3883,11 +2809,7 @@
         "readOnly": true,
         "x-kora-non-persistable": true,
         "x-kora-non-loggable": true,
-        "required": [
-          "expiresAt",
-          "expiresInSeconds",
-          "preparationToken"
-        ],
+        "required": ["expiresAt", "expiresInSeconds", "preparationToken"],
         "properties": {
           "preparationToken": {
             "type": "string",
@@ -3900,21 +2822,16 @@
             "minimum": 1,
             "maximum": 300
           },
-          "expiresAt": {
-            "$ref": "#/components/schemas/Timestamp"
-          }
+          "expiresAt": { "$ref": "#/components/schemas/Timestamp" }
         }
       },
       "MediaPreparationEnvelope": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "data"
-        ],
+        "required": ["data", "meta"],
         "properties": {
-          "data": {
-            "$ref": "#/components/schemas/MediaPreparation"
-          }
+          "data": { "$ref": "#/components/schemas/MediaPreparation" },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
         }
       }
     }

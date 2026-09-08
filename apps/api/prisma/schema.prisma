@@ -112,6 +112,7 @@ model Customer {
   updatedAt          DateTime            @updatedAt
   devices            CustomerDevice[]
   sessions           CustomerSession[]
+  otpChallenges      OtpChallenge[]
   orders             Order[]
   entitlements       Entitlement[]
   idempotencyRecords IdempotencyRecord[]
@@ -122,7 +123,7 @@ model Customer {
 model CustomerDevice {
   id                   String                        @id @default(uuid())
   customerId           String
-  customer             Customer                      @relation(fields: [customerId], references: [id])
+  customer             Customer                      @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   fingerprintHash      String
   platform             DevicePlatform
   registeredAt         DateTime                      @default(now())
@@ -132,15 +133,16 @@ model CustomerDevice {
   purchasedDescriptors PurchasedPlaybackDescriptor[]
 
   @@unique([customerId, fingerprintHash])
+  @@unique([id, customerId])
   @@index([customerId, revokedAt])
 }
 
 model CustomerSession {
   id                  String         @id @default(uuid())
   customerId          String
-  customer            Customer       @relation(fields: [customerId], references: [id])
+  customer            Customer       @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   deviceId            String
-  device              CustomerDevice @relation(fields: [deviceId], references: [id])
+  device              CustomerDevice @relation(fields: [deviceId, customerId], references: [id, customerId], onDelete: Restrict, onUpdate: Restrict)
   sessionFamilyId     String
   accessTokenId       String         @unique
   refreshTokenHash    String         @unique
@@ -149,22 +151,34 @@ model CustomerSession {
   expiresAt           DateTime
   revokedAt           DateTime?
   createdAt           DateTime       @default(now())
+  otpChallenges       OtpChallenge[]
 
+  @@unique([id, customerId])
   @@index([customerId, revokedAt])
   @@index([sessionFamilyId, revokedAt])
 }
 
 model OtpChallenge {
-  id              String     @id @default(uuid())
-  normalizedPhone String
-  purpose         OtpPurpose
-  codeHash        String
-  attempts        Int        @default(0)
-  expiresAt       DateTime
-  consumedAt      DateTime?
-  createdAt       DateTime   @default(now())
+  id                    String           @id @default(uuid())
+  normalizedPhone       String
+  purpose               OtpPurpose
+  codeHash              String
+  customerId            String?
+  customer              Customer?        @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sessionId             String?
+  session               CustomerSession? @relation(fields: [sessionId, customerId], references: [id, customerId], onDelete: Restrict, onUpdate: Restrict)
+  pendingPasswordHash   String?
+  passwordVerifiedAt    DateTime?
+  deviceFingerprintHash String
+  devicePlatform        DevicePlatform
+  attempts              Int              @default(0)
+  expiresAt             DateTime
+  consumedAt            DateTime?
+  createdAt             DateTime         @default(now())
 
   @@index([normalizedPhone, purpose, createdAt])
+  @@index([customerId, purpose, consumedAt])
+  @@index([sessionId, customerId])
 }
 
 model AdminUser {
@@ -513,7 +527,7 @@ model ArtistEarning {
 model Entitlement {
   id                   String                        @id @default(uuid())
   customerId           String
-  customer             Customer                      @relation(fields: [customerId], references: [id])
+  customer             Customer                      @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   audioContentId       String
   audioContent         AudioContent                  @relation(fields: [audioContentId], references: [id])
   orderItemId          String                        @unique
@@ -528,6 +542,7 @@ model Entitlement {
   purchasedDescriptors PurchasedPlaybackDescriptor[]
 
   @@unique([customerId, audioContentId])
+  @@unique([id, customerId])
   @@unique([orderItemId, orderId, audioContentId])
   @@index([audioContentId, revokedAt])
 }
@@ -560,21 +575,22 @@ model PreviewPlaybackDescriptor {
 
 model PurchasedPlaybackDescriptor {
   id             String         @id @default(uuid())
+  customerId     String
   entitlementId  String
-  entitlement    Entitlement    @relation(fields: [entitlementId], references: [id])
+  entitlement    Entitlement    @relation(fields: [entitlementId, customerId], references: [id, customerId], onDelete: Restrict, onUpdate: Restrict)
   deviceId       String
-  device         CustomerDevice @relation(fields: [deviceId], references: [id])
+  device         CustomerDevice @relation(fields: [deviceId, customerId], references: [id, customerId], onDelete: Restrict, onUpdate: Restrict)
   descriptorHash String         @unique
   expiresAt      DateTime
   issuedAt       DateTime       @default(now())
 
-  @@index([entitlementId, deviceId, expiresAt])
+  @@index([customerId, entitlementId, deviceId, expiresAt])
 }
 
 model IdempotencyRecord {
   id             String   @id @default(uuid())
   customerId     String
-  customer       Customer @relation(fields: [customerId], references: [id])
+  customer       Customer @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   operation      String
   idempotencyKey String
   requestHash    String
@@ -582,7 +598,7 @@ model IdempotencyRecord {
   resourceType   String
   resourceId     String
   orderId        String?
-  order          Order?   @relation(fields: [orderId], references: [id])
+  order          Order?   @relation(fields: [orderId, customerId], references: [id, customerId], onDelete: Restrict, onUpdate: Restrict)
   expiresAt      DateTime
   createdAt      DateTime @default(now())
 

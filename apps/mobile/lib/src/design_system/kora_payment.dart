@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/kora_colors.dart';
+import '../theme/kora_theme.dart';
 import 'kora_actions.dart';
 import 'kora_badges.dart';
 
@@ -45,11 +46,11 @@ class KoraPaymentStatusPanel extends StatelessWidget {
     return Semantics(
       container: true,
       explicitChildNodes: true,
-      liveRegion: state != KoraPaymentState.success,
+      liveRegion: true,
       label: '$label. $message',
       child: Card(
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(KoraSpacing.xl),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
@@ -59,8 +60,12 @@ class KoraPaymentStatusPanel extends StatelessWidget {
                   children: <Widget>[
                     Row(
                       children: <Widget>[
-                        Icon(icon, color: _toneColor(tone), size: 28),
-                        const SizedBox(width: 10),
+                        Icon(
+                          icon,
+                          color: _toneColor(tone),
+                          size: KoraDimensions.iconXl,
+                        ),
+                        const SizedBox(width: KoraSpacing.md),
                         Expanded(
                           child: Text(
                             label,
@@ -69,7 +74,7 @@ class KoraPaymentStatusPanel extends StatelessWidget {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: KoraSpacing.sm),
                     Text(
                       message,
                       style: Theme.of(context).textTheme.bodyMedium,
@@ -79,7 +84,7 @@ class KoraPaymentStatusPanel extends StatelessWidget {
               ),
               if (state == KoraPaymentState.failed &&
                   onRetry != null) ...<Widget>[
-                const SizedBox(height: 16),
+                const SizedBox(height: KoraSpacing.xl),
                 KoraActionButton(
                   label: 'Réessayer le paiement',
                   onPressed: onRetry,

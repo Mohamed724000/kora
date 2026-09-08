@@ -1,4 +1,4 @@
-import 'dart:ui' show SemanticsAction;
+import 'dart:ui' show CheckedState, SemanticsAction;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -82,6 +82,8 @@ void main() {
           media: null,
           onOpen: _noop,
           onTogglePlayback: _noop,
+          playingStateLabel: 'En lecture',
+          pausedStateLabel: 'En pause',
         ),
       ),
     );
@@ -98,11 +100,67 @@ void main() {
           ),
           onOpen: _noop,
           onTogglePlayback: _noop,
+          playingStateLabel: 'En lecture',
+          pausedStateLabel: 'En pause',
         ),
       ),
     );
     expect(find.byKey(const Key('mini-player')), findsOneWidget);
     expect(find.byTooltip('Mettre en pause'), findsOneWidget);
+    final description = tester.getSemantics(
+      find.bySemanticsLabel(
+        RegExp(r'^Mini-lecteur\. Voix du fleuve, .+\. En lecture$'),
+      ),
+    );
+    expect(
+      description.getSemanticsData().hasAction(SemanticsAction.tap),
+      isTrue,
+    );
+    expect(description.getSemanticsData().label, startsWith('Mini-lecteur.'));
+    expect(description.getSemanticsData().label, endsWith('. En lecture'));
+    expect(find.bySemanticsLabel('Voix du fleuve'), findsNothing);
+    expect(find.bySemanticsLabel('Awa Traoré'), findsNothing);
+    final pauseAction = tester.getSemantics(find.byTooltip('Mettre en pause'));
+    expect(
+      pauseAction.getSemanticsData().hasAction(SemanticsAction.tap),
+      isTrue,
+    );
+  });
+
+  testWidgets('lecteur expose une description unique et une action separee', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const _TestApp(
+        child: SizedBox(
+          width: 300,
+          child: KoraFullPlayer(
+            media: KoraPlayableMedia(
+              contentId: 'audio_test_1',
+              title: 'Voix du fleuve',
+              artistName: 'Awa Traore',
+              isPlaying: false,
+            ),
+            onTogglePlayback: _noop,
+            playingStateLabel: 'En lecture',
+            pausedStateLabel: 'En pause',
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.bySemanticsLabel('Lecteur. Voix du fleuve, Awa Traore. En pause'),
+      findsOneWidget,
+    );
+    expect(find.byTooltip('Lire'), findsOneWidget);
+    expect(find.bySemanticsLabel('Voix du fleuve'), findsNothing);
+    expect(find.bySemanticsLabel('Awa Traore'), findsNothing);
+    final playAction = tester.getSemantics(find.byTooltip('Lire'));
+    expect(
+      playAction.getSemanticsData().hasAction(SemanticsAction.tap),
+      isTrue,
+    );
   });
 
   testWidgets('lecteur vide fournit une prochaine action utile', (
@@ -113,6 +171,8 @@ void main() {
         child: KoraFullPlayer(
           media: null,
           onTogglePlayback: _noop,
+          playingStateLabel: 'En lecture',
+          pausedStateLabel: 'En pause',
           onBrowse: _noop,
         ),
       ),
@@ -120,8 +180,22 @@ void main() {
 
     expect(find.text('Prêt à écouter ?'), findsOneWidget);
     expect(
+      find.bySemanticsLabel(
+        'Lecteur vide. Choisissez un titre dans Découvrir ou Mes achats.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.bySemanticsLabel('Prêt à écouter ?'), findsNothing);
+    expect(
       find.widgetWithText(KoraActionButton, 'Découvrir les titres'),
       findsOneWidget,
+    );
+    final browseAction = tester.getSemantics(
+      find.bySemanticsLabel('Découvrir les titres'),
+    );
+    expect(
+      browseAction.getSemanticsData().hasAction(SemanticsAction.tap),
+      isTrue,
     );
   });
 
@@ -260,6 +334,8 @@ void main() {
                   ),
                   onOpen: _noop,
                   onTogglePlayback: _noop,
+                  playingStateLabel: 'En lecture',
+                  pausedStateLabel: 'En pause',
                 ),
                 const KoraFullPlayer(
                   media: KoraPlayableMedia(
@@ -269,6 +345,8 @@ void main() {
                     isPlaying: false,
                   ),
                   onTogglePlayback: _noop,
+                  playingStateLabel: 'En lecture',
+                  pausedStateLabel: 'En pause',
                 ),
                 const KoraActionButton(
                   label: 'Continuer vers une prochaine étape explicite',
@@ -309,6 +387,79 @@ void main() {
 
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(find.byIcon(Icons.hourglass_top), findsOneWidget);
+  });
+  testWidgets('payment method exposes one mutually exclusive radio action', (
+    tester,
+  ) async {
+    for (final selected in <bool>[false, true]) {
+      bool? selection;
+      await tester.pumpWidget(
+        _TestApp(
+          child: KoraSandboxPaymentMethod(
+            selected: selected,
+            onSelected: (value) => selection = value,
+          ),
+        ),
+      );
+
+      final finder = find.bySemanticsLabel(
+        RegExp(r'^Moyen de paiement sandbox'),
+      );
+      expect(finder, findsOneWidget);
+      final semantics = tester.getSemantics(finder).getSemanticsData();
+      expect(semantics.flagsCollection.isChecked, isNot(CheckedState.none));
+      expect(
+        semantics.flagsCollection.isChecked,
+        selected ? CheckedState.isTrue : CheckedState.isFalse,
+      );
+      expect(semantics.flagsCollection.isInMutuallyExclusiveGroup, isTrue);
+      expect(semantics.hasAction(SemanticsAction.tap), isTrue);
+      expect(find.bySemanticsLabel('Paiement sandbox'), findsNothing);
+      expect(
+        find.bySemanticsLabel('Simulation neutre, aucun débit réel'),
+        findsNothing,
+      );
+
+      await tester.tap(finder);
+      expect(selection, isTrue);
+    }
+  });
+
+  testWidgets('payment success and offline state are unique live regions', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const _TestApp(
+        child: Column(
+          children: <Widget>[
+            KoraPaymentStatusPanel(state: KoraPaymentState.success),
+            KoraExperienceStateView(
+              state: KoraExperienceState.offline,
+              title: 'Connexion indisponible',
+              message: 'Verifiez votre connexion.',
+            ),
+          ],
+        ),
+      ),
+    );
+
+    for (final pattern in <RegExp>[
+      RegExp(r'^Paiement confirm'),
+      RegExp(r'^Hors connexion\. Connexion indisponible\.'),
+    ]) {
+      final finder = find.bySemanticsLabel(pattern);
+      expect(finder, findsOneWidget);
+      expect(
+        tester
+            .getSemantics(finder)
+            .getSemanticsData()
+            .flagsCollection
+            .isLiveRegion,
+        isTrue,
+      );
+    }
+    expect(find.bySemanticsLabel('Paiement confirmé'), findsNothing);
+    expect(find.bySemanticsLabel('Connexion indisponible'), findsNothing);
   });
 }
 

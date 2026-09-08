@@ -17,25 +17,41 @@ matérialiser dans un lot ultérieur explicitement autorisé.
 
 ## Inventaire contractuel
 
-Les 29 chemins et 35 opérations couvrent les capacités nécessaires au pilote :
+Les 32 chemins et 38 opérations couvrent les capacités nécessaires au pilote :
 
-| Domaine          | Capacités contractées                                                                            |
-| ---------------- | ------------------------------------------------------------------------------------------------ |
-| Opérations       | liveness et readiness existants                                                                  |
-| Catalogue public | liste audio paginée par curseur et détail publié, sans donnée média privée                       |
-| Identité mobile  | challenge OTP, vérification, refresh, clôture de session et appareils                            |
-| Achat            | création/lecture d’Order, création/lecture de PaymentAttempt, reçu et fournisseurs opérationnels |
-| Paiement sandbox | fournisseur unique `SANDBOX_NEUTRAL` et webhook durable signé                                    |
-| Bibliothèque     | `Entitlement`, contenu archivé représentable et descripteur acheté court                         |
-| Preview mobile   | `PreviewGrant` anonyme puis échange contre un descripteur court                                  |
-| Administration   | liste, création et édition d’artistes ; liste, création, édition, publication et archivage audio |
-| Média privé      | création, état et préparation d’un `MediaAsset`                                                  |
+| Domaine          | Capacités contractées                                                                                                   |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Opérations       | liveness et readiness existants                                                                                         |
+| Catalogue public | liste audio paginée par curseur et détail publié, sans donnée média privée                                              |
+| Identité mobile  | inscription et connexion téléphone/mot de passe puis OTP, step-up authentifié, refresh, clôture de session et appareils |
+| Achat            | création/lecture d’Order, création/lecture de PaymentAttempt, reçu et fournisseurs opérationnels                        |
+| Paiement sandbox | fournisseur unique `SANDBOX_NEUTRAL` et webhook durable signé                                                           |
+| Bibliothèque     | `Entitlement`, contenu archivé représentable et descripteur acheté court                                                |
+| Preview mobile   | `PreviewGrant` anonyme puis échange contre un descripteur court                                                         |
+| Administration   | liste, création et édition d’artistes ; liste, création, édition, publication et archivage audio                        |
+| Média privé      | création, état et préparation d’un `MediaAsset`                                                                         |
 
 Le Web public peut lire le catalogue et le détail. Les opérations de preview,
 lecture et transaction sont explicitement réservées au mobile. Les opérations
 administratives exigent un access token admin court et des rôles explicites ;
 le cookie de refresh ne peut jamais authentifier directement une mutation. Le
 webhook exige la signature sandbox contractée.
+
+L’identité client accepte exclusivement un téléphone international E.164 ; le
+sélecteur produit utilise `+223` comme défaut et exemple, sans accepter un
+numéro local ambigu. Inscription et connexion vérifient d’abord téléphone et
+mot de passe, puis émettent un challenge OTP. Sa vérification crée la seule
+session active et révoque atomiquement les sessions actives antérieures du
+client. Le step-up OTP est une opération distincte, protégée par
+`customerBearer`, qui renforce la session existante sans en créer une autre.
+Le challenge persiste uniquement des preuves serveur bornées : hash du code,
+hash de mot de passe pending pour l’inscription, horodatage de vérification du
+mot de passe, hash d’empreinte et plateforme de l’appareil, ainsi que les liens
+client/session composites requis par le login ou le step-up. La réponse
+d’inscription reste indistinguable quand un téléphone existe déjà.
+L’access token cible dure 15 minutes ; le refresh dure 30 jours, tourne à usage
+unique et un replay révoque toute sa famille de session. Ces règles sont des
+contrats et préconditions : aucun runtime d’authentification n’est livré ici.
 
 ## Machines d’état et transitions
 
@@ -177,6 +193,17 @@ propriétaire du contenu.
 15. Les clés d’idempotence sont bornées et uniques par client ou admin.
 16. Aucun replay idempotent ne persiste un descripteur ou token brut ; la
     préparation admin réémet une capability courte pour le même asset.
+17. Une `CustomerSession` lie par clé composite le même `customerId` que son
+    `CustomerDevice`, avec `Restrict`.
+18. Un `PurchasedPlaybackDescriptor` lie le même client à son `Entitlement` et
+    à son appareil ; une `IdempotencyRecord` ne peut référencer qu’une `Order`
+    du même client. Les clés candidates composites sont obligatoires.
+19. Toute réponse métier 2xx avec corps utilise exactement `{data, meta}` ;
+    toute erreur utilise `{error: {code, message, details}}`. Les opérations
+    publiques, `customerBearer`, admin et provider sont des ensembles fermés.
+20. Les alternatives de sécurité OpenAPI sont unitaires : aucune branche OR
+    anonyme, sécurité racine implicite ou opération métier non classée n’est
+    admise. `details` est un objet fermé limité à un vocabulaire non sensible.
 
 Les contraintes relationnelles et d’unicité disponibles sans SQL sont
 exprimées dans la cible Prisma. Les relations financières utilisent
@@ -197,17 +224,21 @@ contenir URL média brute, clé d’objet privé, référence Mux interne ou sec
 fournisseur. Les descripteurs portent les règles contractuelles
 `non-persistable` et `non-loggable`.
 
-Les erreurs client utilisent une enveloppe stable avec code sûr, message en
-français simple, identifiant de requête et détails non sensibles. Chaque
-opération déclare ses codes et chaque code possède un statut HTTP stable. Les
-trois conflits de publication sont distincts et bornés.
+Toute réponse métier réussie avec corps utilise une enveloppe stable
+`{data, meta}` ; `meta` transporte au minimum l’identifiant de requête pour les
+réponses unitaires, et la pagination cursor pour les listes. Les erreurs client
+utilisent `{error: {code, message, details}}`, avec détails structurés non
+sensibles et identifiant de requête de corrélation. Chaque opération déclare ses
+codes et chaque code possède un statut HTTP stable. Les trois conflits de
+publication sont distincts et bornés.
 
 ## Génération et preuve
 
 `scripts/openapi/generate-contract-types.mjs` produit
 `packages/contracts/src/generated/audio-pilot.ts`. Sans `--write`, il échoue si
 le fichier généré diverge. Le validateur OpenAPI vérifie la surface exacte, les
-références, les erreurs, les clients autorisés, les invariants média/finance et
+références, les enveloppes, les ensembles exacts d’authentification, les clients
+autorisés, les invariants média/finance et les relations tenant composites de
 la structure Prisma. Les tests négatifs prouvent que les dérives critiques sont
 rejetées. L’algorithme pur
 `scripts/openapi/artist-earning-allocation.mjs` prouve l’arbitrage sans fournir

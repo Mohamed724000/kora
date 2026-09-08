@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/kora_colors.dart';
+import '../theme/kora_theme.dart';
 
 enum KoraActionVariant { primary, secondary, destructive }
 
@@ -28,18 +29,25 @@ class KoraActionButton extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
-              Icon(icon, size: 20),
-              const SizedBox(width: 8),
+              Icon(icon, size: KoraDimensions.iconMd),
+              const SizedBox(width: KoraSpacing.sm),
               Flexible(child: Text(label)),
             ],
           );
     final style = ButtonStyle(
-      minimumSize: WidgetStateProperty.all(const Size(48, 48)),
+      minimumSize: WidgetStateProperty.all(
+        const Size.square(KoraDimensions.interactive),
+      ),
       padding: WidgetStateProperty.all(
-        const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        const EdgeInsets.symmetric(
+          horizontal: KoraSpacing.xxl,
+          vertical: KoraSpacing.lg,
+        ),
       ),
       shape: WidgetStateProperty.all(
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(KoraRadii.control),
+        ),
       ),
     );
 

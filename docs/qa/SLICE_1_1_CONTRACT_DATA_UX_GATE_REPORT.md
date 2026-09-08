@@ -21,6 +21,37 @@ commencé. Cette mention est un instantané historique de prépublication ; tout
 statut ultérieur de publication doit être constaté dans l’historique Git et dans
 la Draft PR correspondante.
 
+## État correctif S1.1-R1 du 2026-09-08
+
+La revue CTO finale de la Draft PR #36 a demandé neuf corrections locales. R1
+sépare inscription, connexion, vérification OTP et step-up ; impose le mot de
+passe avant OTP, les téléphones E.164, les classes exactes de sécurité et les
+enveloppes fermées `{data, meta}` / `{error: {code, message, details}}`. Les
+schémas publics d’authentification, leurs enveloppes et la liste bornée des
+appareils sont fermés sur leurs propriétés exactes ; les variantes de secrets
+serveur combinant credentials, mots de passe, tokens, codes ou empreintes avec
+`hash` ou `digest` sont rejetées. Le contexte OTP cible conserve hashes, preuve
+password, appareil, client et session selon le parcours, sans oracle d’existence
+de compte. Les relations Prisma
+session/appareil, descripteur/droit/appareil et idempotence/commande sont
+composites par client avec `Restrict` et tests négatifs dédiés.
+
+Côté Flutter, les annonces succès paiement et hors connexion sont des régions
+vivantes, le moyen de paiement est un radio exclusif actionnable et les lecteurs
+annoncent une seule fois titre, artiste et état dérivé de `isPlaying`,
+séparément de l’action, y compris à vide. Les
+dimensions, espacements, rayons et métriques typographiques sont centralisés
+dans les tokens existants. L’intégration complète `AppLocalizations` est
+formellement différée au lot runtime mobile : R1 n’ajoute ni manifeste,
+dépendance, infrastructure i18n ni nouvelle chaîne visible imposée au runtime ;
+les nouveaux libellés d’état sont fournis par l’appelant.
+
+Lors du point de validation prépublication du 2026-09-08, S1.1-R1 était
+uniquement présent dans le worktree local, non indexé, non commité et non publié.
+Cette mention constitue un instantané historique ; tout état de publication
+ultérieur est établi par l’historique Git et la PR #36. S1.2 restait non démarré
+à cet instant.
+
 ## Décisions acceptées
 
 ### Fractions de FCFA — Product Owner
@@ -69,8 +100,11 @@ Exemple obligatoire validé :
 
 ## Contrats et modèle
 
-- OpenAPI : 29 chemins, 35 opérations, 76 schémas et 11 invariants formels ;
+- OpenAPI R1 : 32 chemins, 38 opérations, 85 schémas, 14 invariants et 21
+  préconditions transactionnelles formelles ;
 - Prisma : 30 modèles cibles, sans migration ni seed ;
+- `OtpChallenge` : contexte serveur borné, hash OTP et appareil, preuve de mot
+  de passe, password hash pending et liens client/session selon le `purpose` ;
 - `ArtistSettlement` : agrégat par artiste et Settlement, séquence `BigInt`,
   prédécesseur unique du même artiste, carry entrant/sortant et totaux exacts ;
 - `ArtistEarning` : base et BPS gelés, numérateur exact, lien composite vers le
@@ -134,58 +168,83 @@ pendant M0.3 et le présent rapport obligatoire.
 - `docs/security/THREAT_MODEL.md`
 - `docs/ux/SLICE_1_1_AUDIO_EXPERIENCE_SYSTEM.md`
 
+### Diff local exact S1.1-R1
+
+R1 modifie exactement 23 des 40 fichiers S1.1 publiés, sans nouveau fichier :
+
+- `apps/api/prisma/schema.prisma`
+- `apps/mobile/lib/src/design_system/kora_actions.dart`
+- `apps/mobile/lib/src/design_system/kora_audio.dart`
+- `apps/mobile/lib/src/design_system/kora_badges.dart`
+- `apps/mobile/lib/src/design_system/kora_experience_state.dart`
+- `apps/mobile/lib/src/design_system/kora_forms.dart`
+- `apps/mobile/lib/src/design_system/kora_payment.dart`
+- `apps/mobile/lib/src/design_system/kora_player.dart`
+- `apps/mobile/lib/src/theme/kora_colors.dart`
+- `apps/mobile/lib/src/theme/kora_theme.dart`
+- `apps/mobile/test/audio_pilot_design_system_test.dart`
+- `docs/api/openapi.yaml`
+- `docs/architecture/SLICE_1_1_AUDIO_PILOT_CONTRACT_AND_DATA_MODEL.md`
+- `docs/governance/DECISION_LOG.md`
+- `docs/qa/REQUIREMENTS_TRACEABILITY_MATRIX.md`
+- `docs/qa/SLICE_1_1_CONTRACT_DATA_UX_GATE_REPORT.md`
+- `docs/roadmap/MVP_EXECUTION_PLAN.md`
+- `docs/security/THREAT_MODEL.md`
+- `docs/ux/SLICE_1_1_AUDIO_EXPERIENCE_SYSTEM.md`
+- `packages/contracts/README.md`
+- `packages/contracts/src/generated/audio-pilot.ts`
+- `scripts/openapi/validate-openapi.mjs`
+- `scripts/openapi/validate-openapi.test.mjs`
+
+Les 17 autres fichiers de la Draft PR, dont le golden PNG, restent strictement
+inchangés. Aucun manifeste, lockfile, workflow, dépendance, migration ou code
+applicatif runtime n’entre dans R1.
+
 ## Validations réelles
 
 Environnement : Node `22.18.0`, npm `10.9.3`, Flutter `3.44.1`, Dart `3.12.1`,
 Prisma `7.9.1` et Docker Engine `29.4.2`.
 
-Les validations complètes ci-dessous ont été obtenues avant les corrections
-ciblées issues des revues. Elles n’ont pas été relancées ensuite lorsque leur
-périmètre n’était pas affecté.
+Les validations complètes R1 ci-dessous ont été obtenues une seule fois avant
+les corrections causales des contre-revues finales. Elles n’ont pas été rejouées
+lorsque leur périmètre n’était pas affecté.
 
-| Contrôle                                 | Résultat                                                                                               |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| 2 × `npm ci --ignore-scripts`            | PASS — 2 × 1 135 paquets ; lockfile stable                                                             |
-| `npm audit --audit-level=low`            | PASS — 0 vulnérabilité                                                                                 |
-| `npm audit --omit=dev --audit-level=low` | PASS — 0 vulnérabilité                                                                                 |
-| `npm ls --all`                           | PASS — code 0                                                                                          |
-| `npm run licenses`                       | PASS — 1 129 paquets, 0 non déclaré, 0 non approuvé                                                    |
-| `npm run security:scan`                  | PASS — 333 fichiers, historique actif, 52 immuables, 5 scripts qualifiés                               |
-| Prisma format/validate                   | PASS — schéma valide                                                                                   |
-| Prisma generate × 2                      | PASS — empreinte stable `8D15728BF51876D8A933DF7B3E9DF597972BE6A301EF716447D152ADD4CE62B1`             |
-| `npm run openapi:validate`               | PASS — 29 chemins, 76 schémas, 11 invariants, 30 modèles                                               |
-| génération des types sans `--write`      | PASS — types courants, aucune dérive                                                                   |
-| tests OpenAPI/Prisma/carry ciblés        | PASS initial — 64/64                                                                                   |
-| tests d’outillage complets               | PASS initial — 134/134                                                                                 |
-| lint global                              | PASS — six workspaces npm + Flutter analyze                                                            |
-| typecheck global                         | PASS — six workspaces npm + Flutter analyze                                                            |
-| tests globaux npm                        | PASS initial — Web 10, Admin 13, API 22, Contracts 2, Config 1, UI 10                                  |
-| Flutter tests et goldens                 | PASS initial — 18/18, dont galerie audio 341 px                                                        |
-| builds applicables                       | PASS — Web, Admin, API, Contracts, Config et UI                                                        |
-| APK Flutter debug                        | PASS — 187 955 067 octets ; SHA-256 `328B48853226F4E94E65342056B274FD1498861447AEDAF5118D28481C2AB2EB` |
-| infrastructure complète                  | PASS — persistance, reset ciblé, idempotence, ressources étrangères intactes                           |
-| santé API                                | PASS — live/ready, pannes et reprises Redis/PostgreSQL, PID stable, aucune fuite                       |
-| `git fsck --full`                        | PASS — aucune corruption ; objets inaccessibles historiques uniquement                                 |
+| Contrôle R1 complet       | Résultat                                                                                               |
+| ------------------------- | ------------------------------------------------------------------------------------------------------ |
+| OpenAPI/Prisma/auth ciblé | PASS — 93/93                                                                                           |
+| Flutter ciblé             | PASS — 11/11                                                                                           |
+| scanner officiel          | PASS — 334 fichiers                                                                                    |
+| outillage complet         | PASS — 163/163                                                                                         |
+| Prisma validate/generate  | PASS                                                                                                   |
+| lint et typecheck globaux | PASS                                                                                                   |
+| tests globaux             | PASS — Web 10, Admin 13, API 22, Contracts 2, Config 1, UI 11 et Flutter 22                            |
+| builds npm applicables    | PASS — Web, Admin, API, Contracts, Config et UI                                                        |
+| APK Flutter debug         | PASS — 187 955 067 octets ; SHA-256 `328B48853226F4E94E65342056B274FD1498861447AEDAF5118D28481C2AB2EB` |
+| licences                  | PASS — 1 129 paquets, 0 non déclaré, 0 non approuvé                                                    |
 
-### Relances ciblées après findings
+### Relances ciblées après contre-revue
 
-| Contrôle ciblé                                       | Résultat                                                     |
-| ---------------------------------------------------- | ------------------------------------------------------------ |
-| format Dart des composants et du test concernés      | PASS                                                         |
-| analyse Flutter ciblée sur 4 fichiers                | PASS — aucune anomalie                                       |
-| test Flutter `audio_pilot_design_system_test.dart`   | PASS — 8/8 ; libellé unique et `SemanticsAction.tap` prouvés |
-| format, lint et typecheck du workspace UI            | PASS                                                         |
-| test UI `audio-admin.test.tsx`                       | PASS — 7/7 ; deux instances et associations ARIA vérifiées   |
-| format des validateurs OpenAPI/Prisma                | PASS                                                         |
-| tests OpenAPI/Prisma/carry ciblés après durcissement | PASS — 70/70                                                 |
-| `git diff --check` final                             | PASS                                                         |
+| Contrôle directement affecté                     | Résultat                                                      |
+| ------------------------------------------------ | ------------------------------------------------------------- |
+| format Dart des 4 fichiers concernés             | PASS — aucune dérive                                          |
+| analyse Flutter ciblée sur 4 fichiers            | PASS — aucune anomalie                                        |
+| test Flutter `audio_pilot_design_system_test`    | PASS — 11/11 ; états/actions et absence de doublon prouvés    |
+| format OpenAPI, validateurs, Prisma et documents | PASS                                                          |
+| tests OpenAPI/Prisma/auth/enveloppes             | PASS — 147/147                                                |
+| `npm run openapi:validate`                       | PASS — 32 chemins, 85 schémas, 14 invariants et 30 modèles    |
+| génération puis contrôle de dérive des types     | PASS — types régénérés depuis le contrat final, aucune dérive |
+| Prisma validate/generate                         | PASS — schéma cible valide, client Prisma 7.9.1 généré        |
+| lint et typecheck du workspace Contracts         | PASS                                                          |
+| scanner officiel final                           | PASS — 334 fichiers, historique inclus                        |
+| Prettier, chronologie et références relatives    | PASS — 8 documents, 9 références, 0 brisée                    |
+| `git diff --check`                               | PASS                                                          |
 
-Les installations npm, audits, licences, suites globales, builds, APK et
-vérifications d’infrastructure n’ont pas été relancés après ces
-corrections ciblées. Les manifestes, lockfiles, dépendances, contrats générés
-n’ont pas changé. Les changements Flutter, UI et validateurs sont strictement
-localisés et couverts par les analyses et tests ciblés ci-dessus ; les résultats
-complets antérieurs restent les preuves du gate initial.
+Les deux installations npm déterministes, audits réseau, `npm ls --all`, suites
+globales, six builds, APK, licences et infrastructure n’ont pas été relancés
+après les corrections ciblées finales. Aucun manifeste, lockfile, dépendance,
+workflow ou golden n’a changé ; ces preuves publiées ou acquises avant la
+contre-revue restent applicables. Le contrat TypeScript a en revanche été
+régénéré parce que son OpenAPI source a changé, puis sa dérive a été contrôlée.
 
 Empreintes de lockfiles, inchangées avant et après les validations :
 
@@ -197,29 +256,36 @@ Empreintes de lockfiles, inchangées avant et après les validations :
 ## Revues indépendantes
 
 Les trois revues et leurs contre-vérifications ont été menées en lecture seule.
-Le reviewer architecture initial ayant été interrompu par une limite d’usage,
-un unique reviewer de remplacement a été utilisé comme autorisé.
 
-1. **Architecture, OpenAPI et Prisma — PASS.** Le remplacement confirme le calcul
-   `BigInt`, la conservation, la chaîne de carry, les relations composites et
-   `Restrict`, ainsi que l’absence de migration, seed ou runtime financier. Les
-   limites SQL/runtime futures sont explicitement documentées.
-2. **Finance, sécurité et intégrité — PASS après correction.** La revue avait
-   démontré que les champs critiques de `SettlementArtistAllocationAudit`
-   pouvaient devenir facultatifs et que le gate ledger n’imposait pas totalement
-   l’immutabilité et la relation compensatoire. Le validateur impose maintenant
-   la liste `required` exacte, les types et patterns critiques,
-   l’immutabilité de `LedgerTransactionGroup`/`LedgerPosting`, la compensation
-   avec `Restrict` et les relations de posting avec `Restrict`. Six tests
-   négatifs ont été ajoutés ; la contre-revue et les 70/70 tests sont verts,
-   sans affaiblissement d’un gate antérieur.
+1. **Architecture, OpenAPI et Prisma — PASS après correction.** La revue a
+   demandé le contexte serveur persistant de chaque challenge OTP, les clés
+   candidates composites manquantes, l’inventaire exact des opérations, la
+   fermeture des schémas publics d’authentification et des enveloppes. Les
+   relations client/session/appareil/commande et leurs suppressions `Restrict`
+   sont maintenant imposées par le validator et ses tests négatifs. La
+   contre-revue confirme aussi la dérive nulle des types générés, l’absence de
+   migration ou de runtime et la cohérence des 30 modèles cibles.
+2. **Finance, sécurité et intégrité — PASS après deux corrections.** La première
+   revue a démontré des variantes anonymes sur les classes de sécurité, des
+   ajouts sur les routes health, des alias d’oracle d’existence de compte et des
+   surfaces d’erreur trop extensibles. Une première contre-revue a ensuite
+   reproduit quatre contournements du schéma public `Session` : `password`,
+   `credentialHash`, `refreshTokenDigest` et `passwordHashV2`. Les opérations,
+   codes publics, détails d’erreur, schémas et enveloppes auth sont désormais
+   exacts ; la détection couvre les variantes `hash`/`digest`. Les quatre
+   reproductions sont rejetées et la contre-revue finale ne relève plus aucun
+   finding.
 3. **UX, accessibilité, gouvernance et périmètre — PASS après correction.** La
-   revue avait trouvé les boutons Flutter de reprise masqués par
-   `ExcludeSemantics` et l’identifiant ARIA fixe de `PublicationChecklist`. Les
-   contenus statiques et actions sont maintenant des nœuds sémantiques distincts,
-   `KoraActionButton` expose un seul libellé et une action, et les checklists
-   utilisent `useId()` compatible SSR/hydratation. Les tests ciblés prouvent
-   l’action accessible et l’unicité des associations ARIA.
+   revue a demandé que l’état annoncé des lecteurs soit dérivé de `isPlaying`,
+   que le lecteur vide sépare contenu statique et action, que les deux états du
+   radio soient prouvés et que les seuils typographiques soient centralisés. Les
+   tests Flutter confirment l’absence d’annonce dupliquée, les actions accessibles
+   et les états radio exclusifs. La contre-revue confirme également les 23
+   fichiers R1, les comptes OpenAPI, le report formel d’`AppLocalizations` et la
+   cohérence roadmap/Threat Model.
+
+La suite ciblée finale conclut **147/147** et le validator réel conclut PASS sur
+32 chemins, 85 schémas, 14 invariants et 30 modèles cibles.
 
 Aucun désaccord subsiste entre les revues et la vérification personnelle. Tous
 les findings démontrés ont été corrigés dans le périmètre S1.1 et contre-vérifiés.
@@ -245,7 +311,8 @@ les findings démontrés ont été corrigés dans le périmètre S1.1 et contre-
 Ces constats sont la preuve historique de prépublication. L’état Git et GitHub
 postérieur fait foi dans l’historique Git et dans la Draft PR correspondante.
 
-## Verdict de l’instantané local du 2026-09-07
+## Verdict de l’instantané historique prépublication S1.1-R1 du 2026-09-08
 
-**S1.1 FINANCIAL CARRY AND DATA INTEGRITY IMPLEMENTED — CONTRACT DATA UX GATE
-VALIDATED LOCALLY — READY FOR CTO COMMIT DECISION — S1.2 NOT STARTED**
+**S1.1-R1 AUTH CONTRACT TENANT ISOLATION API ENVELOPES AND ACCESSIBILITY GATES
+VALIDATED LOCALLY — READY FOR CTO COMMIT DECISION — PR #36 DRAFT — S1.2 NOT
+STARTED**

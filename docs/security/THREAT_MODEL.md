@@ -49,7 +49,7 @@ financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
 - corrélation des requêtes et logs Pino avec redaction des en-têtes, champs et
   chaînes de message sensibles ; le champ `msg` Nest reste catégoriel et fixe ;
 - avant S1.1, client Prisma vide et frontière de contrats explicitement vide ;
-- surface OpenAPI S1.1 de 29 chemins et 35 opérations, sans contrôleur ni
+- surface OpenAPI S1.1 de 32 chemins et 38 opérations, sans contrôleur
   consommateur runtime ;
 - modèle Prisma cible S1.1 à 30 modèles, sans migration, base modifiée ni seed ;
 - types audio générés depuis OpenAPI avec contrôle de dérive ;
@@ -214,11 +214,28 @@ métier ou runtime.
 - KMS, secrets production et isolation environnements : gate production.
 - Tests appareils réels, faible mémoire/réseau et anti-capture : gate bêta.
 - Pentest, charge, restauration et audit financier : gate production.
-- S1.1 spécifie `customerBearer`, bearer admin court avec RBAC explicite et
-  signature webhook sandbox. Un cookie de refresh admin ne peut pas
+- S1.1 spécifie une inscription et une connexion distinctes : téléphone E.164
+  et mot de passe sont vérifiés avant l’OTP. La vérification crée la seule
+  session client active et la révocation des sessions actives antérieures doit
+  être atomique. Le refresh est rotatif, à usage unique ; son replay révoque la
+  famille. Le step-up OTP est distinct, exige une session `customerBearer`
+  existante et ne crée pas de nouvelle session. Les ensembles public,
+  `customerBearer`, bearer admin court avec RBAC explicite et signature webhook
+  sandbox sont fermés et validés. Un cookie de refresh admin ne peut pas
   authentifier directement une mutation. Le lot n’implémente ni émission,
   rotation, validation, rate limit ni révocation ; les lots runtime doivent
   fournir leurs tests d’abus avant usage.
+- Le contexte OTP cible conserve seulement les hashes du code, de l’empreinte
+  appareil et, pour l’inscription, du mot de passe pending. L’horodatage de
+  vérification password et les relations composites client/session lient le
+  challenge au parcours initial ; les sorties publiques ne distinguent pas un
+  téléphone déjà connu. Les contraintes dépendantes du `purpose` restent des
+  préconditions transactionnelles à implémenter et tester dans le runtime.
+- Les réponses métier avec corps sont contractées sous `{data, meta}` et les
+  erreurs sous `{error: {code, message, details}}`. Le validateur parcourt les
+  réponses de chaque opération, exige des objets fermés et limite `details` à
+  trois champs non sensibles. Il rejette aussi les alternatives OR anonymes,
+  les sécurités racine implicites et les opérations métier non classées.
 - Les clés d’objet privé et références fournisseur existent uniquement dans le
   modèle serveur cible. Le validateur interdit leur exposition contractuelle ;
   le futur mapping ORM/API devra conserver cette frontière avec des tests de
@@ -230,6 +247,11 @@ métier ou runtime.
 - Les records d’idempotence client/admin ne stockent aucun body. Un replay de
   préparation média retrouve le même asset et réémet une capability courte,
   sans persister ni rejouer le token brut.
+- Les sessions et appareils client, les descripteurs achetés avec leurs droits
+  et appareils, ainsi que les records d’idempotence avec leurs commandes sont
+  liés par `customerId` composite et `Restrict`. Les tests négatifs retirent
+  chaque liaison séparément pour prouver que le gate refuse tout croisement de
+  tenant. La migration et les transactions d’application restent futures.
 - Le règlement artiste est borné par la politique versionnée
   `FLOOR_SETTLEMENT_WITH_ARTIST_CARRY_V1` : arithmétique `BigInt`, floor des
   FCFA payables et reliquat de numérateur conservé pour le même artiste. Un

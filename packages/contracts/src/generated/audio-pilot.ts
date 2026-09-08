@@ -6,8 +6,11 @@ export const audioPilotPaths = [
   '/health/ready',
   '/api/v1/catalog/audio',
   '/api/v1/catalog/audio/{contentId}',
-  '/api/v1/auth/otp/challenges',
+  '/api/v1/auth/register',
+  '/api/v1/auth/login',
   '/api/v1/auth/otp/challenges/{challengeId}/verify',
+  '/api/v1/auth/step-up/challenges',
+  '/api/v1/auth/step-up/challenges/{challengeId}/verify',
   '/api/v1/auth/sessions/refresh',
   '/api/v1/auth/sessions/current',
   '/api/v1/auth/devices',
@@ -78,6 +81,10 @@ export type CursorMeta = {
   readonly nextCursor: string | null;
 };
 
+export type ResponseMeta = {
+  readonly requestId: string;
+};
+
 export type LivenessResponse = {
   readonly status: 'live';
 };
@@ -101,9 +108,11 @@ export type ErrorCode =
   | 'AUTH_REQUIRED'
   | 'AUTH_SESSION_REVOKED'
   | 'AUTH_REFRESH_REUSED'
+  | 'AUTH_INVALID_CREDENTIALS'
   | 'OTP_INVALID'
   | 'OTP_EXPIRED'
   | 'OTP_TOO_MANY_ATTEMPTS'
+  | 'OTP_ALREADY_CONSUMED'
   | 'CONTENT_NOT_FOUND'
   | 'CONTENT_MEDIA_NOT_READY'
   | 'ORDER_NOT_FOUND'
@@ -128,10 +137,25 @@ export type ErrorCode =
   | 'ARTIST_NOT_FOUND'
   | 'ARTIST_CONFLICT';
 
+export type ErrorDetails = {
+  readonly field?: string;
+  readonly reason?:
+    | 'CONFLICT'
+    | 'EXPIRED'
+    | 'INVALID_FORMAT'
+    | 'INVALID_STATE'
+    | 'NOT_AVAILABLE'
+    | 'OUT_OF_RANGE'
+    | 'RATE_LIMITED'
+    | 'REQUIRED';
+  readonly retryAfterSeconds?: number;
+};
+
 export type ErrorResponse = {
   readonly error: {
     readonly code: ErrorCode;
     readonly message: string;
+    readonly details: ErrorDetails;
     readonly retryable?: boolean;
   };
   readonly requestId: string;
@@ -141,6 +165,7 @@ export type PublishConflictError = {
   readonly error: {
     readonly code: 'CONTENT_MEDIA_NOT_READY' | 'IDEMPOTENCY_CONFLICT' | 'INVALID_STATE_TRANSITION';
     readonly message: string;
+    readonly details: ErrorDetails;
     readonly retryable?: boolean;
   };
   readonly requestId: string;
@@ -184,31 +209,62 @@ export type AudioCatalogPage = {
 
 export type AudioContentEnvelope = {
   readonly data: AudioContentDetail;
+  readonly meta: ResponseMeta;
 };
 
-export type MaliPhone = string;
+export type E164Phone = string;
 
-export type OtpChallengeRequest = {
-  readonly phone: MaliPhone;
-  readonly purpose: 'REGISTER' | 'LOGIN' | 'STEP_UP';
+export type CustomerPassword = string;
+
+export type CustomerDeviceRegistration = {
+  readonly fingerprint: string;
+  readonly platform: 'ANDROID' | 'IOS';
+};
+
+export type RegisterCustomerRequest = {
+  readonly phone: E164Phone;
+  readonly password: CustomerPassword;
+  readonly device: CustomerDeviceRegistration;
+};
+
+export type LoginCustomerRequest = {
+  readonly phone: E164Phone;
+  readonly password: CustomerPassword;
+  readonly device: CustomerDeviceRegistration;
 };
 
 export type OtpChallenge = {
   readonly challengeId: Identifier;
   readonly expiresAt: Timestamp;
   readonly retryAfterSeconds: number;
+  readonly purpose: 'REGISTER' | 'LOGIN' | 'STEP_UP';
 };
 
 export type OtpChallengeEnvelope = {
   readonly data: OtpChallenge;
+  readonly meta: ResponseMeta;
 };
 
 export type OtpVerificationRequest = {
   readonly code: string;
-  readonly device: {
-    readonly fingerprint: string;
-    readonly platform: 'ANDROID' | 'IOS';
-  };
+};
+
+export type StepUpChallengeRequest = {
+  readonly purpose: 'ACCOUNT_SECURITY' | 'ARTIST_PAYOUT';
+};
+
+export type StepUpVerificationRequest = {
+  readonly code: string;
+};
+
+export type StepUpVerification = {
+  readonly sessionId: Identifier;
+  readonly verifiedAt: Timestamp;
+};
+
+export type StepUpVerificationEnvelope = {
+  readonly data: StepUpVerification;
+  readonly meta: ResponseMeta;
 };
 
 export type RefreshSessionRequest = {
@@ -226,6 +282,7 @@ export type Session = {
 
 export type SessionEnvelope = {
   readonly data: Session;
+  readonly meta: ResponseMeta;
 };
 
 export type DeviceSummary = {
@@ -238,6 +295,7 @@ export type DeviceSummary = {
 
 export type DeviceListEnvelope = {
   readonly data: ReadonlyArray<DeviceSummary>;
+  readonly meta: ResponseMeta;
 };
 
 export type OrderState = 'CREATED' | 'PAYMENT_PENDING' | 'SETTLED' | 'CANCELLED';
@@ -272,6 +330,7 @@ export type Order = {
 
 export type OrderEnvelope = {
   readonly data: Order;
+  readonly meta: ResponseMeta;
 };
 
 export type OrderPage = {
@@ -308,6 +367,7 @@ export type PaymentAttempt = {
 
 export type PaymentAttemptEnvelope = {
   readonly data: PaymentAttempt;
+  readonly meta: ResponseMeta;
 };
 
 export type PaymentAttemptPage = {
@@ -323,6 +383,7 @@ export type OperationalPaymentProvider = {
 
 export type OperationalProviderListEnvelope = {
   readonly data: ReadonlyArray<OperationalPaymentProvider>;
+  readonly meta: ResponseMeta;
 };
 
 export type PaymentWebhookRequest = {
@@ -342,6 +403,7 @@ export type WebhookAccepted = {
 
 export type WebhookAcceptedEnvelope = {
   readonly data: WebhookAccepted;
+  readonly meta: ResponseMeta;
 };
 
 export type Receipt = {
@@ -355,6 +417,7 @@ export type Receipt = {
 
 export type ReceiptEnvelope = {
   readonly data: Receipt;
+  readonly meta: ResponseMeta;
 };
 
 export type LibraryAudioItem = {
@@ -381,6 +444,7 @@ export type PreviewGrant = {
 
 export type PreviewGrantEnvelope = {
   readonly data: PreviewGrant;
+  readonly meta: ResponseMeta;
 };
 
 export type PurchasedPlaybackRequest = {
@@ -396,6 +460,7 @@ export type PlaybackDescriptor = {
 
 export type PlaybackDescriptorEnvelope = {
   readonly data: PlaybackDescriptor;
+  readonly meta: ResponseMeta;
 };
 
 export type UpsertArtistRequest = {
@@ -411,6 +476,7 @@ export type AdminArtist = {
 
 export type AdminArtistEnvelope = {
   readonly data: AdminArtist;
+  readonly meta: ResponseMeta;
 };
 
 export type AdminArtistPage = {
@@ -455,6 +521,7 @@ export type AdminAudioContent = {
 
 export type AdminAudioEnvelope = {
   readonly data: AdminAudioContent;
+  readonly meta: ResponseMeta;
 };
 
 export type AdminAudioPage = {
@@ -484,6 +551,7 @@ export type MediaAssetStatus = {
 
 export type MediaAssetEnvelope = {
   readonly data: MediaAssetStatus;
+  readonly meta: ResponseMeta;
 };
 
 export type MediaPreparation = {
@@ -494,4 +562,5 @@ export type MediaPreparation = {
 
 export type MediaPreparationEnvelope = {
   readonly data: MediaPreparation;
+  readonly meta: ResponseMeta;
 };

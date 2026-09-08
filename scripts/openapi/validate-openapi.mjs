@@ -10,8 +10,11 @@ export const EXPECTED_PATHS = [
   "/health/ready",
   "/api/v1/catalog/audio",
   "/api/v1/catalog/audio/{contentId}",
-  "/api/v1/auth/otp/challenges",
+  "/api/v1/auth/register",
+  "/api/v1/auth/login",
   "/api/v1/auth/otp/challenges/{challengeId}/verify",
+  "/api/v1/auth/step-up/challenges",
+  "/api/v1/auth/step-up/challenges/{challengeId}/verify",
   "/api/v1/auth/sessions/refresh",
   "/api/v1/auth/sessions/current",
   "/api/v1/auth/devices",
@@ -37,6 +40,77 @@ export const EXPECTED_PATHS = [
   "/api/v1/admin/media-assets/{mediaAssetId}/prepare",
 ];
 
+const EXPECTED_OPERATIONS = new Map([
+  ["GET /health/live", "healthLiveness"],
+  ["GET /health/ready", "healthReadiness"],
+  ["GET /api/v1/catalog/audio", "listPublicAudioCatalog"],
+  ["GET /api/v1/catalog/audio/{contentId}", "getPublicAudioContent"],
+  ["POST /api/v1/auth/register", "registerCustomer"],
+  ["POST /api/v1/auth/login", "loginCustomer"],
+  [
+    "POST /api/v1/auth/otp/challenges/{challengeId}/verify",
+    "verifyCustomerOtp",
+  ],
+  ["POST /api/v1/auth/step-up/challenges", "createCustomerStepUpChallenge"],
+  [
+    "POST /api/v1/auth/step-up/challenges/{challengeId}/verify",
+    "verifyCustomerStepUp",
+  ],
+  ["POST /api/v1/auth/sessions/refresh", "refreshCustomerSession"],
+  ["DELETE /api/v1/auth/sessions/current", "revokeCurrentCustomerSession"],
+  ["GET /api/v1/auth/devices", "listCustomerDevices"],
+  ["GET /api/v1/orders", "listCustomerOrders"],
+  ["POST /api/v1/orders", "createCustomerOrder"],
+  ["GET /api/v1/orders/{orderId}", "getCustomerOrder"],
+  ["GET /api/v1/orders/{orderId}/payment-attempts", "listPaymentAttempts"],
+  ["POST /api/v1/orders/{orderId}/payment-attempts", "createPaymentAttempt"],
+  [
+    "GET /api/v1/orders/{orderId}/payment-attempts/{paymentAttemptId}",
+    "getPaymentAttempt",
+  ],
+  ["GET /api/v1/orders/{orderId}/receipt", "getOrderReceipt"],
+  ["GET /api/v1/payment-providers", "listOperationalPaymentProviders"],
+  ["POST /api/v1/payment-webhooks/{provider}", "acceptPaymentWebhook"],
+  ["GET /api/v1/library/audio", "listEntitledAudioLibrary"],
+  [
+    "POST /api/v1/mobile/audio/{contentId}/preview-grants",
+    "createAnonymousPreviewGrant",
+  ],
+  [
+    "POST /api/v1/mobile/preview-grants/{previewGrantId}/playback-descriptors",
+    "exchangePreviewGrantForPlaybackDescriptor",
+  ],
+  [
+    "POST /api/v1/mobile/audio/{contentId}/playback-descriptors",
+    "createPurchasedPlaybackDescriptor",
+  ],
+  ["GET /api/v1/admin/artists", "listAdminArtists"],
+  ["POST /api/v1/admin/artists", "createAdminArtist"],
+  ["GET /api/v1/admin/artists/{artistId}", "getAdminArtist"],
+  ["PATCH /api/v1/admin/artists/{artistId}", "updateAdminArtist"],
+  ["GET /api/v1/admin/audio-content", "listAdminAudioContent"],
+  ["POST /api/v1/admin/audio-content", "createAdminAudioContent"],
+  ["GET /api/v1/admin/audio-content/{contentId}", "getAdminAudioContent"],
+  ["PATCH /api/v1/admin/audio-content/{contentId}", "updateAdminAudioContent"],
+  [
+    "POST /api/v1/admin/audio-content/{contentId}/publish",
+    "publishAdminAudioContent",
+  ],
+  [
+    "POST /api/v1/admin/audio-content/{contentId}/archive",
+    "archiveAdminAudioContent",
+  ],
+  ["POST /api/v1/admin/media-assets", "createPrivateMediaAsset"],
+  [
+    "GET /api/v1/admin/media-assets/{mediaAssetId}",
+    "getPrivateMediaAssetStatus",
+  ],
+  [
+    "POST /api/v1/admin/media-assets/{mediaAssetId}/prepare",
+    "preparePrivateMediaAssetUpload",
+  ],
+]);
+
 const REQUIRED_INVARIANTS = [
   "ORDER_PRECEDES_PAYMENT_ATTEMPT",
   "PAYMENT_ATTEMPT_APPEND_ONLY",
@@ -49,6 +123,9 @@ const REQUIRED_INVARIANTS = [
   "PREVIEW_GRANT_NEVER_ENTITLEMENT",
   "MEDIA_IDENTIFIERS_PRIVATE",
   "ARTIST_SETTLEMENT_CARRY_SAME_ARTIST_SINGLE_USE",
+  "CUSTOMER_AUTH_PASSWORD_THEN_OTP",
+  "CUSTOMER_SESSION_SINGLE_DEVICE",
+  "CUSTOMER_STEP_UP_REQUIRES_EXISTING_SESSION",
 ];
 
 const REQUIRED_TRANSACTION_PRECONDITIONS = [
@@ -65,7 +142,57 @@ const REQUIRED_TRANSACTION_PRECONDITIONS = [
   "ARTIST_EARNING_ALLOCATION_FOLLOWS_FLOOR_SETTLEMENT_WITH_ARTIST_CARRY_V1",
   "ARTIST_SETTLEMENT_EXACT_NUMERATOR_IS_CONSERVED",
   "SETTLEMENT_ARTIST_AND_PLATFORM_AMOUNTS_CONSERVE_DISTRIBUTABLE_CFA",
+  "AUTH_PASSWORD_VERIFICATION_PRECEDES_OTP_CHALLENGE",
+  "AUTH_PUBLIC_OUTCOMES_DO_NOT_REVEAL_ACCOUNT_EXISTENCE",
+  "AUTH_OTP_CHALLENGE_BINDS_HASHED_DEVICE_FINGERPRINT_AND_PLATFORM",
+  "AUTH_REGISTER_CHALLENGE_BINDS_PENDING_PASSWORD_HASH",
+  "AUTH_LOGIN_CHALLENGE_BINDS_PASSWORD_VERIFIED_CUSTOMER",
+  "AUTH_STEP_UP_CHALLENGE_BINDS_EXISTING_CUSTOMER_SESSION",
+  "AUTH_SESSION_CREATION_ATOMICALLY_REVOKES_PRIOR_ACTIVE_CUSTOMER_SESSIONS",
+  "AUTH_STEP_UP_REQUIRES_AND_PRESERVES_EXISTING_CUSTOMER_SESSION",
 ];
+
+const REQUIRED_AUTHENTICATION_POLICY = {
+  primaryFlow: "PHONE_PASSWORD_THEN_OTP",
+  registrationOperation: "registerCustomer",
+  loginOperation: "loginCustomer",
+  otpVerificationOperation: "verifyCustomerOtp",
+  stepUpFlow: "EXISTING_CUSTOMER_SESSION_THEN_OTP",
+  accessTokenLifetimeMinutes: 15,
+  refreshTokenLifetimeDays: 30,
+  refreshTokenUse: "SINGLE_USE_ROTATING",
+  refreshReplayResponse: "REVOKE_SESSION_FAMILY",
+  successfulLoginSessionPolicy:
+    "ATOMICALLY_REVOKE_ALL_PRIOR_ACTIVE_CUSTOMER_SESSIONS",
+};
+
+const PUBLIC_BUSINESS_OPERATIONS = new Set([
+  "listPublicAudioCatalog",
+  "getPublicAudioContent",
+  "registerCustomer",
+  "loginCustomer",
+  "verifyCustomerOtp",
+  "refreshCustomerSession",
+  "createAnonymousPreviewGrant",
+  "exchangePreviewGrantForPlaybackDescriptor",
+]);
+
+const CUSTOMER_BEARER_OPERATIONS = new Set([
+  "createCustomerStepUpChallenge",
+  "verifyCustomerStepUp",
+  "revokeCurrentCustomerSession",
+  "listCustomerDevices",
+  "listCustomerOrders",
+  "createCustomerOrder",
+  "getCustomerOrder",
+  "listPaymentAttempts",
+  "createPaymentAttempt",
+  "getPaymentAttempt",
+  "getOrderReceipt",
+  "listOperationalPaymentProviders",
+  "listEntitledAudioLibrary",
+  "createPurchasedPlaybackDescriptor",
+]);
 
 const ARTIST_EARNING_ALLOCATION_POLICY =
   "FLOOR_SETTLEMENT_WITH_ARTIST_CARRY_V1";
@@ -130,6 +257,8 @@ const HTTP_METHODS = new Set([
 
 const FORBIDDEN_PUBLIC_FIELD =
   /^(?:media|preview|playback|receipt|upload)?u(?:rl|ri)$|r2|mux|storage(?:object)?key|providersecret|providerassetref|rawpayload/i;
+const FORBIDDEN_PUBLIC_AUTH_HASH =
+  /^(?=.*(?:code|credential|fingerprint|password|secret|token))(?=.*(?:digest|hash)).*$/i;
 
 function fail(message) {
   throw new Error(`OpenAPI validation failed: ${message}`);
@@ -138,6 +267,29 @@ function fail(message) {
 function stableEqual(actual, expected) {
   return (
     JSON.stringify([...actual].sort()) === JSON.stringify([...expected].sort())
+  );
+}
+
+function isExactObjectSchema(schema, required, properties) {
+  return (
+    schema?.type === "object" &&
+    schema?.additionalProperties === false &&
+    stableEqual(schema?.required ?? [], required) &&
+    stableEqual(Object.keys(schema?.properties ?? {}), properties)
+  );
+}
+
+function hasExactSecurityRequirement(operation, scheme) {
+  const security = operation.security;
+  if (!Array.isArray(security) || security.length !== 1) return false;
+  const requirement = security[0];
+  return (
+    requirement !== null &&
+    typeof requirement === "object" &&
+    !Array.isArray(requirement) &&
+    stableEqual(Object.keys(requirement), [scheme]) &&
+    Array.isArray(requirement[scheme]) &&
+    requirement[scheme].length === 0
   );
 }
 
@@ -208,6 +360,7 @@ function hasParameter(document, operation, expectedName, expectedLocation) {
 }
 
 function validateOperationShape(document) {
+  const actualOperations = new Map();
   for (const [path, pathItem] of Object.entries(document.paths)) {
     const methods = Object.keys(pathItem).filter((key) =>
       HTTP_METHODS.has(key),
@@ -217,6 +370,10 @@ function validateOperationShape(document) {
     }
     for (const method of methods) {
       const operation = pathItem[method];
+      actualOperations.set(
+        `${method.toUpperCase()} ${path}`,
+        operation.operationId,
+      );
       if (!operation.operationId || !operation.summary) {
         fail(
           `${method.toUpperCase()} ${path} requires operationId and summary`,
@@ -231,9 +388,46 @@ function validateOperationShape(document) {
       if (Object.keys(operation.responses ?? {}).length === 0) {
         fail(`${method.toUpperCase()} ${path} requires responses`);
       }
+      if (
+        path.startsWith("/health/") &&
+        (operation.security !== undefined ||
+          !stableEqual(operation["x-kora-clients"] ?? [], ["operations"]))
+      ) {
+        fail(
+          `${method.toUpperCase()} ${path} must be an exact public health operation`,
+        );
+      }
       for (const [status, responseValue] of Object.entries(
         operation.responses,
       )) {
+        if (
+          /^2/.test(status) &&
+          status !== "204" &&
+          !path.startsWith("/health/")
+        ) {
+          const response = dereference(document, responseValue);
+          const schema = response?.content?.["application/json"]?.schema;
+          const envelope = dereference(document, schema);
+          if (
+            !schema?.$ref?.startsWith("#/components/schemas/") ||
+            envelope?.type !== "object" ||
+            envelope?.additionalProperties !== false ||
+            !stableEqual(envelope.required ?? [], ["data", "meta"]) ||
+            !stableEqual(Object.keys(envelope.properties ?? {}), [
+              "data",
+              "meta",
+            ]) ||
+            envelope.properties?.data === undefined ||
+            ![
+              "#/components/schemas/CursorMeta",
+              "#/components/schemas/ResponseMeta",
+            ].includes(envelope.properties?.meta?.$ref)
+          ) {
+            fail(
+              `${method.toUpperCase()} ${path} HTTP ${status} requires the exact {data, meta} success envelope`,
+            );
+          }
+        }
         if (/^[45]/.test(status)) {
           if (path === "/health/ready" && status === "503") {
             continue;
@@ -252,6 +446,16 @@ function validateOperationShape(document) {
         }
       }
     }
+  }
+  if (
+    actualOperations.size !== EXPECTED_OPERATIONS.size ||
+    [...EXPECTED_OPERATIONS].some(
+      ([key, operationId]) => actualOperations.get(key) !== operationId,
+    )
+  ) {
+    fail(
+      "path, method and operationId surface must match the exact approved inventory",
+    );
   }
 }
 
@@ -347,6 +551,11 @@ function validateStateMachines(document) {
 }
 
 function validateErrorsAndAuthorization(document) {
+  if (document.security !== undefined) {
+    fail(
+      "root security is forbidden; every business operation is classified explicitly",
+    );
+  }
   const errorCodes = new Set(document.components.schemas.ErrorCode.enum ?? []);
   const operationErrors = document["x-kora-operation-errors"] ?? {};
   const errorStatuses = document["x-kora-error-statuses"] ?? {};
@@ -396,12 +605,17 @@ function validateErrorsAndAuthorization(document) {
           `${operation.operationId} must not expose transaction or playback to web`,
         );
       }
+      if (PUBLIC_BUSINESS_OPERATIONS.has(operation.operationId)) {
+        if (operation.security !== undefined) {
+          fail(`${operation.operationId} must be an exact public operation`);
+        }
+      } else if (CUSTOMER_BEARER_OPERATIONS.has(operation.operationId)) {
+        if (!hasExactSecurityRequirement(operation, "customerBearer")) {
+          fail(`${operation.operationId} requires customerBearer exactly`);
+        }
+      }
       if (clients.includes("admin")) {
-        if (
-          !stableEqual(Object.keys(operation.security?.[0] ?? {}), [
-            "adminSession",
-          ])
-        ) {
+        if (!hasExactSecurityRequirement(operation, "adminSession")) {
           fail(
             `${operation.operationId} requires the short-lived admin access credential`,
           );
@@ -428,12 +642,21 @@ function validateErrorsAndAuthorization(document) {
       }
       if (
         clients.includes("provider") &&
-        !stableEqual(Object.keys(operation.security?.[0] ?? {}), [
-          "providerSignature",
-        ])
+        !hasExactSecurityRequirement(operation, "providerSignature")
       ) {
         fail(
           `${operation.operationId} requires the sandbox provider signature`,
+        );
+      }
+      const authorizationClasses = [
+        PUBLIC_BUSINESS_OPERATIONS.has(operation.operationId),
+        CUSTOMER_BEARER_OPERATIONS.has(operation.operationId),
+        clients.includes("admin"),
+        clients.includes("provider"),
+      ].filter(Boolean);
+      if (authorizationClasses.length !== 1) {
+        fail(
+          `${operation.operationId} must belong to exactly one approved authorization class`,
         );
       }
     }
@@ -448,10 +671,100 @@ function validateErrorsAndAuthorization(document) {
     fail("every stable error code must map to exactly one HTTP status");
   }
   const adminScheme = document.components.securitySchemes.adminSession;
-  if (adminScheme.type !== "http" || adminScheme.scheme !== "bearer") {
+  if (
+    adminScheme?.type !== "http" ||
+    adminScheme?.scheme !== "bearer" ||
+    adminScheme?.bearerFormat !== "short-lived admin access token"
+  ) {
     fail(
       "admin business routes require a short-lived bearer access credential",
     );
+  }
+  const customerScheme = document.components.securitySchemes.customerBearer;
+  if (
+    customerScheme?.type !== "http" ||
+    customerScheme?.scheme !== "bearer" ||
+    customerScheme?.bearerFormat !== "JWT"
+  ) {
+    fail("customerBearer must be the exact HTTP bearer JWT scheme");
+  }
+  const providerScheme = document.components.securitySchemes.providerSignature;
+  if (
+    providerScheme?.type !== "apiKey" ||
+    providerScheme?.in !== "header" ||
+    providerScheme?.name !== "X-Kora-Sandbox-Signature"
+  ) {
+    fail("providerSignature must be the exact sandbox signature header");
+  }
+  const assignedCustomerOperations = businessOperationIds.filter(
+    (operationId) =>
+      PUBLIC_BUSINESS_OPERATIONS.has(operationId) ||
+      CUSTOMER_BEARER_OPERATIONS.has(operationId),
+  );
+  const expectedCustomerOperations = [
+    ...PUBLIC_BUSINESS_OPERATIONS,
+    ...CUSTOMER_BEARER_OPERATIONS,
+  ];
+  if (!stableEqual(assignedCustomerOperations, expectedCustomerOperations)) {
+    fail(
+      "public and customerBearer operations must match the exact approved sets",
+    );
+  }
+  if (
+    JSON.stringify(document["x-kora-authentication-policy"] ?? {}) !==
+    JSON.stringify(REQUIRED_AUTHENTICATION_POLICY)
+  ) {
+    fail(
+      "customer authentication must be phone/password then OTP with protected step-up and single-device sessions",
+    );
+  }
+  for (const schemaName of ["ErrorResponse", "PublishConflictError"]) {
+    const envelope = document.components.schemas[schemaName];
+    const error = envelope?.properties?.error;
+    if (
+      envelope?.type !== "object" ||
+      envelope?.additionalProperties !== false ||
+      !stableEqual(envelope?.required ?? [], ["error", "requestId"]) ||
+      !stableEqual(Object.keys(envelope?.properties ?? {}), [
+        "error",
+        "requestId",
+      ]) ||
+      error?.type !== "object" ||
+      error?.additionalProperties !== false ||
+      !stableEqual(error?.required ?? [], ["code", "details", "message"]) ||
+      !stableEqual(Object.keys(error?.properties ?? {}), [
+        "code",
+        "details",
+        "message",
+        "retryable",
+      ]) ||
+      error.properties?.details?.$ref !== "#/components/schemas/ErrorDetails"
+    ) {
+      fail(
+        `${schemaName} must require the exact {code, message, details} error body`,
+      );
+    }
+  }
+  const errorDetails = document.components.schemas.ErrorDetails;
+  if (
+    errorDetails?.type !== "object" ||
+    errorDetails?.additionalProperties !== false ||
+    !stableEqual(Object.keys(errorDetails?.properties ?? {}), [
+      "field",
+      "reason",
+      "retryAfterSeconds",
+    ])
+  ) {
+    fail("ErrorDetails must expose only the closed non-sensitive vocabulary");
+  }
+  const responseMeta = document.components.schemas.ResponseMeta;
+  if (
+    responseMeta?.type !== "object" ||
+    responseMeta?.additionalProperties !== false ||
+    !stableEqual(responseMeta?.required ?? [], ["requestId"]) ||
+    responseMeta?.properties?.requestId?.type !== "string"
+  ) {
+    fail("ResponseMeta must require the shared safe requestId contract");
   }
   const publishCodes =
     document.components.schemas.PublishConflictError.properties.error.properties
@@ -464,6 +777,328 @@ function validateErrorsAndAuthorization(document) {
     ])
   ) {
     fail("publish conflicts must expose only their three stable safe codes");
+  }
+}
+
+function validateAuthenticationContract(document) {
+  const expectedOperations = [
+    [
+      "/api/v1/auth/register",
+      "post",
+      "RegisterCustomerRequest",
+      "OtpChallengeEnvelope",
+      "202",
+    ],
+    [
+      "/api/v1/auth/login",
+      "post",
+      "LoginCustomerRequest",
+      "OtpChallengeEnvelope",
+      "202",
+    ],
+    [
+      "/api/v1/auth/otp/challenges/{challengeId}/verify",
+      "post",
+      "OtpVerificationRequest",
+      "SessionEnvelope",
+      "200",
+    ],
+    [
+      "/api/v1/auth/step-up/challenges",
+      "post",
+      "StepUpChallengeRequest",
+      "OtpChallengeEnvelope",
+      "202",
+    ],
+    [
+      "/api/v1/auth/step-up/challenges/{challengeId}/verify",
+      "post",
+      "StepUpVerificationRequest",
+      "StepUpVerificationEnvelope",
+      "200",
+    ],
+    [
+      "/api/v1/auth/sessions/refresh",
+      "post",
+      "RefreshSessionRequest",
+      "SessionEnvelope",
+      "200",
+    ],
+  ];
+  for (const [
+    path,
+    method,
+    requestSchema,
+    responseSchema,
+    status,
+  ] of expectedOperations) {
+    const operation = operationAt(document, path, method);
+    if (
+      operation.requestBody?.content?.["application/json"]?.schema?.$ref !==
+        `#/components/schemas/${requestSchema}` ||
+      operation.responses?.[status]?.content?.["application/json"]?.schema
+        ?.$ref !== `#/components/schemas/${responseSchema}`
+    ) {
+      fail(
+        `${operation.operationId} must use its exact approved auth request and response contracts`,
+      );
+    }
+  }
+
+  const phone = document.components.schemas.E164Phone;
+  if (
+    phone?.type !== "string" ||
+    phone?.pattern !== "^\\+[1-9][0-9]{7,14}$" ||
+    phone?.example !== "+22370000000"
+  ) {
+    fail(
+      "customer phones must use unambiguous international E.164 with a +223 example",
+    );
+  }
+  const password = document.components.schemas.CustomerPassword;
+  if (
+    password?.type !== "string" ||
+    password?.minLength !== 8 ||
+    password?.maxLength !== 128 ||
+    password?.writeOnly !== true
+  ) {
+    fail(
+      "customer registration and login require a bounded write-only password",
+    );
+  }
+  for (const schemaName of [
+    "RegisterCustomerRequest",
+    "LoginCustomerRequest",
+  ]) {
+    const schema = document.components.schemas[schemaName];
+    if (
+      schema?.type !== "object" ||
+      schema?.additionalProperties !== false ||
+      !stableEqual(schema?.required ?? [], ["device", "password", "phone"]) ||
+      !stableEqual(Object.keys(schema?.properties ?? {}), [
+        "device",
+        "password",
+        "phone",
+      ]) ||
+      schema?.properties?.phone?.$ref !== "#/components/schemas/E164Phone" ||
+      schema?.properties?.password?.$ref !==
+        "#/components/schemas/CustomerPassword" ||
+      schema?.properties?.device?.$ref !==
+        "#/components/schemas/CustomerDeviceRegistration"
+    ) {
+      fail(`${schemaName} must require phone, password and device`);
+    }
+  }
+  const deviceRegistration =
+    document.components.schemas.CustomerDeviceRegistration;
+  if (
+    deviceRegistration?.type !== "object" ||
+    deviceRegistration?.additionalProperties !== false ||
+    !stableEqual(deviceRegistration?.required ?? [], [
+      "fingerprint",
+      "platform",
+    ]) ||
+    !stableEqual(Object.keys(deviceRegistration?.properties ?? {}), [
+      "fingerprint",
+      "platform",
+    ])
+  ) {
+    fail("CustomerDeviceRegistration must be the exact safe device input");
+  }
+  const register = operationAt(document, "/api/v1/auth/register", "post");
+  const login = operationAt(document, "/api/v1/auth/login", "post");
+  if (
+    register.responses?.["409"] !== undefined ||
+    !stableEqual(document["x-kora-operation-errors"].registerCustomer, [
+      "RATE_LIMITED",
+      "VALIDATION_ERROR",
+    ]) ||
+    login.responses?.["403"] !== undefined ||
+    !stableEqual(document["x-kora-operation-errors"].loginCustomer, [
+      "AUTH_INVALID_CREDENTIALS",
+      "RATE_LIMITED",
+      "VALIDATION_ERROR",
+    ])
+  ) {
+    fail("public authentication outcomes must not reveal account existence");
+  }
+  const otpChallenge = document.components.schemas.OtpChallenge;
+  if (
+    otpChallenge?.type !== "object" ||
+    otpChallenge?.additionalProperties !== false ||
+    !stableEqual(otpChallenge?.required ?? [], [
+      "challengeId",
+      "expiresAt",
+      "purpose",
+      "retryAfterSeconds",
+    ]) ||
+    !stableEqual(Object.keys(otpChallenge?.properties ?? {}), [
+      "challengeId",
+      "expiresAt",
+      "purpose",
+      "retryAfterSeconds",
+    ])
+  ) {
+    fail("OtpChallenge must expose only its exact safe public shape");
+  }
+  const otpVerification = document.components.schemas.OtpVerificationRequest;
+  if (
+    otpVerification?.type !== "object" ||
+    otpVerification?.additionalProperties !== false ||
+    !stableEqual(otpVerification?.required ?? [], ["code"]) ||
+    !stableEqual(Object.keys(otpVerification?.properties ?? {}), ["code"]) ||
+    otpVerification?.properties?.code?.pattern !== "^[0-9]{6}$"
+  ) {
+    fail(
+      "OTP verification must consume only the password-verified challenge code",
+    );
+  }
+  const otpPurpose =
+    document.components.schemas.OtpChallenge?.properties?.purpose?.enum;
+  if (!stableEqual(otpPurpose ?? [], ["REGISTER", "LOGIN", "STEP_UP"])) {
+    fail(
+      "OTP challenges must distinguish registration, login and protected step-up",
+    );
+  }
+  const stepUpPurposes =
+    document.components.schemas.StepUpChallengeRequest?.properties?.purpose
+      ?.enum;
+  const stepUpChallenge = document.components.schemas.StepUpChallengeRequest;
+  if (
+    stepUpChallenge?.type !== "object" ||
+    stepUpChallenge?.additionalProperties !== false ||
+    !stableEqual(stepUpChallenge?.required ?? [], ["purpose"]) ||
+    !stableEqual(Object.keys(stepUpChallenge?.properties ?? {}), ["purpose"]) ||
+    !stableEqual(stepUpPurposes ?? [], ["ACCOUNT_SECURITY", "ARTIST_PAYOUT"])
+  ) {
+    fail(
+      "step-up challenges must be limited to account security and artist payout",
+    );
+  }
+  const stepUpVerification =
+    document.components.schemas.StepUpVerificationRequest;
+  if (
+    stepUpVerification?.type !== "object" ||
+    stepUpVerification?.additionalProperties !== false ||
+    !stableEqual(stepUpVerification?.required ?? [], ["code"]) ||
+    !stableEqual(Object.keys(stepUpVerification?.properties ?? {}), ["code"]) ||
+    stepUpVerification?.properties?.code?.pattern !== "^[0-9]{6}$"
+  ) {
+    fail("StepUpVerificationRequest must expose only the exact OTP code input");
+  }
+
+  const stepUpResult = document.components.schemas.StepUpVerification;
+  if (
+    !isExactObjectSchema(
+      stepUpResult,
+      ["sessionId", "verifiedAt"],
+      ["sessionId", "verifiedAt"],
+    ) ||
+    stepUpResult.properties.sessionId?.$ref !==
+      "#/components/schemas/Identifier" ||
+    stepUpResult.properties.verifiedAt?.$ref !==
+      "#/components/schemas/Timestamp"
+  ) {
+    fail("StepUpVerification must expose only the exact safe result");
+  }
+
+  const refreshSession = document.components.schemas.RefreshSessionRequest;
+  if (
+    !isExactObjectSchema(refreshSession, ["refreshToken"], ["refreshToken"]) ||
+    refreshSession.properties.refreshToken?.type !== "string" ||
+    refreshSession.properties.refreshToken?.minLength !== 32 ||
+    refreshSession.properties.refreshToken?.maxLength !== 4096
+  ) {
+    fail("RefreshSessionRequest must expose only the bounded refresh token");
+  }
+
+  const session = document.components.schemas.Session;
+  if (
+    !isExactObjectSchema(
+      session,
+      [
+        "accessExpiresAt",
+        "accessToken",
+        "deviceId",
+        "refreshExpiresAt",
+        "refreshToken",
+        "sessionId",
+      ],
+      [
+        "accessExpiresAt",
+        "accessToken",
+        "deviceId",
+        "refreshExpiresAt",
+        "refreshToken",
+        "sessionId",
+      ],
+    ) ||
+    session.properties.sessionId?.$ref !== "#/components/schemas/Identifier" ||
+    session.properties.deviceId?.$ref !== "#/components/schemas/Identifier" ||
+    session.properties.accessExpiresAt?.$ref !==
+      "#/components/schemas/Timestamp" ||
+    session.properties.refreshExpiresAt?.$ref !==
+      "#/components/schemas/Timestamp" ||
+    session.properties.accessToken?.type !== "string" ||
+    session.properties.accessToken?.minLength !== 32 ||
+    session.properties.accessToken?.maxLength !== 4096 ||
+    session.properties.refreshToken?.type !== "string" ||
+    session.properties.refreshToken?.minLength !== 32 ||
+    session.properties.refreshToken?.maxLength !== 4096
+  ) {
+    fail("Session must expose only the exact bounded public token result");
+  }
+
+  for (const [envelopeName, payloadName] of [
+    ["OtpChallengeEnvelope", "OtpChallenge"],
+    ["SessionEnvelope", "Session"],
+    ["StepUpVerificationEnvelope", "StepUpVerification"],
+  ]) {
+    const envelope = document.components.schemas[envelopeName];
+    if (
+      !isExactObjectSchema(envelope, ["data", "meta"], ["data", "meta"]) ||
+      envelope.properties.data?.$ref !==
+        `#/components/schemas/${payloadName}` ||
+      envelope.properties.meta?.$ref !== "#/components/schemas/ResponseMeta"
+    ) {
+      fail(`${envelopeName} must wrap only its exact safe auth payload`);
+    }
+  }
+
+  const deviceSummary = document.components.schemas.DeviceSummary;
+  if (
+    !isExactObjectSchema(
+      deviceSummary,
+      ["current", "deviceId", "lastSeenAt", "platform", "registeredAt"],
+      ["current", "deviceId", "lastSeenAt", "platform", "registeredAt"],
+    ) ||
+    deviceSummary.properties.deviceId?.$ref !==
+      "#/components/schemas/Identifier" ||
+    !stableEqual(deviceSummary.properties.platform?.enum ?? [], [
+      "ANDROID",
+      "IOS",
+    ]) ||
+    deviceSummary.properties.registeredAt?.$ref !==
+      "#/components/schemas/Timestamp" ||
+    deviceSummary.properties.lastSeenAt?.$ref !==
+      "#/components/schemas/Timestamp" ||
+    deviceSummary.properties.current?.type !== "boolean"
+  ) {
+    fail("DeviceSummary must expose only the exact safe session metadata");
+  }
+  const deviceList = document.components.schemas.DeviceListEnvelope;
+  if (
+    !isExactObjectSchema(deviceList, ["data", "meta"], ["data", "meta"]) ||
+    deviceList.properties.data?.type !== "array" ||
+    deviceList.properties.data?.maxItems !== 20 ||
+    deviceList.properties.data?.items?.$ref !==
+      "#/components/schemas/DeviceSummary" ||
+    deviceList.properties.meta?.$ref !== "#/components/schemas/ResponseMeta" ||
+    operationAt(document, "/api/v1/auth/devices", "get").responses?.["200"]
+      ?.content?.["application/json"]?.schema?.$ref !==
+      "#/components/schemas/DeviceListEnvelope"
+  ) {
+    fail("registered devices must use the exact bounded safe device list");
   }
 }
 
@@ -508,8 +1143,18 @@ export function validateSchemaInstance(document, schemaName, instance) {
     }
     if (types.includes("integer") && !Number.isInteger(value))
       fail(`${location} must be an integer`);
-    if (types.includes("string") && typeof value !== "string")
-      fail(`${location} must be a string`);
+    if (types.includes("string")) {
+      if (typeof value !== "string") fail(`${location} must be a string`);
+      if (schema.minLength !== undefined && value.length < schema.minLength)
+        fail(`${location} is shorter than ${schema.minLength}`);
+      if (schema.maxLength !== undefined && value.length > schema.maxLength)
+        fail(`${location} is longer than ${schema.maxLength}`);
+      if (
+        schema.pattern !== undefined &&
+        !new RegExp(schema.pattern).test(value)
+      )
+        fail(`${location} does not match its required pattern`);
+    }
     if (types.includes("boolean") && typeof value !== "boolean")
       fail(`${location} must be a boolean`);
   }
@@ -699,9 +1344,12 @@ function validateSafeSchemaSurface(document) {
       return;
     }
     for (const key of Object.keys(value.properties ?? {})) {
-      if (FORBIDDEN_PUBLIC_FIELD.test(key)) {
+      if (
+        FORBIDDEN_PUBLIC_FIELD.test(key) ||
+        FORBIDDEN_PUBLIC_AUTH_HASH.test(key)
+      ) {
         fail(
-          `raw media or private provider field is forbidden at ${location}/properties/${key}`,
+          `forbidden public field ${key} at ${location}/properties/${key}: raw media or private provider fields and server authentication hashes are not allowed`,
         );
       }
       if (/Cfa$/.test(key)) {
@@ -948,11 +1596,12 @@ export function validateOpenApiDocument(document) {
   validateOperationShape(document);
   validateStateMachines(document);
   validateErrorsAndAuthorization(document);
+  validateSafeSchemaSurface(document);
+  validateAuthenticationContract(document);
   validateExamples(document);
   validateArtistEarningPolicy(document);
   validateCursorPagination(document);
   validateIdempotency(document);
-  validateSafeSchemaSurface(document);
   validateMediaAndClientGates(document);
   validateCommerceGates(document);
   validatePublicationAndArchiveGates(document);
@@ -1052,6 +1701,64 @@ export function validatePrismaTargetSchema(source) {
       "PaymentAttempt retries require an order-scoped idempotency constraint",
     );
   }
+  const customer = prismaModel(source, "Customer");
+  const customerDevice = prismaModel(source, "CustomerDevice");
+  const customerSession = prismaModel(source, "CustomerSession");
+  if (!/passwordHash\s+String/.test(customer)) {
+    fail("Customer must persist only the server-side password hash");
+  }
+  if (
+    !/refreshTokenHash\s+String\s+@unique/.test(customerSession) ||
+    !/refreshTokenVersion\s+Int\s+@default\(1\)/.test(customerSession) ||
+    !/lastOtpStepUpAt\s+DateTime\?/.test(customerSession)
+  ) {
+    fail(
+      "CustomerSession must persist rotating refresh hashes and OTP step-up freshness",
+    );
+  }
+  if (
+    !/customer\s+Customer\s+@relation\(fields: \[customerId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/.test(
+      customerDevice,
+    ) ||
+    !/@@unique\(\[id, customerId\]\)/.test(customerDevice) ||
+    !/customer\s+Customer\s+@relation\(fields: \[customerId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/.test(
+      customerSession,
+    ) ||
+    !/@@unique\(\[id, customerId\]\)/.test(customerSession) ||
+    !/device\s+CustomerDevice\s+@relation\(fields: \[deviceId, customerId\], references: \[id, customerId\], onDelete: Restrict, onUpdate: Restrict\)/.test(
+      customerSession,
+    )
+  ) {
+    fail(
+      "CustomerSession must bind its device to the same customer through Restrict composite relations",
+    );
+  }
+  const otpChallenge = prismaModel(source, "OtpChallenge");
+  if (
+    !/normalizedPhone\s+String/.test(otpChallenge) ||
+    !/purpose\s+OtpPurpose/.test(otpChallenge) ||
+    !/codeHash\s+String/.test(otpChallenge) ||
+    !/customerId\s+String\?/.test(otpChallenge) ||
+    !/customer\s+Customer\?\s+@relation\(fields: \[customerId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/.test(
+      otpChallenge,
+    ) ||
+    !/sessionId\s+String\?/.test(otpChallenge) ||
+    !/session\s+CustomerSession\?\s+@relation\(fields: \[sessionId, customerId\], references: \[id, customerId\], onDelete: Restrict, onUpdate: Restrict\)/.test(
+      otpChallenge,
+    ) ||
+    !/pendingPasswordHash\s+String\?/.test(otpChallenge) ||
+    !/passwordVerifiedAt\s+DateTime\?/.test(otpChallenge) ||
+    !/deviceFingerprintHash\s+String/.test(otpChallenge) ||
+    !/devicePlatform\s+DevicePlatform/.test(otpChallenge) ||
+    !/attempts\s+Int\s+@default\(0\)/.test(otpChallenge) ||
+    !/consumedAt\s+DateTime\?/.test(otpChallenge) ||
+    !/@@index\(\[customerId, purpose, consumedAt\]\)/.test(otpChallenge) ||
+    !/@@index\(\[sessionId, customerId\]\)/.test(otpChallenge)
+  ) {
+    fail(
+      "OtpChallenge must persist the bounded password, customer, session and hashed-device context",
+    );
+  }
   const entitlement = prismaModel(source, "Entitlement");
   if (
     !/settlementId\s+String/.test(entitlement) ||
@@ -1064,7 +1771,11 @@ export function validatePrismaTargetSchema(source) {
     ) ||
     !/order\s+Order\s+@relation\(fields: \[orderId, customerId\], references: \[id, customerId\], onDelete: Restrict, onUpdate: Restrict\)/.test(
       entitlement,
-    )
+    ) ||
+    !/customer\s+Customer\s+@relation\(fields: \[customerId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/.test(
+      entitlement,
+    ) ||
+    !/@@unique\(\[id, customerId\]\)/.test(entitlement)
   ) {
     fail(
       "Entitlement must require a settlement and match its order item, content and customer",
@@ -1239,18 +1950,42 @@ export function validatePrismaTargetSchema(source) {
   }
   const customerIdempotency = prismaModel(source, "IdempotencyRecord");
   const adminIdempotency = prismaModel(source, "AdminIdempotencyRecord");
+  const purchasedDescriptor = prismaModel(
+    source,
+    "PurchasedPlaybackDescriptor",
+  );
   if (
     /responseBody/.test(customerIdempotency) ||
     /responseBody/.test(adminIdempotency) ||
     !/resourceType\s+String/.test(customerIdempotency) ||
     !/resourceId\s+String/.test(customerIdempotency) ||
     !/adminUserId\s+String/.test(adminIdempotency) ||
+    !/order\s+Order\?\s+@relation\(fields: \[orderId, customerId\], references: \[id, customerId\], onDelete: Restrict, onUpdate: Restrict\)/.test(
+      customerIdempotency,
+    ) ||
+    !/@@unique\(\[id, customerId\]\)/.test(order) ||
+    !/customer\s+Customer\s+@relation\(fields: \[customerId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/.test(
+      customerIdempotency,
+    ) ||
     !/@@unique\(\[adminUserId, operation, idempotencyKey\]\)/.test(
       adminIdempotency,
     )
   ) {
     fail(
       "idempotency records must scope actors and never persist capability response bodies",
+    );
+  }
+  if (
+    !/customerId\s+String/.test(purchasedDescriptor) ||
+    !/entitlement\s+Entitlement\s+@relation\(fields: \[entitlementId, customerId\], references: \[id, customerId\], onDelete: Restrict, onUpdate: Restrict\)/.test(
+      purchasedDescriptor,
+    ) ||
+    !/device\s+CustomerDevice\s+@relation\(fields: \[deviceId, customerId\], references: \[id, customerId\], onDelete: Restrict, onUpdate: Restrict\)/.test(
+      purchasedDescriptor,
+    )
+  ) {
+    fail(
+      "PurchasedPlaybackDescriptor must bind entitlement and device to the same customer through Restrict composite relations",
     );
   }
 

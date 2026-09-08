@@ -137,7 +137,7 @@ Statut : **In progress — S1.1 implemented, CTO review pending — S1.2 not sta
 
 Parcours cible :
 
-`Home public → catalogue → fiche audio → auth contextuelle → téléphone/OTP →
+`Home public → catalogue → fiche audio → auth contextuelle → téléphone/mot de passe/OTP →
 Order → PaymentAttempt sandbox → Entitlement → Mes achats → lecture signée →
 création du contenu par l’administration`
 
@@ -145,7 +145,7 @@ Travaux contract-first :
 
 - contrats OpenAPI et modèle cible ;
 - catalogue audio administrable ;
-- auth téléphone/OTP ;
+- auth téléphone E.164/mot de passe/OTP, session mono-appareil et step-up ;
 - paiement sandbox, Inbox/Outbox et ledger ;
 - Entitlement et Mes achats ;
 - descriptor de lecture signé ;
@@ -157,10 +157,13 @@ Gate : un achat audio sandbox complet, réconcilié, sans URL média brute.
 
 Livré sans runtime métier ni migration :
 
-- contrat OpenAPI des 29 chemins et 35 opérations du pilote, erreurs, clients,
+- contrat OpenAPI des 32 chemins et 38 opérations du pilote, enveloppes,
+  erreurs, ensembles d’authentification, clients,
   transitions et invariants ;
 - types partagés générés et gate de dérive ;
 - schéma Prisma cible à 30 modèles, sans migration ni seed ;
+- contexte OTP serveur borné pour relier preuve password, appareil, client et
+  session selon le parcours, sans exposer l’existence d’un compte ;
 - machines d’état et invariants finance/média documentés et testés ;
 - politique artiste `FLOOR_SETTLEMENT_WITH_ARTIST_CARRY_V1` prouvée en `BigInt`
   par artiste et Settlement, avec carry séquencé, relations composites et audit
@@ -176,6 +179,11 @@ le [système d’expérience](../ux/SLICE_1_1_AUDIO_EXPERIENCE_SYSTEM.md) et le
 
 S1.2 reste **Not started** : aucun catalogue, auth, paiement, webhook, upload,
 Entitlement ou playback runtime n’est livré par S1.1.
+
+Avant toute nouvelle chaîne visible du futur runtime mobile, un lot autorisé
+devra intégrer `AppLocalizations`, les ressources de langues et leurs tests de
+fallback. Ce gate est planifié mais non commencé ; il n’ajoute ici ni manifeste,
+dépendance ni infrastructure i18n.
 
 ## Slices suivantes
 
