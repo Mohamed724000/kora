@@ -89,6 +89,50 @@ instantané historique daté ; tout statut de publication ultérieur devra être
 établi par l’historique Git et la Draft PR #36. S1.2 restait non démarré à cet
 instant.
 
+## Qualification de licence S1.1-R3 du 2026-09-09
+
+Le head R2 `851bd1dd9ff0b7bb38f43012edf07a675e31b318` a produit trois workflows
+`success` — Infrastructure `34373860566`, Launcher Windows `34373860503` et
+Quality Linux `34373860544` — et un workflow Security `34373860535` en
+`failure`. Les audits de cette exécution étaient à zéro ; le seul écart était
+la qualification de licence de deux variantes Linux x64 optionnelles de
+`sharp@0.35.4`.
+
+R3 remplace dans le contrôleur uniquement les deux tuples nominatifs libvips
+`1.3.2` par leurs versions `1.3.3`, toujours sous licence déclarée
+`LGPL-3.0-or-later`. La licence reste refusée globalement et tout autre nom,
+version ou identifiant de licence est rejeté. La qualification technique et les
+réserves de distribution sont détaillées dans la
+[revue R3](../security/THIRD_PARTY_LICENSE_REVIEW_S1_1_R3.md).
+
+Le périmètre local R3 est limité au contrôleur de licences, aux notices, au
+nouveau rapport et aux trois documents vivants. Aucun manifeste, lockfile,
+dépendance, workflow, code applicatif, binaire tiers ou artefact produit ne
+change. Cette qualification ne constitue ni une autorisation générale de LGPL,
+ni une autorisation de release. S1.2 reste non démarré.
+
+Lors du point de validation prépublication du 2026-09-09, S1.1-R3 était
+uniquement présent dans le worktree local, non indexé, non commité et non
+publié. Cette mention est un instantané historique daté ; tout statut ultérieur
+est établi par l’historique Git et la Draft PR #36.
+
+Contrôles locaux ciblés R3 :
+
+| Contrôle                          | Résultat                                                                             |
+| --------------------------------- | ------------------------------------------------------------------------------------ |
+| métadonnées lockfile/registre npm | PASS — noms, version `1.3.3`, licence, OS/CPU, intégrités et parent Sharp concordent |
+| fixture exacte temporaire         | PASS — code 0, 2 installés, 0 non déclaré, 0 non approuvé                            |
+| autre version                     | PASS — rejetée, code 1, 1 non approuvé                                               |
+| autre licence                     | PASS — rejetée, code 1, 1 non approuvé                                               |
+| troisième paquet LGPL             | PASS — rejeté, code 1, 1 non approuvé                                                |
+| inventaire Windows réel           | PASS — 1 131 installés, 0 non déclaré, 0 non approuvé                                |
+| scanner officiel                  | PASS — 335 fichiers, historique inclus, 52 immuables                                 |
+| outillage complet                 | PASS — 226/226                                                                       |
+
+La fixture et ses quatre inventaires ont existé uniquement dans un répertoire
+temporaire, supprimé après le contrôle. Aucun test technique, audit, build,
+installation, workflow ou contrôle Flutter sans rapport n’a été relancé.
+
 ## Décisions acceptées
 
 ### Fractions de FCFA — Product Owner

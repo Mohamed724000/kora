@@ -270,6 +270,21 @@ constat est une preuve historique datée ; toute publication ultérieure sera
 enregistrée séparément dans l’historique Git et dans la Draft PR #36. S1.2
 restait non démarré à cet instant.
 
+## 2026-09-09 — Qualification de licence Sharp/libvips Linux S1.1-R3
+
+| ID          | Nature       | Décision                                                                                                                                                                                                                                                                                                                                                                                                      | Autorité                      | Statut                                   |
+| ----------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ---------------------------------------- |
+| DEC-S1.1-25 | Gate CI      | Le workflow Security R2 `34373860535` a réussi les audits à zéro puis rejeté uniquement `@img/sharp-libvips-linux-x64@1.3.3` et `@img/sharp-libvips-linuxmusl-x64@1.3.3`, absents de l’installation Windows mais sélectionnés par Sharp sur Linux x64. Les trois autres workflows R2 ont conclu `success`.                                                                                                    | Preuve GitHub S1.1-R2         | Accepted — historical CI evidence        |
+| DEC-S1.1-26 | Licence      | Le contrôleur remplace exclusivement les deux autorisations nominatives `1.3.2` par les mêmes noms en `1.3.3` et licence exacte `LGPL-3.0-or-later`. La licence ne devient pas globalement approuvée ; aucun wildcard, plage, tag, autre version ou troisième paquet n’est autorisé. La qualification S0.3 est un précédent historique limité et non une approbation automatique du delta.                    | Décision CTO S1.1-R3          | Accepted — exact package qualification   |
+| DEC-S1.1-27 | Distribution | Les bibliothèques optionnelles ne sont ni modifiées localement, ni intégrées aux bundles navigateur ou à l’APK Flutter. Elles peuvent être embarquées dans un artefact serveur Linux ; toute distribution reste soumise à un gate juridique/release distinct couvrant licences, notices, sources correspondantes, conditions LGPL et packaging réel. Cette qualification technique n’autorise aucune release. | Gouvernance licences/releases | Accepted — release gate remains required |
+| DEC-S1.1-28 | Périmètre    | R3 est strictement documentaire et outillage : contrôleur de licences, notices tierces, rapport dédié et trois documents vivants. Aucun manifeste, lockfile, dépendance, workflow, code applicatif, binaire tiers, bundle, APK ou S1.2 ne change.                                                                                                                                                             | Gouvernance S1.1-R3           | Accepted — S1.1-R3 scope decision        |
+
+Au point de validation prépublication du 2026-09-09, S1.1-R3 était
+uniquement présent dans le worktree local, non indexé, non commité et non
+publié. Ce constat est une preuve historique datée ; tout statut ultérieur
+fait foi dans l’historique Git et dans la Draft PR #36. S1.2 restait non
+démarré à cet instant.
+
 ## Catégories d’autorité
 
 - **Produit** : vision, économie, marque, contrats et périmètre irréversible ;
