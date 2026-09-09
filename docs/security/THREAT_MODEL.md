@@ -92,21 +92,21 @@ métier ou runtime.
 
 ## Menaces et mesures attendues
 
-| Domaine      | Menaces principales                                                                            | Mesures attendues / autorités                                                                                     | État                                                                                                  |
-| ------------ | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Identité/OTP | Brute force, interception, replay, enumeration                                                 | Rate limits, OTP court et haché, rotation session, logs masqués ; ADR-010                                         | Contract/target model S1.1 — runtime not implemented                                                  |
-| Admin        | Vol de session, MFA contournée, récupération abusive                                           | TOTP RFC 6238, codes Argon2id, cookies httpOnly, step-up, révocation ; ADR-002/005/008                            | Not implemented                                                                                       |
-| RBAC         | Escalade verticale/horizontale, champs sensibles                                               | Contrôle serveur route/action/champ, moindre privilège ; ADR-020                                                  | Not implemented                                                                                       |
-| Paiement     | Double débit, faux webhook, replay, ordre inversé                                              | Signature, idempotence, Inbox/Outbox, PaymentAttempts immuables ; ADR-012/015                                     | Sandbox contract/target model S1.1 — runtime not implemented                                          |
-| Ledger       | Altération, déséquilibre, double comptage                                                      | Append-only, groupes équilibrés, compensation, reconciliation ; ADR-013/014                                       | Target model S1.1 — runtime balance not implemented                                                   |
-| Droits       | Accès sans achat, révocation excessive                                                         | Entitlement permanent ciblé, checks serveur ; ADR-016                                                             | Contract/target model S1.1 — runtime not implemented                                                  |
-| Média        | URL brute, partage, scraping, logs sensibles                                                   | Stockage privé, descriptor court, PreviewGrant, device binding ; ADR-011/017                                      | Contract/target model S1.1 — runtime not implemented                                                  |
-| Offline      | Extraction clé/fichier, replay licence, copie appareil                                         | AES-256-GCM, clé non exportable, licence renouvelable ; ADR-018                                                   | Not implemented                                                                                       |
-| Audit        | Suppression ou falsification                                                                   | Écriture transactionnelle, blocage UPDATE/DELETE, exports audités ; ADR-019                                       | Target model S1.1 — runtime not implemented                                                           |
-| Capture      | Enregistrement écran et dispositif externe                                                     | `FLAG_SECURE`, détection/pause iOS, protections en couches sans promesse absolue ; ADR-024                        | Not implemented                                                                                       |
-| Données/logs | Fuite PII, token ou secret                                                                     | Redaction des champs et messages, `msg` catégoriel, minimisation, contrôle accès, rétention et tests              | Foundation validated locally by S0.6 — no business PII flow                                           |
-| Supply chain | Package compromis, licence incompatible, épuisement de pile, SSRF ou déni de service transitif | Versions verrouillées, revue, audit, provenance, scripts qualifiés, six chemins parents exacts et gates de graphe | R4 publié : audits à zéro et licences contrôlées ; R5 prépublication : scanner 66/66, outillage 73/73 |
-| CI/CD        | Secret exposé, artefact altéré, déploiement non autorisé                                       | Permissions lecture seule, actions épinglées, scans, timeouts et rollback                                         | R4 : les quatre workflows #45 réussissent sur le head publié exact                                    |
+| Domaine      | Menaces principales                                                                            | Mesures attendues / autorités                                                                                                              | État                                                                                                                               |
+| ------------ | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Identité/OTP | Brute force, interception, replay, enumeration                                                 | Rate limits, OTP court et haché, rotation session, logs masqués ; ADR-010                                                                  | Contract/target model S1.1 — runtime not implemented                                                                               |
+| Admin        | Vol de session, MFA contournée, récupération abusive                                           | TOTP RFC 6238, codes Argon2id, cookies httpOnly, step-up, révocation ; ADR-002/005/008                                                     | Not implemented                                                                                                                    |
+| RBAC         | Escalade verticale/horizontale, champs sensibles                                               | Contrôle serveur route/action/champ, moindre privilège ; ADR-020                                                                           | Not implemented                                                                                                                    |
+| Paiement     | Double débit, faux webhook, replay, ordre inversé                                              | Signature, idempotence, Inbox/Outbox, PaymentAttempts immuables ; ADR-012/015                                                              | Sandbox contract/target model S1.1 — runtime not implemented                                                                       |
+| Ledger       | Altération, déséquilibre, double comptage                                                      | Append-only, groupes équilibrés, compensation, reconciliation ; ADR-013/014                                                                | Target model S1.1 — runtime balance not implemented                                                                                |
+| Droits       | Accès sans achat, révocation excessive                                                         | Entitlement permanent ciblé, checks serveur ; ADR-016                                                                                      | Contract/target model S1.1 — runtime not implemented                                                                               |
+| Média        | URL brute, partage, scraping, logs sensibles                                                   | Stockage privé, descriptor court, PreviewGrant, device binding ; ADR-011/017                                                               | Contract/target model S1.1 — runtime not implemented                                                                               |
+| Offline      | Extraction clé/fichier, replay licence, copie appareil                                         | AES-256-GCM, clé non exportable, licence renouvelable ; ADR-018                                                                            | Not implemented                                                                                                                    |
+| Audit        | Suppression ou falsification                                                                   | Écriture transactionnelle, blocage UPDATE/DELETE, exports audités ; ADR-019                                                                | Target model S1.1 — runtime not implemented                                                                                        |
+| Capture      | Enregistrement écran et dispositif externe                                                     | `FLAG_SECURE`, détection/pause iOS, protections en couches sans promesse absolue ; ADR-024                                                 | Not implemented                                                                                                                    |
+| Données/logs | Fuite PII, token ou secret                                                                     | Redaction des champs et messages, `msg` catégoriel, minimisation, contrôle accès, rétention et tests                                       | Foundation validated locally by S0.6 — no business PII flow                                                                        |
+| Supply chain | Package compromis, licence incompatible, épuisement de pile, SSRF ou déni de service transitif | Versions verrouillées, revue, audit, provenance, scripts qualifiés, parents exacts, gates de graphe et sorties Next suivies reproductibles | M0.3 publié et vert ; S1.1-R2 validé localement le 2026-09-09 sur 12 fichiers avec audits zéro, scanner 75/75 et outillage 226/226 |
+| CI/CD        | Secret exposé, artefact altéré, déploiement non autorisé                                       | Permissions lecture seule, actions épinglées, scans, timeouts et rollback                                                                  | R4 : les quatre workflows #45 réussissent sur le head publié exact                                                                 |
 
 ## Risques ouverts et gates
 
@@ -175,6 +175,42 @@ métier ou runtime.
   `peerDependencies`. Les 65 tests R4 restent actifs ; le scanner R5 passe
   66/66 et l’outillage 73/73. Prisma, Prisma Client et `@prisma/config` restent
   `7.9.1`; `deepmerge-ts` reste `8.0.1`.
+- Le 2026-09-09, le workflow Security S1.1-R1 `34286291903` a établi une
+  baseline de 11 vulnérabilités npm pour le graphe complet (2 moderate, 8 high,
+  1 critical) et 7 pour la production (6 high, 1 critical). S1.1-R2 traite les
+  avis courants en conservant les branches majeures : Next et ESLint Config
+  Next `16.3.4`, Vitest et `@vitest/mocker` `4.1.11`, `js-yaml` `3.15.2` et
+  `4.3.2`, Sharp `0.35.4` avec `libheif@1.23.2`, et Multer `2.3.0` uniquement
+  sous `@nestjs/platform-express@11.1.28`. Toutes les versions NestJS et Prisma
+  restent inchangées.
+- Les gates S1.1-R2 imposent les pins de workspaces, les installations
+  physiques approuvées et les parents exacts du lockfile. Ils rejettent toute
+  variante globale, élargie, mal versionnée, en plage, wildcard, tag,
+  référence, parallèle ou attachée à un autre parent, sans affaiblir les gates
+  M0.3. Le lockfile
+  `417A15E68EB637F7426E52FB0022ADBFF3825C7BE1097145DC4A12F6312E245F`
+  se reproduit par deux installations de 1 137 paquets ; audits complet et
+  production zéro, `npm ls --all` code 0, licences 1 131/0/0, scanner 75/75 et
+  outillage 226/226.
+- Next `16.3.4` régénère dans les deux `next-env.d.ts` suivis l’import
+  `./.next/types/root-params.d.ts`. Le périmètre R2 final compte donc 12
+  fichiers. Deux passages ciblés Web/Admin, typecheck inclus, conservent pour
+  chacun de ces fichiers le SHA-256
+  `1862AC4BBBC5192D4BF562161DF66EA547ED3E67173100656AB606AE9797DB2B` et
+  le même diff Git ; supprimer cet import recréerait un diff au build suivant.
+- Les installations, audits, licences, tests globaux et validations sans
+  rapport avaient réussi avant cette correction de sortie générée et n’ont
+  pas été rejoués.
+- Multer `2.3.0` corrige les dénis de service et le contournement de limite
+  suivis par `GHSA-wc9g-mqfw-jrwm`, `GHSA-qfvm-cv95-jqjf`,
+  `GHSA-qvfw-j98x-7q72` et `GHSA-535w-7cp7-47q4`. R2 n’ajoute aucun runtime
+  d’upload. Avant toute future implémentation, le runtime devra fixer
+  explicitement un `fieldArrayIndexLimit` minimal adapté au produit et le
+  qualifier par tests de limites.
+- Ces preuves S1.1-R2 décrivent l’instantané local prépublication du
+  2026-09-09 : aucun commit, push ou changement de la Draft PR #36 R2 n’avait
+  encore été effectué. Tout statut ultérieur fait foi dans l’historique Git et
+  la PR correspondante ; S1.2 restait non démarré à cet instant.
 - Les overrides restent des mesures temporaires. Chacun devra être retiré
   séparément lorsqu’un parent amont autorisé intégrera officiellement la
   dépendance corrigée correspondante. Tout nouveau graphe exige de rejouer

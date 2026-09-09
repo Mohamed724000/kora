@@ -52,6 +52,43 @@ Cette mention constitue un instantané historique ; tout état de publication
 ultérieur est établi par l’historique Git et la PR #36. S1.2 restait non démarré
 à cet instant.
 
+## État correctif S1.1-R2 du 2026-09-09
+
+Le workflow Security R1 `34286291903` sur le head publié
+`78ab745e76e367f8a9cca82996d68f5078a9ff2e` a révélé une nouvelle baseline de
+11 vulnérabilités npm pour le graphe complet (2 moderate, 8 high, 1 critical) et
+7 pour la production (6 high, 1 critical). R2 les traite sans code applicatif,
+workflow, OpenAPI, Prisma, Flutter, golden ni nouveau fichier :
+
+- Next et ESLint Config Next passent de `16.2.12` à `16.3.4` ;
+- Vitest passe de `4.1.10` à `4.1.11` et résout naturellement
+  `@vitest/mocker@4.1.11`, sans override du mocker ;
+- les sélecteurs existants `js-yaml@3.15.0` et `js-yaml@4.3.0` ciblent
+  respectivement `3.15.2` et `4.3.2` ;
+- Sharp passe de `0.35.3` à `0.35.4`, avec `libheif@1.23.2` chargé ;
+- l’override exact `@nestjs/platform-express@11.1.28 > multer@2.3.0` conserve
+  toute la famille NestJS à ses versions R1.
+
+Le périmètre local final comporte 12 fichiers. Aux dix fichiers de
+remédiation initiaux s’ajoutent `apps/web/next-env.d.ts` et
+`apps/admin/next-env.d.ts`, deux sorties déjà suivies que Next `16.3.4`
+régénère. Dans la politique actuelle du dépôt, leur import généré
+`./.next/types/root-params.d.ts` doit être conservé : le retirer recrée un diff
+après chaque build Web ou Admin.
+
+Le scanner impose les pins directs, les installations physiques approuvées,
+les parents exacts du lockfile et l’absence de variante globale, élargie,
+mal versionnée, en plage, wildcard, tag, référence ou rattachée à un autre
+parent. Tout futur runtime d’upload devra en plus fixer explicitement un
+`fieldArrayIndexLimit` minimal adapté au produit ; R2 n’ajoute aucun runtime
+d’upload et n’invente donc pas cette valeur.
+
+Lors du point de validation prépublication du 2026-09-09, S1.1-R2 était limité
+au worktree local, non indexé, non commité et non publié. Cette phrase est un
+instantané historique daté ; tout statut de publication ultérieur devra être
+établi par l’historique Git et la Draft PR #36. S1.2 restait non démarré à cet
+instant.
+
 ## Décisions acceptées
 
 ### Fractions de FCFA — Product Owner
@@ -246,12 +283,56 @@ workflow ou golden n’a changé ; ces preuves publiées ou acquises avant la
 contre-revue restent applicables. Le contrat TypeScript a en revanche été
 régénéré parce que son OpenAPI source a changé, puis sa dérive a été contrôlée.
 
-Empreintes de lockfiles, inchangées avant et après les validations :
+Empreintes historiques R1, inchangées avant et après les validations R1 :
 
 - `package-lock.json` :
   `E47CEA6A6853ABBDEB5A82A1D537C9C9DA92486D7A9F2EC72891A7A4101E2044` ;
 - `apps/mobile/pubspec.lock` :
   `44C54ADEE80B74F8860D7CC87158FEDAD520F60DB0BD918D8D19BEF5A8326B7E`.
+
+### Validations locales S1.1-R2 du 2026-09-09
+
+Environnement : Node `22.18.0`, npm `10.9.3`, Flutter `3.44.1`, Dart `3.12.1`
+et Prisma `7.9.1`.
+
+| Contrôle R2                             | Résultat                                                                                       |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| installations déterministes             | PASS — 2 × 1 137 paquets, scripts désactivés, lockfile stable                                  |
+| audit npm complet                       | PASS — 0 info, 0 low, 0 moderate, 0 high, 0 critical                                           |
+| audit npm production                    | PASS — 0 info, 0 low, 0 moderate, 0 high, 0 critical                                           |
+| `npm ls --all`                          | PASS — code 0, 2 696 lignes                                                                    |
+| scanner ciblé                           | PASS — 75/75                                                                                   |
+| outillage complet                       | PASS — 226/226                                                                                 |
+| scanner réel                            | PASS — 334 fichiers, historique inclus                                                         |
+| OpenAPI                                 | PASS — 32 chemins, 85 schémas, 14 invariants et 30 modèles                                     |
+| Prisma validate/generate                | PASS — schéma valide, client Prisma 7.9.1 généré                                               |
+| lint et typecheck globaux               | PASS                                                                                           |
+| tests globaux                           | PASS — Web 10, Admin 13, API 22, Contracts 2, Config 1, UI 11 et Flutter 22                    |
+| builds npm                              | PASS — Web, Admin, API, Contracts, Config et UI                                                |
+| contre-validation Next                  | PASS — 2 passages Web/Admin identiques, typecheck inclus, aucun octet ni diff supplémentaire   |
+| licences                                | PASS — 1 131 paquets, 0 non déclaré, 0 non approuvé                                            |
+| Sharp/libheif                           | PASS — `sharp@0.35.4`, `libheif@1.23.2`                                                        |
+| diff causal et cohérence manifests/lock | PASS — aucune version physique hors familles R2 et dépendances exigées par leurs parents amont |
+
+Le lockfile R2 a pour SHA-256
+`417A15E68EB637F7426E52FB0022ADBFF3825C7BE1097145DC4A12F6312E245F`.
+`apps/mobile/pubspec.lock` reste à
+`44C54ADEE80B74F8860D7CC87158FEDAD520F60DB0BD918D8D19BEF5A8326B7E`.
+Après chacun des deux passages ciblés Next, les deux `next-env.d.ts` ont le
+SHA-256
+`1862AC4BBBC5192D4BF562161DF66EA547ED3E67173100656AB606AE9797DB2B` et
+le diff Git complet conserve l’empreinte objet
+`b013eb3f7ca964da6a400130846e7563d5863608`.
+
+Les installations, audits, licences, suites globales, validations Prisma et
+OpenAPI, builds non concernés, Flutter et infrastructure avaient déjà réussi
+avant cette correction de sortie générée et n’ont pas été rejoués. Les deux
+builds Next ciblés ont seuls été exécutés deux fois pour prouver
+l’idempotence avec les fichiers suivis finaux.
+Le build APK et le build iOS n’ont pas été exécutés pour R2 : aucun fichier
+Flutter, golden ou lock Pub n’a changé. Le build iOS demeure en outre
+indisponible sous Windows. Les preuves APK R1 ci-dessus restent historiques et
+ne sont pas présentées comme une validation R2.
 
 ## Revues indépendantes
 
