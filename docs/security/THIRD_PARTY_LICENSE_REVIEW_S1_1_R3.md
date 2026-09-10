@@ -2,7 +2,7 @@
 
 - Date de qualification technique : 2026-09-09
 - Source : `package-lock.json`, métadonnées npm amont et inventaires simulés
-- Statut : **QUALIFICATION TECHNIQUE LOCALE — AUCUNE AUTORISATION DE RELEASE**
+- Statut : **QUALIFICATION TECHNIQUE ACCEPTÉE ET PUBLIÉE DANS LA DRAFT PR #36 — GATE JURIDIQUE/RELEASE MAINTENU**
 
 Cette revue qualifie uniquement deux paquets natifs optionnels introduits dans
 le graphe Linux par `sharp@0.35.4`. Elle ne constitue pas un avis juridique, une
@@ -105,3 +105,18 @@ Au point de validation prépublication du 2026-09-09, R3 était uniquement
 présent dans le worktree local, non indexé, non commité et non publié. Cette
 mention est un instantané historique daté ; tout statut ultérieur doit être
 établi par l’historique Git et la Draft PR #36. S1.2 restait non démarré.
+
+Après cet instantané, la qualification a été acceptée et publiée dans la Draft
+PR #36 par le commit `7d23f14619bb88e870e8cfa6d88a0d921db70b28`, quatrième
+commit de la PR, portant son cumul à 52 fichiers. Les workflows Infrastructure
+`34413603588`, Launcher Windows `34413603576`, Security `34413603622` et
+Quality Linux `34413603626` ont tous conclu `completed/success` sur ce head
+exact. Security a confirmé les audits npm complet et production à zéro ainsi
+qu’un inventaire Linux de 1 138 paquets, 0 licence non déclarée et 0 licence non
+approuvée.
+
+Cette publication ne constitue ni une autorisation générale de la LGPL ni une
+autorisation de release. Le gate juridique/release décrit ci-dessus reste
+obligatoire avant toute distribution d’un artefact serveur contenant ces
+bibliothèques. Les futurs statuts Git et CI font foi dans l’historique GitHub et
+la PR #36.

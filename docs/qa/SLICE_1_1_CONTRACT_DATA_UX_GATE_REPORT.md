@@ -105,11 +105,12 @@ version ou identifiant de licence est rejeté. La qualification technique et les
 réserves de distribution sont détaillées dans la
 [revue R3](../security/THIRD_PARTY_LICENSE_REVIEW_S1_1_R3.md).
 
-Le périmètre local R3 est limité au contrôleur de licences, aux notices, au
-nouveau rapport et aux trois documents vivants. Aucun manifeste, lockfile,
-dépendance, workflow, code applicatif, binaire tiers ou artefact produit ne
-change. Cette qualification ne constitue ni une autorisation générale de LGPL,
-ni une autorisation de release. S1.2 reste non démarré.
+Le périmètre validé localement pour R3 était limité au contrôleur de licences,
+aux notices, au nouveau rapport et aux trois documents vivants. Aucun
+manifeste, lockfile, dépendance, workflow, code applicatif, binaire tiers ou
+artefact produit n’a changé. Cette qualification ne constitue ni une
+autorisation générale de LGPL, ni une autorisation de release. S1.2 reste non
+démarré.
 
 Lors du point de validation prépublication du 2026-09-09, S1.1-R3 était
 uniquement présent dans le worktree local, non indexé, non commité et non
@@ -132,6 +133,27 @@ Contrôles locaux ciblés R3 :
 La fixture et ses quatre inventaires ont existé uniquement dans un répertoire
 temporaire, supprimé après le contrôle. Aucun test technique, audit, build,
 installation, workflow ou contrôle Flutter sans rapport n’a été relancé.
+
+### Publication R3 constatée le 2026-09-09
+
+Après l’instantané local ci-dessus, le commit
+`7d23f14619bb88e870e8cfa6d88a0d921db70b28` a publié R3 comme quatrième commit
+de la Draft PR #36. La PR cumulait alors exactement 52 fichiers. Les quatre
+workflows `pull_request` ont terminé sur ce head exact :
+
+| Workflow         | Run ID        | Résultat            |
+| ---------------- | ------------- | ------------------- |
+| Infrastructure   | `34413603588` | `completed/success` |
+| Launcher Windows | `34413603576` | `completed/success` |
+| Security         | `34413603622` | `completed/success` |
+| Quality Linux    | `34413603626` | `completed/success` |
+
+Security a confirmé les audits npm complet et production à zéro, ainsi qu’un
+inventaire Linux de 1 138 paquets installés, 0 licence non déclarée et 0 licence
+non approuvée. Cette publication n’autorise ni la LGPL en général ni une
+release ; le gate juridique/release reste obligatoire pour tout artefact
+serveur distribué qui embarquerait les variantes qualifiées. Les futurs statuts
+Git et CI font foi dans l’historique GitHub et la PR #36.
 
 ## Décisions acceptées
 
