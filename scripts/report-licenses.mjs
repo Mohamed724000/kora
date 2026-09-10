@@ -23,8 +23,8 @@ const APPROVED_LICENSES = new Set([
 ]);
 
 const APPROVED_PACKAGE_LICENSES = new Map([
-  ["@img/sharp-libvips-linux-x64@1.3.2", "LGPL-3.0-or-later"],
-  ["@img/sharp-libvips-linuxmusl-x64@1.3.2", "LGPL-3.0-or-later"],
+  ["@img/sharp-libvips-linux-x64@1.3.3", "LGPL-3.0-or-later"],
+  ["@img/sharp-libvips-linuxmusl-x64@1.3.3", "LGPL-3.0-or-later"],
 ]);
 
 function licenseFor(manifest, packagePath) {

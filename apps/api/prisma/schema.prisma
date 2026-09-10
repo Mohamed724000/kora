@@ -5,3 +5,643 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+// S1.1 target schema only. This file intentionally has no accompanying migration.
+
+enum CustomerStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum DevicePlatform {
+  ANDROID
+  IOS
+}
+
+enum OtpPurpose {
+  REGISTER
+  LOGIN
+  STEP_UP
+}
+
+enum ArtistStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum MediaAssetKind {
+  AUDIO_MASTER
+  COVER_IMAGE
+}
+
+enum MediaProcessingStatus {
+  PREPARING
+  UPLOAD_PENDING
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum OrderState {
+  CREATED
+  PAYMENT_PENDING
+  SETTLED
+  CANCELLED
+}
+
+enum Currency {
+  XOF
+}
+
+enum PaymentProvider {
+  SANDBOX_NEUTRAL
+}
+
+enum PaymentAttemptState {
+  CREATED
+  PENDING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  EXPIRED
+}
+
+enum InboxProcessingStatus {
+  RECEIVED
+  PROCESSING
+  PROCESSED
+  REJECTED
+}
+
+enum LedgerDirection {
+  DEBIT
+  CREDIT
+}
+
+enum LedgerAccountKind {
+  PROVIDER_CLEARING
+  CUSTOMER_RECEIVABLE
+  ARTIST_PAYABLE
+  PLATFORM_REVENUE
+  TAX_PAYABLE
+  REFUND_LIABILITY
+}
+
+enum EntitlementSource {
+  PURCHASE
+}
+
+enum ArtistEarningAllocationPolicy {
+  FLOOR_SETTLEMENT_WITH_ARTIST_CARRY_V1
+}
+
+enum AdminRole {
+  SUPER_ADMIN
+  CONTENT_EDITOR
+  FINANCE_MANAGER
+  SUPPORT
+}
+
+model Customer {
+  id                 String              @id @default(uuid())
+  verifiedPhone      String              @unique
+  optionalEmail      String?             @unique
+  passwordHash       String
+  status             CustomerStatus      @default(ACTIVE)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  devices            CustomerDevice[]
+  sessions           CustomerSession[]
+  otpChallenges      OtpChallenge[]
+  orders             Order[]
+  entitlements       Entitlement[]
+  idempotencyRecords IdempotencyRecord[]
+
+  @@index([status, createdAt])
+}
+
+model CustomerDevice {
+  id                   String                        @id @default(uuid())
+  customerId           String
+  customer             Customer                      @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  fingerprintHash      String
+  platform             DevicePlatform
+  registeredAt         DateTime                      @default(now())
+  lastSeenAt           DateTime                      @default(now())
+  revokedAt            DateTime?
+  sessions             CustomerSession[]
+  purchasedDescriptors PurchasedPlaybackDescriptor[]
+
+  @@unique([customerId, fingerprintHash])
+  @@unique([id, customerId])
+  @@index([customerId, revokedAt])
+}
+
+model CustomerSession {
+  id                  String         @id @default(uuid())
+  customerId          String
+  customer            Customer       @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  deviceId            String
+  device              CustomerDevice @relation(fields: [deviceId, customerId], references: [id, customerId], onDelete: Restrict, onUpdate: Restrict)
+  sessionFamilyId     String
+  accessTokenId       String         @unique
+  refreshTokenHash    String         @unique
+  refreshTokenVersion Int            @default(1)
+  lastOtpStepUpAt     DateTime?
+  expiresAt           DateTime
+  revokedAt           DateTime?
+  createdAt           DateTime       @default(now())
+  otpChallenges       OtpChallenge[]
+
+  @@unique([id, customerId])
+  @@index([customerId, revokedAt])
+  @@index([sessionFamilyId, revokedAt])
+}
+
+model OtpChallenge {
+  id                    String           @id @default(uuid())
+  normalizedPhone       String
+  purpose               OtpPurpose
+  codeHash              String
+  customerId            String?
+  customer              Customer?        @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sessionId             String?
+  session               CustomerSession? @relation(fields: [sessionId, customerId], references: [id, customerId], onDelete: Restrict, onUpdate: Restrict)
+  pendingPasswordHash   String?
+  passwordVerifiedAt    DateTime?
+  deviceFingerprintHash String
+  devicePlatform        DevicePlatform
+  attempts              Int              @default(0)
+  expiresAt             DateTime
+  consumedAt            DateTime?
+  createdAt             DateTime         @default(now())
+
+  @@index([normalizedPhone, purpose, createdAt])
+  @@index([customerId, purpose, consumedAt])
+  @@index([sessionId, customerId])
+}
+
+model AdminUser {
+  id                 String                   @id @default(uuid())
+  email              String                   @unique
+  passwordHash       String
+  role               AdminRole
+  createdAt          DateTime                 @default(now())
+  publications       ContentPublication[]
+  auditLogs          AuditLog[]
+  idempotencyRecords AdminIdempotencyRecord[]
+}
+
+model Artist {
+  id                    String             @id @default(uuid())
+  stageName             String
+  status                ArtistStatus       @default(ACTIVE)
+  artistRevenueShareBps Int                @default(2000)
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  audioContents         AudioContent[]
+  earnings              ArtistEarning[]
+  artistSettlements     ArtistSettlement[]
+
+  @@index([status, stageName])
+}
+
+model AudioContent {
+  id             String               @id @default(uuid())
+  artistId       String
+  artist         Artist               @relation(fields: [artistId], references: [id])
+  title          String
+  description    String?
+  priceCfa       Int
+  previewSeconds Int                  @default(30)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  mediaAssets    MediaAsset[]
+  publications   ContentPublication[]
+  orderItems     OrderItem[]
+  entitlements   Entitlement[]
+  previewGrants  PreviewGrant[]
+  artistEarnings ArtistEarning[]
+
+  @@unique([id, artistId])
+  @@index([artistId, createdAt])
+}
+
+model MediaAsset {
+  id                      String                  @id @default(uuid())
+  audioContentId          String
+  audioContent            AudioContent            @relation(fields: [audioContentId], references: [id])
+  kind                    MediaAssetKind
+  processingStatus        MediaProcessingStatus   @default(PREPARING)
+  version                 Int                     @default(1)
+  checksumSha256          String?
+  durationSeconds         Int?
+  privateStorageObjectKey String?
+  privateProviderAssetRef String?
+  failureCode             String?
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+  publicationLinks        PublicationMediaAsset[]
+
+  @@unique([audioContentId, kind, version])
+  @@unique([id, audioContentId, kind, version])
+  @@index([audioContentId, processingStatus])
+}
+
+// An active row is the public visibility fact. Creating it requires one READY
+// PublicationMediaAsset for every required kind in the same transaction.
+// Mux/provider callbacks never create this record. The service must also keep
+// at most one row with archivedAt = null per audioContentId.
+model ContentPublication {
+  id                 String                  @id @default(uuid())
+  audioContentId     String
+  audioContent       AudioContent            @relation(fields: [audioContentId], references: [id])
+  publishedByAdminId String
+  publishedByAdmin   AdminUser               @relation(fields: [publishedByAdminId], references: [id])
+  publishedAt        DateTime                @default(now())
+  archivedAt         DateTime?
+  mediaAssets        PublicationMediaAsset[]
+
+  @@unique([id, audioContentId])
+  @@index([audioContentId, archivedAt])
+}
+
+model PublicationMediaAsset {
+  id                String             @id @default(uuid())
+  publicationId     String
+  audioContentId    String
+  publication       ContentPublication @relation(fields: [publicationId, audioContentId], references: [id, audioContentId])
+  kind              MediaAssetKind
+  mediaAssetId      String
+  mediaAssetVersion Int
+  mediaAsset        MediaAsset         @relation(fields: [mediaAssetId, audioContentId, kind, mediaAssetVersion], references: [id, audioContentId, kind, version])
+  readinessChecksum String
+  verifiedReadyAt   DateTime
+
+  @@unique([publicationId, kind])
+  @@index([mediaAssetId, mediaAssetVersion])
+}
+
+model Order {
+  id                 String              @id @default(uuid())
+  customerId         String
+  customer           Customer            @relation(fields: [customerId], references: [id])
+  currency           Currency            @default(XOF)
+  totalCfa           Int
+  createdAt          DateTime            @default(now())
+  items              OrderItem[]
+  stateEvents        OrderStateEvent[]
+  paymentAttempts    PaymentAttempt[]
+  settlement         Settlement?
+  idempotencyRecords IdempotencyRecord[]
+  entitlements       Entitlement[]
+
+  @@unique([id, customerId])
+  @@index([customerId, createdAt])
+}
+
+model OrderItem {
+  id             String         @id @default(uuid())
+  orderId        String
+  order          Order          @relation(fields: [orderId], references: [id])
+  audioContentId String
+  audioContent   AudioContent   @relation(fields: [audioContentId], references: [id])
+  titleSnapshot  String
+  unitPriceCfa   Int
+  quantity       Int            @default(1)
+  createdAt      DateTime       @default(now())
+  artistEarning  ArtistEarning?
+  entitlement    Entitlement?
+
+  @@unique([orderId, audioContentId])
+  @@unique([id, orderId, audioContentId])
+}
+
+// Order state is append-only. The current state is the highest sequence.
+model OrderStateEvent {
+  id         String     @id @default(uuid())
+  orderId    String
+  order      Order      @relation(fields: [orderId], references: [id])
+  sequence   Int
+  state      OrderState
+  reasonCode String?
+  recordedAt DateTime   @default(now())
+
+  @@unique([orderId, sequence])
+  @@index([orderId, recordedAt])
+}
+
+// The attempt itself is immutable. A retry always inserts another attempt;
+// state changes are append-only PaymentAttemptEvent rows.
+model PaymentAttempt {
+  id                 String                @id @default(uuid())
+  orderId            String
+  order              Order                 @relation(fields: [orderId], references: [id])
+  provider           PaymentProvider
+  amountCfa          Int
+  currency           Currency              @default(XOF)
+  idempotencyKey     String
+  providerReference  String?               @unique
+  createdAt          DateTime              @default(now())
+  events             PaymentAttemptEvent[]
+  settlement         Settlement?
+  webhookInboxEvents PaymentWebhookInbox[]
+
+  @@unique([orderId, idempotencyKey])
+  @@unique([id, orderId])
+  @@index([orderId, createdAt])
+}
+
+model PaymentAttemptEvent {
+  id               String              @id @default(uuid())
+  paymentAttemptId String
+  paymentAttempt   PaymentAttempt      @relation(fields: [paymentAttemptId], references: [id])
+  sequence         Int
+  state            PaymentAttemptState
+  safeReasonCode   String?
+  recordedAt       DateTime            @default(now())
+  settlement       Settlement?
+
+  @@unique([paymentAttemptId, sequence])
+  @@unique([id, paymentAttemptId])
+  @@index([paymentAttemptId, recordedAt])
+}
+
+model PaymentWebhookInbox {
+  id                  String                @id @default(uuid())
+  provider            PaymentProvider
+  providerEventKey    String
+  paymentAttemptId    String?
+  paymentAttempt      PaymentAttempt?       @relation(fields: [paymentAttemptId], references: [id])
+  payloadHash         String
+  encryptedPayload    String
+  signatureVerifiedAt DateTime
+  processingStatus    InboxProcessingStatus @default(RECEIVED)
+  receivedAt          DateTime              @default(now())
+  processedAt         DateTime?
+
+  @@unique([provider, providerEventKey])
+  @@index([processingStatus, receivedAt])
+}
+
+model OutboxEvent {
+  id               String    @id @default(uuid())
+  aggregateType    String
+  aggregateId      String
+  eventType        String
+  deduplicationKey String    @unique
+  payload          Json
+  createdAt        DateTime  @default(now())
+  publishedAt      DateTime?
+
+  @@index([publishedAt, createdAt])
+}
+
+// A settlement is the only fact allowed to create Entitlement, ledger and
+// ArtistEarning rows in the same transaction.
+model Settlement {
+  id                      String                        @id @default(uuid())
+  orderId                 String                        @unique
+  order                   Order                         @relation(fields: [orderId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  paymentAttemptId        String                        @unique
+  paymentAttempt          PaymentAttempt                @relation(fields: [paymentAttemptId, orderId], references: [id, orderId], onDelete: Restrict, onUpdate: Restrict)
+  succeededAttemptEventId String                        @unique
+  succeededAttemptEvent   PaymentAttemptEvent           @relation(fields: [succeededAttemptEventId, paymentAttemptId], references: [id, paymentAttemptId], onDelete: Restrict, onUpdate: Restrict)
+  settledAmountCfa        Int
+  distributableBasisCfa   Int
+  artistPayableAmountCfa  Int
+  platformAmountCfa       Int
+  artistAllocationPolicy  ArtistEarningAllocationPolicy @default(FLOOR_SETTLEMENT_WITH_ARTIST_CARRY_V1)
+  reconciliationKey       String                        @unique
+  reconciledAt            DateTime
+  settledAt               DateTime                      @default(now())
+  entitlements            Entitlement[]
+  artistSettlements       ArtistSettlement[]
+  artistEarnings          ArtistEarning[]
+  ledgerGroups            LedgerTransactionGroup[]
+
+  @@unique([id, orderId])
+  @@unique([paymentAttemptId, orderId])
+  @@unique([succeededAttemptEventId, paymentAttemptId])
+}
+
+// One immutable row records one artist's result inside a Settlement. The
+// previousArtistSettlementId uniqueness serializes carry consumption; the
+// composite self-relation prevents carry transfer between artists. A future
+// transaction must lock the predecessor before inserting the successor.
+model ArtistSettlement {
+  id                         String                        @id @default(uuid())
+  settlementId               String
+  orderId                    String
+  settlement                 Settlement                    @relation(fields: [settlementId, orderId], references: [id, orderId], onDelete: Restrict, onUpdate: Restrict)
+  artistId                   String
+  artist                     Artist                        @relation(fields: [artistId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  settlementSequence         BigInt
+  previousArtistSettlementId String?                       @unique
+  previousArtistSettlement   ArtistSettlement?             @relation("ArtistSettlementCarry", fields: [previousArtistSettlementId, artistId], references: [id, artistId], onDelete: Restrict, onUpdate: Restrict)
+  nextArtistSettlement       ArtistSettlement?             @relation("ArtistSettlementCarry")
+  carryInNumerator           Int
+  exactEarningsNumerator     BigInt
+  exactNumerator             BigInt
+  payableAmountCfa           Int
+  carryOutNumerator          Int
+  allocationPolicy           ArtistEarningAllocationPolicy @default(FLOOR_SETTLEMENT_WITH_ARTIST_CARRY_V1)
+  reconciledAt               DateTime
+  createdAt                  DateTime                      @default(now())
+  earnings                   ArtistEarning[]
+
+  @@unique([settlementId, artistId])
+  @@unique([previousArtistSettlementId, artistId])
+  @@unique([id, artistId])
+  @@unique([id, settlementId, orderId, artistId])
+  @@unique([artistId, settlementSequence])
+  @@index([artistId, reconciledAt])
+}
+
+model LedgerAccount {
+  id        String            @id @default(uuid())
+  code      String            @unique
+  kind      LedgerAccountKind
+  ownerRef  String?
+  createdAt DateTime          @default(now())
+  postings  LedgerPosting[]
+}
+
+// Every group is append-only and must be posted atomically with equal total
+// DEBIT and CREDIT amountCfa values. Corrections create a linked new group.
+model LedgerTransactionGroup {
+  id                  String                   @id @default(uuid())
+  settlementId        String?
+  settlement          Settlement?              @relation(fields: [settlementId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  eventKey            String                   @unique
+  correctionOfGroupId String?
+  correctionOfGroup   LedgerTransactionGroup?  @relation("LedgerCorrection", fields: [correctionOfGroupId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  corrections         LedgerTransactionGroup[] @relation("LedgerCorrection")
+  createdAt           DateTime                 @default(now())
+  postings            LedgerPosting[]
+
+  @@index([settlementId, createdAt])
+}
+
+model LedgerPosting {
+  id        String                 @id @default(uuid())
+  groupId   String
+  group     LedgerTransactionGroup @relation(fields: [groupId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  accountId String
+  account   LedgerAccount          @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  direction LedgerDirection
+  amountCfa Int
+  createdAt DateTime               @default(now())
+
+  @@index([groupId, direction])
+  @@index([accountId, createdAt])
+}
+
+model ArtistEarning {
+  id                    String                        @id @default(uuid())
+  settlementId          String
+  orderId               String
+  settlement            Settlement                    @relation(fields: [settlementId, orderId], references: [id, orderId], onDelete: Restrict, onUpdate: Restrict)
+  artistSettlementId    String
+  artistSettlement      ArtistSettlement              @relation(fields: [artistSettlementId, settlementId, orderId, artistId], references: [id, settlementId, orderId, artistId], onDelete: Restrict, onUpdate: Restrict)
+  orderItemId           String                        @unique
+  audioContentId        String
+  orderItem             OrderItem                     @relation(fields: [orderItemId, orderId, audioContentId], references: [id, orderId, audioContentId], onDelete: Restrict, onUpdate: Restrict)
+  artistId              String
+  artist                Artist                        @relation(fields: [artistId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  audioContent          AudioContent                  @relation(fields: [audioContentId, artistId], references: [id, artistId], onDelete: Restrict, onUpdate: Restrict)
+  grossItemAmountCfa    Int
+  legallyRequiredTaxCfa Int
+  refundAdjustmentCfa   Int                           @default(0)
+  frozenBasisCfa        Int
+  artistRevenueShareBps Int
+  allocationPolicy      ArtistEarningAllocationPolicy @default(FLOOR_SETTLEMENT_WITH_ARTIST_CARRY_V1)
+  exactEarningNumerator BigInt
+  createdAt             DateTime                      @default(now())
+
+  @@unique([orderItemId, orderId, audioContentId])
+  @@unique([artistSettlementId, settlementId, orderId, orderItemId, audioContentId, artistId])
+  @@index([artistId, createdAt])
+}
+
+model Entitlement {
+  id                   String                        @id @default(uuid())
+  customerId           String
+  customer             Customer                      @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  audioContentId       String
+  audioContent         AudioContent                  @relation(fields: [audioContentId], references: [id])
+  orderItemId          String                        @unique
+  orderItem            OrderItem                     @relation(fields: [orderItemId, orderId, audioContentId], references: [id, orderId, audioContentId], onDelete: Restrict, onUpdate: Restrict)
+  settlementId         String
+  settlement           Settlement                    @relation(fields: [settlementId, orderId], references: [id, orderId], onDelete: Restrict, onUpdate: Restrict)
+  orderId              String
+  order                Order                         @relation(fields: [orderId, customerId], references: [id, customerId], onDelete: Restrict, onUpdate: Restrict)
+  source               EntitlementSource             @default(PURCHASE)
+  grantedAt            DateTime                      @default(now())
+  revokedAt            DateTime?
+  purchasedDescriptors PurchasedPlaybackDescriptor[]
+
+  @@unique([customerId, audioContentId])
+  @@unique([id, customerId])
+  @@unique([orderItemId, orderId, audioContentId])
+  @@index([audioContentId, revokedAt])
+}
+
+model PreviewGrant {
+  id                    String                      @id @default(uuid())
+  audioContentId        String
+  audioContent          AudioContent                @relation(fields: [audioContentId], references: [id])
+  anonymousDeviceHash   String
+  anonymousIpBucketHash String
+  tokenHash             String                      @unique
+  maxDurationSeconds    Int
+  expiresAt             DateTime
+  createdAt             DateTime                    @default(now())
+  descriptors           PreviewPlaybackDescriptor[]
+
+  @@index([anonymousDeviceHash, audioContentId, createdAt])
+  @@index([anonymousIpBucketHash, createdAt])
+}
+
+// Descriptor secrets are short-lived, stored only as hashes and never logged.
+model PreviewPlaybackDescriptor {
+  id             String       @id @default(uuid())
+  previewGrantId String
+  previewGrant   PreviewGrant @relation(fields: [previewGrantId], references: [id])
+  descriptorHash String       @unique
+  expiresAt      DateTime
+  issuedAt       DateTime     @default(now())
+}
+
+model PurchasedPlaybackDescriptor {
+  id             String         @id @default(uuid())
+  customerId     String
+  entitlementId  String
+  entitlement    Entitlement    @relation(fields: [entitlementId, customerId], references: [id, customerId], onDelete: Restrict, onUpdate: Restrict)
+  deviceId       String
+  device         CustomerDevice @relation(fields: [deviceId, customerId], references: [id, customerId], onDelete: Restrict, onUpdate: Restrict)
+  descriptorHash String         @unique
+  expiresAt      DateTime
+  issuedAt       DateTime       @default(now())
+
+  @@index([customerId, entitlementId, deviceId, expiresAt])
+}
+
+model IdempotencyRecord {
+  id             String   @id @default(uuid())
+  customerId     String
+  customer       Customer @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  operation      String
+  idempotencyKey String
+  requestHash    String
+  responseCode   Int
+  resourceType   String
+  resourceId     String
+  orderId        String?
+  order          Order?   @relation(fields: [orderId, customerId], references: [id, customerId], onDelete: Restrict, onUpdate: Restrict)
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+
+  @@unique([customerId, operation, idempotencyKey])
+  @@index([expiresAt])
+}
+
+// Admin idempotency never stores response bodies or short-lived capabilities.
+// A preparation replay resolves the same MediaAsset then reissues a fresh,
+// short-lived token; the raw token is never persisted in this table.
+model AdminIdempotencyRecord {
+  id             String    @id @default(uuid())
+  adminUserId    String
+  adminUser      AdminUser @relation(fields: [adminUserId], references: [id])
+  operation      String
+  idempotencyKey String
+  requestHash    String
+  responseCode   Int
+  resourceType   String
+  resourceId     String
+  expiresAt      DateTime
+  createdAt      DateTime  @default(now())
+
+  @@unique([adminUserId, operation, idempotencyKey])
+  @@index([expiresAt])
+}
+
+// Critical mutation and audit insert must share one transaction. Application
+// roles receive no UPDATE/DELETE privilege on this table.
+model AuditLog {
+  id             String    @id @default(uuid())
+  adminUserId    String
+  adminUser      AdminUser @relation(fields: [adminUserId], references: [id])
+  adminSessionId String
+  action         String
+  entityType     String
+  entityId       String
+  maskedBefore   Json?
+  maskedAfter    Json?
+  reason         String?
+  requestId      String
+  createdAt      DateTime  @default(now())
+
+  @@index([entityType, entityId, createdAt])
+  @@index([adminUserId, createdAt])
+}

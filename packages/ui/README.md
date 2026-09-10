@@ -12,6 +12,12 @@ Le package expose actuellement :
 
 Le package ne contient aucune donnée, règle métier, route ou intégration réseau.
 
+Les primitives S1.1 ajoutent `ContentForm`, `ContentFormField`,
+`ContentStatusBadge`, `MediaProcessingStatus`, `PublicationChecklist` et
+`ActionableError`. Elles préparent un parcours administration audio clair,
+light-only et accessible sans ajouter de page runtime, de donnée ou de faux
+dashboard.
+
 ## Validation
 
 Depuis ce dossier :

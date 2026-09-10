@@ -64,6 +64,55 @@ const QS_PARENTS = [
     version: "10.3.0",
   },
 ];
+const NEXT_PACKAGE = "next";
+const NEXT_SAFE_VERSION = "16.3.4";
+const NEXT_WORKSPACES = ["apps/admin", "apps/web"];
+const ESLINT_CONFIG_NEXT_PACKAGE = "eslint-config-next";
+const ESLINT_CONFIG_NEXT_SAFE_VERSION = "16.3.4";
+const ESLINT_CONFIG_NEXT_WORKSPACES = ["apps/admin", "apps/web", "packages/ui"];
+const VITEST_PACKAGE = "vitest";
+const VITEST_SAFE_VERSION = "4.1.11";
+const VITEST_WORKSPACES = ["apps/admin", "apps/web", "packages/ui"];
+const VITEST_MOCKER_PACKAGE = "@vitest/mocker";
+const VITEST_MOCKER_SAFE_VERSION = "4.1.11";
+const JS_YAML_PACKAGE = "js-yaml";
+const JS_YAML_OVERRIDES = new Map([
+  ["js-yaml@3.15.0", "3.15.2"],
+  ["js-yaml@4.3.0", "4.3.2"],
+]);
+const JS_YAML_PARENTS = [
+  {
+    declaredVersion: "^4.3.0",
+    packagePath: "node_modules/@eslint/eslintrc",
+    version: "3.3.6",
+  },
+  {
+    declaredVersion: "^3.13.1",
+    packagePath: "node_modules/@istanbuljs/load-nyc-config",
+    version: "1.1.0",
+  },
+  {
+    declaredVersion: "^4.1.0",
+    packagePath: "node_modules/cosmiconfig",
+    version: "8.3.6",
+  },
+];
+const JS_YAML_INSTALLATIONS = new Map([
+  ["node_modules/js-yaml", "4.3.2"],
+  ["node_modules/@istanbuljs/load-nyc-config/node_modules/js-yaml", "3.15.2"],
+]);
+const SHARP_PACKAGE = "sharp";
+const SHARP_ROOT_PATH = `node_modules/${SHARP_PACKAGE}`;
+const SHARP_SAFE_VERSION = "0.35.4";
+const SHARP_PARENT_PATH = "node_modules/next";
+const SHARP_DECLARED_VERSION = "^0.35.4";
+const MULTER_PACKAGE = "multer";
+const MULTER_ROOT_PATH = `node_modules/${MULTER_PACKAGE}`;
+const MULTER_SAFE_VERSION = "2.3.0";
+const NEST_PLATFORM_EXPRESS_VERSION = "11.1.28";
+const NEST_PLATFORM_EXPRESS_PATH = "node_modules/@nestjs/platform-express";
+const NEST_PLATFORM_EXPRESS_OVERRIDE = `@nestjs/platform-express@${NEST_PLATFORM_EXPRESS_VERSION}`;
+const MULTER_DECLARED_VERSION = "2.2.0";
 const DEPENDABOT_ECOSYSTEMS = new Map([
   ["npm", "/"],
   ["pub", "/apps/mobile"],
@@ -415,6 +464,90 @@ function forbiddenMultiParentOverridePaths(
   }
 
   return forbiddenPaths.sort();
+}
+
+function overridePathsTargetingPackage(overrides, packageName) {
+  if (!isObjectRecord(overrides)) {
+    return [];
+  }
+
+  const paths = [];
+  const pending = [{ entries: overrides, parent: null }];
+  while (pending.length > 0) {
+    const { entries, parent } = pending.pop();
+    for (const [selector, value] of Object.entries(entries)) {
+      const node = { parent, selector };
+      if (targetsOverridePackage(selector, packageName)) {
+        paths.push(formatOverridePath(node));
+      }
+      if (isObjectRecord(value)) {
+        pending.push({ entries: value, parent: node });
+      }
+    }
+  }
+  return paths.sort();
+}
+
+function packageInstallations(lockfile, packageName) {
+  const rootPath = `node_modules/${packageName}`;
+  return Object.entries(lockfile.packages ?? {}).filter(
+    ([packagePath]) =>
+      packagePath === rootPath || packagePath.endsWith(`/${rootPath}`),
+  );
+}
+
+function installationSummary(installations) {
+  return (
+    installations
+      .map(
+        ([packagePath, metadata]) =>
+          `${packagePath}@${metadata.version ?? "MISSING"}`,
+      )
+      .join(", ") || "NONE"
+  );
+}
+
+function validateWorkspacePins(
+  manifests,
+  { packageName, section, version, workspaces },
+) {
+  const errors = [];
+  const approved = new Set(workspaces);
+  for (const workspacePath of workspaces) {
+    if (manifests[workspacePath]?.[section]?.[packageName] !== version) {
+      errors.push(
+        `${workspacePath} must pin ${packageName} to exact ${version} in ${section}`,
+      );
+    }
+  }
+  for (const [workspacePath, manifest] of Object.entries(manifests)) {
+    for (const candidateSection of DIRECT_DEPENDENCY_SECTIONS) {
+      if (
+        Object.prototype.hasOwnProperty.call(
+          manifest[candidateSection] ?? {},
+          packageName,
+        ) &&
+        (!approved.has(workspacePath) || candidateSection !== section)
+      ) {
+        errors.push(
+          `${packageName} has an unapproved direct declaration: ${workspacePath || "<root>"}:${candidateSection}`,
+        );
+      }
+    }
+  }
+  return errors;
+}
+
+function validatePhysicalSingleton(lockfile, packageName, version) {
+  const rootPath = `node_modules/${packageName}`;
+  const installations = packageInstallations(lockfile, packageName);
+  return installations.length === 1 &&
+    installations[0]?.[0] === rootPath &&
+    installations[0]?.[1]?.version === version
+    ? []
+    : [
+        `${packageName} must have one physical installation at ${rootPath}@${version}; found ${installationSummary(installations)}`,
+      ];
 }
 
 export function validatePrismaDeepmergeOverride(manifests, lockfile) {
@@ -821,6 +954,269 @@ export function validateQsOverrides(manifests, lockfile) {
   return errors;
 }
 
+export function validateNextToolchain(manifests, lockfile) {
+  const errors = [
+    ...validateWorkspacePins(manifests, {
+      packageName: NEXT_PACKAGE,
+      section: "dependencies",
+      version: NEXT_SAFE_VERSION,
+      workspaces: NEXT_WORKSPACES,
+    }),
+    ...validateWorkspacePins(manifests, {
+      packageName: ESLINT_CONFIG_NEXT_PACKAGE,
+      section: "devDependencies",
+      version: ESLINT_CONFIG_NEXT_SAFE_VERSION,
+      workspaces: ESLINT_CONFIG_NEXT_WORKSPACES,
+    }),
+    ...validatePhysicalSingleton(lockfile, NEXT_PACKAGE, NEXT_SAFE_VERSION),
+    ...validatePhysicalSingleton(
+      lockfile,
+      ESLINT_CONFIG_NEXT_PACKAGE,
+      ESLINT_CONFIG_NEXT_SAFE_VERSION,
+    ),
+  ];
+
+  for (const packageName of [NEXT_PACKAGE, ESLINT_CONFIG_NEXT_PACKAGE]) {
+    for (const overridePath of overridePathsTargetingPackage(
+      manifests[""]?.overrides,
+      packageName,
+    )) {
+      errors.push(
+        `${packageName} override is forbidden at path: ${overridePath}`,
+      );
+    }
+  }
+  for (const parentPath of unexpectedDependencyParentPaths(
+    lockfile,
+    NEXT_PACKAGE,
+    [...NEXT_WORKSPACES, "node_modules/@adminlte/react"],
+  )) {
+    errors.push(`next has an unapproved lock parent: ${parentPath}`);
+  }
+  for (const parentPath of unexpectedDependencyParentPaths(
+    lockfile,
+    ESLINT_CONFIG_NEXT_PACKAGE,
+    ESLINT_CONFIG_NEXT_WORKSPACES,
+  )) {
+    errors.push(
+      `eslint-config-next has an unapproved lock parent: ${parentPath}`,
+    );
+  }
+  return errors;
+}
+
+export function validateVitestSupplyChain(manifests, lockfile) {
+  const errors = [
+    ...validateWorkspacePins(manifests, {
+      packageName: VITEST_PACKAGE,
+      section: "devDependencies",
+      version: VITEST_SAFE_VERSION,
+      workspaces: VITEST_WORKSPACES,
+    }),
+    ...validatePhysicalSingleton(lockfile, VITEST_PACKAGE, VITEST_SAFE_VERSION),
+    ...validatePhysicalSingleton(
+      lockfile,
+      VITEST_MOCKER_PACKAGE,
+      VITEST_MOCKER_SAFE_VERSION,
+    ),
+  ];
+  const overrides = manifests[""]?.overrides;
+  for (const packageName of [VITEST_PACKAGE, VITEST_MOCKER_PACKAGE]) {
+    for (const overridePath of overridePathsTargetingPackage(
+      overrides,
+      packageName,
+    )) {
+      errors.push(
+        `${packageName} override is forbidden at path: ${overridePath}`,
+      );
+    }
+  }
+
+  if (
+    lockfile.packages?.[`node_modules/${VITEST_PACKAGE}`]?.dependencies?.[
+      VITEST_MOCKER_PACKAGE
+    ] !== VITEST_MOCKER_SAFE_VERSION
+  ) {
+    errors.push("vitest@4.1.11 must depend on @vitest/mocker 4.1.11");
+  }
+  for (const parentPath of unexpectedDependencyParentPaths(
+    lockfile,
+    VITEST_PACKAGE,
+    VITEST_WORKSPACES,
+  )) {
+    errors.push(`vitest has an unapproved lock parent: ${parentPath}`);
+  }
+  for (const parentPath of unexpectedDependencyParentPaths(
+    lockfile,
+    VITEST_MOCKER_PACKAGE,
+    [`node_modules/${VITEST_PACKAGE}`],
+  )) {
+    errors.push(`@vitest/mocker has an unapproved lock parent: ${parentPath}`);
+  }
+  return errors;
+}
+
+export function validateJsYamlOverrides(manifests, lockfile) {
+  const errors = [];
+  const overrides = manifests[""]?.overrides ?? {};
+  const approvedSelectors = new Set(JS_YAML_OVERRIDES.keys());
+  for (const [selector, version] of JS_YAML_OVERRIDES) {
+    if (overrides[selector] !== version) {
+      errors.push(
+        `${selector} must override js-yaml to exact version ${version}`,
+      );
+    }
+  }
+  for (const overridePath of overridePathsTargetingPackage(
+    overrides,
+    JS_YAML_PACKAGE,
+  )) {
+    if (!approvedSelectors.has(overridePath)) {
+      errors.push(
+        `js-yaml security override is forbidden at path: ${overridePath}`,
+      );
+    }
+  }
+
+  for (const parent of JS_YAML_PARENTS) {
+    const parentMetadata = lockfile.packages?.[parent.packagePath];
+    if (
+      parentMetadata?.version !== parent.version ||
+      parentMetadata?.dependencies?.[JS_YAML_PACKAGE] !== parent.declaredVersion
+    ) {
+      errors.push(
+        `${parent.packagePath} lock metadata must retain its audited js-yaml ${parent.declaredVersion} dependency`,
+      );
+    }
+  }
+  for (const parentPath of unexpectedDependencyParentPaths(
+    lockfile,
+    JS_YAML_PACKAGE,
+    JS_YAML_PARENTS.map(({ packagePath }) => packagePath),
+  )) {
+    errors.push(`js-yaml has an unapproved lock parent: ${parentPath}`);
+  }
+
+  const installations = packageInstallations(lockfile, JS_YAML_PACKAGE);
+  const actual = new Map(
+    installations.map(([packagePath, metadata]) => [
+      packagePath,
+      metadata.version,
+    ]),
+  );
+  if (
+    installations.length !== JS_YAML_INSTALLATIONS.size ||
+    [...JS_YAML_INSTALLATIONS].some(
+      ([packagePath, version]) => actual.get(packagePath) !== version,
+    )
+  ) {
+    errors.push(
+      `js-yaml must have only the approved physical installations; found ${installationSummary(installations)}`,
+    );
+  }
+  return errors;
+}
+
+export function validateSharpOverride(manifests, lockfile) {
+  const errors = [];
+  const overrides = manifests[""]?.overrides ?? {};
+  if (overrides[SHARP_PACKAGE] !== SHARP_SAFE_VERSION) {
+    errors.push(
+      `sharp must be overridden to exact version ${SHARP_SAFE_VERSION}`,
+    );
+  }
+  for (const overridePath of overridePathsTargetingPackage(
+    overrides,
+    SHARP_PACKAGE,
+  )) {
+    if (overridePath !== SHARP_PACKAGE) {
+      errors.push(
+        `sharp security override is forbidden at path: ${overridePath}`,
+      );
+    }
+  }
+
+  const parentMetadata = lockfile.packages?.[SHARP_PARENT_PATH];
+  if (
+    parentMetadata?.version !== NEXT_SAFE_VERSION ||
+    parentMetadata?.optionalDependencies?.[SHARP_PACKAGE] !==
+      SHARP_DECLARED_VERSION
+  ) {
+    errors.push(
+      `next@${NEXT_SAFE_VERSION} lock metadata must retain its audited sharp ${SHARP_DECLARED_VERSION} optional dependency`,
+    );
+  }
+  for (const parentPath of unexpectedDependencyParentPaths(
+    lockfile,
+    SHARP_PACKAGE,
+    [SHARP_PARENT_PATH],
+  )) {
+    errors.push(`sharp has an unapproved lock parent: ${parentPath}`);
+  }
+  errors.push(
+    ...validatePhysicalSingleton(lockfile, SHARP_PACKAGE, SHARP_SAFE_VERSION),
+  );
+  return errors;
+}
+
+export function validateNestMulterOverride(manifests, lockfile) {
+  const errors = [];
+  const overrides = manifests[""]?.overrides ?? {};
+  const targetedOverride = overrides[NEST_PLATFORM_EXPRESS_OVERRIDE];
+  for (const overridePath of forbiddenTargetedOverridePaths(overrides, {
+    childPackage: MULTER_PACKAGE,
+    parentPackage: "@nestjs/platform-express",
+    parentSelector: NEST_PLATFORM_EXPRESS_OVERRIDE,
+  })) {
+    errors.push(
+      `multer security override is forbidden at path: ${overridePath}`,
+    );
+  }
+  if (
+    !isObjectRecord(targetedOverride) ||
+    targetedOverride[MULTER_PACKAGE] !== MULTER_SAFE_VERSION ||
+    Object.keys(targetedOverride).length !== 1
+  ) {
+    errors.push(
+      `${NEST_PLATFORM_EXPRESS_OVERRIDE} must override multer to exact version ${MULTER_SAFE_VERSION}`,
+    );
+  }
+  if (
+    manifests["apps/api"]?.dependencies?.["@nestjs/platform-express"] !==
+    NEST_PLATFORM_EXPRESS_VERSION
+  ) {
+    errors.push(
+      `apps/api must keep @nestjs/platform-express exactly ${NEST_PLATFORM_EXPRESS_VERSION}`,
+    );
+  }
+
+  const parentMetadata = lockfile.packages?.[NEST_PLATFORM_EXPRESS_PATH];
+  if (
+    parentMetadata?.version !== NEST_PLATFORM_EXPRESS_VERSION ||
+    parentMetadata?.dependencies?.[MULTER_PACKAGE] !== MULTER_DECLARED_VERSION
+  ) {
+    errors.push(
+      `${NEST_PLATFORM_EXPRESS_OVERRIDE} lock metadata must retain its audited multer ${MULTER_DECLARED_VERSION} dependency`,
+    );
+  }
+  for (const parentPath of unexpectedDependencyParentPaths(
+    lockfile,
+    MULTER_PACKAGE,
+    [NEST_PLATFORM_EXPRESS_PATH],
+  )) {
+    errors.push(`multer has an unapproved lock parent: ${parentPath}`);
+  }
+  errors.push(
+    ...validatePhysicalSingleton(lockfile, MULTER_PACKAGE, MULTER_SAFE_VERSION),
+    ...validatePhysicalSingleton(
+      lockfile,
+      "@nestjs/platform-express",
+      NEST_PLATFORM_EXPRESS_VERSION,
+    ),
+  );
+  return errors;
+}
+
 export function validateManifestLockConsistency(manifests, lockfile) {
   const errors = [];
   for (const [workspacePath, manifest] of Object.entries(manifests)) {
@@ -1069,6 +1465,11 @@ export function scanRepository(repositoryRoot = process.cwd(), options = {}) {
   errors.push(...validatePrismaMysqlOverride(manifests, lockfile));
   errors.push(...validateAjvFastUriOverride(manifests, lockfile));
   errors.push(...validateQsOverrides(manifests, lockfile));
+  errors.push(...validateNextToolchain(manifests, lockfile));
+  errors.push(...validateVitestSupplyChain(manifests, lockfile));
+  errors.push(...validateJsYamlOverrides(manifests, lockfile));
+  errors.push(...validateSharpOverride(manifests, lockfile));
+  errors.push(...validateNestMulterOverride(manifests, lockfile));
   errors.push(...validatePackageLock(lockfile));
   errors.push(
     ...validateDependabotPolicy(

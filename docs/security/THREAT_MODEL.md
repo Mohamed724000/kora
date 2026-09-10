@@ -1,11 +1,16 @@
 # KORA+ Final — Threat Model initial
 
-État couvert par la preuve prépublication du 2026-09-04 : **BASELINE +
-S0.4/S0.5/M0.1/M0.2/S0.6 FUSIONNÉS ET CLÔTURÉS + M0.3-R4 PUBLIÉ SUR LA DRAFT
-PR #29 + GATE M0.3-R5 VALIDÉ LOCALEMENT**
+Périmètre durable couvert : **BASELINE + S0.4/S0.5/M0.1/M0.2/S0.6 ET M0.3
+FUSIONNÉS ET CLÔTURÉS + CONTRATS, MODÈLE CIBLE ET GATES UX S1.1**.
+
+La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
+commit, push ou changement GitHub S1.1 n’avait encore été effectué : il s’agit
+d’un instantané historique de prépublication. Tout statut GitHub ultérieur doit
+être constaté dans l’historique Git et dans la Draft PR correspondante.
 
 Ce modèle décrit les frontières et mesures attendues. Sprint 0.3 introduit des
-shells et quelques contrôles de fondation étroits ; aucun contrôle métier,
+shells et quelques contrôles de fondation étroits. S1.1 ajoute des contrats,
+un modèle Prisma cible et des composants visuels ; aucun contrôle métier,
 financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
 
 ## Actifs
@@ -33,7 +38,7 @@ financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
 8. CI/CD ↔ environnements et secrets.
 9. Opérateurs ↔ fonctions sensibles et exports.
 
-## Frontières et gates réellement introduits jusqu’à M0.3-R5
+## Frontières et gates M0.3-R5, complétés contractuellement par S1.1
 
 - shells mobile, web public et administration sans appel API ni donnée métier ;
 - surface HTTP NestJS limitée à `/health/live` et `/health/ready`, hors du
@@ -43,9 +48,15 @@ financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
   avec délais clients et borne globale pilotée par `READINESS_TIMEOUT_MS` ;
 - corrélation des requêtes et logs Pino avec redaction des en-têtes, champs et
   chaînes de message sensibles ; le champ `msg` Nest reste catégoriel et fixe ;
-- client Prisma vide et frontière de contrats explicitement vide ;
+- avant S1.1, client Prisma vide et frontière de contrats explicitement vide ;
+- surface OpenAPI S1.1 de 32 chemins et 38 opérations, sans contrôleur
+  consommateur runtime ;
+- modèle Prisma cible S1.1 à 30 modèles, sans migration, base modifiée ni seed ;
+- types audio générés depuis OpenAPI avec contrôle de dérive ;
+- primitives Flutter et administration sans appel API, faux contenu runtime ou
+  intégration fournisseur ;
 - aucune migration, queue BullMQ active, intégration fournisseur, URL média,
-  logique financière ou donnée personnelle.
+  logique financière exécutée ou donnée personnelle réelle ;
 - PostgreSQL et Redis locaux S0.4, bornés au projet Compose et au loopback ;
 - CI S0.5 en lecture seule sur le dépôt, actions épinglées et jobs bornés ;
 - Sentry minimal API, Web, Admin et Flutter, inactif sans DSN, sans PII, logs,
@@ -65,6 +76,12 @@ financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
 - S0.6 n’ajoute aucune frontière runtime : il rejoue et documente les preuves
   des fondations sur la baseline
   `40a224edc1dc018a080b6c188a804e361e96b5ef`.
+- S0.6 est fusionné au SHA
+  `a602fd38f32d018867c8a058deace0325b4a7c31`, baseline initiale de S1.1 ;
+- S1.1 borne contractuellement les futures frontières mobile/API/admin, paiement
+  sandbox et média privé par contrat uniquement ; leur activation reste
+  interdite. Lors de la validation locale du 2026-09-07, le lot n’était ni
+  publié ni fusionné.
 
 Chronologie supply-chain : M0.3 corrige `deepmerge-ts`; R1 durcit le gate; R2
 corrige le premier avis `mysql2`; R3 publie la réconciliation documentaire; R4
@@ -75,21 +92,21 @@ métier ou runtime.
 
 ## Menaces et mesures attendues
 
-| Domaine      | Menaces principales                                                                            | Mesures attendues / autorités                                                                                     | État                                                                                                  |
-| ------------ | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Identité/OTP | Brute force, interception, replay, enumeration                                                 | Rate limits, OTP court et haché, rotation session, logs masqués ; ADR-010                                         | Not implemented                                                                                       |
-| Admin        | Vol de session, MFA contournée, récupération abusive                                           | TOTP RFC 6238, codes Argon2id, cookies httpOnly, step-up, révocation ; ADR-002/005/008                            | Not implemented                                                                                       |
-| RBAC         | Escalade verticale/horizontale, champs sensibles                                               | Contrôle serveur route/action/champ, moindre privilège ; ADR-020                                                  | Not implemented                                                                                       |
-| Paiement     | Double débit, faux webhook, replay, ordre inversé                                              | Signature, idempotence, Inbox/Outbox, PaymentAttempts immuables ; ADR-012/015                                     | Not implemented                                                                                       |
-| Ledger       | Altération, déséquilibre, double comptage                                                      | Append-only, groupes équilibrés, compensation, reconciliation ; ADR-013/014                                       | Not implemented                                                                                       |
-| Droits       | Accès sans achat, révocation excessive                                                         | Entitlement permanent ciblé, checks serveur ; ADR-016                                                             | Not implemented                                                                                       |
-| Média        | URL brute, partage, scraping, logs sensibles                                                   | Stockage privé, descriptor court, PreviewGrant, device binding ; ADR-011/017                                      | Not implemented                                                                                       |
-| Offline      | Extraction clé/fichier, replay licence, copie appareil                                         | AES-256-GCM, clé non exportable, licence renouvelable ; ADR-018                                                   | Not implemented                                                                                       |
-| Audit        | Suppression ou falsification                                                                   | Écriture transactionnelle, blocage UPDATE/DELETE, exports audités ; ADR-019                                       | Not implemented                                                                                       |
-| Capture      | Enregistrement écran et dispositif externe                                                     | `FLAG_SECURE`, détection/pause iOS, protections en couches sans promesse absolue ; ADR-024                        | Not implemented                                                                                       |
-| Données/logs | Fuite PII, token ou secret                                                                     | Redaction des champs et messages, `msg` catégoriel, minimisation, contrôle accès, rétention et tests              | Foundation validated locally by S0.6 — no business PII flow                                           |
-| Supply chain | Package compromis, licence incompatible, épuisement de pile, SSRF ou déni de service transitif | Versions verrouillées, revue, audit, provenance, scripts qualifiés, six chemins parents exacts et gates de graphe | R4 publié : audits à zéro et licences contrôlées ; R5 prépublication : scanner 66/66, outillage 73/73 |
-| CI/CD        | Secret exposé, artefact altéré, déploiement non autorisé                                       | Permissions lecture seule, actions épinglées, scans, timeouts et rollback                                         | R4 : les quatre workflows #45 réussissent sur le head publié exact                                    |
+| Domaine      | Menaces principales                                                                            | Mesures attendues / autorités                                                                                                                                         | État                                                                                     |
+| ------------ | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Identité/OTP | Brute force, interception, replay, enumeration                                                 | Rate limits, OTP court et haché, rotation session, logs masqués ; ADR-010                                                                                             | Contract/target model S1.1 — runtime not implemented                                     |
+| Admin        | Vol de session, MFA contournée, récupération abusive                                           | TOTP RFC 6238, codes Argon2id, cookies httpOnly, step-up, révocation ; ADR-002/005/008                                                                                | Not implemented                                                                          |
+| RBAC         | Escalade verticale/horizontale, champs sensibles                                               | Contrôle serveur route/action/champ, moindre privilège ; ADR-020                                                                                                      | Not implemented                                                                          |
+| Paiement     | Double débit, faux webhook, replay, ordre inversé                                              | Signature, idempotence, Inbox/Outbox, PaymentAttempts immuables ; ADR-012/015                                                                                         | Sandbox contract/target model S1.1 — runtime not implemented                             |
+| Ledger       | Altération, déséquilibre, double comptage                                                      | Append-only, groupes équilibrés, compensation, reconciliation ; ADR-013/014                                                                                           | Target model S1.1 — runtime balance not implemented                                      |
+| Droits       | Accès sans achat, révocation excessive                                                         | Entitlement permanent ciblé, checks serveur ; ADR-016                                                                                                                 | Contract/target model S1.1 — runtime not implemented                                     |
+| Média        | URL brute, partage, scraping, logs sensibles                                                   | Stockage privé, descriptor court, PreviewGrant, device binding ; ADR-011/017                                                                                          | Contract/target model S1.1 — runtime not implemented                                     |
+| Offline      | Extraction clé/fichier, replay licence, copie appareil                                         | AES-256-GCM, clé non exportable, licence renouvelable ; ADR-018                                                                                                       | Not implemented                                                                          |
+| Audit        | Suppression ou falsification                                                                   | Écriture transactionnelle, blocage UPDATE/DELETE, exports audités ; ADR-019                                                                                           | Target model S1.1 — runtime not implemented                                              |
+| Capture      | Enregistrement écran et dispositif externe                                                     | `FLAG_SECURE`, détection/pause iOS, protections en couches sans promesse absolue ; ADR-024                                                                            | Not implemented                                                                          |
+| Données/logs | Fuite PII, token ou secret                                                                     | Redaction des champs et messages, `msg` catégoriel, minimisation, contrôle accès, rétention et tests                                                                  | Foundation validated locally by S0.6 — no business PII flow                              |
+| Supply chain | Package compromis, licence incompatible, épuisement de pile, SSRF ou déni de service transitif | Versions verrouillées, revue, audit, provenance, scripts qualifiés, parents exacts, gates de graphe, sorties Next reproductibles et exceptions de licence nominatives | M0.3 publié et vert ; S1.1-R2 et R3 publiés dans la Draft PR #36, R3 au head `7d23f146…` |
+| CI/CD        | Secret exposé, artefact altéré, déploiement non autorisé                                       | Permissions lecture seule, actions épinglées, scans, timeouts et rollback                                                                                             | Workflows M0.3 #45 verts ; quatre workflows S1.1-R3 verts sur le head publié exact       |
 
 ## Risques ouverts et gates
 
@@ -158,6 +175,68 @@ métier ou runtime.
   `peerDependencies`. Les 65 tests R4 restent actifs ; le scanner R5 passe
   66/66 et l’outillage 73/73. Prisma, Prisma Client et `@prisma/config` restent
   `7.9.1`; `deepmerge-ts` reste `8.0.1`.
+- Le 2026-09-09, le workflow Security S1.1-R1 `34286291903` a établi une
+  baseline de 11 vulnérabilités npm pour le graphe complet (2 moderate, 8 high,
+  1 critical) et 7 pour la production (6 high, 1 critical). S1.1-R2 traite les
+  avis courants en conservant les branches majeures : Next et ESLint Config
+  Next `16.3.4`, Vitest et `@vitest/mocker` `4.1.11`, `js-yaml` `3.15.2` et
+  `4.3.2`, Sharp `0.35.4` avec `libheif@1.23.2`, et Multer `2.3.0` uniquement
+  sous `@nestjs/platform-express@11.1.28`. Toutes les versions NestJS et Prisma
+  restent inchangées.
+- Les gates S1.1-R2 imposent les pins de workspaces, les installations
+  physiques approuvées et les parents exacts du lockfile. Ils rejettent toute
+  variante globale, élargie, mal versionnée, en plage, wildcard, tag,
+  référence, parallèle ou attachée à un autre parent, sans affaiblir les gates
+  M0.3. Le lockfile
+  `417A15E68EB637F7426E52FB0022ADBFF3825C7BE1097145DC4A12F6312E245F`
+  se reproduit par deux installations de 1 137 paquets ; audits complet et
+  production zéro, `npm ls --all` code 0, licences 1 131/0/0, scanner 75/75 et
+  outillage 226/226.
+- Next `16.3.4` régénère dans les deux `next-env.d.ts` suivis l’import
+  `./.next/types/root-params.d.ts`. Le périmètre R2 final compte donc 12
+  fichiers. Deux passages ciblés Web/Admin, typecheck inclus, conservent pour
+  chacun de ces fichiers le SHA-256
+  `1862AC4BBBC5192D4BF562161DF66EA547ED3E67173100656AB606AE9797DB2B` et
+  le même diff Git ; supprimer cet import recréerait un diff au build suivant.
+- Les installations, audits, licences, tests globaux et validations sans
+  rapport avaient réussi avant cette correction de sortie générée et n’ont
+  pas été rejoués.
+- Le workflow historique Security R2 `34373860535` a confirmé les audits à
+  zéro mais rejeté les variantes optionnelles
+  `@img/sharp-libvips-linux-x64@1.3.3` et
+  `@img/sharp-libvips-linuxmusl-x64@1.3.3`. R3 qualifie exclusivement ces deux
+  tuples et leur licence déclarée `LGPL-3.0-or-later` ; aucune licence LGPL,
+  famille `@img`, autre version ou autre paquet ne devient globalement
+  approuvé.
+- Les paquets Linux ne sont pas présents dans l’installation Windows et aucune
+  bibliothèque libvips n’est modifiée localement. Ils ne sont intégrés ni aux
+  bundles navigateur ni à l’APK Flutter, mais peuvent être embarqués dans un
+  artefact serveur Linux. Toute distribution reste bloquée par un gate
+  juridique/release distinct couvrant licences, notices, sources
+  correspondantes, conditions LGPL et packaging réel.
+- La revue S0.3 des variantes `1.3.2` est un précédent historique, pas une
+  autorisation automatique de `1.3.3`. La qualification technique R3 n’est ni
+  une autorisation générale de LGPL ni une autorisation de release.
+- Après la validation locale, R3 a été publié au commit
+  `7d23f14619bb88e870e8cfa6d88a0d921db70b28`, quatrième commit de la Draft PR
+  #36, dont le cumul atteignait alors 52 fichiers. Infrastructure `34413603588`,
+  Launcher Windows `34413603576`, Security `34413603622` et Quality Linux
+  `34413603626` ont tous conclu `completed/success` sur ce head exact. Security
+  a confirmé les audits npm complet et production à zéro ainsi que l’inventaire
+  Linux de 1 138 paquets, 0 licence non déclarée et 0 licence non approuvée.
+  Cette preuve publiée n’autorise ni la LGPL en général ni une release ; le gate
+  juridique/release demeure obligatoire pour tout artefact serveur distribué.
+  Les futurs statuts Git et CI font foi dans l’historique GitHub et la PR #36.
+- Multer `2.3.0` corrige les dénis de service et le contournement de limite
+  suivis par `GHSA-wc9g-mqfw-jrwm`, `GHSA-qfvm-cv95-jqjf`,
+  `GHSA-qvfw-j98x-7q72` et `GHSA-535w-7cp7-47q4`. R2 n’ajoute aucun runtime
+  d’upload. Avant toute future implémentation, le runtime devra fixer
+  explicitement un `fieldArrayIndexLimit` minimal adapté au produit et le
+  qualifier par tests de limites.
+- Ces preuves S1.1-R2 décrivent l’instantané local prépublication du
+  2026-09-09 : aucun commit, push ou changement de la Draft PR #36 R2 n’avait
+  encore été effectué. Tout statut ultérieur fait foi dans l’historique Git et
+  la PR correspondante ; S1.2 restait non démarré à cet instant.
 - Les overrides restent des mesures temporaires. Chacun devra être retiré
   séparément lorsqu’un parent amont autorisé intégrera officiellement la
   dépendance corrigée correspondante. Tout nouveau graphe exige de rejouer
@@ -197,6 +276,61 @@ métier ou runtime.
 - KMS, secrets production et isolation environnements : gate production.
 - Tests appareils réels, faible mémoire/réseau et anti-capture : gate bêta.
 - Pentest, charge, restauration et audit financier : gate production.
+- S1.1 spécifie une inscription et une connexion distinctes : téléphone E.164
+  et mot de passe sont vérifiés avant l’OTP. La vérification crée la seule
+  session client active et la révocation des sessions actives antérieures doit
+  être atomique. Le refresh est rotatif, à usage unique ; son replay révoque la
+  famille. Le step-up OTP est distinct, exige une session `customerBearer`
+  existante et ne crée pas de nouvelle session. Les ensembles public,
+  `customerBearer`, bearer admin court avec RBAC explicite et signature webhook
+  sandbox sont fermés et validés. Un cookie de refresh admin ne peut pas
+  authentifier directement une mutation. Le lot n’implémente ni émission,
+  rotation, validation, rate limit ni révocation ; les lots runtime doivent
+  fournir leurs tests d’abus avant usage.
+- Le contexte OTP cible conserve seulement les hashes du code, de l’empreinte
+  appareil et, pour l’inscription, du mot de passe pending. L’horodatage de
+  vérification password et les relations composites client/session lient le
+  challenge au parcours initial ; les sorties publiques ne distinguent pas un
+  téléphone déjà connu. Les contraintes dépendantes du `purpose` restent des
+  préconditions transactionnelles à implémenter et tester dans le runtime.
+- Les réponses métier avec corps sont contractées sous `{data, meta}` et les
+  erreurs sous `{error: {code, message, details}}`. Le validateur parcourt les
+  réponses de chaque opération, exige des objets fermés et limite `details` à
+  trois champs non sensibles. Il rejette aussi les alternatives OR anonymes,
+  les sécurités racine implicites et les opérations métier non classées.
+- Les clés d’objet privé et références fournisseur existent uniquement dans le
+  modèle serveur cible. Le validateur interdit leur exposition contractuelle ;
+  le futur mapping ORM/API devra conserver cette frontière avec des tests de
+  sérialisation négatifs.
+- L’équilibre du ledger, les montants non négatifs, l’unicité partielle de la
+  publication active et la précondition média `READY` nécessitent migration
+  et/ou transactions serveur. Prisma exprime les relations composites et
+  unicités possibles sans prétendre matérialiser ces invariants avant S1.2.
+- Les records d’idempotence client/admin ne stockent aucun body. Un replay de
+  préparation média retrouve le même asset et réémet une capability courte,
+  sans persister ni rejouer le token brut.
+- Les sessions et appareils client, les descripteurs achetés avec leurs droits
+  et appareils, ainsi que les records d’idempotence avec leurs commandes sont
+  liés par `customerId` composite et `Restrict`. Les tests négatifs retirent
+  chaque liaison séparément pour prouver que le gate refuse tout croisement de
+  tenant. La migration et les transactions d’application restent futures.
+- Le règlement artiste est borné par la politique versionnée
+  `FLOOR_SETTLEMENT_WITH_ARTIST_CARRY_V1` : arithmétique `BigInt`, floor des
+  FCFA payables et reliquat de numérateur conservé pour le même artiste. Un
+  `ArtistSettlement` porte une séquence unique, un prédécesseur composite du
+  même artiste et une référence de prédécesseur consommable une seule fois.
+  La transaction future devra verrouiller ce prédécesseur pour empêcher deux
+  consommations concurrentes, imposer le carry initial nul et vérifier
+  l’équation de conservation avant insertion.
+- Chaque `ArtistEarning` est relié par clé composite au même
+  `ArtistSettlement`, Settlement, commande, ligne, contenu et artiste. Les
+  relations financières utilisent `Restrict`; les enregistrements finalisés
+  sont append-only et toute correction passe par une écriture compensatoire.
+  Le modèle et l’algorithme pur testent ces préconditions, mais restent une
+  cible sans migration, transaction, paiement ou exécution financière réelle.
+- Les descripteurs de lecture sont contractuellement opaques, courts,
+  non persistables et non journalisables. Leur signature, rotation, liaison
+  appareil et révocation restent un gate runtime ultérieur.
 
 ## Méthode de mise à jour
 

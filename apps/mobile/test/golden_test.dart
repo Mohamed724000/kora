@@ -11,6 +11,8 @@ import 'package:kora_plus/src/foundation/presentation/kora_shell.dart';
 import 'package:kora_plus/src/navigation/app_section.dart';
 import 'package:kora_plus/src/theme/kora_theme.dart';
 
+import 'support/audio_pilot_gallery.dart';
+
 const _goldenFontFamily = 'KoraGoldenRoboto';
 final bool _skipNonReferenceGoldenPlatform = !Platform.isWindows;
 late ThemeData _goldenTheme;
@@ -89,10 +91,43 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      final labels = tester
+          .widgetList<KoraNavigationItem>(find.byType(KoraNavigationItem))
+          .map((item) => item.section.label)
+          .toList(growable: false);
+      expect(labels, <String>[
+        'Accueil',
+        'Découvrir',
+        'Mes achats',
+        'Lecteur',
+        'Compte',
+      ]);
       expect(find.byKey(const Key('mini-player')), findsNothing);
       await expectLater(
         find.byKey(foundationShellKey),
         matchesGoldenFile('goldens/no_mini_player_341.png'),
+      );
+    },
+    skip: _skipNonReferenceGoldenPlatform,
+  );
+  testWidgets(
+    'golden du système d’expérience audio à 341 px',
+    (tester) async {
+      _configureViewport(tester, const Size(341, 1100));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: _goldenTheme,
+          home: const Scaffold(body: AudioPilotGallery()),
+        ),
+      );
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      await expectLater(
+        find.byType(AudioPilotGallery),
+        matchesGoldenFile('goldens/audio_pilot_gallery_341.png'),
       );
     },
     skip: _skipNonReferenceGoldenPlatform,

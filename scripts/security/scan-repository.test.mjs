@@ -9,12 +9,17 @@ import {
   validateDependabotPolicy,
   validateManifestLockConsistency,
   validateManifestVersions,
+  validateNestMulterOverride,
+  validateNextToolchain,
   validatePackageLock,
   validateAjvFastUriOverride,
+  validateJsYamlOverrides,
   validatePrismaDeepmergeOverride,
   validatePrismaMysqlOverride,
   validateQsOverrides,
   validateReactTypesSingleton,
+  validateSharpOverride,
+  validateVitestSupplyChain,
 } from "./scan-repository.mjs";
 
 const validDependabotPolicy = `version: 2
@@ -1106,4 +1111,327 @@ test("rejects changed qs parent metadata and an unapproved lock parent", () => {
     "express@5.2.1 lock metadata must retain its audited qs ^6.14.0 dependency",
     "qs has an unapproved lock parent: node_modules/example",
   ]);
+});
+
+const validR2Manifests = {
+  "": {
+    overrides: {
+      "@nestjs/platform-express@11.1.28": { multer: "2.3.0" },
+      "js-yaml@3.15.0": "3.15.2",
+      "js-yaml@4.3.0": "4.3.2",
+      sharp: "0.35.4",
+    },
+  },
+  "apps/admin": {
+    dependencies: { next: "16.3.4" },
+    devDependencies: {
+      "eslint-config-next": "16.3.4",
+      vitest: "4.1.11",
+    },
+  },
+  "apps/api": {
+    dependencies: { "@nestjs/platform-express": "11.1.28" },
+  },
+  "apps/web": {
+    dependencies: { next: "16.3.4" },
+    devDependencies: {
+      "eslint-config-next": "16.3.4",
+      vitest: "4.1.11",
+    },
+  },
+  "packages/ui": {
+    devDependencies: {
+      "eslint-config-next": "16.3.4",
+      vitest: "4.1.11",
+    },
+  },
+};
+
+const validR2Lock = {
+  packages: {
+    "node_modules/@eslint/eslintrc": {
+      dependencies: { "js-yaml": "^4.3.0" },
+      version: "3.3.6",
+    },
+    "node_modules/@istanbuljs/load-nyc-config": {
+      dependencies: { "js-yaml": "^3.13.1" },
+      version: "1.1.0",
+    },
+    "node_modules/@istanbuljs/load-nyc-config/node_modules/js-yaml": {
+      version: "3.15.2",
+    },
+    "node_modules/@nestjs/platform-express": {
+      dependencies: { multer: "2.2.0" },
+      version: "11.1.28",
+    },
+    "node_modules/@vitest/mocker": { version: "4.1.11" },
+    "node_modules/cosmiconfig": {
+      dependencies: { "js-yaml": "^4.1.0" },
+      version: "8.3.6",
+    },
+    "node_modules/eslint-config-next": { version: "16.3.4" },
+    "node_modules/js-yaml": { version: "4.3.2" },
+    "node_modules/multer": { version: "2.3.0" },
+    "node_modules/next": {
+      optionalDependencies: { sharp: "^0.35.4" },
+      version: "16.3.4",
+    },
+    "node_modules/sharp": { version: "0.35.4" },
+    "node_modules/vitest": {
+      dependencies: { "@vitest/mocker": "4.1.11" },
+      version: "4.1.11",
+    },
+  },
+};
+
+test("accepts the exact S1.1-R2 supply-chain graph", () => {
+  assert.deepEqual(validateNextToolchain(validR2Manifests, validR2Lock), []);
+  assert.deepEqual(
+    validateVitestSupplyChain(validR2Manifests, validR2Lock),
+    [],
+  );
+  assert.deepEqual(validateJsYamlOverrides(validR2Manifests, validR2Lock), []);
+  assert.deepEqual(validateSharpOverride(validR2Manifests, validR2Lock), []);
+  assert.deepEqual(
+    validateNestMulterOverride(validR2Manifests, validR2Lock),
+    [],
+  );
+});
+
+test("rejects Next and ESLint Config Next pin, placement and override drift", () => {
+  const manifests = structuredClone(validR2Manifests);
+  manifests["apps/web"].dependencies.next = "16.3.3";
+  manifests["apps/api"].devDependencies = { next: "16.3.4" };
+  manifests[""].overrides.next = "16.3.4";
+  const lockfile = structuredClone(validR2Lock);
+  lockfile.packages["apps/web/node_modules/next"] = { version: "16.3.4" };
+  lockfile.packages["node_modules/example"] = {
+    dependencies: { next: "16.3.4" },
+    devDependencies: { "eslint-config-next": "16.3.4" },
+  };
+
+  const errors = validateNextToolchain(manifests, lockfile);
+  assert.ok(
+    errors.includes("apps/web must pin next to exact 16.3.4 in dependencies"),
+  );
+  assert.ok(
+    errors.includes(
+      "next has an unapproved direct declaration: apps/api:devDependencies",
+    ),
+  );
+  assert.ok(errors.includes("next override is forbidden at path: next"));
+  assert.ok(
+    errors.includes("next has an unapproved lock parent: node_modules/example"),
+  );
+  assert.ok(
+    errors.includes(
+      "eslint-config-next has an unapproved lock parent: node_modules/example",
+    ),
+  );
+  assert.ok(
+    errors.some((error) =>
+      error.startsWith(
+        "next must have one physical installation at node_modules/next@16.3.4",
+      ),
+    ),
+  );
+});
+
+test("rejects every Vitest or @vitest/mocker bypass", () => {
+  const manifests = structuredClone(validR2Manifests);
+  manifests["apps/admin"].devDependencies.vitest = "4.1.10";
+  manifests[""].overrides["@vitest/mocker"] = "4.1.11";
+  const lockfile = structuredClone(validR2Lock);
+  lockfile.packages["node_modules/vitest"].dependencies["@vitest/mocker"] =
+    "4.1.10";
+  lockfile.packages["node_modules/example"] = {
+    optionalDependencies: {
+      "@vitest/mocker": "4.1.11",
+      vitest: "4.1.11",
+    },
+  };
+  lockfile.packages["node_modules/example/node_modules/@vitest/mocker"] = {
+    version: "4.1.10",
+  };
+
+  const errors = validateVitestSupplyChain(manifests, lockfile);
+  assert.ok(
+    errors.includes(
+      "apps/admin must pin vitest to exact 4.1.11 in devDependencies",
+    ),
+  );
+  assert.ok(
+    errors.includes(
+      "@vitest/mocker override is forbidden at path: @vitest/mocker",
+    ),
+  );
+  assert.ok(
+    errors.includes("vitest@4.1.11 must depend on @vitest/mocker 4.1.11"),
+  );
+  assert.ok(
+    errors.includes(
+      "@vitest/mocker has an unapproved lock parent: node_modules/example",
+    ),
+  );
+  assert.ok(
+    errors.includes(
+      "vitest has an unapproved lock parent: node_modules/example",
+    ),
+  );
+  assert.ok(
+    errors.some((error) =>
+      error.startsWith(
+        "@vitest/mocker must have one physical installation at node_modules/@vitest/mocker@4.1.11",
+      ),
+    ),
+  );
+});
+
+test("rejects broadened, global and malversioned js-yaml overrides", () => {
+  for (const [selector, specification] of [
+    ["js-yaml", "4.3.2"],
+    ["js-yaml@^4.3.0", "4.3.2"],
+    ["js-yaml@4.3.0", "^4.3.2"],
+    ["example@1.0.0", { "js-yaml": "4.3.2" }],
+  ]) {
+    const manifests = structuredClone(validR2Manifests);
+    manifests[""].overrides[selector] = specification;
+    const errors = validateJsYamlOverrides(manifests, validR2Lock);
+    assert.ok(
+      errors.length > 0,
+      `${selector}=${JSON.stringify(specification)}`,
+    );
+  }
+});
+
+test("rejects js-yaml unapproved parents and physical variants", () => {
+  const lockfile = structuredClone(validR2Lock);
+  lockfile.packages["node_modules/example"] = {
+    peerDependencies: { "js-yaml": "4.3.2" },
+  };
+  lockfile.packages["node_modules/example/node_modules/js-yaml"] = {
+    version: "4.3.2",
+  };
+  const errors = validateJsYamlOverrides(validR2Manifests, lockfile);
+  assert.ok(
+    errors.includes(
+      "js-yaml has an unapproved lock parent: node_modules/example",
+    ),
+  );
+  assert.ok(
+    errors.some((error) =>
+      error.startsWith(
+        "js-yaml must have only the approved physical installations",
+      ),
+    ),
+  );
+});
+
+test("rejects Sharp override, parent and physical installation drift", () => {
+  const manifests = structuredClone(validR2Manifests);
+  manifests[""].overrides.sharp = "^0.35.4";
+  manifests[""].overrides["next@16.3.4"] = { sharp: "0.35.4" };
+  const lockfile = structuredClone(validR2Lock);
+  lockfile.packages["node_modules/next"].optionalDependencies.sharp = "^0.35.3";
+  lockfile.packages["node_modules/example/node_modules/sharp"] = {
+    version: "0.35.3",
+  };
+  const errors = validateSharpOverride(manifests, lockfile);
+  assert.ok(
+    errors.includes("sharp must be overridden to exact version 0.35.4"),
+  );
+  assert.ok(
+    errors.includes(
+      "sharp security override is forbidden at path: next@16.3.4 > sharp",
+    ),
+  );
+  assert.ok(
+    errors.includes(
+      "next@16.3.4 lock metadata must retain its audited sharp ^0.35.4 optional dependency",
+    ),
+  );
+  assert.ok(
+    errors.some((error) =>
+      error.startsWith(
+        "sharp must have one physical installation at node_modules/sharp@0.35.4",
+      ),
+    ),
+  );
+});
+
+test("rejects global, broadened, tagged and referenced Multer overrides", () => {
+  for (const mutation of [
+    (overrides) => {
+      overrides.multer = "2.3.0";
+    },
+    (overrides) => {
+      overrides["@nestjs/platform-express"] = { multer: "2.3.0" };
+    },
+    (overrides) => {
+      overrides["@nestjs/platform-express@^11.1.28"] = { multer: "2.3.0" };
+    },
+    (overrides) => {
+      overrides["@nestjs/platform-express@11.1.28"].multer = "^2.3.0";
+    },
+    (overrides) => {
+      overrides["@nestjs/platform-express@11.1.28"].multer = "latest";
+    },
+    (overrides) => {
+      overrides["@nestjs/platform-express@11.1.28"].multer = "$multer";
+    },
+  ]) {
+    const manifests = structuredClone(validR2Manifests);
+    mutation(manifests[""].overrides);
+    assert.ok(validateNestMulterOverride(manifests, validR2Lock).length > 0);
+  }
+});
+
+test("rejects an additional Multer parent in every dependency section", () => {
+  for (const section of [
+    "dependencies",
+    "devDependencies",
+    "optionalDependencies",
+    "peerDependencies",
+  ]) {
+    const lockfile = structuredClone(validR2Lock);
+    lockfile.packages["node_modules/example"] = {
+      [section]: { multer: "2.3.0" },
+      version: "1.0.0",
+    };
+    assert.ok(
+      validateNestMulterOverride(validR2Manifests, lockfile).includes(
+        "multer has an unapproved lock parent: node_modules/example",
+      ),
+      section,
+    );
+  }
+});
+
+test("rejects NestJS parent drift and every vulnerable Multer installation", () => {
+  const manifests = structuredClone(validR2Manifests);
+  manifests["apps/api"].dependencies["@nestjs/platform-express"] = "11.1.29";
+  const lockfile = structuredClone(validR2Lock);
+  lockfile.packages["node_modules/@nestjs/platform-express"].version =
+    "11.1.29";
+  lockfile.packages["node_modules/example/node_modules/multer"] = {
+    version: "2.2.0",
+  };
+  const errors = validateNestMulterOverride(manifests, lockfile);
+  assert.ok(
+    errors.includes(
+      "apps/api must keep @nestjs/platform-express exactly 11.1.28",
+    ),
+  );
+  assert.ok(
+    errors.includes(
+      "@nestjs/platform-express@11.1.28 lock metadata must retain its audited multer 2.2.0 dependency",
+    ),
+  );
+  assert.ok(
+    errors.some((error) =>
+      error.startsWith(
+        "multer must have one physical installation at node_modules/multer@2.3.0",
+      ),
+    ),
+  );
 });

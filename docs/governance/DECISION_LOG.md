@@ -159,6 +159,24 @@ rester Draft. La décision CTO de clôture ultérieure a autorisé exclusivement
 Ready et le merge commit ci-dessus. Elle n’a autorisé ni tag, release,
 déploiement, suppression de branche, ni démarrage de Slice 1.
 
+## 2026-08-15 — Slice 1 / S1.1 Audio Pilot Contract, Data & Experience Gate
+
+| ID          | Nature      | Décision                                                                                                                                                                                                                         | Autorité          | Statut                           |
+| ----------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | -------------------------------- |
+| DEC-S1.1-01 | Contrat     | OpenAPI est la source unique des 29 chemins et 35 opérations du pilote audio ; les types partagés sont générés seulement après validation et un contrôle de dérive est bloquant.                                                 | Décision CTO S1.1 | Proposed — historical S1.1 draft |
+| DEC-S1.1-02 | Données     | Le schéma Prisma est une cible de conception sans migration, seed, mutation de base ni prétention d’application runtime.                                                                                                         | Décision CTO S1.1 | Proposed — historical S1.1 draft |
+| DEC-S1.1-03 | Finance     | FCFA et points de base sont des entiers, la devise cible est XOF ; les relations composites lient Order, tentative, événement réussi, Settlement, ligne et Entitlement ; le reste est une précondition transactionnelle runtime. | ADR-012 à ADR-016 | Proposed — historical S1.1 draft |
+| DEC-S1.1-04 | Média       | Processing et publication sont indépendants ; publication exige master audio et cover READY à leurs versions exactes ; les capabilities sont courtes, non persistables et non journalisables.                                    | ADR-011/017       | Proposed — historical S1.1 draft |
+| DEC-S1.1-05 | Expérience  | Le mobile reste guest-first, sombre et à cinq onglets ; le mini-lecteur exige un média actif ; le Web public ne lit, ne preview ni ne transige.                                                                                  | ADR-010/017       | Proposed — historical S1.1 draft |
+| DEC-S1.1-06 | Paiement    | S1.1 ne présente que `SANDBOX_NEUTRAL` et ne contracte, intègre ou simule aucun fournisseur de production.                                                                                                                       | Décision CTO S1.1 | Proposed — historical S1.1 draft |
+| DEC-S1.1-07 | Design      | Les primitives Flutter et administration sont réelles et testées ; les fixtures restent confinées aux tests et goldens, jamais au runtime.                                                                                       | Décision CTO S1.1 | Proposed — historical S1.1 draft |
+| DEC-S1.1-08 | Publication | Le lot s’arrête à une Draft PR ; aucune route métier, migration, Ready, fusion, release, déploiement ou S1.2 n’est autorisé.                                                                                                     | Décision CTO S1.1 | Proposed — historical S1.1 draft |
+| DEC-S1.1-09 | Sécurité    | Les mutations admin exigent bearer court, RBAC, audit transactionnel et idempotence dédiée ; un replay de préparation réémet une capability sans persister le token brut.                                                        | ADR-019/020       | Proposed — historical S1.1 draft |
+
+Dans l’instantané historique du 2026-08-15, ces propositions S1.1 décrivaient
+uniquement le travail local alors non publié. Elles ne constituaient pas encore
+des décisions acceptées ni une clôture du lot.
+
 ## 2026-08-20 — Hotfix supply-chain M0.3
 
 | ID          | Nature         | Décision                                                                                                                                                                                                                                                                                                                   | Autorité                               | Statut                                       |
@@ -189,9 +207,89 @@ est publié au head consigné par DEC-M0.3-17 avec quatre workflows #45 verts.
 La validation locale du 2026-09-04 consignée par DEC-M0.3-18 a qualifié la
 correction R5 du dernier écart de gate avant publication. Les métadonnées de
 publication, qui ne sont pas auto-référencées dans cette preuve, font foi dans
-GitHub. S1.1 reste préservé à 39/39 avec l’empreinte agrégée
+GitHub. Au moment de cette validation M0.3, S1.1 était préservé à 39/39 avec
+l’empreinte agrégée
 `8957cbf3ff27110af162f53c72e0c129860f0fcdfb8bfddab1ae3714a1d9c6dc`, et
 S1.2 n’est pas démarré.
+
+## 2026-08-20 — Arbitrage financier S1.1
+
+| ID          | Nature    | Décision                                                                                                                                                                                                                            | Autorité                 | Statut                    |
+| ----------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ | ------------------------- |
+| DEC-S1.1-10 | Arrondi   | Proposition historique d’un `ROUND_HALF_UP` au Settlement entier, sans report fractionnaire. Cette proposition n’a jamais été publiée ni fusionnée et est remplacée par la décision Product Owner DEC-S1.1-13.                      | Arbitrage CTO 2026-08-20 | Superseded by DEC-S1.1-13 |
+| DEC-S1.1-11 | Intégrité | Proposition historique de relations composites et d’un rang d’allocation. La protection composite reste requise, mais le rang lié au largest-remainder est remplacé par la chaîne structurelle et les préconditions de DEC-S1.1-14. | Arbitrage CTO 2026-08-20 | Superseded by DEC-S1.1-14 |
+| DEC-S1.1-12 | Reversal  | Proposition historique où le complément plateforme absorbait le reliquat du Settlement courant. Elle est remplacée : le reliquat appartient à l’artiste et toute correction future reste compensatoire, sans réécriture.            | Arbitrage CTO 2026-08-20 | Superseded by DEC-S1.1-13 |
+
+Cet arbitrage historique n’a été ni publié ni fusionné. Les propositions
+incompatibles sont remplacées par les décisions finales ci-dessous.
+
+## 2026-09-07 — Décisions finales finance et intégrité S1.1
+
+| ID          | Nature       | Décision                                                                                                                                                                                                                                                                                                                                             | Autorité                             | Statut                            |
+| ----------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | --------------------------------- |
+| DEC-S1.1-13 | Fractions    | `FLOOR_SETTLEMENT_WITH_ARTIST_CARRY_V1` est la règle officielle. KORA+ paie les FCFA entiers ; chaque reliquat de numérateur appartient au même artiste, sort d’un `ArtistSettlement` et entre exactement une fois dans son successeur immédiat. Aucun `ROUND_HALF_UP`, abandon plateforme ou transfert entre artistes n’est autorisé.               | Décision Product Owner du 2026-09-07 | Accepted — S1.1 contract decision |
+| DEC-S1.1-14 | Intégrité    | Chaque `ArtistEarning` est relié par clé composite au même `ArtistSettlement`, `Settlement`, `OrderItem`, `AudioContent` et artiste. Le prédécesseur du carry est unique, du même artiste et ordonné par séquence ; une transaction future doit le verrouiller et exécuter les préconditions de correspondance, conservation et consommation unique. | Décision CTO du 2026-09-07           | Accepted — S1.1 contract decision |
+| DEC-S1.1-15 | Immutabilité | Les relations financières cibles utilisent `Restrict`, les données finalisées restent append-only et toute correction future crée des écritures compensatoires. S1.1 fournit uniquement modèle, contrat, validateur et preuve pure : aucune migration, route, transaction ou exécution financière réelle n’est livrée.                               | ADR-013/014 et décision CTO S1.1     | Accepted — S1.1 contract decision |
+
+Ces décisions S1.1 sont acceptées indépendamment du statut Git de leur
+publication et remplacent les propositions historiques incompatibles
+DEC-S1.1-10 à DEC-S1.1-12. Lors de la validation locale du 2026-09-07, aucun
+commit, push ou changement GitHub S1.1 n’avait encore été effectué et S1.2
+n’avait pas été commencé. Cet état est un instantané historique de
+prépublication ; tout statut ultérieur fait foi dans l’historique Git et dans la
+Draft PR correspondante.
+
+## 2026-09-08 — Correctifs locaux S1.1-R1 issus de la revue CTO
+
+| ID          | Nature           | Décision                                                                                                                                                                                                                                                                                                                                                                                                                                     | Autorité                   | Statut                                |
+| ----------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ------------------------------------- |
+| DEC-S1.1-16 | Authentification | Le contrat client sépare inscription et connexion, exige téléphone E.164 et mot de passe avant OTP, protège le step-up par la session existante et impose la création atomique de la seule session active avec révocation des précédentes. Le challenge conserve un contexte serveur borné et l’inscription ne révèle pas l’existence du téléphone. Access 15 minutes, refresh 30 jours rotatif à usage unique, replay révoquant la famille. | ADR-010 / revue CTO S1.1   | Accepted — S1.1 contract decision     |
+| DEC-S1.1-17 | Isolation        | Session/appareil, descripteur/droit/appareil et idempotence/commande utilisent des relations composites de même client avec `Restrict`. Toute réponse métier avec corps suit une enveloppe fermée `{data, meta}` et toute erreur suit `{error: {code, message, details}}` avec détails fermés non sensibles ; les classes de sécurité sont exactes, sans alternative anonyme.                                                                | Revue CTO S1.1             | Accepted — S1.1 contract decision     |
+| DEC-S1.1-18 | Accessibilité    | Paiement sandbox expose un radio exclusif actionnable ; succès paiement et hors connexion sont des régions vivantes ; les lecteurs séparent description, état dérivé de `isPlaying` et action sans répéter titre/artiste, y compris à vide. Dimensions, espacements, rayons et typographie sont centralisés dans les tokens Flutter existants.                                                                                               | Revue CTO S1.1             | Accepted — S1.1 contract decision     |
+| DEC-S1.1-19 | Localisation     | L’intégration complète `AppLocalizations` est formellement différée au lot runtime mobile planifié. S1.1-R1 n’ajoute ni dépendance, manifeste ni infrastructure i18n et fournit les nouveaux libellés d’état par l’appelant ; il ne prétend pas livrer la localisation complète.                                                                                                                                                             | Gouvernance S1.1 / roadmap | Accepted — deferred runtime execution |
+
+Au point de décision CTO du 2026-09-08, S1.1-R1 avait achevé sa validation
+locale avant tout commit, push ou changement de la Draft PR #36. Ce constat est
+une preuve historique de prépublication ; la publication ultérieure est
+enregistrée séparément dans l’historique Git et dans la PR. S1.2 restait non
+démarré à cet instant.
+
+## 2026-09-09 — Remédiation supply-chain S1.1-R2
+
+| ID          | Nature         | Décision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Autorité                              | Statut                                   |
+| ----------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------- | ---------------------------------------- |
+| DEC-S1.1-20 | Dépendances    | R2 maintient les branches majeures et fixe Next/ESLint Config Next `16.3.4`, Vitest et `@vitest/mocker` `4.1.11`, `js-yaml` `3.15.2`/`4.3.2` via les deux sélecteurs existants, et Sharp `0.35.4` avec `libheif@1.23.2`. Aucun override `@vitest/mocker`, changement Prisma, code applicatif, workflow ou nouveau fichier n’est autorisé.                                                                                                                                                        | Décision CTO S1.1-R2 / avis officiels | Accepted — S1.1-R2 remediation decision  |
+| DEC-S1.1-21 | Upload         | `@nestjs/platform-express@11.1.28` conserve sa version et remplace uniquement sa résolution déclarée `multer@2.2.0` par l’override parenté exact `multer@2.3.0`. Tout futur runtime d’upload devra fixer un `fieldArrayIndexLimit` minimal adapté au produit ; aucune valeur ni implémentation runtime n’est inventée par R2.                                                                                                                                                                    | Décision CTO S1.1-R2                  | Accepted — S1.1-R2 remediation decision  |
+| DEC-S1.1-22 | Automatisation | Le scanner impose les pins, installations physiques et parents exacts des familles R2. Il rejette les overrides globaux, élargis, mal versionnés, en plage, wildcard, tag, référence, parallèles ou rattachés à un autre parent, tout en conservant sans affaiblissement les gates M0.3 et S1.1-R1.                                                                                                                                                                                              | Security gate S1.1-R2                 | Accepted — S1.1-R2 remediation decision  |
+| DEC-S1.1-23 | Validation     | Le lockfile SHA-256 `417A15E68EB637F7426E52FB0022ADBFF3825C7BE1097145DC4A12F6312E245F` est reproduit par 2 × 1 137 paquets ; audits complet/production zéro, `npm ls --all` code 0, scanner 75/75, outillage 226/226, licences 1 131/0/0, tests globaux et six builds npm passent. Après conservation des sorties Next suivies, deux passages Web/Admin supplémentaires, typecheck inclus, produisent les mêmes SHA-256 et le même diff Git. Prisma reste `7.9.1` et le lock Pub reste inchangé. | Preuves locales S1.1-R2               | Accepted — local prepublication evidence |
+| DEC-S1.1-24 | Périmètre      | R2 reste limité à 12 fichiers : les cinq manifests/lock npm, le scanner et ses tests, les trois documents vivants et les deux `next-env.d.ts` suivis, régénérés par Next `16.3.4`. Leur import `root-params.d.ts` est requis pour des builds idempotents avec la politique de suivi actuelle. Aucun manifeste Pub, golden, fichier Flutter, OpenAPI, schéma Prisma, code métier, migration, infrastructure ou S1.2 ne change.                                                                    | Gouvernance S1.1-R2                   | Accepted — S1.1-R2 scope decision        |
+
+Au point de validation prépublication du 2026-09-09, S1.1-R2 était uniquement
+présent dans le worktree local, non indexé, non commité et non publié. Ce
+constat est une preuve historique datée ; toute publication ultérieure sera
+enregistrée séparément dans l’historique Git et dans la Draft PR #36. S1.2
+restait non démarré à cet instant.
+
+## 2026-09-09 — Qualification de licence Sharp/libvips Linux S1.1-R3
+
+| ID          | Nature       | Décision                                                                                                                                                                                                                                                                                                                                                                                                                           | Autorité                      | Statut                                   |
+| ----------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ---------------------------------------- |
+| DEC-S1.1-25 | Gate CI      | Le workflow Security R2 `34373860535` a réussi les audits à zéro puis rejeté uniquement `@img/sharp-libvips-linux-x64@1.3.3` et `@img/sharp-libvips-linuxmusl-x64@1.3.3`, absents de l’installation Windows mais sélectionnés par Sharp sur Linux x64. Les trois autres workflows R2 ont conclu `success`.                                                                                                                         | Preuve GitHub S1.1-R2         | Accepted — historical CI evidence        |
+| DEC-S1.1-26 | Licence      | Le contrôleur remplace exclusivement les deux autorisations nominatives `1.3.2` par les mêmes noms en `1.3.3` et licence exacte `LGPL-3.0-or-later`. La licence ne devient pas globalement approuvée ; aucun wildcard, plage, tag, autre version ou troisième paquet n’est autorisé. La qualification S0.3 est un précédent historique limité et non une approbation automatique du delta.                                         | Décision CTO S1.1-R3          | Accepted — exact package qualification   |
+| DEC-S1.1-27 | Distribution | Les bibliothèques optionnelles ne sont ni modifiées localement, ni intégrées aux bundles navigateur ou à l’APK Flutter. Elles peuvent être embarquées dans un artefact serveur Linux ; toute distribution reste soumise à un gate juridique/release distinct couvrant licences, notices, sources correspondantes, conditions LGPL et packaging réel. Cette qualification technique n’autorise aucune release.                      | Gouvernance licences/releases | Accepted — release gate remains required |
+| DEC-S1.1-28 | Périmètre    | R3 est strictement documentaire et outillage : contrôleur de licences, notices tierces, rapport dédié et trois documents vivants. Aucun manifeste, lockfile, dépendance, workflow, code applicatif, binaire tiers, bundle, APK ou S1.2 ne change.                                                                                                                                                                                  | Gouvernance S1.1-R3           | Accepted — S1.1-R3 scope decision        |
+| DEC-S1.1-29 | Publication  | Le commit `7d23f14619bb88e870e8cfa6d88a0d921db70b28` publie R3 comme quatrième commit de la Draft PR #36, dont le cumul atteint alors 52 fichiers. Infrastructure `34413603588`, Launcher Windows `34413603576`, Security `34413603622` et Quality Linux `34413603626` concluent tous `completed/success` sur ce head exact. Security confirme les audits npm complet et production à zéro ainsi que l’inventaire Linux 1 138/0/0. | Preuves GitHub S1.1-R3        | Accepted — published historical evidence |
+
+Au point de validation prépublication du 2026-09-09, S1.1-R3 était
+uniquement présent dans le worktree local, non indexé, non commité et non
+publié. Ce constat est une preuve historique datée ; tout statut ultérieur
+fait foi dans l’historique Git et dans la Draft PR #36. S1.2 restait non
+démarré à cet instant.
+
+Après cet instantané, R3 a été publié au SHA consigné par DEC-S1.1-29. Cette
+preuve postérieure n’étend ni l’autorisation LGPL nominative ni l’autorisation
+de release ; les futurs statuts Git et CI font foi dans l’historique GitHub et
+la PR #36.
 
 ## Catégories d’autorité
 
