@@ -24,7 +24,8 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 | M0.1             | Dependency Governance                        | Closed and merged                |
 | M0.2             | Supply-chain Security Hotfix                 | Closed and merged                |
 | S0.6             | Foundation Gate                              | Closed and merged                |
-| Slice 1 / S1.1   | Contrats, données cibles et expérience audio | Implemented — CTO review pending |
+| Slice 1 / S1.1   | Contrats, données cibles et expérience audio | Closed and merged                |
+| Slice 1 / S1.2-01 | Contract & Data Readiness Gate              | Contract and data gate complete             |
 | Slice 1 / S1.2+  | Fonctionnalités runtime du pilote            | Not started                      |
 | Slices suivantes | Fonctionnalités produit ultérieures          | Not started                      |
 
@@ -133,7 +134,7 @@ démarrait ni Slice 1 ni aucune exigence produit.
 
 ## Slice 1 — Audio purchase pilot
 
-Statut : **In progress — S1.1 implemented, CTO review pending — S1.2 not started**
+Statut : **In progress — S1.1 closed — S1.2-01 gate complete — runtime not started**
 
 Parcours cible :
 
@@ -177,8 +178,30 @@ Les détails sont consignés dans le
 le [système d’expérience](../ux/SLICE_1_1_AUDIO_EXPERIENCE_SYSTEM.md) et le
 [rapport de gate](../qa/SLICE_1_1_CONTRACT_DATA_UX_GATE_REPORT.md).
 
-S1.2 reste **Not started** : aucun catalogue, auth, paiement, webhook, upload,
-Entitlement ou playback runtime n’est livré par S1.1.
+S1.1 est fermé et fusionné dans la baseline de départ de S1.2-01.
+
+### S1.2-01 — Contract & Data Readiness Gate
+
+Le gate prépare les contrats et le modèle cible sans runtime métier ni migration :
+
+- OpenAPI 1.2.0 à 34 chemins, 40 opérations, 87 schémas et 18 invariants ;
+- représentation de couverture publique contrôlée et versionnée, sans emplacement privé ;
+- compteur de ventes réglées réel, strictement nul avant P4 ;
+- provenance administrateur serveur pour `Artist` et `AudioContent`, avec future immutabilité SQL obligatoire ;
+- cible TOTP, sessions, récupération et audit administrateur conforme aux ADR ;
+- Inbox Mux authentifiée, chiffrée, durable, corrélée par références privées uniques et incapable de publier ;
+- republication append-only après archivage ;
+- Prisma à 33 modèles cibles, sans migration ni seed ;
+- types TypeScript et gates négatifs réconciliés.
+
+Les détails sont consignés dans le
+[document d’architecture S1.2-01](../architecture/SLICE_1_2_01_CONTRACT_AND_DATA_READINESS_GATE.md)
+et le
+[rapport de validation](../qa/SLICE_1_2_01_CONTRACT_AND_DATA_READINESS_GATE_REPORT.md).
+
+Le runtime S1.2 reste **Not started** : aucun catalogue, auth administrateur,
+paiement, webhook, upload, Entitlement ou playback runtime n’est livré par ce
+gate.
 
 Avant toute nouvelle chaîne visible du futur runtime mobile, un lot autorisé
 devra intégrer `AppLocalizations`, les ressources de langues et leurs tests de

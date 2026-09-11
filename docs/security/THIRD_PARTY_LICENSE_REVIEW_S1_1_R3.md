@@ -120,3 +120,25 @@ autorisation de release. Le gate juridique/release décrit ci-dessus reste
 obligatoire avant toute distribution d’un artefact serveur contenant ces
 bibliothèques. Les futurs statuts Git et CI font foi dans l’historique GitHub et
 la PR #36.
+
+## Clôture et fusion S1.1
+
+Après l’instantané R3 et sa publication, le commit documentaire R4
+`86471b427bbbab54e1b7e55ab89ffec77f4f3bee` a réconcilié les preuves. La PR #36
+a été fusionnée le 2026-09-10 au merge commit
+`bcb579916c1ca73e3cfb186683cb932f4f3905e9`, avec les parents exacts
+`3b05bfd83a65ab552c6c08f114b8ee0261103f30` et
+`86471b427bbbab54e1b7e55ab89ffec77f4f3bee`.
+
+Les workflows post-fusion Infrastructure `34466969243`, Launcher Windows
+`34466969313`, Security `34466969222` et Quality Linux `34466969196` ont tous
+conclu `completed/success`. Cette clôture ne transforme pas la qualification
+technique en avis juridique ou en autorisation de distribution : le gate
+juridique/release décrit par la présente revue reste obligatoire.
+
+S1.2-01 est postérieur à cette fusion. Instantané historique de validation
+locale du 2026-09-11, établi avant toute publication. À cet instant, S1.2-01
+était non indexé, non commité et non publié, sans changement de dépendance,
+manifeste, lockfile, workflow ni artefact distribué. Ce constat reste vrai pour
+cet instantané historique ; toute publication ultérieure est enregistrée
+séparément par l’historique Git, la PR et les workflows.

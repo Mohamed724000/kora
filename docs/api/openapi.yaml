@@ -2,10 +2,10 @@
   "openapi": "3.1.0",
   "info": {
     "title": "KORA+ Audio Pilot API",
-    "version": "1.1.0",
-    "description": "S1.1 contract-first target for the audio pilot. No runtime implementation, production provider, migration or media location is supplied by this contract."
+    "version": "1.2.0",
+    "description": "S1.2-01 contract and data readiness target for the global MVP audio catalog. No runtime implementation, migration, provider call, seed media or private media location is supplied by this contract."
   },
-  "x-kora-scope": "S1.1_AUDIO_PILOT_CONTRACT_DATA_UX_GATE",
+  "x-kora-scope": "S1.2_01_AUDIO_CATALOG_CONTRACT_DATA_READINESS_GATE",
   "x-kora-authentication-policy": {
     "primaryFlow": "PHONE_PASSWORD_THEN_OTP",
     "registrationOperation": "registerCustomer",
@@ -17,6 +17,24 @@
     "refreshTokenUse": "SINGLE_USE_ROTATING",
     "refreshReplayResponse": "REVOKE_SESSION_FAMILY",
     "successfulLoginSessionPolicy": "ATOMICALLY_REVOKE_ALL_PRIOR_ACTIVE_CUSTOMER_SESSIONS"
+  },
+  "x-kora-admin-auth-data-policy": {
+    "totpStandard": "RFC6238",
+    "totpSecretAtRest": "ENCRYPTED",
+    "totpRequiredEveryLogin": true,
+    "totpEnrollmentRequiredBeforeProtectedAccess": true,
+    "recoveryCodeCount": 10,
+    "recoveryCodeStorage": "ARGON2ID_HASH_SINGLE_USE",
+    "recoveryAndResetAudited": true,
+    "accessTokenLifetimeMinutes": 15,
+    "refreshTokenUse": "SINGLE_USE_ROTATING",
+    "refreshReplayResponse": "REVOKE_SESSION_FAMILY",
+    "refreshCookieHttpOnly": true,
+    "refreshCookieSecure": true,
+    "refreshCookieSameSiteRequired": true,
+    "localStorageForbidden": true,
+    "inactivityWindowHours": 8,
+    "sensitiveActionTotpFreshnessMinutes": 5
   },
   "x-kora-invariants": [
     "ORDER_PRECEDES_PAYMENT_ATTEMPT",
@@ -32,7 +50,11 @@
     "ARTIST_SETTLEMENT_CARRY_SAME_ARTIST_SINGLE_USE",
     "CUSTOMER_AUTH_PASSWORD_THEN_OTP",
     "CUSTOMER_SESSION_SINGLE_DEVICE",
-    "CUSTOMER_STEP_UP_REQUIRES_EXISTING_SESSION"
+    "CUSTOMER_STEP_UP_REQUIRES_EXISTING_SESSION",
+    "ADMIN_CREATED_CATALOG_ENTITIES_PROVENANCE_RESTRICTED",
+    "MEDIA_WEBHOOK_INBOX_AUTHENTICATED_UNIQUE_AND_DURABLE",
+    "PUBLIC_COVER_CONTROLLED_REPRESENTATION_ONLY",
+    "PUBLIC_SALES_COUNT_SETTLED_NET_FULL_REFUNDS"
   ],
   "x-kora-state-machines": {
     "Order": {
@@ -72,14 +94,24 @@
     },
     "AudioEditorial": {
       "initial": "DRAFT",
-      "terminal": ["ARCHIVED"],
+      "terminal": [],
       "transitions": {
         "DRAFT": ["PUBLISHED"],
         "PUBLISHED": ["ARCHIVED"],
-        "ARCHIVED": []
+        "ARCHIVED": ["PUBLISHED"]
       }
     },
     "PaymentWebhookInbox": {
+      "initial": "RECEIVED",
+      "terminal": ["PROCESSED", "REJECTED"],
+      "transitions": {
+        "RECEIVED": ["PROCESSING", "REJECTED"],
+        "PROCESSING": ["PROCESSED", "REJECTED"],
+        "PROCESSED": [],
+        "REJECTED": []
+      }
+    },
+    "MediaWebhookInbox": {
       "initial": "RECEIVED",
       "terminal": ["PROCESSED", "REJECTED"],
       "transitions": {
@@ -111,7 +143,15 @@
     "AUTH_LOGIN_CHALLENGE_BINDS_PASSWORD_VERIFIED_CUSTOMER",
     "AUTH_STEP_UP_CHALLENGE_BINDS_EXISTING_CUSTOMER_SESSION",
     "AUTH_SESSION_CREATION_ATOMICALLY_REVOKES_PRIOR_ACTIVE_CUSTOMER_SESSIONS",
-    "AUTH_STEP_UP_REQUIRES_AND_PRESERVES_EXISTING_CUSTOMER_SESSION"
+    "AUTH_STEP_UP_REQUIRES_AND_PRESERVES_EXISTING_CUSTOMER_SESSION",
+    "ADMIN_SESSION_REFRESH_ROTATES_HASH_AND_VERSION_OR_REVOKES_FAMILY_ON_REPLAY",
+    "ADMIN_RECOVERY_CREATES_EXACTLY_TEN_ARGON2ID_SINGLE_USE_HASHES",
+    "ADMIN_CATALOG_CREATION_BINDS_AUTHENTICATED_ADMIN_AND_AUDIT_ATOMICALLY",
+    "MEDIA_WEBHOOK_SIGNATURE_VERIFIED_BEFORE_ENCRYPTED_INBOX_INSERT",
+    "MEDIA_PROVIDER_UPLOAD_AND_ASSET_REFERENCES_SET_ONCE_AND_RESOLVE_UNIQUELY",
+    "MEDIA_WEBHOOK_CALLBACK_NEVER_PUBLISHES",
+    "CATALOG_PROVENANCE_COLUMN_IMMUTABLE_AFTER_INSERT",
+    "PUBLIC_SALES_COUNT_ZERO_UNTIL_SETTLEMENT_AND_FULL_REFUND_DATA_EXIST"
   ],
   "x-kora-financial-policies": {
     "artistEarningAllocation": {
@@ -129,6 +169,12 @@
     }
   },
   "x-kora-required-publication-media-kinds": ["AUDIO_MASTER", "COVER_IMAGE"],
+  "x-kora-catalog-policy": {
+    "scope": "GLOBAL_MVP",
+    "publicCover": "CONTROLLED_API_REPRESENTATION_WITHOUT_PRIVATE_LOCATION",
+    "salesCount": "SETTLED_UNITS_NET_FULL_REFUNDS",
+    "beforeP4": "ZERO_NO_DEMO_OR_SYNTHETIC_VALUE"
+  },
   "x-kora-error-statuses": {
     "VALIDATION_ERROR": 400,
     "AUTH_REQUIRED": 401,
@@ -150,6 +196,7 @@
     "PAYMENT_ATTEMPT_NOT_FOUND": 404,
     "PAYMENT_ATTEMPT_TERMINAL": 409,
     "PAYMENT_WEBHOOK_INVALID": 400,
+    "MEDIA_WEBHOOK_INVALID": 400,
     "PROVIDER_SIGNATURE_INVALID": 401,
     "ENTITLEMENT_REQUIRED": 403,
     "DEVICE_NOT_REGISTERED": 403,
@@ -166,6 +213,7 @@
   "x-kora-operation-errors": {
     "listPublicAudioCatalog": ["VALIDATION_ERROR"],
     "getPublicAudioContent": ["CONTENT_NOT_FOUND"],
+    "getPublicAudioCover": ["CONTENT_NOT_FOUND"],
     "registerCustomer": ["VALIDATION_ERROR", "RATE_LIMITED"],
     "loginCustomer": [
       "VALIDATION_ERROR",
@@ -232,6 +280,10 @@
     "listOperationalPaymentProviders": ["AUTH_REQUIRED"],
     "acceptPaymentWebhook": [
       "PAYMENT_WEBHOOK_INVALID",
+      "PROVIDER_SIGNATURE_INVALID"
+    ],
+    "acceptMuxMediaWebhook": [
+      "MEDIA_WEBHOOK_INVALID",
       "PROVIDER_SIGNATURE_INVALID"
     ],
     "listEntitledAudioLibrary": ["AUTH_REQUIRED", "VALIDATION_ERROR"],
@@ -382,6 +434,36 @@
                 "schema": {
                   "$ref": "#/components/schemas/AudioContentEnvelope"
                 }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/ClientError" }
+        }
+      }
+    },
+    "/api/v1/catalog/audio/{contentId}/cover": {
+      "get": {
+        "operationId": "getPublicAudioCover",
+        "summary": "Returns the controlled public cover representation without disclosing its private location.",
+        "x-kora-clients": ["mobile", "web"],
+        "x-kora-controlled-representation": true,
+        "x-kora-content-binding": "ROUTE_CONTENT_ID_AND_REQUIRED_MEDIA_ASSET_VERSION",
+        "parameters": [
+          { "$ref": "#/components/parameters/ContentId" },
+          {
+            "name": "mediaAssetVersion",
+            "in": "query",
+            "required": true,
+            "description": "Exact cover version selected by the active publication metadata.",
+            "schema": { "type": "integer", "minimum": 1 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Controlled cover bytes for the active publication.",
+            "content": {
+              "image/*": {
+                "schema": { "type": "string", "format": "binary" }
               }
             }
           },
@@ -873,6 +955,46 @@
         }
       }
     },
+    "/api/v1/media-webhooks/mux": {
+      "post": {
+        "operationId": "acceptMuxMediaWebhook",
+        "summary": "Authenticates and durably records a Mux media event before acknowledgement.",
+        "x-kora-clients": ["media-provider"],
+        "x-kora-idempotent": true,
+        "x-kora-durable-before-ack": true,
+        "x-kora-never-publishes": true,
+        "x-kora-signature-algorithm": "HMAC-SHA256",
+        "x-kora-signed-payload": "TIMESTAMP_DOT_RAW_BODY",
+        "x-kora-raw-body-ingress-policy": "BOUNDED_BEFORE_HMAC_PARSE_AND_ENCRYPTED_PERSISTENCE_APPROVAL_REQUIRED",
+        "x-kora-provider-event-key-source": "BODY_ID",
+        "x-kora-persisted-payload": "ENCRYPTED_RAW_BODY_WITH_SHA256",
+        "security": [{ "muxSignature": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MuxMediaWebhookRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Authenticated event durably stored; duplicates are acknowledged without a second effect.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookAcceptedEnvelope"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" }
+        }
+      }
+    },
     "/api/v1/library/audio": {
       "get": {
         "operationId": "listEntitledAudioLibrary",
@@ -1024,6 +1146,7 @@
         "x-kora-clients": ["admin"],
         "x-kora-roles": ["SUPER_ADMIN", "CONTENT_EDITOR"],
         "x-kora-idempotent": true,
+        "x-kora-provenance": "AUTHENTICATED_ADMIN_ACTOR_IMMUTABLE",
         "x-kora-transactional-audit": true,
         "security": [{ "adminSession": [] }],
         "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
@@ -1085,6 +1208,7 @@
         "x-kora-clients": ["admin"],
         "x-kora-roles": ["SUPER_ADMIN", "CONTENT_EDITOR"],
         "x-kora-idempotent": true,
+        "x-kora-provenance": "AUTHENTICATED_ADMIN_ACTOR_IMMUTABLE",
         "x-kora-transactional-audit": true,
         "security": [{ "adminSession": [] }],
         "parameters": [
@@ -1154,6 +1278,7 @@
         "x-kora-clients": ["admin"],
         "x-kora-roles": ["SUPER_ADMIN", "CONTENT_EDITOR"],
         "x-kora-idempotent": true,
+        "x-kora-provenance": "AUTHENTICATED_ADMIN_ACTOR_IMMUTABLE",
         "x-kora-transactional-audit": true,
         "security": [{ "adminSession": [] }],
         "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
@@ -1216,6 +1341,7 @@
         "x-kora-clients": ["admin"],
         "x-kora-roles": ["SUPER_ADMIN", "CONTENT_EDITOR"],
         "x-kora-idempotent": true,
+        "x-kora-provenance": "AUTHENTICATED_ADMIN_ACTOR_IMMUTABLE",
         "x-kora-transactional-audit": true,
         "security": [{ "adminSession": [] }],
         "parameters": [
@@ -1259,6 +1385,7 @@
         "x-kora-roles": ["SUPER_ADMIN", "CONTENT_EDITOR"],
         "x-kora-idempotent": true,
         "x-kora-precondition": "MEDIA_ASSET_READY_AT_EXPECTED_VERSION",
+        "x-kora-republication": "APPEND_NEW_CONTENT_PUBLICATION_PRESERVE_HISTORY",
         "x-kora-transactional-audit": true,
         "security": [{ "adminSession": [] }],
         "parameters": [
@@ -1462,6 +1589,12 @@
         "type": "apiKey",
         "in": "header",
         "name": "X-Kora-Sandbox-Signature"
+      },
+      "muxSignature": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Mux-Signature",
+        "description": "Mux timestamped HMAC-SHA256 signature over the exact raw request body; verification precedes durable inbox insertion."
       }
     },
     "parameters": {
@@ -1756,6 +1889,7 @@
           "PAYMENT_ATTEMPT_NOT_FOUND",
           "PAYMENT_ATTEMPT_TERMINAL",
           "PAYMENT_WEBHOOK_INVALID",
+          "MEDIA_WEBHOOK_INVALID",
           "PROVIDER_SIGNATURE_INVALID",
           "ENTITLEMENT_REQUIRED",
           "DEVICE_NOT_REGISTERED",
@@ -1868,18 +2002,29 @@
         "additionalProperties": false,
         "required": [
           "artist",
+          "cover",
           "contentId",
           "durationSeconds",
           "previewAvailable",
           "previewSeconds",
           "priceCfa",
+          "settledSalesCount",
           "title"
         ],
         "properties": {
           "contentId": { "$ref": "#/components/schemas/Identifier" },
           "title": { "type": "string", "minLength": 1, "maxLength": 120 },
           "artist": { "$ref": "#/components/schemas/ArtistSummary" },
+          "cover": { "$ref": "#/components/schemas/PublicCoverImage" },
           "priceCfa": { "$ref": "#/components/schemas/MoneyCfa" },
+          "settledSalesCount": {
+            "type": "integer",
+            "minimum": 0,
+            "readOnly": true,
+            "x-kora-derivation": "SETTLED_ORDER_ITEM_UNITS_MINUS_FULLY_REFUNDED_UNITS",
+            "x-kora-pre-p4-value": 0,
+            "description": "Real settled units net of full refunds. This is exactly zero before P4 supplies settlement data; demo or synthetic values are forbidden."
+          },
           "durationSeconds": {
             "type": "integer",
             "minimum": 1,
@@ -1896,7 +2041,13 @@
               "artistId": "22222222-2222-4222-8222-222222222222",
               "stageName": "Awa Traoré"
             },
+            "cover": {
+              "contentId": "11111111-1111-4111-8111-111111111111",
+              "mediaAssetVersion": 1,
+              "representation": "CONTROLLED_API"
+            },
             "priceCfa": 2500,
+            "settledSalesCount": 0,
             "durationSeconds": 204,
             "previewAvailable": true,
             "previewSeconds": 30
@@ -1908,12 +2059,14 @@
         "additionalProperties": false,
         "required": [
           "artist",
+          "cover",
           "contentId",
           "description",
           "durationSeconds",
           "previewAvailable",
           "previewSeconds",
           "priceCfa",
+          "settledSalesCount",
           "title"
         ],
         "properties": {
@@ -1921,7 +2074,16 @@
           "title": { "type": "string", "minLength": 1, "maxLength": 120 },
           "description": { "type": ["string", "null"], "maxLength": 1000 },
           "artist": { "$ref": "#/components/schemas/ArtistSummary" },
+          "cover": { "$ref": "#/components/schemas/PublicCoverImage" },
           "priceCfa": { "$ref": "#/components/schemas/MoneyCfa" },
+          "settledSalesCount": {
+            "type": "integer",
+            "minimum": 0,
+            "readOnly": true,
+            "x-kora-derivation": "SETTLED_ORDER_ITEM_UNITS_MINUS_FULLY_REFUNDED_UNITS",
+            "x-kora-pre-p4-value": 0,
+            "description": "Real settled units net of full refunds; zero before P4."
+          },
           "durationSeconds": {
             "type": "integer",
             "minimum": 1,
@@ -1938,6 +2100,19 @@
         "properties": {
           "artistId": { "$ref": "#/components/schemas/Identifier" },
           "stageName": { "type": "string", "minLength": 1, "maxLength": 80 }
+        }
+      },
+      "PublicCoverImage": {
+        "type": "object",
+        "additionalProperties": false,
+        "readOnly": true,
+        "x-kora-resolution-operation": "getPublicAudioCover",
+        "x-kora-content-binding": "ROUTE_CONTENT_ID_AND_REQUIRED_MEDIA_ASSET_VERSION",
+        "required": ["contentId", "mediaAssetVersion", "representation"],
+        "properties": {
+          "contentId": { "$ref": "#/components/schemas/Identifier" },
+          "mediaAssetVersion": { "type": "integer", "minimum": 1 },
+          "representation": { "type": "string", "const": "CONTROLLED_API" }
         }
       },
       "AudioCatalogPage": {
@@ -2430,6 +2605,24 @@
           "meta": { "$ref": "#/components/schemas/ResponseMeta" }
         }
       },
+      "MuxMediaWebhookRequest": {
+        "type": "object",
+        "description": "Provider boundary payload. The authenticated raw body is encrypted in the durable inbox; no provider identifier becomes public catalog data.",
+        "required": ["data", "id", "type"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "type": {
+            "type": "string",
+            "enum": [
+              "video.asset.ready",
+              "video.asset.errored",
+              "video.upload.asset_created"
+            ]
+          },
+          "data": { "type": "object", "additionalProperties": true }
+        },
+        "additionalProperties": true
+      },
       "Receipt": {
         "type": "object",
         "additionalProperties": false,
@@ -2584,9 +2777,10 @@
       "AdminArtist": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["artistId", "stageName", "status"],
+        "required": ["artistId", "createdByAdminId", "stageName", "status"],
         "properties": {
           "artistId": { "$ref": "#/components/schemas/Identifier" },
+          "createdByAdminId": { "$ref": "#/components/schemas/Identifier" },
           "stageName": { "type": "string", "minLength": 1, "maxLength": 80 },
           "status": { "type": "string", "enum": ["ACTIVE", "SUSPENDED"] }
         }
@@ -2701,6 +2895,7 @@
         "required": [
           "artist",
           "contentId",
+          "createdByAdminId",
           "editorialState",
           "mediaAssets",
           "previewSeconds",
@@ -2709,6 +2904,7 @@
         ],
         "properties": {
           "contentId": { "$ref": "#/components/schemas/Identifier" },
+          "createdByAdminId": { "$ref": "#/components/schemas/Identifier" },
           "title": { "type": "string", "minLength": 1, "maxLength": 120 },
           "description": { "type": ["string", "null"], "maxLength": 1000 },
           "artist": { "$ref": "#/components/schemas/ArtistSummary" },

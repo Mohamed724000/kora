@@ -1,8 +1,9 @@
 # KORA+ Final — Source de vérité
 
-Statut : **APPROUVÉ — BASELINE OPÉRATIONNELLE S0.1**
+Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.1 FUSIONNÉ — GATE S1.2-01 ACHEVÉ**
 
 Date d’effet : 2026-07-28
+Dernière réconciliation documentaire : 2026-09-11
 
 ## Hiérarchie normative
 
@@ -45,8 +46,11 @@ non autorisé est historique, même s’il contient des impératifs.
 - **Archive historique** : conservée pour traçabilité, non exécutable.
 
 Les 24 ADR actifs se trouvent actuellement dans le Resolution Pack immuable.
-Le futur chemin `docs/adr/` et le futur contrat `docs/api/openapi.yaml` ne
-peuvent être créés que par un lot qui les autorise.
+Aucun ADR-025 n’est créé par S1.2-01. Le contrat
+[OpenAPI](../api/openapi.yaml) et le modèle cible
+[Prisma](../../apps/api/prisma/schema.prisma), introduits par S1.1 puis
+renforcés par le gate S1.2-01, sont les contrats techniques canoniques présents.
+Ils ne constituent ni une migration ni un runtime.
 
 ## Règle de contradiction
 
@@ -77,5 +81,10 @@ ultérieures conservent l’historique.
 - [DEFINITION_OF_DONE.md](../qa/DEFINITION_OF_DONE.md)
 - [THREAT_MODEL.md](../security/THREAT_MODEL.md)
 
-Les contrats OpenAPI, Prisma et clients générés seront ajoutés uniquement dans
-les lots qui les autorisent. Ils ne devront jamais contredire un ADR accepté.
+Les contrats OpenAPI et Prisma présents, ainsi que les types clients générés,
+évoluent uniquement dans les lots qui les autorisent. Ils ne doivent jamais
+contredire un ADR accepté. S1.1 est fusionné au merge
+`bcb579916c1ca73e3cfb186683cb932f4f3905e9`. S1.2-01 complète la préparation
+contractuelle et du modèle cible sans livrer de runtime, migration ou interface
+P2. L’état Git et l’état de publication font foi dans l’historique Git, la PR et
+les workflows associés.

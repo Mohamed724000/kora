@@ -1,11 +1,12 @@
 // Generated from docs/api/openapi.yaml by scripts/openapi/generate-contract-types.mjs.
-// Do not edit by hand. Runtime clients are intentionally outside S1.1.
+// Do not edit by hand. Runtime clients are intentionally outside S1.2-01.
 
 export const audioPilotPaths = [
   '/health/live',
   '/health/ready',
   '/api/v1/catalog/audio',
   '/api/v1/catalog/audio/{contentId}',
+  '/api/v1/catalog/audio/{contentId}/cover',
   '/api/v1/auth/register',
   '/api/v1/auth/login',
   '/api/v1/auth/otp/challenges/{challengeId}/verify',
@@ -21,6 +22,7 @@ export const audioPilotPaths = [
   '/api/v1/orders/{orderId}/receipt',
   '/api/v1/payment-providers',
   '/api/v1/payment-webhooks/{provider}',
+  '/api/v1/media-webhooks/mux',
   '/api/v1/library/audio',
   '/api/v1/mobile/audio/{contentId}/preview-grants',
   '/api/v1/mobile/preview-grants/{previewGrantId}/playback-descriptors',
@@ -124,6 +126,7 @@ export type ErrorCode =
   | 'PAYMENT_ATTEMPT_NOT_FOUND'
   | 'PAYMENT_ATTEMPT_TERMINAL'
   | 'PAYMENT_WEBHOOK_INVALID'
+  | 'MEDIA_WEBHOOK_INVALID'
   | 'PROVIDER_SIGNATURE_INVALID'
   | 'ENTITLEMENT_REQUIRED'
   | 'DEVICE_NOT_REGISTERED'
@@ -180,7 +183,9 @@ export type AudioCatalogItem = {
   readonly contentId: Identifier;
   readonly title: string;
   readonly artist: ArtistSummary;
+  readonly cover: PublicCoverImage;
   readonly priceCfa: MoneyCfa;
+  readonly settledSalesCount: number;
   readonly durationSeconds: number;
   readonly previewAvailable: boolean;
   readonly previewSeconds: number;
@@ -191,7 +196,9 @@ export type AudioContentDetail = {
   readonly title: string;
   readonly description: string | null;
   readonly artist: ArtistSummary;
+  readonly cover: PublicCoverImage;
   readonly priceCfa: MoneyCfa;
+  readonly settledSalesCount: number;
   readonly durationSeconds: number;
   readonly previewAvailable: boolean;
   readonly previewSeconds: number;
@@ -200,6 +207,12 @@ export type AudioContentDetail = {
 export type ArtistSummary = {
   readonly artistId: Identifier;
   readonly stageName: string;
+};
+
+export type PublicCoverImage = {
+  readonly contentId: Identifier;
+  readonly mediaAssetVersion: number;
+  readonly representation: 'CONTROLLED_API';
 };
 
 export type AudioCatalogPage = {
@@ -406,6 +419,15 @@ export type WebhookAcceptedEnvelope = {
   readonly meta: ResponseMeta;
 };
 
+export type MuxMediaWebhookRequest = {
+  readonly id: string;
+  readonly type: 'video.asset.ready' | 'video.asset.errored' | 'video.upload.asset_created';
+  readonly data: {
+    readonly [key: string]: unknown;
+  };
+  readonly [key: string]: unknown;
+};
+
 export type Receipt = {
   readonly receiptId: Identifier;
   readonly orderId: Identifier;
@@ -470,6 +492,7 @@ export type UpsertArtistRequest = {
 
 export type AdminArtist = {
   readonly artistId: Identifier;
+  readonly createdByAdminId: Identifier;
   readonly stageName: string;
   readonly status: 'ACTIVE' | 'SUSPENDED';
 };
@@ -510,6 +533,7 @@ export type ArchiveAudioContentRequest = {
 
 export type AdminAudioContent = {
   readonly contentId: Identifier;
+  readonly createdByAdminId: Identifier;
   readonly title: string;
   readonly description?: string | null;
   readonly artist: ArtistSummary;

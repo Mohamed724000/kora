@@ -207,10 +207,12 @@ est publié au head consigné par DEC-M0.3-17 avec quatre workflows #45 verts.
 La validation locale du 2026-09-04 consignée par DEC-M0.3-18 a qualifié la
 correction R5 du dernier écart de gate avant publication. Les métadonnées de
 publication, qui ne sont pas auto-référencées dans cette preuve, font foi dans
-GitHub. Au moment de cette validation M0.3, S1.1 était préservé à 39/39 avec
-l’empreinte agrégée
-`8957cbf3ff27110af162f53c72e0c129860f0fcdfb8bfddab1ae3714a1d9c6dc`, et
-S1.2 n’est pas démarré.
+GitHub. Au moment de cette validation M0.3, l’instantané historique
+prépublication S1.1 était préservé à 39/39. Son empreinte agrégée, établie sur
+ce périmètre exact à partir de l’inventaire associant chaque chemin à sa taille
+et son SHA-256, était
+`8957cbf3ff27110af162f53c72e0c129860f0fcdfb8bfddab1ae3714a1d9c6dc`.
+S1.2 n’était pas démarré à cet instant.
 
 ## 2026-08-20 — Arbitrage financier S1.1
 
@@ -290,6 +292,24 @@ Après cet instantané, R3 a été publié au SHA consigné par DEC-S1.1-29. Cet
 preuve postérieure n’étend ni l’autorisation LGPL nominative ni l’autorisation
 de release ; les futurs statuts Git et CI font foi dans l’historique GitHub et
 la PR #36.
+
+## 2026-09-10 — S1.2-01 Contract & Data Readiness Gate
+
+| ID           | Nature      | Décision | Autorité | Statut |
+| ------------ | ----------- | -------- | -------- | ------ |
+| DEC-S1.2-01-01 | Périmètre | S1.1 est fermé. S1.2-01 complète uniquement le contrat, le modèle cible, les gates et les preuves ; aucune migration, route runtime, interface, installation, dépendance, seed, intégration fournisseur ou donnée média n’est créée. | Autorisation Product Owner et CTO du 2026-09-10 | Accepted — contract/data gate decision |
+| DEC-S1.2-01-02 | Catalogue | La couverture publique est une représentation contrôlée liée au contenu et au `mediaAssetVersion` obligatoire de la publication active, sans URL ou emplacement privé. `settledSalesCount` dérive seulement des unités réglées nettes des remboursements totaux et vaut zéro avant P4. | ADR-011/016 et décision CTO S1.2-01 | Accepted — contract decision |
+| DEC-S1.2-01-03 | Provenance | `Artist` et `AudioContent` conservent l’administrateur créateur ; cette provenance est attribuée par le serveur, absente des entrées client et reliée par `Restrict`. Comme `Restrict` n’interdit pas une réaffectation directe de la FK, une future contrainte SQL devra rendre la colonne immuable avant le runtime. | ADR-011/019/020 | Accepted — target data decision; SQL enforcement deferred |
+| DEC-S1.2-01-04 | Admin | La cible de données admin couvre TOTP RFC 6238 à chaque connexion et enrôlement préalable, secret chiffré, dix codes Argon2id à usage unique, récupération/reset audités, session révocable, refresh cookie protégé, rotation versionnée, inactivité huit heures, fraîcheur TOTP cinq minutes et journal complet lié à la même session (action, entité, avant/après masqués, motif, requête, horodatage). | ADR-002/005/008/019 | Accepted — data readiness decision |
+| DEC-S1.2-01-05 | Média | Le callback Mux futur vérifie la signature sur le corps brut borné, persiste avant acquittement une Inbox dédupliquée contenant SHA-256 et payload chiffré, corrèle séparément les références upload/asset uniques, puis traite idempotemment sans jamais publier. La valeur maximale du corps reste une décision de sécurité préalable au runtime. | ADR-011/015 | Accepted — contract/data target; runtime limit deferred |
+| DEC-S1.2-01-06 | Publication | Une republication après archivage ajoute une nouvelle `ContentPublication` et préserve toutes les preuves historiques ; les liens contenu, publication et assets sont `Restrict`. | ADR-011/016/019 | Accepted — data decision |
+
+Instantané historique de validation locale du 2026-09-11, établi avant toute
+publication. À cet instant, le HEAD de départ restait
+`bcb579916c1ca73e3cfb186683cb932f4f3905e9` et aucun commit, push, changement
+GitHub, runtime ou migration S1.2 n’avait été effectué. Ce constat reste vrai
+pour cet instantané historique ; toute publication ultérieure est enregistrée
+séparément par l’historique Git, la PR et les workflows.
 
 ## Catégories d’autorité
 

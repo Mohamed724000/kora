@@ -1,6 +1,6 @@
 # KORA+ Final — Specification Alignment Register
 
-Version : 2.1
+Version : 2.2
 Baseline préservée : 2.0 du 2026-07-25
 Statuts : `Accepted`, `Deferred V2`, `Contract gate`, `Superseded`
 
@@ -58,6 +58,24 @@ une nouvelle entrée datée et l’autorité prévue par la
 - Entrées manquantes ou dupliquées : aucune.
 - Nouvelle contradiction découverte pendant S0.1 : aucune.
 - `REG-40` est un gate contractuel externe, pas une ambiguïté documentaire.
+
+## Propagation P2 traitée par S1.2-01
+
+S1.2-01 ne crée aucun nouvel arbitrage ni ADR. Il propage dans OpenAPI et dans
+le modèle Prisma cible les contradictions P2 déjà tranchées ci-dessous. Leur
+implémentation runtime et leurs contraintes SQL restent non commencées.
+
+| P2 concerné | Contradiction propagée | Résolution contractuelle S1.2-01 | Autorité existante | État |
+| --- | --- | --- | --- | --- |
+| Création et publication | Publication artiste possible contre administration seule au MVP | Mutations réservées aux rôles admin exacts, provenance serveur et audit de même session | REG-14 ; ADR-011/019/020 | Contract/data target verified |
+| Catalogue public et couverture | URL média directement exposée contre stockage et identifiants privés | Représentation contrôlée liée à `contentId` et au `mediaAssetVersion` publié, sans URL, URI, clé ou identifiant provider | REG-22 ; ADR-011/017 | Contract verified |
+| Upload et processing | État Mux susceptible de piloter l’état éditorial | États séparés, Inbox authentifiée/chiffrée/dédupliquée et callback incapable de publier | REG-23/25 ; ADR-011/015 | Contract/data target verified |
+| Archive et republication | Archivage public contre droits acquis et conservation des preuves | Accès acheté préservé ; republication par nouvelle preuve append-only, sans réutiliser la ligne archivée | REG-24/27 ; ADR-016/019 | Contract/data target verified |
+| Ventes publiques | Compteur affichable avant une source financière réglée et compensée | `settledSalesCount` en lecture seule, nul avant P4 puis dérivé des unités réglées nettes des remboursements totaux | REG-38 ; ADR-013/016 | Contract gate verified; runtime deferred |
+
+Le gate S1.2-01 propage ces décisions dans 34 chemins OpenAPI, 87 schémas,
+18 invariants et 33 modèles Prisma cibles, sans migration, route runtime,
+interface, dépendance, manifeste, lockfile ou workflow.
 
 ## Propagation obligatoire
 
