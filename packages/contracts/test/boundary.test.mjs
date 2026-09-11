@@ -27,7 +27,9 @@ test('the generated boundary exposes readiness metadata without private media lo
 test('catalog provenance is response-only in the generated boundary', () => {
   const source = readFileSync(new URL('../src/generated/audio-pilot.ts', import.meta.url), 'utf8');
   const artistRequest = /export type UpsertArtistRequest = \{([\s\S]*?)\n\};/.exec(source)?.[1];
-  const audioRequest = /export type UpsertAudioContentRequest = \{([\s\S]*?)\n\};/.exec(source)?.[1];
+  const audioRequest = /export type UpsertAudioContentRequest = \{([\s\S]*?)\n\};/.exec(
+    source,
+  )?.[1];
 
   assert.ok(artistRequest);
   assert.ok(audioRequest);
