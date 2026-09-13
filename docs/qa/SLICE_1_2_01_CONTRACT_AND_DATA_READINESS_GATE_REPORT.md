@@ -171,6 +171,86 @@ les Run IDs et résultats fournis par le CTO a été vérifiée localement.
 L’orchestrateur a reproduit les autres contrôles et ne relève aucun désaccord
 résiduel.
 
+## S1.2-01-R2 — Contract Gate Hardening
+
+Instantané historique local prépublication du 2026-09-12, établi sur le head R1
+`c588f12422423936ea190a72926f821988553761`. Le verdict CTO était
+`CHANGES REQUIRED` et autorisait ce micro-lot défensif avant une décision de
+commit R2 séparée. Aucun SHA de commit R2 ni Run ID futur n’est affirmé ici.
+
+### Périmètre R2
+
+Le diff R2 contient exactement les sept fichiers autorisés :
+
+1. `docs/api/openapi.yaml`
+2. `scripts/openapi/validate-openapi.mjs`
+3. `scripts/openapi/validate-openapi.test.mjs`
+4. `scripts/openapi/generate-contract-types.mjs`
+5. `docs/governance/DECISION_LOG.md`
+6. `docs/qa/SLICE_1_2_01_CONTRACT_AND_DATA_READINESS_GATE_REPORT.md`
+7. `docs/security/THREAT_MODEL.md`
+
+Aucun manifeste, lockfile, workflow, dépendance, runtime, migration, interface
+ou fichier généré n’est modifié. Le correctif R1 publié reste intact et S1.2-02
+n’est pas démarré.
+
+### Garanties et reproductions négatives
+
+- `getPublicAudioCover` expose exactement `400 / VALIDATION_ERROR` lorsque
+  `mediaAssetVersion` est absent, non entier ou inférieur à 1 ;
+- les 40 opérations sont figées chacune sur un unique statut de succès, media
+  type et schéma. Les sondes rejettent l’enveloppe d’une autre opération, le
+  statut substitué, une réponse générique `2XX` ajoutée, le media type ou le
+  sibling de schéma supplémentaire et un body ajouté au `204` ;
+- `MuxMediaWebhookRequest` conserve `additionalProperties: true` à sa racine et
+  dans `data`, tandis que `WebhookAccepted` reste exact et fermé. Les quatre
+  dérives correspondantes sont rejetées ;
+- le source Prisma est privé lexicalement des commentaires ligne et bloc, puis
+  des chaînes susceptibles de contenir du faux code, avant inventaire et
+  validation. Un secret TOTP, une famille de session, les deux clés uniques Mux,
+  les déduplications Payment/Media Inbox, une relation de provenance ou la
+  relation `AuditLog` présents uniquement en commentaire sont rejetés ; les
+  leurres en commentaire ou chaîne ne masquent ni une vraie relation `Cascade`
+  ni l’absence d’un champ ou d’une unicité. Pour les garanties sensibles R2
+  listées ci-dessus, les identifiants préfixés ne sont pas acceptés comme
+  déclarations exactes ;
+- le générateur officiel échoue clairement si Prettier est absent ou différent
+  de la version exacte `3.9.6`. La frontière `//`, saut de ligne et déclaration
+  TypeScript possède une sonde négative dédiée.
+
+### Preuves locales R2
+
+| Contrôle | Résultat |
+| --- | --- |
+| Validateur réel OpenAPI/Prisma | PASS — 34 chemins, 87 schémas, 18 invariants et 33 modèles cibles |
+| Tests OpenAPI et Contracts concernés | PASS — 217/217, 0 échec, 0 skip |
+| Générateur officiel sans Prettier installé | échec attendu et explicite — aucune comparaison dégradée déclarée PASS |
+| Comparaison exacte du fichier généré | PASS avec Prettier `3.9.6` extrait du cache npm ; aucune dérive et aucun changement du fichier généré |
+| Scanner officiel | PASS — 337 fichiers, historique inclus, 52 immuables et 5 scripts d’installation qualifiés |
+| Prettier ciblé, références documentaires, `git diff --check` et périmètre | PASS — Prettier `3.9.6` sur les quatre fichiers techniques ; 72 cibles relatives dans 84 documents suivis ; whitespace propre ; exactement sept fichiers R2 modifiés |
+
+Le paquet Prettier provenait de l’archive déjà présente dans le cache npm,
+d’intégrité verrouillée par `package-lock.json`. Aucun registre, téléchargement,
+installation ou changement de dépendance n’a été utilisé.
+
+### Contre-revues R2 et réconciliation
+
+- **Architecture/OpenAPI/Prisma** : la réponse générique `2XX` initialement
+  ignorée est désormais comptée comme succès et rejetée en surplus ; le
+  `$ref` de succès refuse aussi tout sibling. Les sondes cover, Mux et Prisma
+  concernées passent.
+- **Sécurité/reproductibilité** : les faux `PASS` sans Prettier, par commentaire
+  Prisma, chaîne-leurre ou identifiant préfixé dans les garanties sensibles R2
+  ont été reproduits, corrigés et ajoutés aux tests négatifs.
+- **Gouvernance/documentation/périmètre** : le compte `217/217`, le head R1, les
+  sept fichiers, les exclusions et l’absence de SHA ou Run ID futur concordent.
+  Le placeholder postflight signalé par la revue est fermé par les preuves
+  exécutées lors de la reprise du 2026-09-13.
+
+Réconciliation personnelle de l’orchestrateur : l’ancrage des identifiants est
+déclaré uniquement pour les garanties sensibles couvertes par R2 ; aucune
+affirmation universelle n’est portée sur les anciens gates S1.1 non modifiés.
+
 ## Conclusion
 
 S1.2-01 établit la disponibilité du contrat et du modèle cible sans prétendre

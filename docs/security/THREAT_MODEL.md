@@ -369,6 +369,38 @@ métier ou runtime.
   partielle d’une publication active et l’interdiction SQL de modifier/supprimer
   les preuves exigent toujours une migration future explicitement autorisée.
 
+## Durcissement défensif S1.2-01-R2
+
+L’instantané local prépublication du 2026-09-12 durcit les gates sans ajouter de
+contrôle runtime :
+
+- une réponse de succès valide mais rattachée à la mauvaise opération est une
+  substitution de contrat. Le gate lie donc chaque opération à son statut, son
+  media type et son schéma exacts ;
+- une version de couverture absente, fractionnaire ou inférieure à 1 est une
+  entrée invalide contractée en `400 / VALIDATION_ERROR`, sans exposition d’URL
+  ou de localisation privée ;
+- le payload entrant Mux demeure extensible à la racine et dans `data`, car le
+  fournisseur peut ajouter des propriétés. La réponse `WebhookAccepted` reste
+  fermée afin qu’aucun champ serveur accidentel ne soit exposé ;
+- avant toute vérification par expressions régulières, le validateur retire
+  lexicalement les commentaires Prisma, masque les chaînes susceptibles de
+  contenir du faux code et ancre les déclarations sensibles à leur nom et leur
+  ligne exacts. Les sondes négatives couvrent le secret TOTP, la famille de
+  session, les deux clés uniques Mux, les deux déduplications Inbox, la
+  provenance catalogue et la relation d’acteur `AuditLog`, ainsi que des leurres
+  `Restrict` commentés ou injectés dans une chaîne devant une vraie relation
+  `Cascade`. Pour ces garanties sensibles R2, les déclarations ancrées rejettent
+  aussi les identifiants préfixés ;
+- la génération de contrats échoue explicitement sans Prettier `3.9.6` exact.
+  Le saut de ligne terminant un commentaire TypeScript `//` est aussi une
+  frontière de tokens testée, et ne peut plus être effacé par un fallback
+  lexical donnant un faux `PASS`.
+
+Ces mesures qualifient le contrat et le modèle cible uniquement. Les limites du
+corps webhook, HMAC, KMS, transactions, sessions, migrations et routes restent
+des obligations runtime futures et ne sont pas présentées comme opérationnelles.
+
 ## Méthode de mise à jour
 
 Chaque lot affectant une frontière :

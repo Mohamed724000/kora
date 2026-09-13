@@ -4,7 +4,9 @@ import { resolve } from "node:path";
 import { test } from "node:test";
 
 import {
+  EXACT_PRETTIER_VERSION,
   buildContractTypes,
+  loadExactPrettier,
   normalizeContractSyntax,
   readGeneratedContract,
 } from "./generate-contract-types.mjs";
@@ -37,6 +39,12 @@ function replaceWithinModel(source, modelName, original, replacement) {
   const updatedModel = model.replace(original, replacement);
   assert.notEqual(updatedModel, model, `fixture must mutate ${modelName}`);
   return source.replace(model, updatedModel);
+}
+
+function commentOutWithinModel(source, modelName, original, style = "line") {
+  const replacement = (match) =>
+    style === "block" ? `/* ${match} */` : `// ${match}`;
+  return replaceWithinModel(source, modelName, original, replacement);
 }
 
 function earningCandidate({
@@ -474,6 +482,71 @@ test("rejects a public auth operation protected by a substituted scheme", () => 
   );
 });
 
+for (const [name, mutate] of [
+  [
+    "an envelope borrowed from another operation",
+    (document) => {
+      document.paths["/api/v1/orders"].post.responses["201"].content[
+        "application/json"
+      ].schema.$ref = "#/components/schemas/PaymentAttemptEnvelope";
+    },
+  ],
+  [
+    "a substituted success status",
+    (document) => {
+      const responses = document.paths["/api/v1/orders"].post.responses;
+      responses["200"] = responses["201"];
+      delete responses["201"];
+    },
+  ],
+  [
+    "an additional success media type",
+    (document) => {
+      document.paths["/api/v1/orders"].post.responses["201"].content[
+        "text/plain"
+      ] = { schema: { type: "string" } };
+    },
+  ],
+  [
+    "an additional generic 2XX response",
+    (document) => {
+      document.paths["/api/v1/orders"].post.responses["2XX"] = structuredClone(
+        document.paths["/api/v1/orders"].post.responses["201"],
+      );
+    },
+  ],
+  [
+    "an augmented success schema binding",
+    (document) => {
+      document.paths["/api/v1/orders"].post.responses["201"].content[
+        "application/json"
+      ].schema.description = "Unexpected schema sibling";
+    },
+  ],
+  [
+    "content on a 204 success",
+    (document) => {
+      document.paths["/api/v1/auth/sessions/current"].delete.responses[
+        "204"
+      ].content = {
+        "application/json": {
+          schema: { $ref: "#/components/schemas/SessionEnvelope" },
+        },
+      };
+    },
+  ],
+]) {
+  test(`rejects ${name} in an operation success binding`, () => {
+    const document = documentFixture();
+    mutate(document);
+
+    assert.throws(
+      () => validateOpenApiDocument(document),
+      /success response must|approved success response/,
+    );
+  });
+}
+
 test("rejects a successful business response without data and meta", () => {
   const document = documentFixture();
   document.components.schemas.OrderEnvelope.required = ["data"];
@@ -631,7 +704,34 @@ test("the shared TypeScript boundary is generated from the current OpenAPI", asy
   );
   if (existsSync(resolve("node_modules", "prettier", "package.json"))) {
     assert.equal(current, await readGeneratedContract());
+  } else {
+    await assert.rejects(
+      readGeneratedContract(),
+      new RegExp(`Prettier ${EXACT_PRETTIER_VERSION}.*unavailable`),
+    );
   }
+});
+
+test("the exact generator fails closed when Prettier is unavailable", async () => {
+  await assert.rejects(
+    loadExactPrettier({
+      readPackageJson() {
+        throw Object.assign(new Error("module missing"), {
+          code: "MODULE_NOT_FOUND",
+        });
+      },
+    }),
+    new RegExp(`Prettier ${EXACT_PRETTIER_VERSION}.*unavailable`),
+  );
+});
+
+test("the exact generator rejects a substituted Prettier version", async () => {
+  await assert.rejects(
+    loadExactPrettier({
+      readPackageJson: () => ({ version: "3.9.5" }),
+    }),
+    /Prettier 3\.9\.6 is required.*found 3\.9\.5/,
+  );
 });
 
 test("generated contract normalization preserves token boundaries", () => {
@@ -642,6 +742,14 @@ test("generated contract normalization preserves token boundaries", () => {
   assert.notEqual(
     normalizeContractSyntax("readonly value: string;"),
     normalizeContractSyntax("readonlyvalue: string;"),
+  );
+  assert.notEqual(
+    normalizeContractSyntax("// generated boundary\nexport const value = 1;"),
+    normalizeContractSyntax("// generated boundary export const value = 1;"),
+  );
+  assert.match(
+    normalizeContractSyntax("// generated boundary\nexport const value = 1;"),
+    /\/\/ generated boundary\nexport/,
   );
 });
 
@@ -1053,6 +1161,58 @@ test("requires the exact active-publication cover version in the request", () =>
   );
 });
 
+for (const [name, mutate] of [
+  [
+    "a non-integer mediaAssetVersion",
+    (parameter) => {
+      parameter.schema.type = "number";
+    },
+  ],
+  [
+    "a mediaAssetVersion below one",
+    (parameter) => {
+      parameter.schema.minimum = 0;
+    },
+  ],
+]) {
+  test(`rejects ${name} in the public cover contract`, () => {
+    const document = documentFixture();
+    const parameter = document.paths[
+      "/api/v1/catalog/audio/{contentId}/cover"
+    ].get.parameters.find((entry) => entry.name === "mediaAssetVersion");
+    assert.ok(parameter);
+    mutate(parameter);
+
+    assert.throws(
+      () => validateOpenApiDocument(document),
+      /public cover bytes require the exact controlled representation path/,
+    );
+  });
+}
+
+test("requires HTTP 400 for invalid public cover versions", () => {
+  const document = documentFixture();
+  delete document.paths["/api/v1/catalog/audio/{contentId}/cover"].get
+    .responses["400"];
+
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /getPublicAudioCover does not expose the HTTP status mapped to VALIDATION_ERROR/,
+  );
+});
+
+test("requires VALIDATION_ERROR for invalid public cover versions", () => {
+  const document = documentFixture();
+  document["x-kora-operation-errors"].getPublicAudioCover = [
+    "CONTENT_NOT_FOUND",
+  ];
+
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /getPublicAudioCover HTTP 400 lacks a mapped stable error code/,
+  );
+});
+
 test("rejects a synthetic or writable public sales count", () => {
   for (const mutation of [
     (sales) => {
@@ -1064,8 +1224,7 @@ test("rejects a synthetic or writable public sales count", () => {
   ]) {
     const document = documentFixture();
     mutation(
-      document.components.schemas.AudioCatalogItem.properties
-        .settledSalesCount,
+      document.components.schemas.AudioCatalogItem.properties.settledSalesCount,
     );
 
     assert.throws(
@@ -1077,9 +1236,10 @@ test("rejects a synthetic or writable public sales count", () => {
 
 test("rejects client-supplied catalog provenance", () => {
   const document = documentFixture();
-  document.components.schemas.UpsertAudioContentRequest.properties.createdByAdminId = {
-    $ref: "#/components/schemas/Identifier",
-  };
+  document.components.schemas.UpsertAudioContentRequest.properties.createdByAdminId =
+    {
+      $ref: "#/components/schemas/Identifier",
+    };
 
   assert.throws(
     () => validateOpenApiDocument(document),
@@ -1750,10 +1910,7 @@ test("rejects a Mux webhook without its exact signature boundary", () => {
     { providerSignature: [] },
   ];
 
-  assert.throws(
-    () => validateOpenApiDocument(document),
-    /exact Mux signature/,
-  );
+  assert.throws(() => validateOpenApiDocument(document), /exact Mux signature/);
 });
 
 test("rejects a Mux webhook that is not durable or can publish", () => {
@@ -1785,6 +1942,46 @@ test("rejects unbounded Mux provider event identifiers", () => {
   );
 });
 
+for (const [name, mutate, error] of [
+  [
+    "a closed Mux provider payload root",
+    (document) => {
+      document.components.schemas.MuxMediaWebhookRequest.additionalProperties = false;
+    },
+    /Mux callbacks must be signature-authenticated/,
+  ],
+  [
+    "closed Mux provider data",
+    (document) => {
+      document.components.schemas.MuxMediaWebhookRequest.properties.data.additionalProperties = false;
+    },
+    /Mux callbacks must be signature-authenticated/,
+  ],
+  [
+    "an extensible webhook acknowledgement",
+    (document) => {
+      document.components.schemas.WebhookAccepted.additionalProperties = true;
+    },
+    /webhook acknowledgements must remain exact and closed/,
+  ],
+  [
+    "an extra webhook acknowledgement property",
+    (document) => {
+      document.components.schemas.WebhookAccepted.properties.debug = {
+        type: "string",
+      };
+    },
+    /webhook acknowledgements must remain exact and closed/,
+  ],
+]) {
+  test(`rejects ${name}`, () => {
+    const document = documentFixture();
+    mutate(document);
+
+    assert.throws(() => validateOpenApiDocument(document), error);
+  });
+}
+
 test("rejects plaintext media webhook payload persistence", () => {
   const invalid = replaceWithinModel(
     prismaSource,
@@ -1812,6 +2009,171 @@ test("rejects deletion propagation from media webhook evidence", () => {
     /authenticated encrypted payloads/,
   );
 });
+
+for (const [name, modelName, original, style, error] of [
+  [
+    "TOTP material present only in a line comment",
+    "AdminUser",
+    /totpSecretEncrypted\s+String\?/,
+    "line",
+    /admin authentication readiness/,
+  ],
+  [
+    "session-family uniqueness present only in a block comment",
+    "AdminSession",
+    /@@unique\(\[adminUserId, tokenFamilyId\]\)/,
+    "block",
+    /admin authentication readiness/,
+  ],
+  [
+    "Mux upload uniqueness present only in a line comment",
+    "MediaAsset",
+    /@@unique\(\[provider, privateProviderUploadRef\]\)/,
+    "line",
+    /authenticated encrypted payloads/,
+  ],
+  [
+    "Mux asset uniqueness present only in a line comment",
+    "MediaAsset",
+    /@@unique\(\[provider, privateProviderAssetRef\]\)/,
+    "line",
+    /authenticated encrypted payloads/,
+  ],
+  [
+    "payment Inbox deduplication present only in a line comment",
+    "PaymentWebhookInbox",
+    /@@unique\(\[provider, providerEventKey\]\)/,
+    "line",
+    /PaymentWebhookInbox requires provider\/event deduplication/,
+  ],
+  [
+    "media Inbox deduplication present only in a line comment",
+    "MediaWebhookInbox",
+    /@@unique\(\[provider, providerEventKey\]\)/,
+    "line",
+    /authenticated encrypted payloads/,
+  ],
+  [
+    "catalog provenance present only in a line comment",
+    "Artist",
+    /createdByAdmin\s+AdminUser\s+@relation\("ArtistCreatedByAdmin", fields: \[createdByAdminId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/,
+    "line",
+    /server-owned admin provenance/,
+  ],
+  [
+    "AuditLog actor relation present only in a line comment",
+    "AuditLog",
+    /adminSession\s+AdminSession\s+@relation\(fields: \[adminSessionId, adminUserId\], references: \[id, adminUserId\], onDelete: Restrict, onUpdate: Restrict\)/,
+    "line",
+    /AuditLog must be append-only with complete/,
+  ],
+]) {
+  test(`rejects ${name}`, () => {
+    const invalid = commentOutWithinModel(
+      prismaSource,
+      modelName,
+      original,
+      style,
+    );
+
+    assert.throws(() => validatePrismaTargetSchema(invalid), error);
+  });
+}
+
+test("rejects a forbidden relation despite an approved relation in a comment", () => {
+  const approved =
+    "mediaAsset MediaAsset? @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict, onUpdate: Restrict)";
+  const invalid = replaceWithinModel(
+    prismaSource,
+    "MediaWebhookInbox",
+    /mediaAsset\s+MediaAsset\?\s+@relation\(fields: \[mediaAssetId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/,
+    `mediaAsset MediaAsset? @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)\n  // ${approved}`,
+  );
+
+  assert.throws(
+    () => validatePrismaTargetSchema(invalid),
+    /authenticated encrypted payloads/,
+  );
+});
+
+test("rejects Mux uniqueness present only in a Prisma string", () => {
+  const invalid = replaceWithinModel(
+    prismaSource,
+    "MediaAsset",
+    "@@unique([provider, privateProviderAssetRef])",
+    '@@map("@@unique([provider, privateProviderAssetRef])")',
+  );
+
+  assert.throws(
+    () => validatePrismaTargetSchema(invalid),
+    /authenticated encrypted payloads/,
+  );
+});
+
+test("rejects an approved relation present only in a Prisma string", () => {
+  const approved =
+    "mediaAsset MediaAsset? @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict, onUpdate: Restrict)";
+  const invalid = replaceWithinModel(
+    prismaSource,
+    "MediaWebhookInbox",
+    /mediaAsset\s+MediaAsset\?\s+@relation\(fields: \[mediaAssetId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/,
+    `mediaAsset MediaAsset? @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)\n  @@map("${approved}")`,
+  );
+
+  assert.throws(
+    () => validatePrismaTargetSchema(invalid),
+    /authenticated encrypted payloads/,
+  );
+});
+
+test("rejects TOTP material present only in a Prisma string", () => {
+  const invalid = replaceWithinModel(
+    prismaSource,
+    "AdminUser",
+    /totpSecretEncrypted\s+String\?/,
+    'decoy String @default("totpSecretEncrypted String?")',
+  );
+
+  assert.throws(
+    () => validatePrismaTargetSchema(invalid),
+    /admin authentication readiness/,
+  );
+});
+
+for (const [name, modelName, original, replacement, error] of [
+  [
+    "a prefixed TOTP field name",
+    "AdminUser",
+    /totpSecretEncrypted\s+String\?/,
+    "faketotpSecretEncrypted String?",
+    /admin authentication readiness/,
+  ],
+  [
+    "a prefixed media relation name",
+    "MediaWebhookInbox",
+    /mediaAsset\s+MediaAsset\?\s+@relation\(fields: \[mediaAssetId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/,
+    "fakemediaAsset MediaAsset? @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict, onUpdate: Restrict)",
+    /authenticated encrypted payloads/,
+  ],
+  [
+    "a prefixed private provider field name",
+    "MediaAsset",
+    /privateProviderAssetRef\s+String\?/,
+    "fakeprivateProviderAssetRef String?",
+    /authenticated encrypted payloads/,
+  ],
+]) {
+  test(`rejects ${name}`, () => {
+    const invalid = replaceWithinModel(
+      prismaSource,
+      modelName,
+      original,
+      replacement,
+    );
+
+    assert.throws(() => validatePrismaTargetSchema(invalid), error);
+  });
+}
 
 test("rejects a non-operational or real payment provider in S1.2-01", () => {
   const document = documentFixture();

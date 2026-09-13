@@ -213,7 +213,7 @@
   "x-kora-operation-errors": {
     "listPublicAudioCatalog": ["VALIDATION_ERROR"],
     "getPublicAudioContent": ["CONTENT_NOT_FOUND"],
-    "getPublicAudioCover": ["CONTENT_NOT_FOUND"],
+    "getPublicAudioCover": ["VALIDATION_ERROR", "CONTENT_NOT_FOUND"],
     "registerCustomer": ["VALIDATION_ERROR", "RATE_LIMITED"],
     "loginCustomer": [
       "VALIDATION_ERROR",
@@ -467,6 +467,7 @@
               }
             }
           },
+          "400": { "$ref": "#/components/responses/ClientError" },
           "404": { "$ref": "#/components/responses/ClientError" }
         }
       }

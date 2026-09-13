@@ -205,6 +205,183 @@ const EXPECTED_OPERATIONS = new Map([
   ],
 ]);
 
+const EXPECTED_SUCCESS_RESPONSES = new Map([
+  [
+    "healthLiveness",
+    ["200", "application/json", "#/components/schemas/LivenessResponse"],
+  ],
+  [
+    "healthReadiness",
+    ["200", "application/json", "#/components/schemas/ReadinessResponse"],
+  ],
+  [
+    "listPublicAudioCatalog",
+    ["200", "application/json", "#/components/schemas/AudioCatalogPage"],
+  ],
+  [
+    "getPublicAudioContent",
+    ["200", "application/json", "#/components/schemas/AudioContentEnvelope"],
+  ],
+  ["getPublicAudioCover", ["200", "image/*", "binary"]],
+  [
+    "registerCustomer",
+    ["202", "application/json", "#/components/schemas/OtpChallengeEnvelope"],
+  ],
+  [
+    "loginCustomer",
+    ["202", "application/json", "#/components/schemas/OtpChallengeEnvelope"],
+  ],
+  [
+    "verifyCustomerOtp",
+    ["200", "application/json", "#/components/schemas/SessionEnvelope"],
+  ],
+  [
+    "createCustomerStepUpChallenge",
+    ["202", "application/json", "#/components/schemas/OtpChallengeEnvelope"],
+  ],
+  [
+    "verifyCustomerStepUp",
+    [
+      "200",
+      "application/json",
+      "#/components/schemas/StepUpVerificationEnvelope",
+    ],
+  ],
+  [
+    "refreshCustomerSession",
+    ["200", "application/json", "#/components/schemas/SessionEnvelope"],
+  ],
+  ["revokeCurrentCustomerSession", ["204", null, null]],
+  [
+    "listCustomerDevices",
+    ["200", "application/json", "#/components/schemas/DeviceListEnvelope"],
+  ],
+  [
+    "listCustomerOrders",
+    ["200", "application/json", "#/components/schemas/OrderPage"],
+  ],
+  [
+    "createCustomerOrder",
+    ["201", "application/json", "#/components/schemas/OrderEnvelope"],
+  ],
+  [
+    "getCustomerOrder",
+    ["200", "application/json", "#/components/schemas/OrderEnvelope"],
+  ],
+  [
+    "listPaymentAttempts",
+    ["200", "application/json", "#/components/schemas/PaymentAttemptPage"],
+  ],
+  [
+    "createPaymentAttempt",
+    ["201", "application/json", "#/components/schemas/PaymentAttemptEnvelope"],
+  ],
+  [
+    "getPaymentAttempt",
+    ["200", "application/json", "#/components/schemas/PaymentAttemptEnvelope"],
+  ],
+  [
+    "getOrderReceipt",
+    ["200", "application/json", "#/components/schemas/ReceiptEnvelope"],
+  ],
+  [
+    "listOperationalPaymentProviders",
+    [
+      "200",
+      "application/json",
+      "#/components/schemas/OperationalProviderListEnvelope",
+    ],
+  ],
+  [
+    "acceptPaymentWebhook",
+    ["202", "application/json", "#/components/schemas/WebhookAcceptedEnvelope"],
+  ],
+  [
+    "acceptMuxMediaWebhook",
+    ["202", "application/json", "#/components/schemas/WebhookAcceptedEnvelope"],
+  ],
+  [
+    "listEntitledAudioLibrary",
+    ["200", "application/json", "#/components/schemas/LibraryPage"],
+  ],
+  [
+    "createAnonymousPreviewGrant",
+    ["201", "application/json", "#/components/schemas/PreviewGrantEnvelope"],
+  ],
+  [
+    "exchangePreviewGrantForPlaybackDescriptor",
+    [
+      "201",
+      "application/json",
+      "#/components/schemas/PlaybackDescriptorEnvelope",
+    ],
+  ],
+  [
+    "createPurchasedPlaybackDescriptor",
+    [
+      "201",
+      "application/json",
+      "#/components/schemas/PlaybackDescriptorEnvelope",
+    ],
+  ],
+  [
+    "listAdminArtists",
+    ["200", "application/json", "#/components/schemas/AdminArtistPage"],
+  ],
+  [
+    "createAdminArtist",
+    ["201", "application/json", "#/components/schemas/AdminArtistEnvelope"],
+  ],
+  [
+    "getAdminArtist",
+    ["200", "application/json", "#/components/schemas/AdminArtistEnvelope"],
+  ],
+  [
+    "updateAdminArtist",
+    ["200", "application/json", "#/components/schemas/AdminArtistEnvelope"],
+  ],
+  [
+    "listAdminAudioContent",
+    ["200", "application/json", "#/components/schemas/AdminAudioPage"],
+  ],
+  [
+    "createAdminAudioContent",
+    ["201", "application/json", "#/components/schemas/AdminAudioEnvelope"],
+  ],
+  [
+    "getAdminAudioContent",
+    ["200", "application/json", "#/components/schemas/AdminAudioEnvelope"],
+  ],
+  [
+    "updateAdminAudioContent",
+    ["200", "application/json", "#/components/schemas/AdminAudioEnvelope"],
+  ],
+  [
+    "publishAdminAudioContent",
+    ["200", "application/json", "#/components/schemas/AdminAudioEnvelope"],
+  ],
+  [
+    "archiveAdminAudioContent",
+    ["200", "application/json", "#/components/schemas/AdminAudioEnvelope"],
+  ],
+  [
+    "createPrivateMediaAsset",
+    ["201", "application/json", "#/components/schemas/MediaAssetEnvelope"],
+  ],
+  [
+    "getPrivateMediaAssetStatus",
+    ["200", "application/json", "#/components/schemas/MediaAssetEnvelope"],
+  ],
+  [
+    "preparePrivateMediaAssetUpload",
+    [
+      "201",
+      "application/json",
+      "#/components/schemas/MediaPreparationEnvelope",
+    ],
+  ],
+]);
+
 const REQUIRED_INVARIANTS = [
   "ORDER_PRECEDES_PAYMENT_ATTEMPT",
   "PAYMENT_ATTEMPT_APPEND_ONLY",
@@ -392,10 +569,7 @@ const ADMIN_OPERATION_ROLES = new Map([
   ["publishAdminAudioContent", ["SUPER_ADMIN", "CONTENT_EDITOR"]],
   ["archiveAdminAudioContent", ["SUPER_ADMIN", "CONTENT_EDITOR"]],
   ["createPrivateMediaAsset", ["SUPER_ADMIN", "CONTENT_EDITOR"]],
-  [
-    "getPrivateMediaAssetStatus",
-    ["SUPER_ADMIN", "CONTENT_EDITOR", "SUPPORT"],
-  ],
+  ["getPrivateMediaAssetStatus", ["SUPER_ADMIN", "CONTENT_EDITOR", "SUPPORT"]],
   ["preparePrivateMediaAssetUpload", ["SUPER_ADMIN", "CONTENT_EDITOR"]],
 ]);
 
@@ -429,7 +603,10 @@ const SAFE_MEDIA_SURFACE_PROPERTIES = new Map([
       "title",
     ],
   ],
-  ["PlaybackDescriptor", ["descriptor", "expiresAt", "expiresInSeconds", "protocol"]],
+  [
+    "PlaybackDescriptor",
+    ["descriptor", "expiresAt", "expiresInSeconds", "protocol"],
+  ],
   ["MediaPreparation", ["expiresAt", "expiresInSeconds", "preparationToken"]],
   [
     "LibraryAudioItem",
@@ -608,6 +785,14 @@ function validateOperationShape(document) {
         );
       }
       if (
+        EXPECTED_OPERATIONS.get(`${method.toUpperCase()} ${path}`) !==
+        operation.operationId
+      ) {
+        fail(
+          "path, method and operationId surface must match the exact approved inventory",
+        );
+      }
+      if (
         !Array.isArray(operation["x-kora-clients"]) ||
         operation["x-kora-clients"].length === 0
       ) {
@@ -615,6 +800,48 @@ function validateOperationShape(document) {
       }
       if (Object.keys(operation.responses ?? {}).length === 0) {
         fail(`${method.toUpperCase()} ${path} requires responses`);
+      }
+      const expectedSuccess = EXPECTED_SUCCESS_RESPONSES.get(
+        operation.operationId,
+      );
+      const successResponses = Object.entries(operation.responses ?? {}).filter(
+        ([status]) => /^2(?:\d\d|XX)$/i.test(status),
+      );
+      if (!expectedSuccess || successResponses.length !== 1) {
+        fail(
+          `${operation.operationId} requires exactly one approved success response`,
+        );
+      }
+      const [expectedStatus, expectedMediaType, expectedSchema] =
+        expectedSuccess;
+      const [actualStatus, responseValue] = successResponses[0];
+      const response = dereference(document, responseValue);
+      if (actualStatus !== expectedStatus) {
+        fail(
+          `${operation.operationId} success response must use HTTP ${expectedStatus}`,
+        );
+      }
+      if (expectedStatus === "204") {
+        if (response?.content !== undefined) {
+          fail(
+            `${operation.operationId} HTTP 204 success response must not declare content`,
+          );
+        }
+      } else {
+        const mediaTypes = Object.keys(response?.content ?? {});
+        const schema = response?.content?.[expectedMediaType]?.schema;
+        const schemaMatches =
+          expectedSchema === "binary"
+            ? schema?.type === "string" &&
+              schema?.format === "binary" &&
+              stableEqual(Object.keys(schema), ["format", "type"])
+            : schema?.$ref === expectedSchema &&
+              stableEqual(Object.keys(schema), ["$ref"]);
+        if (!stableEqual(mediaTypes, [expectedMediaType]) || !schemaMatches) {
+          fail(
+            `${operation.operationId} HTTP ${expectedStatus} success response must bind exactly ${expectedMediaType} to ${expectedSchema}`,
+          );
+        }
       }
       if (
         path.startsWith("/health/") &&
@@ -1602,7 +1829,10 @@ function validateIdempotency(document) {
 }
 
 function validateSafeSchemaSurface(document) {
-  for (const [schemaName, expectedProperties] of SAFE_MEDIA_SURFACE_PROPERTIES) {
+  for (const [
+    schemaName,
+    expectedProperties,
+  ] of SAFE_MEDIA_SURFACE_PROPERTIES) {
     const schema = document.components.schemas[schemaName];
     if (
       schema?.additionalProperties !== false ||
@@ -1773,11 +2003,28 @@ function validateMediaAndClientGates(document) {
       "video.asset.errored",
       "video.upload.asset_created",
     ]) ||
-    muxRequest?.properties?.data?.type !== "object"
+    muxRequest?.properties?.data?.type !== "object" ||
+    muxRequest?.properties?.data?.additionalProperties !== true ||
+    muxRequest?.additionalProperties !== true
   ) {
     fail(
       "Mux callbacks must be signature-authenticated, durable, idempotent and unable to publish",
     );
+  }
+  const accepted = document.components.schemas.WebhookAccepted;
+  if (
+    !isExactObjectSchema(
+      accepted,
+      ["duplicate", "inboxEventId", "received"],
+      ["duplicate", "inboxEventId", "received"],
+    ) ||
+    accepted.properties?.inboxEventId?.$ref !==
+      "#/components/schemas/Identifier" ||
+    accepted.properties?.received?.type !== "boolean" ||
+    accepted.properties?.received?.const !== true ||
+    accepted.properties?.duplicate?.type !== "boolean"
+  ) {
+    fail("webhook acknowledgements must remain exact and closed");
   }
 }
 
@@ -1824,6 +2071,12 @@ function validateCatalogReadinessGates(document) {
     coverVersionParameter?.required !== true ||
     coverVersionParameter?.schema?.type !== "integer" ||
     coverVersionParameter?.schema?.minimum !== 1 ||
+    coverOperation.responses?.["400"]?.$ref !==
+      "#/components/responses/ClientError" ||
+    !stableEqual(
+      document["x-kora-operation-errors"]?.getPublicAudioCover ?? [],
+      ["CONTENT_NOT_FOUND", "VALIDATION_ERROR"],
+    ) ||
     coverOperation.responses?.["200"]?.content?.["image/*"]?.schema?.format !==
       "binary"
   ) {
@@ -1900,9 +2153,7 @@ function validateCommerceGates(document) {
     operational.properties.code.const !== "SANDBOX_NEUTRAL" ||
     operational.properties.status.const !== "OPERATIONAL"
   ) {
-    fail(
-      "only the operational provider-neutral sandbox may appear in S1.2-01",
-    );
+    fail("only the operational provider-neutral sandbox may appear in S1.2-01");
   }
   const providerList =
     document.components.schemas.OperationalProviderListEnvelope.properties.data;
@@ -2028,7 +2279,9 @@ export function validateOpenApiDocument(document) {
     document["x-kora-scope"] !==
       "S1.2_01_AUDIO_CATALOG_CONTRACT_DATA_READINESS_GATE"
   ) {
-    fail("S1.2-01 audio-catalog readiness title, version or scope is incorrect");
+    fail(
+      "S1.2-01 audio-catalog readiness title, version or scope is incorrect",
+    );
   }
   if (!stableEqual(Object.keys(document.paths ?? {}), EXPECTED_PATHS)) {
     fail(
@@ -2072,6 +2325,80 @@ export function validateOpenApiDocument(document) {
   };
 }
 
+export function stripPrismaComments(source) {
+  let stripped = "";
+  let state = "code";
+  let escaped = false;
+
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    const next = source[index + 1];
+
+    if (state === "string") {
+      stripped += character;
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === '"') {
+        state = "code";
+      }
+      continue;
+    }
+
+    if (state === "line-comment") {
+      if (character === "\r" || character === "\n") {
+        stripped += character;
+        state = "code";
+      } else {
+        stripped += " ";
+      }
+      continue;
+    }
+
+    if (state === "block-comment") {
+      if (character === "*" && next === "/") {
+        stripped += "  ";
+        index += 1;
+        state = "code";
+      } else {
+        stripped += character === "\r" || character === "\n" ? character : " ";
+      }
+      continue;
+    }
+
+    if (character === '"') {
+      stripped += character;
+      state = "string";
+    } else if (character === "/" && next === "/") {
+      stripped += "  ";
+      index += 1;
+      state = "line-comment";
+    } else if (character === "/" && next === "*") {
+      stripped += "  ";
+      index += 1;
+      state = "block-comment";
+    } else {
+      stripped += character;
+    }
+  }
+
+  if (state === "block-comment") {
+    fail("Prisma target schema contains an unterminated block comment");
+  }
+  return stripped;
+}
+
+function maskPrismaCodeLikeStringContents(source) {
+  return source.replace(/"(?:\\.|[^"\\])*"/g, (literal) => {
+    const content = literal.slice(1, -1);
+    if (/^[A-Za-z][A-Za-z0-9_]*$/.test(content)) {
+      return literal;
+    }
+    return `"${" ".repeat(content.length)}"`;
+  });
+}
+
 function prismaModel(source, name) {
   const match = new RegExp(
     `model\\s+${name}\\s*\\{([\\s\\S]*?)\\n\\}`,
@@ -2083,7 +2410,17 @@ function prismaModel(source, name) {
   return match[1];
 }
 
+function hasExactPrismaLine(source, declaration) {
+  const flags = declaration.flags.replace(/[gy]/g, "");
+  const anchored = new RegExp(
+    `^\\s*(?:${declaration.source})\\s*$`,
+    flags.includes("m") ? flags : `${flags}m`,
+  );
+  return anchored.test(source);
+}
+
 export function validatePrismaTargetSchema(source) {
+  source = maskPrismaCodeLikeStringContents(stripPrismaComments(source));
   const requiredModels = [
     "Customer",
     "CustomerDevice",
@@ -2232,29 +2569,43 @@ export function validatePrismaTargetSchema(source) {
   const adminSession = prismaModel(source, "AdminSession");
   const adminRecoveryCode = prismaModel(source, "AdminRecoveryCode");
   if (
-    !/totpSecretEncrypted\s+String\?/.test(adminUser) ||
-    !/totpEnabledAt\s+DateTime\?/.test(adminUser) ||
-    !/sessions\s+AdminSession\[\]/.test(adminUser) ||
-    !/recoveryCodes\s+AdminRecoveryCode\[\]/.test(adminUser) ||
-    !/tokenFamilyId\s+String/.test(adminSession) ||
-    !/accessTokenJti\s+String\s+@unique/.test(adminSession) ||
-    !/refreshTokenHash\s+String\s+@unique/.test(adminSession) ||
-    !/refreshTokenVersion\s+Int\s+@default\(1\)/.test(adminSession) ||
-    !/lastTwoFactorAt\s+DateTime/.test(adminSession) ||
-    !/lastActivityAt\s+DateTime\s+@default\(now\(\)\)/.test(adminSession) ||
-    !/expiresAt\s+DateTime/.test(adminSession) ||
-    !/revokedAt\s+DateTime\?/.test(adminSession) ||
-    !/adminUser\s+AdminUser\s+@relation\(fields: \[adminUserId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/.test(
+    !hasExactPrismaLine(adminUser, /totpSecretEncrypted\s+String\?/) ||
+    !hasExactPrismaLine(adminUser, /totpEnabledAt\s+DateTime\?/) ||
+    !hasExactPrismaLine(adminUser, /sessions\s+AdminSession\[\]/) ||
+    !hasExactPrismaLine(adminUser, /recoveryCodes\s+AdminRecoveryCode\[\]/) ||
+    !hasExactPrismaLine(adminSession, /tokenFamilyId\s+String/) ||
+    !hasExactPrismaLine(adminSession, /accessTokenJti\s+String\s+@unique/) ||
+    !hasExactPrismaLine(adminSession, /refreshTokenHash\s+String\s+@unique/) ||
+    !hasExactPrismaLine(
       adminSession,
+      /refreshTokenVersion\s+Int\s+@default\(1\)/,
     ) ||
-    !/@@unique\(\[id, adminUserId\]\)/.test(adminSession) ||
-    !/@@unique\(\[adminUserId, tokenFamilyId\]\)/.test(adminSession) ||
-    !/codeHash\s+String/.test(adminRecoveryCode) ||
-    !/usedAt\s+DateTime\?/.test(adminRecoveryCode) ||
-    !/adminUser\s+AdminUser\s+@relation\(fields: \[adminUserId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/.test(
+    !hasExactPrismaLine(adminSession, /lastTwoFactorAt\s+DateTime/) ||
+    !hasExactPrismaLine(
+      adminSession,
+      /lastActivityAt\s+DateTime\s+@default\(now\(\)\)/,
+    ) ||
+    !hasExactPrismaLine(adminSession, /expiresAt\s+DateTime/) ||
+    !hasExactPrismaLine(adminSession, /revokedAt\s+DateTime\?/) ||
+    !hasExactPrismaLine(
+      adminSession,
+      /adminUser\s+AdminUser\s+@relation\(fields: \[adminUserId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/,
+    ) ||
+    !hasExactPrismaLine(adminSession, /@@unique\(\[id, adminUserId\]\)/) ||
+    !hasExactPrismaLine(
+      adminSession,
+      /@@unique\(\[adminUserId, tokenFamilyId\]\)/,
+    ) ||
+    !hasExactPrismaLine(adminRecoveryCode, /codeHash\s+String/) ||
+    !hasExactPrismaLine(adminRecoveryCode, /usedAt\s+DateTime\?/) ||
+    !hasExactPrismaLine(
       adminRecoveryCode,
+      /adminUser\s+AdminUser\s+@relation\(fields: \[adminUserId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/,
     ) ||
-    !/@@unique\(\[adminUserId, codeHash\]\)/.test(adminRecoveryCode)
+    !hasExactPrismaLine(
+      adminRecoveryCode,
+      /@@unique\(\[adminUserId, codeHash\]\)/,
+    )
   ) {
     fail(
       "admin authentication readiness requires encrypted TOTP material, revocable sessions and hashed recovery codes",
@@ -2263,16 +2614,19 @@ export function validatePrismaTargetSchema(source) {
   const artist = prismaModel(source, "Artist");
   const catalogAudioContent = prismaModel(source, "AudioContent");
   if (
-    !/createdByAdminId\s+String/.test(artist) ||
-    !/createdByAdmin\s+AdminUser\s+@relation\("ArtistCreatedByAdmin", fields: \[createdByAdminId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/.test(
+    !hasExactPrismaLine(artist, /createdByAdminId\s+String/) ||
+    !hasExactPrismaLine(
       artist,
+      /createdByAdmin\s+AdminUser\s+@relation\("ArtistCreatedByAdmin", fields: \[createdByAdminId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/,
     ) ||
-    !/createdByAdminId\s+String/.test(catalogAudioContent) ||
-    !/createdByAdmin\s+AdminUser\s+@relation\("AudioContentCreatedByAdmin", fields: \[createdByAdminId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/.test(
+    !hasExactPrismaLine(catalogAudioContent, /createdByAdminId\s+String/) ||
+    !hasExactPrismaLine(
       catalogAudioContent,
+      /createdByAdmin\s+AdminUser\s+@relation\("AudioContentCreatedByAdmin", fields: \[createdByAdminId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/,
     ) ||
-    !/artist\s+Artist\s+@relation\(fields: \[artistId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/.test(
+    !hasExactPrismaLine(
       catalogAudioContent,
+      /artist\s+Artist\s+@relation\(fields: \[artistId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/,
     )
   ) {
     fail(
@@ -2302,34 +2656,48 @@ export function validatePrismaTargetSchema(source) {
     );
   }
   const inbox = prismaModel(source, "PaymentWebhookInbox");
-  if (!/@@unique\(\[provider, providerEventKey\]\)/.test(inbox)) {
+  if (
+    !hasExactPrismaLine(inbox, /@@unique\(\[provider, providerEventKey\]\)/)
+  ) {
     fail("PaymentWebhookInbox requires provider/event deduplication");
   }
   const mediaAsset = prismaModel(source, "MediaAsset");
   const mediaInbox = prismaModel(source, "MediaWebhookInbox");
   if (
     !/enum MediaProvider\s*\{\s*MUX\s*\}/m.test(source) ||
-    !/provider\s+MediaProvider\?/.test(mediaAsset) ||
-    !/privateProviderUploadRef\s+String\?/.test(mediaAsset) ||
-    !/privateProviderAssetRef\s+String\?/.test(mediaAsset) ||
-    !/@@unique\(\[provider, privateProviderUploadRef\]\)/.test(mediaAsset) ||
-    !/@@unique\(\[provider, privateProviderAssetRef\]\)/.test(mediaAsset) ||
-    !/audioContent\s+AudioContent\s+@relation\(fields: \[audioContentId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/.test(
+    !hasExactPrismaLine(mediaAsset, /provider\s+MediaProvider\?/) ||
+    !hasExactPrismaLine(mediaAsset, /privateProviderUploadRef\s+String\?/) ||
+    !hasExactPrismaLine(mediaAsset, /privateProviderAssetRef\s+String\?/) ||
+    !hasExactPrismaLine(
       mediaAsset,
+      /@@unique\(\[provider, privateProviderUploadRef\]\)/,
     ) ||
-    !/providerEventKey\s+String/.test(mediaInbox) ||
-    !/eventType\s+String/.test(mediaInbox) ||
-    !/payloadHash\s+String/.test(mediaInbox) ||
-    !/encryptedPayload\s+String/.test(mediaInbox) ||
+    !hasExactPrismaLine(
+      mediaAsset,
+      /@@unique\(\[provider, privateProviderAssetRef\]\)/,
+    ) ||
+    !hasExactPrismaLine(
+      mediaAsset,
+      /audioContent\s+AudioContent\s+@relation\(fields: \[audioContentId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/,
+    ) ||
+    !hasExactPrismaLine(mediaInbox, /providerEventKey\s+String/) ||
+    !hasExactPrismaLine(mediaInbox, /eventType\s+String/) ||
+    !hasExactPrismaLine(mediaInbox, /payloadHash\s+String/) ||
+    !hasExactPrismaLine(mediaInbox, /encryptedPayload\s+String/) ||
     /(?:^|\n)\s*(?:rawPayload|payload)\s+/.test(mediaInbox) ||
-    !/signatureVerifiedAt\s+DateTime/.test(mediaInbox) ||
-    !/processingStatus\s+InboxProcessingStatus\s+@default\(RECEIVED\)/.test(
+    !hasExactPrismaLine(mediaInbox, /signatureVerifiedAt\s+DateTime/) ||
+    !hasExactPrismaLine(
       mediaInbox,
+      /processingStatus\s+InboxProcessingStatus\s+@default\(RECEIVED\)/,
     ) ||
-    !/mediaAsset\s+MediaAsset\?\s+@relation\(fields: \[mediaAssetId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/.test(
+    !hasExactPrismaLine(
       mediaInbox,
+      /mediaAsset\s+MediaAsset\?\s+@relation\(fields: \[mediaAssetId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/,
     ) ||
-    !/@@unique\(\[provider, providerEventKey\]\)/.test(mediaInbox)
+    !hasExactPrismaLine(
+      mediaInbox,
+      /@@unique\(\[provider, providerEventKey\]\)/,
+    )
   ) {
     fail(
       "MediaWebhookInbox requires authenticated encrypted payloads, provider/event deduplication and Restrict linkage",

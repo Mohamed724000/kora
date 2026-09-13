@@ -311,6 +311,23 @@ GitHub, runtime ou migration S1.2 n’avait été effectué. Ce constat reste vr
 pour cet instantané historique ; toute publication ultérieure est enregistrée
 séparément par l’historique Git, la PR et les workflows.
 
+## 2026-09-12 — S1.2-01-R2 Contract Gate Hardening
+
+| ID | Nature | Décision | Autorité | Statut |
+| --- | --- | --- | --- | --- |
+| DEC-S1.2-01-R2-01 | Réponses | Chaque `operationId` est lié à un unique triplet succès exact : statut HTTP, media type et schéma de réponse. Une enveloppe valide appartenant à une autre opération, un statut substitué, un media type ajouté ou un body sur `204` sont bloquants. | Verdict CTO `CHANGES REQUIRED` et autorisation R2 du 2026-09-12 | Accepted — règle de gate R2 |
+| DEC-S1.2-01-R2-02 | Couverture | `getPublicAudioCover` exige `mediaAssetVersion` présent, entier et supérieur ou égal à 1 ; toute violation est contractée en `400 / VALIDATION_ERROR`. | Autorisation CTO S1.2-01-R2 | Accepted — contrat défensif |
+| DEC-S1.2-01-R2-03 | Webhook Mux | La racine du payload fournisseur Mux et son objet `data` restent extensibles pour tolérer les ajouts fournisseur ; l’acquittement KORA+ reste au contraire une forme exacte et fermée. | Autorisation CTO S1.2-01-R2 | Accepted — frontière fournisseur |
+| DEC-S1.2-01-R2-04 | Prisma | Les commentaires ligne et bloc sont retirés lexicalement et les chaînes susceptibles de contenir du faux code sont masquées avant tout contrôle Prisma : un champ, une relation, une clé candidate ou une contrainte uniquement commenté ou injecté dans une telle chaîne ne satisfait aucun gate. Les garanties sensibles explicitement couvertes par R2 — authentification admin, provenance, Inbox et média Mux — sont en plus ancrées à des lignes et noms exacts afin de rejeter leurs identifiants préfixés. | Autorisation CTO S1.2-01-R2 | Accepted — validation fail-closed |
+| DEC-S1.2-01-R2-05 | Génération | La comparaison officielle des types générés exige exactement Prettier `3.9.6`. L’absence, le remplacement ou l’impossibilité de charger ce formateur produit un échec explicite ; aucune équivalence lexicale dégradée n’est déclarée `PASS`. | Version verrouillée du dépôt et autorisation CTO S1.2-01-R2 | Accepted — reproductibilité exacte |
+
+Instantané historique local prépublication du 2026-09-12 : R2 est construit sur
+le head publié R1 `c588f12422423936ea190a72926f821988553761`. Les décisions ci-dessus
+décrivent le gate défensif validé localement avant toute décision distincte de
+commit R2. Elles n’affirment aucun SHA ou Run ID futur et n’autorisent ni
+runtime, migration, interface, changement de dépendance, Ready, merge ou
+démarrage de S1.2-02.
+
 ## Catégories d’autorité
 
 - **Produit** : vision, économie, marque, contrats et périmètre irréversible ;

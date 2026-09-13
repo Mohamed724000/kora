@@ -1,6 +1,11 @@
 import { readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+export const EXACT_PRETTIER_VERSION = "3.9.6";
+
+const require = createRequire(import.meta.url);
 
 const OPENAPI_PATH = resolve("docs", "api", "openapi.yaml");
 const OUTPUT_PATH = resolve(
@@ -88,9 +93,26 @@ export function normalizeContractSyntax(source) {
   let normalized = "";
   let quote = null;
   let escaped = false;
+  let comment = null;
   for (let index = 0; index < source.length; index += 1) {
     const character = source[index];
-    if (quote !== null) {
+    const next = source[index + 1];
+    if (comment === "line") {
+      if (character === "\r" || character === "\n") {
+        normalized += "\n";
+        if (character === "\r" && next === "\n") index += 1;
+        comment = null;
+      } else {
+        normalized += character;
+      }
+    } else if (comment === "block") {
+      normalized += character;
+      if (character === "*" && next === "/") {
+        normalized += next;
+        index += 1;
+        comment = null;
+      }
+    } else if (quote !== null) {
       if (escaped) {
         normalized += character;
         escaped = false;
@@ -106,6 +128,14 @@ export function normalizeContractSyntax(source) {
     } else if (character === '"' || character === "'") {
       normalized += '"';
       quote = character;
+    } else if (character === "/" && next === "/") {
+      normalized += "//";
+      index += 1;
+      comment = "line";
+    } else if (character === "/" && next === "*") {
+      normalized += "/*";
+      index += 1;
+      comment = "block";
     } else if (/\s/.test(character)) {
       let nextIndex = index + 1;
       while (nextIndex < source.length && /\s/.test(source[nextIndex])) {
@@ -124,8 +154,45 @@ export function normalizeContractSyntax(source) {
   return normalized.replace(/([=:])\|/g, "$1");
 }
 
-export async function generateContractTypes(document) {
-  const { default: prettier } = await import("prettier");
+export async function loadExactPrettier({
+  importPrettier = () => import("prettier"),
+  readPackageJson = () =>
+    JSON.parse(readFileSync(require.resolve("prettier/package.json"), "utf8")),
+} = {}) {
+  let packageJson;
+  try {
+    packageJson = readPackageJson();
+  } catch (cause) {
+    throw new Error(
+      `Prettier ${EXACT_PRETTIER_VERSION} is required for the exact generated-contract comparison but is unavailable.`,
+      { cause },
+    );
+  }
+  if (packageJson?.version !== EXACT_PRETTIER_VERSION) {
+    throw new Error(
+      `Prettier ${EXACT_PRETTIER_VERSION} is required for the exact generated-contract comparison; found ${packageJson?.version ?? "an unknown version"}.`,
+    );
+  }
+  let module;
+  try {
+    module = await importPrettier();
+  } catch (cause) {
+    throw new Error(
+      `Prettier ${EXACT_PRETTIER_VERSION} is required for the exact generated-contract comparison but could not be loaded.`,
+      { cause },
+    );
+  }
+  const prettier = module.default ?? module;
+  if (typeof prettier?.format !== "function") {
+    throw new Error(
+      `Prettier ${EXACT_PRETTIER_VERSION} did not expose the required format function.`,
+    );
+  }
+  return prettier;
+}
+
+export async function generateContractTypes(document, loaderOptions) {
+  const prettier = await loadExactPrettier(loaderOptions);
   return prettier.format(buildContractTypes(document), {
     parser: "typescript",
     printWidth: 100,
@@ -154,33 +221,10 @@ if (direct) {
   } else {
     const document = JSON.parse(readFileSync(OPENAPI_PATH, "utf8"));
     const current = readFileSync(OUTPUT_PATH, "utf8");
-    let expected;
-    let exact = true;
-    try {
-      expected = await generateContractTypes(document);
-    } catch (error) {
-      if (
-        error?.code !== "ERR_MODULE_NOT_FOUND" ||
-        !String(error.message).includes("prettier")
-      ) {
-        throw error;
-      }
-      exact = false;
-      expected = buildContractTypes(document);
-    }
-    const currentComparable = exact
-      ? current
-      : normalizeContractSyntax(current);
-    const expectedComparable = exact
-      ? expected
-      : normalizeContractSyntax(expected);
-    if (currentComparable !== expectedComparable) {
+    const expected = await generateContractTypes(document);
+    if (current !== expected) {
       throw new Error("Generated audio-pilot contract types are stale.");
     }
-    console.log(
-      exact
-        ? "Generated audio-pilot contract types are current."
-        : "Generated audio-pilot contract syntax is current; exact formatting check requires Prettier.",
-    );
+    console.log("Generated audio-pilot contract types are current.");
   }
 }
