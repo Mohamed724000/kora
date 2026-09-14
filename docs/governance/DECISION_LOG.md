@@ -207,10 +207,12 @@ est publié au head consigné par DEC-M0.3-17 avec quatre workflows #45 verts.
 La validation locale du 2026-09-04 consignée par DEC-M0.3-18 a qualifié la
 correction R5 du dernier écart de gate avant publication. Les métadonnées de
 publication, qui ne sont pas auto-référencées dans cette preuve, font foi dans
-GitHub. Au moment de cette validation M0.3, S1.1 était préservé à 39/39 avec
-l’empreinte agrégée
-`8957cbf3ff27110af162f53c72e0c129860f0fcdfb8bfddab1ae3714a1d9c6dc`, et
-S1.2 n’est pas démarré.
+GitHub. Au moment de cette validation M0.3, l’instantané historique
+prépublication S1.1 était préservé à 39/39. Son empreinte agrégée, établie sur
+ce périmètre exact à partir de l’inventaire associant chaque chemin à sa taille
+et son SHA-256, était
+`8957cbf3ff27110af162f53c72e0c129860f0fcdfb8bfddab1ae3714a1d9c6dc`.
+S1.2 n’était pas démarré à cet instant.
 
 ## 2026-08-20 — Arbitrage financier S1.1
 
@@ -290,6 +292,57 @@ Après cet instantané, R3 a été publié au SHA consigné par DEC-S1.1-29. Cet
 preuve postérieure n’étend ni l’autorisation LGPL nominative ni l’autorisation
 de release ; les futurs statuts Git et CI font foi dans l’historique GitHub et
 la PR #36.
+
+## 2026-09-10 — S1.2-01 Contract & Data Readiness Gate
+
+| ID           | Nature      | Décision | Autorité | Statut |
+| ------------ | ----------- | -------- | -------- | ------ |
+| DEC-S1.2-01-01 | Périmètre | S1.1 est fermé. S1.2-01 complète uniquement le contrat, le modèle cible, les gates et les preuves ; aucune migration, route runtime, interface, installation, dépendance, seed, intégration fournisseur ou donnée média n’est créée. | Autorisation Product Owner et CTO du 2026-09-10 | Accepted — contract/data gate decision |
+| DEC-S1.2-01-02 | Catalogue | La couverture publique est une représentation contrôlée liée au contenu et au `mediaAssetVersion` obligatoire de la publication active, sans URL ou emplacement privé. `settledSalesCount` dérive seulement des unités réglées nettes des remboursements totaux et vaut zéro avant P4. | ADR-011/016 et décision CTO S1.2-01 | Accepted — contract decision |
+| DEC-S1.2-01-03 | Provenance | `Artist` et `AudioContent` conservent l’administrateur créateur ; cette provenance est attribuée par le serveur, absente des entrées client et reliée par `Restrict`. Comme `Restrict` n’interdit pas une réaffectation directe de la FK, une future contrainte SQL devra rendre la colonne immuable avant le runtime. | ADR-011/019/020 | Accepted — target data decision; SQL enforcement deferred |
+| DEC-S1.2-01-04 | Admin | La cible de données admin couvre TOTP RFC 6238 à chaque connexion et enrôlement préalable, secret chiffré, dix codes Argon2id à usage unique, récupération/reset audités, session révocable, refresh cookie protégé, rotation versionnée, inactivité huit heures, fraîcheur TOTP cinq minutes et journal complet lié à la même session (action, entité, avant/après masqués, motif, requête, horodatage). | ADR-002/005/008/019 | Accepted — data readiness decision |
+| DEC-S1.2-01-05 | Média | Le callback Mux futur vérifie la signature sur le corps brut borné, persiste avant acquittement une Inbox dédupliquée contenant SHA-256 et payload chiffré, corrèle séparément les références upload/asset uniques, puis traite idempotemment sans jamais publier. La valeur maximale du corps reste une décision de sécurité préalable au runtime. | ADR-011/015 | Accepted — contract/data target; runtime limit deferred |
+| DEC-S1.2-01-06 | Publication | Une republication après archivage ajoute une nouvelle `ContentPublication` et préserve toutes les preuves historiques ; les liens contenu, publication et assets sont `Restrict`. | ADR-011/016/019 | Accepted — data decision |
+
+Instantané historique de validation locale du 2026-09-11, établi avant toute
+publication. À cet instant, le HEAD de départ restait
+`bcb579916c1ca73e3cfb186683cb932f4f3905e9` et aucun commit, push, changement
+GitHub, runtime ou migration S1.2 n’avait été effectué. Ce constat reste vrai
+pour cet instantané historique ; toute publication ultérieure est enregistrée
+séparément par l’historique Git, la PR et les workflows.
+
+## 2026-09-12 — S1.2-01-R2 Contract Gate Hardening
+
+| ID | Nature | Décision | Autorité | Statut |
+| --- | --- | --- | --- | --- |
+| DEC-S1.2-01-R2-01 | Réponses | Chaque `operationId` est lié à un unique triplet succès exact : statut HTTP, media type et schéma de réponse. Une enveloppe valide appartenant à une autre opération, un statut substitué, un media type ajouté ou un body sur `204` sont bloquants. | Verdict CTO `CHANGES REQUIRED` et autorisation R2 du 2026-09-12 | Accepted — règle de gate R2 |
+| DEC-S1.2-01-R2-02 | Couverture | `getPublicAudioCover` exige `mediaAssetVersion` présent, entier et supérieur ou égal à 1 ; toute violation est contractée en `400 / VALIDATION_ERROR`. | Autorisation CTO S1.2-01-R2 | Accepted — contrat défensif |
+| DEC-S1.2-01-R2-03 | Webhook Mux | La racine du payload fournisseur Mux et son objet `data` restent extensibles pour tolérer les ajouts fournisseur ; l’acquittement KORA+ reste au contraire une forme exacte et fermée. | Autorisation CTO S1.2-01-R2 | Accepted — frontière fournisseur |
+| DEC-S1.2-01-R2-04 | Prisma | Les commentaires ligne et bloc sont retirés lexicalement et les chaînes susceptibles de contenir du faux code sont masquées avant tout contrôle Prisma : un champ, une relation, une clé candidate ou une contrainte uniquement commenté ou injecté dans une telle chaîne ne satisfait aucun gate. Les garanties sensibles explicitement couvertes par R2 — authentification admin, provenance, Inbox et média Mux — sont en plus ancrées à des lignes et noms exacts afin de rejeter leurs identifiants préfixés. | Autorisation CTO S1.2-01-R2 | Accepted — validation fail-closed |
+| DEC-S1.2-01-R2-05 | Génération | La comparaison officielle des types générés exige exactement Prettier `3.9.6`. L’absence, le remplacement ou l’impossibilité de charger ce formateur produit un échec explicite ; aucune équivalence lexicale dégradée n’est déclarée `PASS`. | Version verrouillée du dépôt et autorisation CTO S1.2-01-R2 | Accepted — reproductibilité exacte |
+
+Instantané historique local prépublication du 2026-09-12 : R2 est construit sur
+le head publié R1 `c588f12422423936ea190a72926f821988553761`. Les décisions ci-dessus
+décrivent le gate défensif validé localement avant toute décision distincte de
+commit R2. Elles n’affirment aucun SHA ou Run ID futur et n’autorisent ni
+runtime, migration, interface, changement de dépendance, Ready, merge ou
+démarrage de S1.2-02.
+
+## 2026-09-14 — S1.2-01-R3 Prisma Lexer and Cover Parameter Uniqueness
+
+| ID                | Nature            | Décision                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Autorité                                                        | Statut                                  |
+| ----------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------- |
+| DEC-S1.2-01-R3-01 | Validation Prisma | Toute chaîne Prisma qui atteint un saut de ligne ou la fin du fichier avant un guillemet fermant non échappé provoque un échec lexical explicite. Aucun texte placé après cette ouverture ne peut satisfaire un gate de champ, relation, clé candidate ou contrainte. Les chaînes valides, échappements et commentaires correctement terminés conservent leur traitement R2.                                                                                                          | Verdict CTO `CHANGES REQUIRED` et autorisation R3 du 2026-09-14 | Accepted — règle de gate R3             |
+| DEC-S1.2-01-R3-02 | Couverture        | Après déréférencement, `getPublicAudioCover` doit contenir exactement un paramètre nommé `mediaAssetVersion`, situé en query, obligatoire, entier et de minimum 1. Un second paramètre homonyme est bloquant, même lorsque le premier est conforme.                                                                                                                                                                                                                                   | Autorisation CTO S1.2-01-R3                                     | Accepted — contrat défensif             |
+| DEC-S1.2-01-R3-03 | Validation        | Les deux faux `PASS` Prisma — relation `AuditLog.adminSession` injectée après une ouverture de chaîne suivie d’un saut de ligne, puis chaîne encore ouverte à EOF — et le doublon de paramètre cover ont été reproduits avant correction. Trois tests négatifs les figent ; sous Node `22.18.0`, syntaxe, validateur réel, tests OpenAPI/Contracts `220/220`, scanner officiel sur 337 fichiers, Prettier `3.9.6`, références, chronologie, whitespace et périmètre concluent `PASS`. | Preuves locales R3 du 2026-09-14                                | Accepted — preuve locale prépublication |
+
+Cette entrée décrit exclusivement l’instantané historique local
+prépublication du 2026-09-14, construit sur le head R2 publié
+`7138b2d3d3829ffdd65e4ff592968466273c46d3`. À cet instant, aucun commit R3,
+push ou changement de la Draft PR #42 n’a été effectué ; aucun SHA R3 ni Run ID
+futur n’est affirmé. Le micro-lot ne livre ni runtime, migration, interface,
+dépendance ou fichier généré et ne démarre pas S1.2-02. Tout statut de
+publication ultérieur fera foi dans l’historique Git, la PR et ses workflows.
 
 ## Catégories d’autorité
 

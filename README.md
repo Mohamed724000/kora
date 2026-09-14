@@ -1,9 +1,9 @@
 # KORA+ Final
 
 KORA+ Final est la clean room de production du produit KORA+. Le dépôt contient
-la baseline documentaire, le contrat du monorepo et les fondations applicatives
-des Sprints 0.3 à 0.5. S0.6 audite ces fondations sans ajouter de fonctionnalité
-métier.
+la baseline documentaire, le contrat du monorepo, les fondations applicatives
+et le gate S1.1 fusionné. S1.2-01 prépare les contrats et le modèle cible sans
+ajouter de fonctionnalité runtime.
 
 ## État actuel
 
@@ -15,8 +15,11 @@ métier.
 - Sprint 0.5 : **Closed and merged** via la PR #6.
 - M0.1 : **Closed and merged** via la PR #13.
 - M0.2 : **Closed and merged** via la PR #22.
-- S0.6 : **Foundation Gate exécuté avec réserves, en attente de revue CTO**.
-- Slice 1 et les fonctionnalités produit : **Not started**.
+- S0.6 : **Closed and merged** via la PR #28.
+- S1.1 : **Closed and merged** via la PR #36.
+- S1.2-01 : **Contract & Data Readiness Gate achevé — OpenAPI, Prisma et
+  Contracts préparés ; aucun runtime, migration ou interface P2 livré**.
+- Runtime, migrations et interfaces métier de Slice 1 : **Not started**.
 
 Sprint 0.3 a été fermé et fusionné via la
 [PR #2](https://github.com/Mohamed724000/kora/pull/2). Le commit de clôture est
@@ -37,10 +40,20 @@ Les gates de maintenance M0.1 et M0.2 ont ensuite été fusionnés via les
 [`79ceddc6cbf04b3d213001417da0841044af8206`](https://github.com/Mohamed724000/kora/commit/79ceddc6cbf04b3d213001417da0841044af8206)
 et
 [`40a224edc1dc018a080b6c188a804e361e96b5ef`](https://github.com/Mohamed724000/kora/commit/40a224edc1dc018a080b6c188a804e361e96b5ef).
-Ce dernier commit est la baseline exacte de S0.6. Le
+Ce dernier commit était la baseline exacte de S0.6. Le
 [rapport du Foundation Gate](docs/qa/SPRINT_0_6_FOUNDATION_GATE_REPORT.md)
-conserve les preuves et les réserves. S0.6 reste en attente de décision CTO et
-Slice 1 n’est pas commencé.
+conserve les preuves et les réserves de cet instantané historique.
+
+S1.1 a ensuite été fermé et fusionné via la
+[PR #36](https://github.com/Mohamed724000/kora/pull/36), au merge commit
+[`bcb579916c1ca73e3cfb186683cb932f4f3905e9`](https://github.com/Mohamed724000/kora/commit/bcb579916c1ca73e3cfb186683cb932f4f3905e9).
+S1.2-01 constitue le gate contractuel et données. Son
+[document d’architecture](docs/architecture/SLICE_1_2_01_CONTRACT_AND_DATA_READINESS_GATE.md)
+et son
+[rapport de validation](docs/qa/SLICE_1_2_01_CONTRACT_AND_DATA_READINESS_GATE_REPORT.md)
+en conservent les décisions et les preuves techniques. L’état Git et l’état de
+publication font foi dans l’historique Git et sur GitHub. Aucune migration,
+route métier ou interface P2 n’est livrée par ce gate.
 
 ## Autorités
 

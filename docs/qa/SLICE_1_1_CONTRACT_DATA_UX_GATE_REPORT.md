@@ -155,6 +155,34 @@ release ; le gate juridique/release reste obligatoire pour tout artefact
 serveur distribué qui embarquerait les variantes qualifiées. Les futurs statuts
 Git et CI font foi dans l’historique GitHub et la PR #36.
 
+## Clôture S1.1-R4 et fusion constatées le 2026-09-10
+
+Après les instantanés historiques S1.1 à R3, R4 a réconcilié les preuves de
+publication dans le commit
+`86471b427bbbab54e1b7e55ab89ffec77f4f3bee`. La PR #36 a ensuite été fusionnée
+au merge commit `bcb579916c1ca73e3cfb186683cb932f4f3905e9`, dont les parents
+exacts sont, dans l’ordre Git :
+
+1. `3b05bfd83a65ab552c6c08f114b8ee0261103f30` ;
+2. `86471b427bbbab54e1b7e55ab89ffec77f4f3bee`.
+
+Les quatre workflows post-fusion ont conclu `completed/success` sur ce merge :
+
+| Workflow | Run ID | Résultat |
+| --- | --- | --- |
+| Infrastructure | `34466969243` | `completed/success` |
+| Launcher Windows | `34466969313` | `completed/success` |
+| Security | `34466969222` | `completed/success` |
+| Quality Linux | `34466969196` | `completed/success` |
+
+S1.1 est donc fermé et fusionné. Instantané historique de validation locale du
+2026-09-11, établi avant toute publication. À cet instant, l’état S1.2-01
+postérieur était non indexé, non commité et non publié ; il ne modifiait pas les
+preuves historiques ci-dessus et ne démarrait aucun runtime, migration ou
+interface. Ce constat reste vrai pour cet instantané historique ; toute
+publication ultérieure est enregistrée séparément par l’historique Git, la PR
+et les workflows.
+
 ## Décisions acceptées
 
 ### Fractions de FCFA — Product Owner

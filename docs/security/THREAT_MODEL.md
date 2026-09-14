@@ -1,7 +1,7 @@
 # KORA+ Final — Threat Model initial
 
 Périmètre durable couvert : **BASELINE + S0.4/S0.5/M0.1/M0.2/S0.6 ET M0.3
-FUSIONNÉS ET CLÔTURÉS + CONTRATS, MODÈLE CIBLE ET GATES UX S1.1**.
+FUSIONNÉS ET CLÔTURÉS + S1.1 FERMÉ + CONTRACT & DATA READINESS S1.2-01**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
 commit, push ou changement GitHub S1.1 n’avait encore été effectué : il s’agit
@@ -9,9 +9,10 @@ d’un instantané historique de prépublication. Tout statut GitHub ultérieur 
 être constaté dans l’historique Git et dans la Draft PR correspondante.
 
 Ce modèle décrit les frontières et mesures attendues. Sprint 0.3 introduit des
-shells et quelques contrôles de fondation étroits. S1.1 ajoute des contrats,
-un modèle Prisma cible et des composants visuels ; aucun contrôle métier,
-financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
+shells et quelques contrôles de fondation étroits. S1.1 ajoute des contrats, un
+modèle Prisma cible et des composants visuels. S1.2-01 renforce uniquement le
+contrat, la cible de données et leurs gates ; aucun contrôle métier, financier,
+média ou d’identité ci-dessous n’est déclaré opérationnel.
 
 ## Actifs
 
@@ -38,7 +39,7 @@ financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
 8. CI/CD ↔ environnements et secrets.
 9. Opérateurs ↔ fonctions sensibles et exports.
 
-## Frontières et gates M0.3-R5, complétés contractuellement par S1.1
+## Frontières et gates M0.3-R5, S1.1 et S1.2-01
 
 - shells mobile, web public et administration sans appel API ni donnée métier ;
 - surface HTTP NestJS limitée à `/health/live` et `/health/ready`, hors du
@@ -49,9 +50,10 @@ financier, média ou d’identité ci-dessous n’est déclaré opérationnel.
 - corrélation des requêtes et logs Pino avec redaction des en-têtes, champs et
   chaînes de message sensibles ; le champ `msg` Nest reste catégoriel et fixe ;
 - avant S1.1, client Prisma vide et frontière de contrats explicitement vide ;
-- surface OpenAPI S1.1 de 32 chemins et 38 opérations, sans contrôleur
+- surface OpenAPI S1.2-01 de 34 chemins et 40 opérations, sans contrôleur
   consommateur runtime ;
-- modèle Prisma cible S1.1 à 30 modèles, sans migration, base modifiée ni seed ;
+- modèle Prisma cible S1.2-01 à 33 modèles, sans migration, base modifiée ni
+  seed ;
 - types audio générés depuis OpenAPI avec contrôle de dérive ;
 - primitives Flutter et administration sans appel API, faux contenu runtime ou
   intégration fournisseur ;
@@ -95,14 +97,14 @@ métier ou runtime.
 | Domaine      | Menaces principales                                                                            | Mesures attendues / autorités                                                                                                                                         | État                                                                                     |
 | ------------ | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | Identité/OTP | Brute force, interception, replay, enumeration                                                 | Rate limits, OTP court et haché, rotation session, logs masqués ; ADR-010                                                                                             | Contract/target model S1.1 — runtime not implemented                                     |
-| Admin        | Vol de session, MFA contournée, récupération abusive                                           | TOTP RFC 6238, codes Argon2id, cookies httpOnly, step-up, révocation ; ADR-002/005/008                                                                                | Not implemented                                                                          |
+| Admin        | Vol de session, MFA contournée, récupération abusive                                           | TOTP RFC 6238, codes Argon2id, cookies httpOnly, rotation/replay, step-up, révocation ; ADR-002/005/008                                                              | Contract/data target S1.2-01 — runtime not implemented                                   |
 | RBAC         | Escalade verticale/horizontale, champs sensibles                                               | Contrôle serveur route/action/champ, moindre privilège ; ADR-020                                                                                                      | Not implemented                                                                          |
 | Paiement     | Double débit, faux webhook, replay, ordre inversé                                              | Signature, idempotence, Inbox/Outbox, PaymentAttempts immuables ; ADR-012/015                                                                                         | Sandbox contract/target model S1.1 — runtime not implemented                             |
 | Ledger       | Altération, déséquilibre, double comptage                                                      | Append-only, groupes équilibrés, compensation, reconciliation ; ADR-013/014                                                                                           | Target model S1.1 — runtime balance not implemented                                      |
 | Droits       | Accès sans achat, révocation excessive                                                         | Entitlement permanent ciblé, checks serveur ; ADR-016                                                                                                                 | Contract/target model S1.1 — runtime not implemented                                     |
-| Média        | URL brute, partage, scraping, logs sensibles                                                   | Stockage privé, descriptor court, PreviewGrant, device binding ; ADR-011/017                                                                                          | Contract/target model S1.1 — runtime not implemented                                     |
+| Média        | URL brute, faux callback/replay, partage, scraping, logs sensibles                              | Stockage privé, représentation contrôlée, Inbox Mux signée/chiffrée/dédupliquée, descriptor court ; ADR-011/015/017                                                 | Contract/target model S1.2-01 — runtime not implemented                                  |
 | Offline      | Extraction clé/fichier, replay licence, copie appareil                                         | AES-256-GCM, clé non exportable, licence renouvelable ; ADR-018                                                                                                       | Not implemented                                                                          |
-| Audit        | Suppression ou falsification                                                                   | Écriture transactionnelle, blocage UPDATE/DELETE, exports audités ; ADR-019                                                                                           | Target model S1.1 — runtime not implemented                                              |
+| Audit        | Suppression, falsification ou attribution au mauvais acteur/session                             | Écriture transactionnelle, liaison composite acteur/session, `Restrict`, blocage UPDATE/DELETE ; ADR-019                                                            | Target model S1.2-01 — runtime not implemented                                           |
 | Capture      | Enregistrement écran et dispositif externe                                                     | `FLAG_SECURE`, détection/pause iOS, protections en couches sans promesse absolue ; ADR-024                                                                            | Not implemented                                                                          |
 | Données/logs | Fuite PII, token ou secret                                                                     | Redaction des champs et messages, `msg` catégoriel, minimisation, contrôle accès, rétention et tests                                                                  | Foundation validated locally by S0.6 — no business PII flow                              |
 | Supply chain | Package compromis, licence incompatible, épuisement de pile, SSRF ou déni de service transitif | Versions verrouillées, revue, audit, provenance, scripts qualifiés, parents exacts, gates de graphe, sorties Next reproductibles et exceptions de licence nominatives | M0.3 publié et vert ; S1.1-R2 et R3 publiés dans la Draft PR #36, R3 au head `7d23f146…` |
@@ -331,6 +333,105 @@ métier ou runtime.
 - Les descripteurs de lecture sont contractuellement opaques, courts,
   non persistables et non journalisables. Leur signature, rotation, liaison
   appareil et révocation restent un gate runtime ultérieur.
+- S1.2-01 ajoute la cible `AdminSession` avec JTI d’accès, famille, hash et
+  version de refresh, dernière activité, expiration, révocation et fraîcheur
+  TOTP. `AdminRecoveryCode` ne conserve que le hash et `usedAt`. La cardinalité
+  dix, Argon2id, TOTP à chaque connexion, enrôlement avant accès protégé, cookie
+  refresh `httpOnly`/`Secure`/`SameSite`, les fenêtres 15 minutes/8 heures/5
+  minutes, la rotation et la détection de replay restent des obligations
+  runtime testables, pas des contrôles opérationnels de ce gate. Le contrat
+  exige toutefois déjà l’audit de toute récupération ou réinitialisation.
+- `Artist`, `AudioContent`, `ContentPublication`, `AuditLog` et l’idempotence
+  admin conservent une provenance protégée par `Restrict`. Les entrées client ne
+  peuvent fournir `createdByAdminId`; l’attribution depuis l’acteur authentifié
+  et l’écriture atomique de l’audit devront être prouvées en intégration.
+  `AuditLog` exige acteur, session, action, entité, avant/après masqués, motif,
+  corrélation requête et horodatage. Une
+  future contrainte SQL doit en plus interdire la réaffectation directe des FK
+  de création, que `onUpdate: Restrict` ne couvre pas.
+- La couverture publique S1.2-01 est résolue comme représentation contrôlée de
+  la publication active par `contentId` et `mediaAssetVersion` obligatoires.
+  Les schémas publics et types générés ne contiennent ni URL, clé d’objet ni
+  référence provider. La future route devra encore imposer droits, limites de
+  taille, type MIME, cache sûr et tests de sérialisation.
+- `settledSalesCount` est en lecture seule et vaut zéro avant P4. Le futur calcul
+  devra compter uniquement des unités réglées, retirer les remboursements
+  totaux ciblés et résister aux retries, compensations et réconciliations sans
+  double comptage.
+- La frontière Mux exige HMAC-SHA256 sur `timestamp.rawBody`, déduplication par
+  identifiant provider, SHA-256 et payload chiffré persistés avant réponse 202.
+  `MediaAsset` sépare les références privées upload et asset, chacune unique
+  dans son provider et attribuée une seule fois. Le corps doit être borné avant
+  lecture/HMAC/parsing/persistance ; sa limite exacte doit être approuvée avant
+  le runtime. Le secret, la fenêtre anti-replay, le KMS, les transactions et le
+  worker ne sont pas livrés ; le callback ne doit jamais créer une publication.
+- Une republication crée une nouvelle preuve après archivage. L’unicité
+  partielle d’une publication active et l’interdiction SQL de modifier/supprimer
+  les preuves exigent toujours une migration future explicitement autorisée.
+
+## Durcissement défensif S1.2-01-R2
+
+L’instantané local prépublication du 2026-09-12 durcit les gates sans ajouter de
+contrôle runtime :
+
+- une réponse de succès valide mais rattachée à la mauvaise opération est une
+  substitution de contrat. Le gate lie donc chaque opération à son statut, son
+  media type et son schéma exacts ;
+- une version de couverture absente, fractionnaire ou inférieure à 1 est une
+  entrée invalide contractée en `400 / VALIDATION_ERROR`, sans exposition d’URL
+  ou de localisation privée ;
+- le payload entrant Mux demeure extensible à la racine et dans `data`, car le
+  fournisseur peut ajouter des propriétés. La réponse `WebhookAccepted` reste
+  fermée afin qu’aucun champ serveur accidentel ne soit exposé ;
+- avant toute vérification par expressions régulières, le validateur retire
+  lexicalement les commentaires Prisma, masque les chaînes susceptibles de
+  contenir du faux code et ancre les déclarations sensibles à leur nom et leur
+  ligne exacts. Les sondes négatives couvrent le secret TOTP, la famille de
+  session, les deux clés uniques Mux, les deux déduplications Inbox, la
+  provenance catalogue et la relation d’acteur `AuditLog`, ainsi que des leurres
+  `Restrict` commentés ou injectés dans une chaîne devant une vraie relation
+  `Cascade`. Pour ces garanties sensibles R2, les déclarations ancrées rejettent
+  aussi les identifiants préfixés ;
+- la génération de contrats échoue explicitement sans Prettier `3.9.6` exact.
+  Le saut de ligne terminant un commentaire TypeScript `//` est aussi une
+  frontière de tokens testée, et ne peut plus être effacé par un fallback
+  lexical donnant un faux `PASS`.
+
+Ces mesures qualifient le contrat et le modèle cible uniquement. Les limites du
+corps webhook, HMAC, KMS, transactions, sessions, migrations et routes restent
+des obligations runtime futures et ne sont pas présentées comme opérationnelles.
+
+## Durcissement défensif S1.2-01-R3
+
+L’instantané historique local prépublication du 2026-09-14, construit sur le
+head R2 publié `7138b2d3d3829ffdd65e4ff592968466273c46d3`, ferme deux classes
+de contournement sans ajouter de contrôle runtime :
+
+- **confusion lexicale Prisma** : avant correction, une chaîne ouverte pouvait
+  traverser un saut de ligne ou EOF sans échec. Le texte d’une relation
+  `AuditLog.adminSession` supprimée puis replacée après cette ouverture pouvait
+  ainsi produire un faux `PASS`. Le lexer rejette désormais explicitement une
+  chaîne non terminée avant CR/LF et une chaîne encore ouverte à EOF, tout en
+  préservant chaînes valides, échappements et commentaires correctement
+  terminés ;
+- **pollution de paramètre OpenAPI** : avant correction, le premier
+  `mediaAssetVersion` valide masquait un second paramètre homonyme avec
+  `minimum: 0`. Le gate déréférence et compte maintenant tous les paramètres de
+  ce nom, exige une cardinalité exacte de un, puis vérifie son emplacement,
+  obligation, type et minimum.
+
+Trois tests négatifs dédiés reproduisent ces deux faux `PASS` Prisma et le
+doublon cover, puis exigent leurs erreurs causales. Sous Node `22.18.0`, la
+syntaxe des deux scripts, le validateur réel, les tests OpenAPI/Contracts
+`220/220`, le scanner officiel sur 337 fichiers, Prettier `3.9.6`, les
+références, la chronologie, `git diff --check` et le périmètre de cinq fichiers
+concluent `PASS`.
+
+R3 ne modifie pas `docs/api/openapi.yaml` ni aucun fichier généré, manifeste,
+lockfile, workflow ou dépendance. Il ne livre aucune migration, route runtime
+ou interface et ne démarre pas S1.2-02. À la date de cet instantané, aucun
+commit R3, push ou changement de la Draft PR #42 n’a eu lieu ; aucun SHA R3 ni
+Run ID futur n’est affirmé. Les preuves R2 publiées demeurent historiques.
 
 ## Méthode de mise à jour
 

@@ -10,6 +10,7 @@ export const EXPECTED_PATHS = [
   "/health/ready",
   "/api/v1/catalog/audio",
   "/api/v1/catalog/audio/{contentId}",
+  "/api/v1/catalog/audio/{contentId}/cover",
   "/api/v1/auth/register",
   "/api/v1/auth/login",
   "/api/v1/auth/otp/challenges/{challengeId}/verify",
@@ -25,6 +26,7 @@ export const EXPECTED_PATHS = [
   "/api/v1/orders/{orderId}/receipt",
   "/api/v1/payment-providers",
   "/api/v1/payment-webhooks/{provider}",
+  "/api/v1/media-webhooks/mux",
   "/api/v1/library/audio",
   "/api/v1/mobile/audio/{contentId}/preview-grants",
   "/api/v1/mobile/preview-grants/{previewGrantId}/playback-descriptors",
@@ -40,11 +42,102 @@ export const EXPECTED_PATHS = [
   "/api/v1/admin/media-assets/{mediaAssetId}/prepare",
 ];
 
+const EXPECTED_SCHEMAS = [
+  "Identifier",
+  "Timestamp",
+  "MoneyCfa",
+  "BasisPoints",
+  "ArtistEarningAllocationPolicyVersion",
+  "ArtistEarningAllocationAudit",
+  "SettlementArtistAllocationAudit",
+  "CursorMeta",
+  "ResponseMeta",
+  "LivenessResponse",
+  "DependencyHealth",
+  "ReadinessResponse",
+  "ErrorCode",
+  "ErrorDetails",
+  "ErrorResponse",
+  "PublishConflictError",
+  "AudioEditorialState",
+  "MediaProcessingStatus",
+  "AudioCatalogItem",
+  "AudioContentDetail",
+  "ArtistSummary",
+  "PublicCoverImage",
+  "AudioCatalogPage",
+  "AudioContentEnvelope",
+  "E164Phone",
+  "CustomerPassword",
+  "CustomerDeviceRegistration",
+  "RegisterCustomerRequest",
+  "LoginCustomerRequest",
+  "OtpChallenge",
+  "OtpChallengeEnvelope",
+  "OtpVerificationRequest",
+  "StepUpChallengeRequest",
+  "StepUpVerificationRequest",
+  "StepUpVerification",
+  "StepUpVerificationEnvelope",
+  "RefreshSessionRequest",
+  "Session",
+  "SessionEnvelope",
+  "DeviceSummary",
+  "DeviceListEnvelope",
+  "OrderState",
+  "CreateOrderRequest",
+  "OrderLine",
+  "OrderStateEvent",
+  "Order",
+  "OrderEnvelope",
+  "OrderPage",
+  "PaymentProvider",
+  "PaymentAttemptState",
+  "CreatePaymentAttemptRequest",
+  "PaymentAttemptEvent",
+  "PaymentAttempt",
+  "PaymentAttemptEnvelope",
+  "PaymentAttemptPage",
+  "OperationalPaymentProvider",
+  "OperationalProviderListEnvelope",
+  "PaymentWebhookRequest",
+  "WebhookAccepted",
+  "WebhookAcceptedEnvelope",
+  "MuxMediaWebhookRequest",
+  "Receipt",
+  "ReceiptEnvelope",
+  "LibraryAudioItem",
+  "LibraryPage",
+  "PreviewGrant",
+  "PreviewGrantEnvelope",
+  "PurchasedPlaybackRequest",
+  "PlaybackDescriptor",
+  "PlaybackDescriptorEnvelope",
+  "UpsertArtistRequest",
+  "AdminArtist",
+  "AdminArtistEnvelope",
+  "AdminArtistPage",
+  "UpsertAudioContentRequest",
+  "PublishAudioContentRequest",
+  "RequiredReadyMediaAsset",
+  "ArchiveAudioContentRequest",
+  "AdminAudioContent",
+  "AdminAudioEnvelope",
+  "AdminAudioPage",
+  "CreateMediaAssetRequest",
+  "PrepareMediaAssetRequest",
+  "MediaAssetStatus",
+  "MediaAssetEnvelope",
+  "MediaPreparation",
+  "MediaPreparationEnvelope",
+];
+
 const EXPECTED_OPERATIONS = new Map([
   ["GET /health/live", "healthLiveness"],
   ["GET /health/ready", "healthReadiness"],
   ["GET /api/v1/catalog/audio", "listPublicAudioCatalog"],
   ["GET /api/v1/catalog/audio/{contentId}", "getPublicAudioContent"],
+  ["GET /api/v1/catalog/audio/{contentId}/cover", "getPublicAudioCover"],
   ["POST /api/v1/auth/register", "registerCustomer"],
   ["POST /api/v1/auth/login", "loginCustomer"],
   [
@@ -71,6 +164,7 @@ const EXPECTED_OPERATIONS = new Map([
   ["GET /api/v1/orders/{orderId}/receipt", "getOrderReceipt"],
   ["GET /api/v1/payment-providers", "listOperationalPaymentProviders"],
   ["POST /api/v1/payment-webhooks/{provider}", "acceptPaymentWebhook"],
+  ["POST /api/v1/media-webhooks/mux", "acceptMuxMediaWebhook"],
   ["GET /api/v1/library/audio", "listEntitledAudioLibrary"],
   [
     "POST /api/v1/mobile/audio/{contentId}/preview-grants",
@@ -111,6 +205,183 @@ const EXPECTED_OPERATIONS = new Map([
   ],
 ]);
 
+const EXPECTED_SUCCESS_RESPONSES = new Map([
+  [
+    "healthLiveness",
+    ["200", "application/json", "#/components/schemas/LivenessResponse"],
+  ],
+  [
+    "healthReadiness",
+    ["200", "application/json", "#/components/schemas/ReadinessResponse"],
+  ],
+  [
+    "listPublicAudioCatalog",
+    ["200", "application/json", "#/components/schemas/AudioCatalogPage"],
+  ],
+  [
+    "getPublicAudioContent",
+    ["200", "application/json", "#/components/schemas/AudioContentEnvelope"],
+  ],
+  ["getPublicAudioCover", ["200", "image/*", "binary"]],
+  [
+    "registerCustomer",
+    ["202", "application/json", "#/components/schemas/OtpChallengeEnvelope"],
+  ],
+  [
+    "loginCustomer",
+    ["202", "application/json", "#/components/schemas/OtpChallengeEnvelope"],
+  ],
+  [
+    "verifyCustomerOtp",
+    ["200", "application/json", "#/components/schemas/SessionEnvelope"],
+  ],
+  [
+    "createCustomerStepUpChallenge",
+    ["202", "application/json", "#/components/schemas/OtpChallengeEnvelope"],
+  ],
+  [
+    "verifyCustomerStepUp",
+    [
+      "200",
+      "application/json",
+      "#/components/schemas/StepUpVerificationEnvelope",
+    ],
+  ],
+  [
+    "refreshCustomerSession",
+    ["200", "application/json", "#/components/schemas/SessionEnvelope"],
+  ],
+  ["revokeCurrentCustomerSession", ["204", null, null]],
+  [
+    "listCustomerDevices",
+    ["200", "application/json", "#/components/schemas/DeviceListEnvelope"],
+  ],
+  [
+    "listCustomerOrders",
+    ["200", "application/json", "#/components/schemas/OrderPage"],
+  ],
+  [
+    "createCustomerOrder",
+    ["201", "application/json", "#/components/schemas/OrderEnvelope"],
+  ],
+  [
+    "getCustomerOrder",
+    ["200", "application/json", "#/components/schemas/OrderEnvelope"],
+  ],
+  [
+    "listPaymentAttempts",
+    ["200", "application/json", "#/components/schemas/PaymentAttemptPage"],
+  ],
+  [
+    "createPaymentAttempt",
+    ["201", "application/json", "#/components/schemas/PaymentAttemptEnvelope"],
+  ],
+  [
+    "getPaymentAttempt",
+    ["200", "application/json", "#/components/schemas/PaymentAttemptEnvelope"],
+  ],
+  [
+    "getOrderReceipt",
+    ["200", "application/json", "#/components/schemas/ReceiptEnvelope"],
+  ],
+  [
+    "listOperationalPaymentProviders",
+    [
+      "200",
+      "application/json",
+      "#/components/schemas/OperationalProviderListEnvelope",
+    ],
+  ],
+  [
+    "acceptPaymentWebhook",
+    ["202", "application/json", "#/components/schemas/WebhookAcceptedEnvelope"],
+  ],
+  [
+    "acceptMuxMediaWebhook",
+    ["202", "application/json", "#/components/schemas/WebhookAcceptedEnvelope"],
+  ],
+  [
+    "listEntitledAudioLibrary",
+    ["200", "application/json", "#/components/schemas/LibraryPage"],
+  ],
+  [
+    "createAnonymousPreviewGrant",
+    ["201", "application/json", "#/components/schemas/PreviewGrantEnvelope"],
+  ],
+  [
+    "exchangePreviewGrantForPlaybackDescriptor",
+    [
+      "201",
+      "application/json",
+      "#/components/schemas/PlaybackDescriptorEnvelope",
+    ],
+  ],
+  [
+    "createPurchasedPlaybackDescriptor",
+    [
+      "201",
+      "application/json",
+      "#/components/schemas/PlaybackDescriptorEnvelope",
+    ],
+  ],
+  [
+    "listAdminArtists",
+    ["200", "application/json", "#/components/schemas/AdminArtistPage"],
+  ],
+  [
+    "createAdminArtist",
+    ["201", "application/json", "#/components/schemas/AdminArtistEnvelope"],
+  ],
+  [
+    "getAdminArtist",
+    ["200", "application/json", "#/components/schemas/AdminArtistEnvelope"],
+  ],
+  [
+    "updateAdminArtist",
+    ["200", "application/json", "#/components/schemas/AdminArtistEnvelope"],
+  ],
+  [
+    "listAdminAudioContent",
+    ["200", "application/json", "#/components/schemas/AdminAudioPage"],
+  ],
+  [
+    "createAdminAudioContent",
+    ["201", "application/json", "#/components/schemas/AdminAudioEnvelope"],
+  ],
+  [
+    "getAdminAudioContent",
+    ["200", "application/json", "#/components/schemas/AdminAudioEnvelope"],
+  ],
+  [
+    "updateAdminAudioContent",
+    ["200", "application/json", "#/components/schemas/AdminAudioEnvelope"],
+  ],
+  [
+    "publishAdminAudioContent",
+    ["200", "application/json", "#/components/schemas/AdminAudioEnvelope"],
+  ],
+  [
+    "archiveAdminAudioContent",
+    ["200", "application/json", "#/components/schemas/AdminAudioEnvelope"],
+  ],
+  [
+    "createPrivateMediaAsset",
+    ["201", "application/json", "#/components/schemas/MediaAssetEnvelope"],
+  ],
+  [
+    "getPrivateMediaAssetStatus",
+    ["200", "application/json", "#/components/schemas/MediaAssetEnvelope"],
+  ],
+  [
+    "preparePrivateMediaAssetUpload",
+    [
+      "201",
+      "application/json",
+      "#/components/schemas/MediaPreparationEnvelope",
+    ],
+  ],
+]);
+
 const REQUIRED_INVARIANTS = [
   "ORDER_PRECEDES_PAYMENT_ATTEMPT",
   "PAYMENT_ATTEMPT_APPEND_ONLY",
@@ -126,6 +397,10 @@ const REQUIRED_INVARIANTS = [
   "CUSTOMER_AUTH_PASSWORD_THEN_OTP",
   "CUSTOMER_SESSION_SINGLE_DEVICE",
   "CUSTOMER_STEP_UP_REQUIRES_EXISTING_SESSION",
+  "ADMIN_CREATED_CATALOG_ENTITIES_PROVENANCE_RESTRICTED",
+  "MEDIA_WEBHOOK_INBOX_AUTHENTICATED_UNIQUE_AND_DURABLE",
+  "PUBLIC_COVER_CONTROLLED_REPRESENTATION_ONLY",
+  "PUBLIC_SALES_COUNT_SETTLED_NET_FULL_REFUNDS",
 ];
 
 const REQUIRED_TRANSACTION_PRECONDITIONS = [
@@ -150,6 +425,14 @@ const REQUIRED_TRANSACTION_PRECONDITIONS = [
   "AUTH_STEP_UP_CHALLENGE_BINDS_EXISTING_CUSTOMER_SESSION",
   "AUTH_SESSION_CREATION_ATOMICALLY_REVOKES_PRIOR_ACTIVE_CUSTOMER_SESSIONS",
   "AUTH_STEP_UP_REQUIRES_AND_PRESERVES_EXISTING_CUSTOMER_SESSION",
+  "ADMIN_SESSION_REFRESH_ROTATES_HASH_AND_VERSION_OR_REVOKES_FAMILY_ON_REPLAY",
+  "ADMIN_RECOVERY_CREATES_EXACTLY_TEN_ARGON2ID_SINGLE_USE_HASHES",
+  "ADMIN_CATALOG_CREATION_BINDS_AUTHENTICATED_ADMIN_AND_AUDIT_ATOMICALLY",
+  "MEDIA_WEBHOOK_SIGNATURE_VERIFIED_BEFORE_ENCRYPTED_INBOX_INSERT",
+  "MEDIA_PROVIDER_UPLOAD_AND_ASSET_REFERENCES_SET_ONCE_AND_RESOLVE_UNIQUELY",
+  "MEDIA_WEBHOOK_CALLBACK_NEVER_PUBLISHES",
+  "CATALOG_PROVENANCE_COLUMN_IMMUTABLE_AFTER_INSERT",
+  "PUBLIC_SALES_COUNT_ZERO_UNTIL_SETTLEMENT_AND_FULL_REFUND_DATA_EXIST",
 ];
 
 const REQUIRED_AUTHENTICATION_POLICY = {
@@ -166,9 +449,29 @@ const REQUIRED_AUTHENTICATION_POLICY = {
     "ATOMICALLY_REVOKE_ALL_PRIOR_ACTIVE_CUSTOMER_SESSIONS",
 };
 
+const REQUIRED_ADMIN_AUTH_DATA_POLICY = {
+  totpStandard: "RFC6238",
+  totpSecretAtRest: "ENCRYPTED",
+  totpRequiredEveryLogin: true,
+  totpEnrollmentRequiredBeforeProtectedAccess: true,
+  recoveryCodeCount: 10,
+  recoveryCodeStorage: "ARGON2ID_HASH_SINGLE_USE",
+  recoveryAndResetAudited: true,
+  accessTokenLifetimeMinutes: 15,
+  refreshTokenUse: "SINGLE_USE_ROTATING",
+  refreshReplayResponse: "REVOKE_SESSION_FAMILY",
+  refreshCookieHttpOnly: true,
+  refreshCookieSecure: true,
+  refreshCookieSameSiteRequired: true,
+  localStorageForbidden: true,
+  inactivityWindowHours: 8,
+  sensitiveActionTotpFreshnessMinutes: 5,
+};
+
 const PUBLIC_BUSINESS_OPERATIONS = new Set([
   "listPublicAudioCatalog",
   "getPublicAudioContent",
+  "getPublicAudioCover",
   "registerCustomer",
   "loginCustomer",
   "verifyCustomerOtp",
@@ -235,6 +538,16 @@ const REQUIRED_STATE_MACHINES = {
   PaymentWebhookInbox: {
     states: ["RECEIVED", "PROCESSING", "PROCESSED", "REJECTED"],
   },
+  MediaWebhookInbox: {
+    states: ["RECEIVED", "PROCESSING", "PROCESSED", "REJECTED"],
+  },
+};
+
+const REQUIRED_CATALOG_POLICY = {
+  scope: "GLOBAL_MVP",
+  publicCover: "CONTROLLED_API_REPRESENTATION_WITHOUT_PRIVATE_LOCATION",
+  salesCount: "SETTLED_UNITS_NET_FULL_REFUNDS",
+  beforeP4: "ZERO_NO_DEMO_OR_SYNTHETIC_VALUE",
 };
 
 const ADMIN_ROLES = new Set([
@@ -242,6 +555,98 @@ const ADMIN_ROLES = new Set([
   "CONTENT_EDITOR",
   "FINANCE_MANAGER",
   "SUPPORT",
+]);
+
+const ADMIN_OPERATION_ROLES = new Map([
+  ["listAdminArtists", ["SUPER_ADMIN", "CONTENT_EDITOR", "SUPPORT"]],
+  ["createAdminArtist", ["SUPER_ADMIN", "CONTENT_EDITOR"]],
+  ["getAdminArtist", ["SUPER_ADMIN", "CONTENT_EDITOR", "SUPPORT"]],
+  ["updateAdminArtist", ["SUPER_ADMIN", "CONTENT_EDITOR"]],
+  ["listAdminAudioContent", ["SUPER_ADMIN", "CONTENT_EDITOR", "SUPPORT"]],
+  ["createAdminAudioContent", ["SUPER_ADMIN", "CONTENT_EDITOR"]],
+  ["getAdminAudioContent", ["SUPER_ADMIN", "CONTENT_EDITOR", "SUPPORT"]],
+  ["updateAdminAudioContent", ["SUPER_ADMIN", "CONTENT_EDITOR"]],
+  ["publishAdminAudioContent", ["SUPER_ADMIN", "CONTENT_EDITOR"]],
+  ["archiveAdminAudioContent", ["SUPER_ADMIN", "CONTENT_EDITOR"]],
+  ["createPrivateMediaAsset", ["SUPER_ADMIN", "CONTENT_EDITOR"]],
+  ["getPrivateMediaAssetStatus", ["SUPER_ADMIN", "CONTENT_EDITOR", "SUPPORT"]],
+  ["preparePrivateMediaAssetUpload", ["SUPER_ADMIN", "CONTENT_EDITOR"]],
+]);
+
+const SAFE_MEDIA_SURFACE_PROPERTIES = new Map([
+  [
+    "AudioCatalogItem",
+    [
+      "artist",
+      "contentId",
+      "cover",
+      "durationSeconds",
+      "previewAvailable",
+      "previewSeconds",
+      "priceCfa",
+      "settledSalesCount",
+      "title",
+    ],
+  ],
+  [
+    "AudioContentDetail",
+    [
+      "artist",
+      "contentId",
+      "cover",
+      "description",
+      "durationSeconds",
+      "previewAvailable",
+      "previewSeconds",
+      "priceCfa",
+      "settledSalesCount",
+      "title",
+    ],
+  ],
+  [
+    "PlaybackDescriptor",
+    ["descriptor", "expiresAt", "expiresInSeconds", "protocol"],
+  ],
+  ["MediaPreparation", ["expiresAt", "expiresInSeconds", "preparationToken"]],
+  [
+    "LibraryAudioItem",
+    [
+      "archived",
+      "artist",
+      "audioContentId",
+      "entitlementId",
+      "grantedAt",
+      "source",
+      "title",
+    ],
+  ],
+  [
+    "PreviewGrant",
+    ["audioContentId", "expiresAt", "maxDurationSeconds", "previewGrantId"],
+  ],
+  [
+    "MediaAssetStatus",
+    [
+      "durationSeconds",
+      "kind",
+      "mediaAssetId",
+      "processingStatus",
+      "safeFailureCode",
+      "version",
+    ],
+  ],
+]);
+
+const ADMIN_REQUEST_PROPERTIES = new Map([
+  ["UpsertArtistRequest", ["stageName", "status"]],
+  [
+    "UpsertAudioContentRequest",
+    ["artistId", "description", "previewSeconds", "priceCfa", "title"],
+  ],
+  ["PublishAudioContentRequest", ["reason", "requiredMediaAssets"]],
+  ["ArchiveAudioContentRequest", ["reason"]],
+  ["CreateMediaAssetRequest", ["audioContentId", "checksumSha256", "kind"]],
+  ["PrepareMediaAssetRequest", ["byteLength", "checksumSha256"]],
 ]);
 
 const HTTP_METHODS = new Set([
@@ -256,7 +661,7 @@ const HTTP_METHODS = new Set([
 ]);
 
 const FORBIDDEN_PUBLIC_FIELD =
-  /^(?:media|preview|playback|receipt|upload)?u(?:rl|ri)$|r2|mux|storage(?:object)?key|providersecret|providerassetref|rawpayload/i;
+  /(?:url|uri)$|r2|mux|storage(?:object)?key|sourceobjectkey|originkey|medialocator|providersecret|providerasset(?:id|ref)|rawpayload/i;
 const FORBIDDEN_PUBLIC_AUTH_HASH =
   /^(?=.*(?:code|credential|fingerprint|password|secret|token))(?=.*(?:digest|hash)).*$/i;
 
@@ -380,6 +785,14 @@ function validateOperationShape(document) {
         );
       }
       if (
+        EXPECTED_OPERATIONS.get(`${method.toUpperCase()} ${path}`) !==
+        operation.operationId
+      ) {
+        fail(
+          "path, method and operationId surface must match the exact approved inventory",
+        );
+      }
+      if (
         !Array.isArray(operation["x-kora-clients"]) ||
         operation["x-kora-clients"].length === 0
       ) {
@@ -387,6 +800,48 @@ function validateOperationShape(document) {
       }
       if (Object.keys(operation.responses ?? {}).length === 0) {
         fail(`${method.toUpperCase()} ${path} requires responses`);
+      }
+      const expectedSuccess = EXPECTED_SUCCESS_RESPONSES.get(
+        operation.operationId,
+      );
+      const successResponses = Object.entries(operation.responses ?? {}).filter(
+        ([status]) => /^2(?:\d\d|XX)$/i.test(status),
+      );
+      if (!expectedSuccess || successResponses.length !== 1) {
+        fail(
+          `${operation.operationId} requires exactly one approved success response`,
+        );
+      }
+      const [expectedStatus, expectedMediaType, expectedSchema] =
+        expectedSuccess;
+      const [actualStatus, responseValue] = successResponses[0];
+      const response = dereference(document, responseValue);
+      if (actualStatus !== expectedStatus) {
+        fail(
+          `${operation.operationId} success response must use HTTP ${expectedStatus}`,
+        );
+      }
+      if (expectedStatus === "204") {
+        if (response?.content !== undefined) {
+          fail(
+            `${operation.operationId} HTTP 204 success response must not declare content`,
+          );
+        }
+      } else {
+        const mediaTypes = Object.keys(response?.content ?? {});
+        const schema = response?.content?.[expectedMediaType]?.schema;
+        const schemaMatches =
+          expectedSchema === "binary"
+            ? schema?.type === "string" &&
+              schema?.format === "binary" &&
+              stableEqual(Object.keys(schema), ["format", "type"])
+            : schema?.$ref === expectedSchema &&
+              stableEqual(Object.keys(schema), ["$ref"]);
+        if (!stableEqual(mediaTypes, [expectedMediaType]) || !schemaMatches) {
+          fail(
+            `${operation.operationId} HTTP ${expectedStatus} success response must bind exactly ${expectedMediaType} to ${expectedSchema}`,
+          );
+        }
       }
       if (
         path.startsWith("/health/") &&
@@ -406,6 +861,13 @@ function validateOperationShape(document) {
           !path.startsWith("/health/")
         ) {
           const response = dereference(document, responseValue);
+          const isControlledCover =
+            operation.operationId === "getPublicAudioCover" &&
+            status === "200" &&
+            operation["x-kora-controlled-representation"] === true &&
+            response?.content?.["image/*"]?.schema?.type === "string" &&
+            response?.content?.["image/*"]?.schema?.format === "binary";
+          if (isControlledCover) continue;
           const schema = response?.content?.["application/json"]?.schema;
           const envelope = dereference(document, schema);
           if (
@@ -563,6 +1025,7 @@ function validateErrorsAndAuthorization(document) {
   const publicWebPaths = new Set([
     "/api/v1/catalog/audio",
     "/api/v1/catalog/audio/{contentId}",
+    "/api/v1/catalog/audio/{contentId}/cover",
   ]);
 
   for (const [path, pathItem] of Object.entries(document.paths)) {
@@ -621,13 +1084,15 @@ function validateErrorsAndAuthorization(document) {
           );
         }
         const roles = operation["x-kora-roles"];
+        const expectedRoles = ADMIN_OPERATION_ROLES.get(operation.operationId);
         if (
           !Array.isArray(roles) ||
-          roles.length === 0 ||
-          roles.some((role) => !ADMIN_ROLES.has(role))
+          expectedRoles === undefined ||
+          roles.some((role) => !ADMIN_ROLES.has(role)) ||
+          !stableEqual(roles, expectedRoles)
         ) {
           fail(
-            `${operation.operationId} requires explicit approved admin roles`,
+            `${operation.operationId} requires the exact approved admin roles`,
           );
         }
         if (
@@ -648,11 +1113,18 @@ function validateErrorsAndAuthorization(document) {
           `${operation.operationId} requires the sandbox provider signature`,
         );
       }
+      if (
+        clients.includes("media-provider") &&
+        !hasExactSecurityRequirement(operation, "muxSignature")
+      ) {
+        fail(`${operation.operationId} requires the exact Mux signature`);
+      }
       const authorizationClasses = [
         PUBLIC_BUSINESS_OPERATIONS.has(operation.operationId),
         CUSTOMER_BEARER_OPERATIONS.has(operation.operationId),
         clients.includes("admin"),
         clients.includes("provider"),
+        clients.includes("media-provider"),
       ].filter(Boolean);
       if (authorizationClasses.length !== 1) {
         fail(
@@ -696,6 +1168,14 @@ function validateErrorsAndAuthorization(document) {
   ) {
     fail("providerSignature must be the exact sandbox signature header");
   }
+  const muxScheme = document.components.securitySchemes.muxSignature;
+  if (
+    muxScheme?.type !== "apiKey" ||
+    muxScheme?.in !== "header" ||
+    muxScheme?.name !== "Mux-Signature"
+  ) {
+    fail("muxSignature must be the exact Mux-Signature header");
+  }
   const assignedCustomerOperations = businessOperationIds.filter(
     (operationId) =>
       PUBLIC_BUSINESS_OPERATIONS.has(operationId) ||
@@ -716,6 +1196,14 @@ function validateErrorsAndAuthorization(document) {
   ) {
     fail(
       "customer authentication must be phone/password then OTP with protected step-up and single-device sessions",
+    );
+  }
+  if (
+    JSON.stringify(document["x-kora-admin-auth-data-policy"] ?? {}) !==
+    JSON.stringify(REQUIRED_ADMIN_AUTH_DATA_POLICY)
+  ) {
+    fail(
+      "admin authentication data must enforce RFC 6238, encrypted secrets, single-use Argon2id recovery and bounded sessions",
     );
   }
   for (const schemaName of ["ErrorResponse", "PublishConflictError"]) {
@@ -1174,7 +1662,9 @@ function validateExamples(document) {
     }
   }
   if (count < 3)
-    fail("S1.1 requires at least three coherent non-sensitive schema examples");
+    fail(
+      "S1.2-01 requires at least three coherent non-sensitive schema examples",
+    );
 }
 
 function validateArtistEarningPolicy(document) {
@@ -1311,7 +1801,7 @@ function validateIdempotency(document) {
       ) {
         continue;
       }
-      if (path.includes("payment-webhooks")) {
+      if (path.includes("-webhooks")) {
         continue;
       }
       if (!hasParameter(document, operation, "Idempotency-Key", "header")) {
@@ -1339,6 +1829,26 @@ function validateIdempotency(document) {
 }
 
 function validateSafeSchemaSurface(document) {
+  for (const [
+    schemaName,
+    expectedProperties,
+  ] of SAFE_MEDIA_SURFACE_PROPERTIES) {
+    const schema = document.components.schemas[schemaName];
+    if (
+      schema?.additionalProperties !== false ||
+      !stableEqual(Object.keys(schema?.properties ?? {}), expectedProperties)
+    ) {
+      fail(`${schemaName} must expose only its exact safe media properties`);
+    }
+  }
+  for (const [schemaName, expectedProperties] of ADMIN_REQUEST_PROPERTIES) {
+    const schema = document.components.schemas[schemaName];
+    if (!isExactObjectSchema(schema, expectedProperties, expectedProperties)) {
+      fail(
+        `${schemaName} must expose only its exact approved content-authority fields`,
+      );
+    }
+  }
   walk(document.components.schemas, (value, location) => {
     if (value === null || typeof value !== "object" || Array.isArray(value)) {
       return;
@@ -1462,6 +1972,182 @@ function validateMediaAndClientGates(document) {
       "media preparation replay must reissue a capability without persisting its token",
     );
   }
+
+  const mediaWebhook = operationAt(
+    document,
+    "/api/v1/media-webhooks/mux",
+    "post",
+  );
+  const muxRequest = document.components.schemas.MuxMediaWebhookRequest;
+  if (
+    !stableEqual(mediaWebhook["x-kora-clients"] ?? [], ["media-provider"]) ||
+    mediaWebhook["x-kora-idempotent"] !== true ||
+    mediaWebhook["x-kora-durable-before-ack"] !== true ||
+    mediaWebhook["x-kora-never-publishes"] !== true ||
+    mediaWebhook["x-kora-signature-algorithm"] !== "HMAC-SHA256" ||
+    mediaWebhook["x-kora-signed-payload"] !== "TIMESTAMP_DOT_RAW_BODY" ||
+    mediaWebhook["x-kora-raw-body-ingress-policy"] !==
+      "BOUNDED_BEFORE_HMAC_PARSE_AND_ENCRYPTED_PERSISTENCE_APPROVAL_REQUIRED" ||
+    mediaWebhook["x-kora-provider-event-key-source"] !== "BODY_ID" ||
+    mediaWebhook["x-kora-persisted-payload"] !==
+      "ENCRYPTED_RAW_BODY_WITH_SHA256" ||
+    mediaWebhook.responses?.["202"] === undefined ||
+    mediaWebhook.requestBody?.content?.["application/json"]?.schema?.$ref !==
+      "#/components/schemas/MuxMediaWebhookRequest" ||
+    !stableEqual(muxRequest?.required ?? [], ["data", "id", "type"]) ||
+    muxRequest?.properties?.id?.type !== "string" ||
+    muxRequest?.properties?.id?.minLength !== 1 ||
+    muxRequest?.properties?.id?.maxLength !== 256 ||
+    !stableEqual(muxRequest?.properties?.type?.enum ?? [], [
+      "video.asset.ready",
+      "video.asset.errored",
+      "video.upload.asset_created",
+    ]) ||
+    muxRequest?.properties?.data?.type !== "object" ||
+    muxRequest?.properties?.data?.additionalProperties !== true ||
+    muxRequest?.additionalProperties !== true
+  ) {
+    fail(
+      "Mux callbacks must be signature-authenticated, durable, idempotent and unable to publish",
+    );
+  }
+  const accepted = document.components.schemas.WebhookAccepted;
+  if (
+    !isExactObjectSchema(
+      accepted,
+      ["duplicate", "inboxEventId", "received"],
+      ["duplicate", "inboxEventId", "received"],
+    ) ||
+    accepted.properties?.inboxEventId?.$ref !==
+      "#/components/schemas/Identifier" ||
+    accepted.properties?.received?.type !== "boolean" ||
+    accepted.properties?.received?.const !== true ||
+    accepted.properties?.duplicate?.type !== "boolean"
+  ) {
+    fail("webhook acknowledgements must remain exact and closed");
+  }
+}
+
+function validateCatalogReadinessGates(document) {
+  if (
+    JSON.stringify(document["x-kora-catalog-policy"] ?? {}) !==
+    JSON.stringify(REQUIRED_CATALOG_POLICY)
+  ) {
+    fail("the global catalog cover and settled-sales policy has drifted");
+  }
+
+  const cover = document.components.schemas.PublicCoverImage;
+  if (
+    !isExactObjectSchema(
+      cover,
+      ["contentId", "mediaAssetVersion", "representation"],
+      ["contentId", "mediaAssetVersion", "representation"],
+    ) ||
+    cover.readOnly !== true ||
+    cover["x-kora-resolution-operation"] !== "getPublicAudioCover" ||
+    cover["x-kora-content-binding"] !==
+      "ROUTE_CONTENT_ID_AND_REQUIRED_MEDIA_ASSET_VERSION" ||
+    cover.properties?.representation?.const !== "CONTROLLED_API" ||
+    cover.properties?.mediaAssetVersion?.type !== "integer" ||
+    cover.properties?.mediaAssetVersion?.minimum !== 1
+  ) {
+    fail("public cover metadata must resolve only through the controlled API");
+  }
+  const coverPath = "/api/v1/catalog/audio/{contentId}/cover";
+  const coverPathItem = document.paths[coverPath];
+  const coverOperation = operationAt(document, coverPath, "get");
+  const coverVersionParameters = [
+    ...(coverPathItem.parameters ?? []),
+    ...(coverOperation.parameters ?? []),
+  ]
+    .map((entry) => dereference(document, entry))
+    .filter((parameter) => parameter?.name === "mediaAssetVersion");
+  if (coverVersionParameters.length !== 1) {
+    fail(
+      "getPublicAudioCover must declare exactly one mediaAssetVersion parameter",
+    );
+  }
+  const [coverVersionParameter] = coverVersionParameters;
+  if (
+    coverOperation["x-kora-controlled-representation"] !== true ||
+    coverOperation["x-kora-content-binding"] !==
+      "ROUTE_CONTENT_ID_AND_REQUIRED_MEDIA_ASSET_VERSION" ||
+    coverVersionParameter?.in !== "query" ||
+    coverVersionParameter?.required !== true ||
+    coverVersionParameter?.schema?.type !== "integer" ||
+    coverVersionParameter?.schema?.minimum !== 1 ||
+    coverOperation.responses?.["400"]?.$ref !==
+      "#/components/responses/ClientError" ||
+    !stableEqual(
+      document["x-kora-operation-errors"]?.getPublicAudioCover ?? [],
+      ["CONTENT_NOT_FOUND", "VALIDATION_ERROR"],
+    ) ||
+    coverOperation.responses?.["200"]?.content?.["image/*"]?.schema?.format !==
+      "binary"
+  ) {
+    fail("public cover bytes require the exact controlled representation path");
+  }
+  for (const schemaName of ["AudioCatalogItem", "AudioContentDetail"]) {
+    const schema = document.components.schemas[schemaName];
+    const sales = schema?.properties?.settledSalesCount;
+    if (
+      !schema?.required?.includes("cover") ||
+      !schema?.required?.includes("settledSalesCount") ||
+      schema.properties?.cover?.$ref !==
+        "#/components/schemas/PublicCoverImage" ||
+      sales?.type !== "integer" ||
+      sales?.minimum !== 0 ||
+      sales?.readOnly !== true ||
+      sales?.["x-kora-derivation"] !==
+        "SETTLED_ORDER_ITEM_UNITS_MINUS_FULLY_REFUNDED_UNITS" ||
+      sales?.["x-kora-pre-p4-value"] !== 0
+    ) {
+      fail(
+        `${schemaName} must expose controlled cover metadata and real settled sales only`,
+      );
+    }
+  }
+  for (const [responseName, requestName] of [
+    ["AdminArtist", "UpsertArtistRequest"],
+    ["AdminAudioContent", "UpsertAudioContentRequest"],
+  ]) {
+    const response = document.components.schemas[responseName];
+    const request = document.components.schemas[requestName];
+    const expectedRequestProperties =
+      requestName === "UpsertArtistRequest"
+        ? ["stageName", "status"]
+        : ["artistId", "description", "previewSeconds", "priceCfa", "title"];
+    if (
+      !response?.required?.includes("createdByAdminId") ||
+      response.properties?.createdByAdminId?.$ref !==
+        "#/components/schemas/Identifier" ||
+      request?.properties?.createdByAdminId !== undefined ||
+      request?.additionalProperties !== false ||
+      !stableEqual(
+        Object.keys(request?.properties ?? {}),
+        expectedRequestProperties,
+      )
+    ) {
+      fail(
+        `${responseName} must expose server-assigned admin provenance and its content request must exclude finance authority`,
+      );
+    }
+  }
+  for (const [path, method] of [
+    ["/api/v1/admin/artists", "post"],
+    ["/api/v1/admin/artists/{artistId}", "patch"],
+    ["/api/v1/admin/audio-content", "post"],
+    ["/api/v1/admin/audio-content/{contentId}", "patch"],
+  ]) {
+    if (
+      operationAt(document, path, method)["x-kora-provenance"] !==
+      "AUTHENTICATED_ADMIN_ACTOR_IMMUTABLE"
+    ) {
+      fail(
+        "catalog mutations must preserve immutable authenticated-admin provenance",
+      );
+    }
+  }
 }
 
 function validateCommerceGates(document) {
@@ -1472,7 +2158,7 @@ function validateCommerceGates(document) {
     operational.properties.code.const !== "SANDBOX_NEUTRAL" ||
     operational.properties.status.const !== "OPERATIONAL"
   ) {
-    fail("only the operational provider-neutral sandbox may appear in S1.1");
+    fail("only the operational provider-neutral sandbox may appear in S1.2-01");
   }
   const providerList =
     document.components.schemas.OperationalProviderListEnvelope.properties.data;
@@ -1534,6 +2220,21 @@ function validatePublicationAndArchiveGates(document) {
       "publishing must expose stable conflicts and require exact ready media versions",
     );
   }
+  if (
+    publish["x-kora-republication"] !==
+      "APPEND_NEW_CONTENT_PUBLICATION_PRESERVE_HISTORY" ||
+    !stableEqual(
+      document["x-kora-state-machines"]?.AudioEditorial?.transitions
+        ?.ARCHIVED ?? [],
+      ["PUBLISHED"],
+    ) ||
+    (document["x-kora-state-machines"]?.AudioEditorial?.terminal ?? [])
+      .length !== 0
+  ) {
+    fail(
+      "republishing archived content must append a new publication and preserve immutable history",
+    );
+  }
   const request = document.components.schemas.PublishAudioContentRequest;
   const requiredMedia = request.properties.requiredMediaAssets;
   const requiredKinds = (requiredMedia.allOf ?? []).map(
@@ -1579,17 +2280,31 @@ export function validateOpenApiDocument(document) {
   }
   if (
     document.info?.title !== "KORA+ Audio Pilot API" ||
-    document.info?.version !== "1.1.0"
+    document.info?.version !== "1.2.0" ||
+    document["x-kora-scope"] !==
+      "S1.2_01_AUDIO_CATALOG_CONTRACT_DATA_READINESS_GATE"
   ) {
-    fail("S1.1 audio-pilot title or version is incorrect");
+    fail(
+      "S1.2-01 audio-catalog readiness title, version or scope is incorrect",
+    );
   }
   if (!stableEqual(Object.keys(document.paths ?? {}), EXPECTED_PATHS)) {
     fail(
-      `paths must be exactly the ${EXPECTED_PATHS.length} approved S1.1 paths`,
+      `paths must be exactly the ${EXPECTED_PATHS.length} approved S1.2-01 paths`,
+    );
+  }
+  if (
+    !stableEqual(
+      Object.keys(document.components?.schemas ?? {}),
+      EXPECTED_SCHEMAS,
+    )
+  ) {
+    fail(
+      `schemas must be exactly the ${EXPECTED_SCHEMAS.length} approved schemas`,
     );
   }
   if (!stableEqual(document["x-kora-invariants"] ?? [], REQUIRED_INVARIANTS)) {
-    fail("the formal S1.1 invariant set is incomplete or has drifted");
+    fail("the formal S1.2-01 invariant set is incomplete or has drifted");
   }
 
   validateReferences(document);
@@ -1603,6 +2318,7 @@ export function validateOpenApiDocument(document) {
   validateCursorPagination(document);
   validateIdempotency(document);
   validateMediaAndClientGates(document);
+  validateCatalogReadinessGates(document);
   validateCommerceGates(document);
   validatePublicationAndArchiveGates(document);
 
@@ -1612,6 +2328,90 @@ export function validateOpenApiDocument(document) {
     references: "resolved",
     schemas: Object.keys(document.components.schemas).length,
   };
+}
+
+export function stripPrismaComments(source) {
+  let stripped = "";
+  let state = "code";
+  let escaped = false;
+
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    const next = source[index + 1];
+
+    if (state === "string") {
+      if (character === "\r" || character === "\n") {
+        fail(
+          "Prisma target schema contains an unterminated string literal before a line break",
+        );
+      }
+      stripped += character;
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === '"') {
+        state = "code";
+      }
+      continue;
+    }
+
+    if (state === "line-comment") {
+      if (character === "\r" || character === "\n") {
+        stripped += character;
+        state = "code";
+      } else {
+        stripped += " ";
+      }
+      continue;
+    }
+
+    if (state === "block-comment") {
+      if (character === "*" && next === "/") {
+        stripped += "  ";
+        index += 1;
+        state = "code";
+      } else {
+        stripped += character === "\r" || character === "\n" ? character : " ";
+      }
+      continue;
+    }
+
+    if (character === '"') {
+      stripped += character;
+      state = "string";
+    } else if (character === "/" && next === "/") {
+      stripped += "  ";
+      index += 1;
+      state = "line-comment";
+    } else if (character === "/" && next === "*") {
+      stripped += "  ";
+      index += 1;
+      state = "block-comment";
+    } else {
+      stripped += character;
+    }
+  }
+
+  if (state === "block-comment") {
+    fail("Prisma target schema contains an unterminated block comment");
+  }
+  if (state === "string") {
+    fail(
+      "Prisma target schema contains an unterminated string literal at end of file",
+    );
+  }
+  return stripped;
+}
+
+function maskPrismaCodeLikeStringContents(source) {
+  return source.replace(/"(?:\\.|[^"\\])*"/g, (literal) => {
+    const content = literal.slice(1, -1);
+    if (/^[A-Za-z][A-Za-z0-9_]*$/.test(content)) {
+      return literal;
+    }
+    return `"${" ".repeat(content.length)}"`;
+  });
 }
 
 function prismaModel(source, name) {
@@ -1625,16 +2425,29 @@ function prismaModel(source, name) {
   return match[1];
 }
 
+function hasExactPrismaLine(source, declaration) {
+  const flags = declaration.flags.replace(/[gy]/g, "");
+  const anchored = new RegExp(
+    `^\\s*(?:${declaration.source})\\s*$`,
+    flags.includes("m") ? flags : `${flags}m`,
+  );
+  return anchored.test(source);
+}
+
 export function validatePrismaTargetSchema(source) {
+  source = maskPrismaCodeLikeStringContents(stripPrismaComments(source));
   const requiredModels = [
     "Customer",
     "CustomerDevice",
     "CustomerSession",
     "OtpChallenge",
     "AdminUser",
+    "AdminSession",
+    "AdminRecoveryCode",
     "Artist",
     "AudioContent",
     "MediaAsset",
+    "MediaWebhookInbox",
     "ContentPublication",
     "PublicationMediaAsset",
     "Order",
@@ -1658,6 +2471,14 @@ export function validatePrismaTargetSchema(source) {
     "AdminIdempotencyRecord",
     "AuditLog",
   ];
+  const actualModels = [
+    ...source.matchAll(/^model\s+([A-Za-z][A-Za-z0-9_]*)\s*\{/gm),
+  ].map((match) => match[1]);
+  if (!stableEqual(actualModels, requiredModels)) {
+    fail(
+      `Prisma target models must be exactly the ${requiredModels.length} approved models`,
+    );
+  }
   for (const name of requiredModels) {
     prismaModel(source, name);
   }
@@ -1759,6 +2580,74 @@ export function validatePrismaTargetSchema(source) {
       "OtpChallenge must persist the bounded password, customer, session and hashed-device context",
     );
   }
+  const adminUser = prismaModel(source, "AdminUser");
+  const adminSession = prismaModel(source, "AdminSession");
+  const adminRecoveryCode = prismaModel(source, "AdminRecoveryCode");
+  if (
+    !hasExactPrismaLine(adminUser, /totpSecretEncrypted\s+String\?/) ||
+    !hasExactPrismaLine(adminUser, /totpEnabledAt\s+DateTime\?/) ||
+    !hasExactPrismaLine(adminUser, /sessions\s+AdminSession\[\]/) ||
+    !hasExactPrismaLine(adminUser, /recoveryCodes\s+AdminRecoveryCode\[\]/) ||
+    !hasExactPrismaLine(adminSession, /tokenFamilyId\s+String/) ||
+    !hasExactPrismaLine(adminSession, /accessTokenJti\s+String\s+@unique/) ||
+    !hasExactPrismaLine(adminSession, /refreshTokenHash\s+String\s+@unique/) ||
+    !hasExactPrismaLine(
+      adminSession,
+      /refreshTokenVersion\s+Int\s+@default\(1\)/,
+    ) ||
+    !hasExactPrismaLine(adminSession, /lastTwoFactorAt\s+DateTime/) ||
+    !hasExactPrismaLine(
+      adminSession,
+      /lastActivityAt\s+DateTime\s+@default\(now\(\)\)/,
+    ) ||
+    !hasExactPrismaLine(adminSession, /expiresAt\s+DateTime/) ||
+    !hasExactPrismaLine(adminSession, /revokedAt\s+DateTime\?/) ||
+    !hasExactPrismaLine(
+      adminSession,
+      /adminUser\s+AdminUser\s+@relation\(fields: \[adminUserId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/,
+    ) ||
+    !hasExactPrismaLine(adminSession, /@@unique\(\[id, adminUserId\]\)/) ||
+    !hasExactPrismaLine(
+      adminSession,
+      /@@unique\(\[adminUserId, tokenFamilyId\]\)/,
+    ) ||
+    !hasExactPrismaLine(adminRecoveryCode, /codeHash\s+String/) ||
+    !hasExactPrismaLine(adminRecoveryCode, /usedAt\s+DateTime\?/) ||
+    !hasExactPrismaLine(
+      adminRecoveryCode,
+      /adminUser\s+AdminUser\s+@relation\(fields: \[adminUserId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/,
+    ) ||
+    !hasExactPrismaLine(
+      adminRecoveryCode,
+      /@@unique\(\[adminUserId, codeHash\]\)/,
+    )
+  ) {
+    fail(
+      "admin authentication readiness requires encrypted TOTP material, revocable sessions and hashed recovery codes",
+    );
+  }
+  const artist = prismaModel(source, "Artist");
+  const catalogAudioContent = prismaModel(source, "AudioContent");
+  if (
+    !hasExactPrismaLine(artist, /createdByAdminId\s+String/) ||
+    !hasExactPrismaLine(
+      artist,
+      /createdByAdmin\s+AdminUser\s+@relation\("ArtistCreatedByAdmin", fields: \[createdByAdminId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/,
+    ) ||
+    !hasExactPrismaLine(catalogAudioContent, /createdByAdminId\s+String/) ||
+    !hasExactPrismaLine(
+      catalogAudioContent,
+      /createdByAdmin\s+AdminUser\s+@relation\("AudioContentCreatedByAdmin", fields: \[createdByAdminId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/,
+    ) ||
+    !hasExactPrismaLine(
+      catalogAudioContent,
+      /artist\s+Artist\s+@relation\(fields: \[artistId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/,
+    )
+  ) {
+    fail(
+      "Artist and AudioContent require server-owned admin provenance and Restrict relations",
+    );
+  }
   const entitlement = prismaModel(source, "Entitlement");
   if (
     !/settlementId\s+String/.test(entitlement) ||
@@ -1782,16 +2671,69 @@ export function validatePrismaTargetSchema(source) {
     );
   }
   const inbox = prismaModel(source, "PaymentWebhookInbox");
-  if (!/@@unique\(\[provider, providerEventKey\]\)/.test(inbox)) {
+  if (
+    !hasExactPrismaLine(inbox, /@@unique\(\[provider, providerEventKey\]\)/)
+  ) {
     fail("PaymentWebhookInbox requires provider/event deduplication");
+  }
+  const mediaAsset = prismaModel(source, "MediaAsset");
+  const mediaInbox = prismaModel(source, "MediaWebhookInbox");
+  if (
+    !/enum MediaProvider\s*\{\s*MUX\s*\}/m.test(source) ||
+    !hasExactPrismaLine(mediaAsset, /provider\s+MediaProvider\?/) ||
+    !hasExactPrismaLine(mediaAsset, /privateProviderUploadRef\s+String\?/) ||
+    !hasExactPrismaLine(mediaAsset, /privateProviderAssetRef\s+String\?/) ||
+    !hasExactPrismaLine(
+      mediaAsset,
+      /@@unique\(\[provider, privateProviderUploadRef\]\)/,
+    ) ||
+    !hasExactPrismaLine(
+      mediaAsset,
+      /@@unique\(\[provider, privateProviderAssetRef\]\)/,
+    ) ||
+    !hasExactPrismaLine(
+      mediaAsset,
+      /audioContent\s+AudioContent\s+@relation\(fields: \[audioContentId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/,
+    ) ||
+    !hasExactPrismaLine(mediaInbox, /providerEventKey\s+String/) ||
+    !hasExactPrismaLine(mediaInbox, /eventType\s+String/) ||
+    !hasExactPrismaLine(mediaInbox, /payloadHash\s+String/) ||
+    !hasExactPrismaLine(mediaInbox, /encryptedPayload\s+String/) ||
+    /(?:^|\n)\s*(?:rawPayload|payload)\s+/.test(mediaInbox) ||
+    !hasExactPrismaLine(mediaInbox, /signatureVerifiedAt\s+DateTime/) ||
+    !hasExactPrismaLine(
+      mediaInbox,
+      /processingStatus\s+InboxProcessingStatus\s+@default\(RECEIVED\)/,
+    ) ||
+    !hasExactPrismaLine(
+      mediaInbox,
+      /mediaAsset\s+MediaAsset\?\s+@relation\(fields: \[mediaAssetId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/,
+    ) ||
+    !hasExactPrismaLine(
+      mediaInbox,
+      /@@unique\(\[provider, providerEventKey\]\)/,
+    )
+  ) {
+    fail(
+      "MediaWebhookInbox requires authenticated encrypted payloads, provider/event deduplication and Restrict linkage",
+    );
   }
   const publication = prismaModel(source, "ContentPublication");
   const publicationMedia = prismaModel(source, "PublicationMediaAsset");
   if (
     !/mediaAssets\s+PublicationMediaAsset\[\]/.test(publication) ||
     !/@@index\(\[audioContentId, archivedAt\]\)/.test(publication) ||
+    !/audioContent\s+AudioContent\s+@relation\(fields: \[audioContentId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/.test(
+      publication,
+    ) ||
+    !/publishedByAdmin\s+AdminUser\s+@relation\(fields: \[publishedByAdminId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/.test(
+      publication,
+    ) ||
     !/@@unique\(\[publicationId, kind\]\)/.test(publicationMedia) ||
-    !/mediaAsset\s+MediaAsset\s+@relation\(fields: \[mediaAssetId, audioContentId, kind, mediaAssetVersion\], references: \[id, audioContentId, kind, version\]\)/.test(
+    !/publication\s+ContentPublication\s+@relation\(fields: \[publicationId, audioContentId\], references: \[id, audioContentId\], onDelete: Restrict, onUpdate: Restrict\)/.test(
+      publicationMedia,
+    ) ||
+    !/mediaAsset\s+MediaAsset\s+@relation\(fields: \[mediaAssetId, audioContentId, kind, mediaAssetVersion\], references: \[id, audioContentId, kind, version\], onDelete: Restrict, onUpdate: Restrict\)/.test(
       publicationMedia,
     )
   ) {
@@ -1945,8 +2887,26 @@ export function validatePrismaTargetSchema(source) {
     );
   }
   const audit = prismaModel(source, "AuditLog");
-  if (/updatedAt|deletedAt/.test(audit) || !/requestId\s+String/.test(audit)) {
-    fail("AuditLog must be append-only and request-correlated");
+  if (
+    /^\s+(?:updatedAt|deletedAt)\s+/m.test(audit) ||
+    !/^\s+action\s+String\s*$/m.test(audit) ||
+    !/^\s+entityType\s+String\s*$/m.test(audit) ||
+    !/^\s+entityId\s+String\s*$/m.test(audit) ||
+    !/^\s+maskedBefore\s+Json\?\s*$/m.test(audit) ||
+    !/^\s+maskedAfter\s+Json\?\s*$/m.test(audit) ||
+    !/^\s+reason\s+String\s*$/m.test(audit) ||
+    !/^\s+requestId\s+String\s*$/m.test(audit) ||
+    !/^\s+createdAt\s+DateTime\s+@default\(now\(\)\)\s*$/m.test(audit) ||
+    !/^\s+adminUser\s+AdminUser\s+@relation\(fields: \[adminUserId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)\s*$/m.test(
+      audit,
+    ) ||
+    !/^\s+adminSession\s+AdminSession\s+@relation\(fields: \[adminSessionId, adminUserId\], references: \[id, adminUserId\], onDelete: Restrict, onUpdate: Restrict\)\s*$/m.test(
+      audit,
+    )
+  ) {
+    fail(
+      "AuditLog must be append-only with complete actor, session, action, entity, masked change, reason, request and timestamp evidence",
+    );
   }
   const customerIdempotency = prismaModel(source, "IdempotencyRecord");
   const adminIdempotency = prismaModel(source, "AdminIdempotencyRecord");
@@ -1960,6 +2920,9 @@ export function validatePrismaTargetSchema(source) {
     !/resourceType\s+String/.test(customerIdempotency) ||
     !/resourceId\s+String/.test(customerIdempotency) ||
     !/adminUserId\s+String/.test(adminIdempotency) ||
+    !/adminUser\s+AdminUser\s+@relation\(fields: \[adminUserId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/.test(
+      adminIdempotency,
+    ) ||
     !/order\s+Order\?\s+@relation\(fields: \[orderId, customerId\], references: \[id, customerId\], onDelete: Restrict, onUpdate: Restrict\)/.test(
       customerIdempotency,
     ) ||
@@ -1991,7 +2954,7 @@ export function validatePrismaTargetSchema(source) {
 
   return {
     integerFinancialFields: integerMoneyFields.length,
-    models: requiredModels.length,
+    models: actualModels.length,
   };
 }
 
@@ -2019,6 +2982,6 @@ const direct =
 if (direct) {
   const result = readAndValidateOpenApi();
   console.log(
-    `S1.1 contract valid: ${result.openapi.paths} paths, ${result.openapi.schemas} schemas, ${result.openapi.invariants} invariants, ${result.prisma.models} target models.`,
+    `S1.2-01 readiness contract valid: ${result.openapi.paths} paths, ${result.openapi.schemas} schemas, ${result.openapi.invariants} invariants, ${result.prisma.models} target models.`,
   );
 }

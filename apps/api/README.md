@@ -41,9 +41,11 @@ jamais leur valeur.
 
 ## Prisma et BullMQ
 
-Le schéma Prisma cible PostgreSQL mais ne contient aucun modèle et aucune
-migration. BullMQ reçoit une configuration Redis partagée sans queue, worker ou
-job. Ces frontières seront étendues uniquement par un lot autorisé.
+Le schéma Prisma contient désormais le modèle cible contractuel S1.2-01 de
+33 modèles. Il ne possède toujours aucune migration, ne modifie aucune base et
+n’implémente aucune route métier P2. BullMQ reçoit une configuration Redis
+partagée sans queue, worker ou job. Ces frontières seront étendues uniquement
+par un lot runtime explicitement autorisé.
 
 ## Commandes
 
