@@ -1157,7 +1157,24 @@ test("requires the exact active-publication cover version in the request", () =>
 
   assert.throws(
     () => validateOpenApiDocument(document),
-    /public cover bytes require the exact controlled representation path/,
+    /getPublicAudioCover must declare exactly one mediaAssetVersion parameter/,
+  );
+});
+
+test("rejects a duplicate public cover mediaAssetVersion parameter", () => {
+  const document = documentFixture();
+  document.paths["/api/v1/catalog/audio/{contentId}/cover"].parameters = [
+    {
+      name: "mediaAssetVersion",
+      in: "query",
+      required: true,
+      schema: { type: "integer", minimum: 0 },
+    },
+  ];
+
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /getPublicAudioCover must declare exactly one mediaAssetVersion parameter/,
   );
 });
 
@@ -2137,6 +2154,38 @@ test("rejects TOTP material present only in a Prisma string", () => {
   assert.throws(
     () => validatePrismaTargetSchema(invalid),
     /admin authentication readiness/,
+  );
+});
+
+test("rejects an AuditLog relation after an unterminated Prisma string newline", () => {
+  const relation =
+    "adminSession AdminSession @relation(fields: [adminSessionId, adminUserId], references: [id, adminUserId], onDelete: Restrict, onUpdate: Restrict)";
+  for (const [name, lineBreak] of [
+    ["LF", "\n"],
+    ["CR", "\r"],
+    ["CRLF", "\r\n"],
+  ]) {
+    const invalid = replaceWithinModel(
+      prismaSource,
+      "AuditLog",
+      /adminSession\s+AdminSession\s+@relation\(fields: \[adminSessionId, adminUserId\], references: \[id, adminUserId\], onDelete: Restrict, onUpdate: Restrict\)/,
+      `lexicalProbe String @default("unterminated${lineBreak}  ${relation}`,
+    );
+
+    assert.throws(
+      () => validatePrismaTargetSchema(invalid),
+      /unterminated string literal before a line break/,
+      name,
+    );
+  }
+});
+
+test("rejects an unterminated Prisma string at end of file", () => {
+  const invalid = `${prismaSource}\n"unterminated`;
+
+  assert.throws(
+    () => validatePrismaTargetSchema(invalid),
+    /unterminated string literal at end of file/,
   );
 });
 

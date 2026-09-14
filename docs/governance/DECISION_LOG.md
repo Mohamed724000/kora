@@ -328,6 +328,22 @@ commit R2. Elles n’affirment aucun SHA ou Run ID futur et n’autorisent ni
 runtime, migration, interface, changement de dépendance, Ready, merge ou
 démarrage de S1.2-02.
 
+## 2026-09-14 — S1.2-01-R3 Prisma Lexer and Cover Parameter Uniqueness
+
+| ID                | Nature            | Décision                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Autorité                                                        | Statut                                  |
+| ----------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------- |
+| DEC-S1.2-01-R3-01 | Validation Prisma | Toute chaîne Prisma qui atteint un saut de ligne ou la fin du fichier avant un guillemet fermant non échappé provoque un échec lexical explicite. Aucun texte placé après cette ouverture ne peut satisfaire un gate de champ, relation, clé candidate ou contrainte. Les chaînes valides, échappements et commentaires correctement terminés conservent leur traitement R2.                                                                                                          | Verdict CTO `CHANGES REQUIRED` et autorisation R3 du 2026-09-14 | Accepted — règle de gate R3             |
+| DEC-S1.2-01-R3-02 | Couverture        | Après déréférencement, `getPublicAudioCover` doit contenir exactement un paramètre nommé `mediaAssetVersion`, situé en query, obligatoire, entier et de minimum 1. Un second paramètre homonyme est bloquant, même lorsque le premier est conforme.                                                                                                                                                                                                                                   | Autorisation CTO S1.2-01-R3                                     | Accepted — contrat défensif             |
+| DEC-S1.2-01-R3-03 | Validation        | Les deux faux `PASS` Prisma — relation `AuditLog.adminSession` injectée après une ouverture de chaîne suivie d’un saut de ligne, puis chaîne encore ouverte à EOF — et le doublon de paramètre cover ont été reproduits avant correction. Trois tests négatifs les figent ; sous Node `22.18.0`, syntaxe, validateur réel, tests OpenAPI/Contracts `220/220`, scanner officiel sur 337 fichiers, Prettier `3.9.6`, références, chronologie, whitespace et périmètre concluent `PASS`. | Preuves locales R3 du 2026-09-14                                | Accepted — preuve locale prépublication |
+
+Cette entrée décrit exclusivement l’instantané historique local
+prépublication du 2026-09-14, construit sur le head R2 publié
+`7138b2d3d3829ffdd65e4ff592968466273c46d3`. À cet instant, aucun commit R3,
+push ou changement de la Draft PR #42 n’a été effectué ; aucun SHA R3 ni Run ID
+futur n’est affirmé. Le micro-lot ne livre ni runtime, migration, interface,
+dépendance ou fichier généré et ne démarre pas S1.2-02. Tout statut de
+publication ultérieur fera foi dans l’historique Git, la PR et ses workflows.
+
 ## Catégories d’autorité
 
 - **Produit** : vision, économie, marque, contrats et périmètre irréversible ;

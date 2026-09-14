@@ -401,6 +401,38 @@ Ces mesures qualifient le contrat et le modèle cible uniquement. Les limites du
 corps webhook, HMAC, KMS, transactions, sessions, migrations et routes restent
 des obligations runtime futures et ne sont pas présentées comme opérationnelles.
 
+## Durcissement défensif S1.2-01-R3
+
+L’instantané historique local prépublication du 2026-09-14, construit sur le
+head R2 publié `7138b2d3d3829ffdd65e4ff592968466273c46d3`, ferme deux classes
+de contournement sans ajouter de contrôle runtime :
+
+- **confusion lexicale Prisma** : avant correction, une chaîne ouverte pouvait
+  traverser un saut de ligne ou EOF sans échec. Le texte d’une relation
+  `AuditLog.adminSession` supprimée puis replacée après cette ouverture pouvait
+  ainsi produire un faux `PASS`. Le lexer rejette désormais explicitement une
+  chaîne non terminée avant CR/LF et une chaîne encore ouverte à EOF, tout en
+  préservant chaînes valides, échappements et commentaires correctement
+  terminés ;
+- **pollution de paramètre OpenAPI** : avant correction, le premier
+  `mediaAssetVersion` valide masquait un second paramètre homonyme avec
+  `minimum: 0`. Le gate déréférence et compte maintenant tous les paramètres de
+  ce nom, exige une cardinalité exacte de un, puis vérifie son emplacement,
+  obligation, type et minimum.
+
+Trois tests négatifs dédiés reproduisent ces deux faux `PASS` Prisma et le
+doublon cover, puis exigent leurs erreurs causales. Sous Node `22.18.0`, la
+syntaxe des deux scripts, le validateur réel, les tests OpenAPI/Contracts
+`220/220`, le scanner officiel sur 337 fichiers, Prettier `3.9.6`, les
+références, la chronologie, `git diff --check` et le périmètre de cinq fichiers
+concluent `PASS`.
+
+R3 ne modifie pas `docs/api/openapi.yaml` ni aucun fichier généré, manifeste,
+lockfile, workflow ou dépendance. Il ne livre aucune migration, route runtime
+ou interface et ne démarre pas S1.2-02. À la date de cet instantané, aucun
+commit R3, push ou changement de la Draft PR #42 n’a eu lieu ; aucun SHA R3 ni
+Run ID futur n’est affirmé. Les preuves R2 publiées demeurent historiques.
+
 ## Méthode de mise à jour
 
 Chaque lot affectant une frontière :

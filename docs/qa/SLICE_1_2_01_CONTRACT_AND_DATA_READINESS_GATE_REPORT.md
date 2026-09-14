@@ -251,6 +251,70 @@ Réconciliation personnelle de l’orchestrateur : l’ancrage des identifiants 
 déclaré uniquement pour les garanties sensibles couvertes par R2 ; aucune
 affirmation universelle n’est portée sur les anciens gates S1.1 non modifiés.
 
+## S1.2-01-R3 — Prisma Lexer and Cover Parameter Uniqueness Gates
+
+Instantané historique local prépublication du 2026-09-14, établi sur le head R2
+publié `7138b2d3d3829ffdd65e4ff592968466273c46d3`. Le verdict CTO
+`CHANGES REQUIRED` autorise uniquement ce micro-lot avant une décision de commit
+R3 distincte. Aucun SHA R3 ou Run ID futur n’est affirmé et la Draft PR #42
+n’est pas modifiée par cette validation locale.
+
+### Périmètre R3
+
+Le diff contient exactement les cinq fichiers autorisés :
+
+1. `scripts/openapi/validate-openapi.mjs`
+2. `scripts/openapi/validate-openapi.test.mjs`
+3. `docs/governance/DECISION_LOG.md`
+4. `docs/qa/SLICE_1_2_01_CONTRACT_AND_DATA_READINESS_GATE_REPORT.md`
+5. `docs/security/THREAT_MODEL.md`
+
+`docs/api/openapi.yaml` reste inchangé : son contrat réel était déjà conforme.
+Aucun fichier généré, manifeste, lockfile, workflow, dépendance, runtime,
+migration ou interface ne change. S1.2-02 n’est pas démarré.
+
+### Reproductions, corrections et tests R3
+
+Avant correction, trois sondes intégralement en mémoire produisaient un faux
+`PASS` :
+
+- la vraie relation `AuditLog.adminSession` était remplacée par une ouverture
+  de chaîne non terminée, un saut de ligne puis le texte exact de la relation ;
+- une chaîne Prisma demeurait ouverte à la fin du fichier ;
+- un second paramètre query `mediaAssetVersion`, obligatoire et entier mais de
+  `minimum: 0`, était ajouté après le paramètre valide de
+  `getPublicAudioCover`.
+
+Le lexer échoue maintenant dès qu’une chaîne atteint CR/LF avant sa fermeture
+non échappée et distingue l’ouverture encore active à EOF. Il conserve le
+traitement des chaînes fermées, des caractères échappés et des commentaires
+ligne/bloc. Le gate cover collecte les paramètres après déréférencement, compte
+tous ceux nommés `mediaAssetVersion`, exige une cardinalité exacte de un puis
+vérifie `in: query`, `required: true`, `type: integer` et `minimum: 1`.
+
+Trois tests négatifs ont été ajoutés : rejet lexical de la relation `AuditLog`
+après saut de ligne, rejet lexical à EOF et rejet du doublon cover. Après
+correction, les reproductions échouent respectivement avec
+`unterminated string literal before a line break`,
+`unterminated string literal at end of file` et
+`getPublicAudioCover must declare exactly one mediaAssetVersion parameter`.
+
+### Preuves locales R3
+
+| Contrôle                                                   | Résultat                                                                                                                                |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime de validation                                      | PASS — Node `22.18.0` exact                                                                                                             |
+| Syntaxe Node des deux scripts modifiés                     | PASS — codes de sortie 0                                                                                                                |
+| Validateur réel OpenAPI/Prisma                             | PASS — 34 chemins, 87 schémas, 18 invariants et 33 modèles cibles                                                                       |
+| Tests OpenAPI et Contracts concernés                       | PASS — 220/220, 0 échec, 0 skip                                                                                                         |
+| Reproductions négatives R3                                 | PASS — trois contournements rejetés par leurs erreurs causales attendues                                                                |
+| Scanner officiel                                           | PASS — 337 fichiers, historique inclus, 52 immuables et 5 scripts d’installation qualifiés                                              |
+| Prettier, références, chronologie, whitespace et périmètre | PASS — Prettier `3.9.6`, aucune preuve future inventée, aucun lien relatif cassé, `git diff --check` propre et exactement cinq fichiers |
+
+Prettier `3.9.6` provient d’une copie locale existante dont la version a été
+relue dans son manifeste. Aucun registre, téléchargement ou installation n’a
+été utilisé. Les preuves R2 publiées restent historiques et inchangées.
+
 ## Conclusion
 
 S1.2-01 établit la disponibilité du contrat et du modèle cible sans prétendre

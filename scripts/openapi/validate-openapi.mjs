@@ -2053,21 +2053,26 @@ function validateCatalogReadinessGates(document) {
   ) {
     fail("public cover metadata must resolve only through the controlled API");
   }
-  const coverOperation = operationAt(
-    document,
-    "/api/v1/catalog/audio/{contentId}/cover",
-    "get",
-  );
-  const coverVersionParameter = (coverOperation.parameters ?? [])
+  const coverPath = "/api/v1/catalog/audio/{contentId}/cover";
+  const coverPathItem = document.paths[coverPath];
+  const coverOperation = operationAt(document, coverPath, "get");
+  const coverVersionParameters = [
+    ...(coverPathItem.parameters ?? []),
+    ...(coverOperation.parameters ?? []),
+  ]
     .map((entry) => dereference(document, entry))
-    .find(
-      (parameter) =>
-        parameter?.name === "mediaAssetVersion" && parameter?.in === "query",
+    .filter((parameter) => parameter?.name === "mediaAssetVersion");
+  if (coverVersionParameters.length !== 1) {
+    fail(
+      "getPublicAudioCover must declare exactly one mediaAssetVersion parameter",
     );
+  }
+  const [coverVersionParameter] = coverVersionParameters;
   if (
     coverOperation["x-kora-controlled-representation"] !== true ||
     coverOperation["x-kora-content-binding"] !==
       "ROUTE_CONTENT_ID_AND_REQUIRED_MEDIA_ASSET_VERSION" ||
+    coverVersionParameter?.in !== "query" ||
     coverVersionParameter?.required !== true ||
     coverVersionParameter?.schema?.type !== "integer" ||
     coverVersionParameter?.schema?.minimum !== 1 ||
@@ -2335,6 +2340,11 @@ export function stripPrismaComments(source) {
     const next = source[index + 1];
 
     if (state === "string") {
+      if (character === "\r" || character === "\n") {
+        fail(
+          "Prisma target schema contains an unterminated string literal before a line break",
+        );
+      }
       stripped += character;
       if (escaped) {
         escaped = false;
@@ -2385,6 +2395,11 @@ export function stripPrismaComments(source) {
 
   if (state === "block-comment") {
     fail("Prisma target schema contains an unterminated block comment");
+  }
+  if (state === "string") {
+    fail(
+      "Prisma target schema contains an unterminated string literal at end of file",
+    );
   }
   return stripped;
 }
