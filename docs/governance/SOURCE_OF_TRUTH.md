@@ -1,9 +1,9 @@
 # KORA+ Final — Source de vérité
 
-Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.1 FUSIONNÉ — GATE S1.2-01 ACHEVÉ**
+Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 IMPLÉMENTÉ — REVUE CTO REQUISE**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-09-11
+Dernière réconciliation documentaire : 2026-09-15
 
 ## Hiérarchie normative
 
@@ -46,11 +46,12 @@ non autorisé est historique, même s’il contient des impératifs.
 - **Archive historique** : conservée pour traçabilité, non exécutable.
 
 Les 24 ADR actifs se trouvent actuellement dans le Resolution Pack immuable.
-Aucun ADR-025 n’est créé par S1.2-01. Le contrat
+Aucun ADR-025 n’est créé par S1.2-01 ou S1.2-02. Le contrat
 [OpenAPI](../api/openapi.yaml) et le modèle cible
 [Prisma](../../apps/api/prisma/schema.prisma), introduits par S1.1 puis
 renforcés par le gate S1.2-01, sont les contrats techniques canoniques présents.
-Ils ne constituent ni une migration ni un runtime.
+S1.2-02 matérialise le schéma Prisma par des migrations PostgreSQL versionnées et
+des contraintes SQL ; il ne constitue toujours pas un runtime métier.
 
 ## Règle de contradiction
 
@@ -85,6 +86,9 @@ Les contrats OpenAPI et Prisma présents, ainsi que les types clients générés
 évoluent uniquement dans les lots qui les autorisent. Ils ne doivent jamais
 contredire un ADR accepté. S1.1 est fusionné au merge
 `bcb579916c1ca73e3cfb186683cb932f4f3905e9`. S1.2-01 complète la préparation
-contractuelle et du modèle cible sans livrer de runtime, migration ou interface
-P2. L’état Git et l’état de publication font foi dans l’historique Git, la PR et
+contractuelle et du modèle cible. S1.2-02, démarré depuis le merge S1.2-01
+`dfb6445cb157b03142b7f1b01952fa76fdef16f9`, matérialise les 33 modèles et les
+invariants SQL documentés, sans endpoint, service ou worker métier. Sa preuve
+locale prépublication est datée du 2026-09-15. S1.2-03 n’est pas démarré.
+L’état Git et l’état de publication font foi dans l’historique Git, la PR et
 les workflows associés.

@@ -10,24 +10,25 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 
 ## État des gates et lots
 
-| Gate ou lot      | Objectif                                     | Statut                           |
-| ---------------- | -------------------------------------------- | -------------------------------- |
-| Gate 0           | Sources approuvées et readiness clean room   | Completed                        |
-| Lot 00           | Preflight read-only                          | Completed                        |
-| Lot 00B          | Remédiation documentaire                     | Completed                        |
-| Lot 00C          | Canonicalisation AdminLTE                    | Completed                        |
-| S0.1             | Gouvernance et Git                           | Completed                        |
-| S0.2             | Contrat monorepo et versions                 | Completed                        |
-| S0.3             | Fondations applicatives                      | Closed and merged                |
-| S0.4             | Infrastructure locale                        | Closed and merged                |
-| S0.5             | CI, sécurité et observabilité                | Closed and merged                |
-| M0.1             | Dependency Governance                        | Closed and merged                |
-| M0.2             | Supply-chain Security Hotfix                 | Closed and merged                |
-| S0.6             | Foundation Gate                              | Closed and merged                |
-| Slice 1 / S1.1   | Contrats, données cibles et expérience audio | Closed and merged                |
-| Slice 1 / S1.2-01 | Contract & Data Readiness Gate              | Contract and data gate complete             |
-| Slice 1 / S1.2+  | Fonctionnalités runtime du pilote            | Not started                      |
-| Slices suivantes | Fonctionnalités produit ultérieures          | Not started                      |
+| Gate ou lot        | Objectif                                     | Statut                                        |
+| ------------------ | -------------------------------------------- | --------------------------------------------- |
+| Gate 0             | Sources approuvées et readiness clean room   | Completed                                     |
+| Lot 00             | Preflight read-only                          | Completed                                     |
+| Lot 00B            | Remédiation documentaire                     | Completed                                     |
+| Lot 00C            | Canonicalisation AdminLTE                    | Completed                                     |
+| S0.1               | Gouvernance et Git                           | Completed                                     |
+| S0.2               | Contrat monorepo et versions                 | Completed                                     |
+| S0.3               | Fondations applicatives                      | Closed and merged                             |
+| S0.4               | Infrastructure locale                        | Closed and merged                             |
+| S0.5               | CI, sécurité et observabilité                | Closed and merged                             |
+| M0.1               | Dependency Governance                        | Closed and merged                             |
+| M0.2               | Supply-chain Security Hotfix                 | Closed and merged                             |
+| S0.6               | Foundation Gate                              | Closed and merged                             |
+| Slice 1 / S1.1     | Contrats, données cibles et expérience audio | Closed and merged                             |
+| Slice 1 / S1.2-01  | Contract & Data Readiness Gate               | Contract and data gate complete               |
+| Slice 1 / S1.2-02  | Baseline PostgreSQL et contraintes SQL       | Implementation complete — CTO review required |
+| Slice 1 / S1.2-03+ | Fonctionnalités runtime du pilote            | Not started                                   |
+| Slices suivantes   | Fonctionnalités produit ultérieures          | Not started                                   |
 
 ## Sprint 0 — Clean-room foundation
 
@@ -199,9 +200,26 @@ Les détails sont consignés dans le
 et le
 [rapport de validation](../qa/SLICE_1_2_01_CONTRACT_AND_DATA_READINESS_GATE_REPORT.md).
 
-Le runtime S1.2 reste **Not started** : aucun catalogue, auth administrateur,
-paiement, webhook, upload, Entitlement ou playback runtime n’est livré par ce
-gate.
+### S1.2-02 — Canonical PostgreSQL Baseline and SQL Constraints
+
+La baseline, dont la preuve locale prépublication date du 2026-09-15,
+matérialise les 33 modèles canoniques dans deux migrations versionnées :
+génération Prisma déterministe puis contraintes PostgreSQL. Les
+garanties SQL couvrent notamment publication active unique et médias `READY`,
+provenance administrateur immuable, références fournisseur attribuables une
+fois, preuves append-only, isolation par FK composites, bornes arithmétiques,
+machines d’état, ledger équilibré et conservation artiste floor/carry.
+
+La validation applique deux fois les migrations sur deux bases vides distinctes,
+contrôle 33 tables, 54 FK, 133 index, 47 `CHECK`, 33 fonctions et 45 triggers,
+exécute les tests positifs/négatifs, compare une signature structurelle identique
+et supprime les seules bases éphémères créées. Le détail et la classification des
+garanties figurent dans le
+[document d’architecture S1.2-02](../architecture/SLICE_1_2_02_POSTGRESQL_BASELINE.md).
+
+Le runtime S1.2-03 reste **Not started** : aucun catalogue, auth administrateur,
+paiement, webhook, upload, Entitlement ou playback runtime n’est livré par cette
+baseline.
 
 Avant toute nouvelle chaîne visible du futur runtime mobile, un lot autorisé
 devra intégrer `AppLocalizations`, les ressources de langues et leurs tests de

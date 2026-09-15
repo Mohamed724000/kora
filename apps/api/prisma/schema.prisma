@@ -6,7 +6,8 @@ datasource db {
   provider = "postgresql"
 }
 
-// S1.2-01 target schema only. This file intentionally has no accompanying migration.
+// S1.2-02 canonical schema, materialized by the versioned PostgreSQL baseline.
+// PostgreSQL-only invariants are defined in the accompanying migration SQL.
 
 enum CustomerStatus {
   ACTIVE
@@ -186,37 +187,37 @@ model OtpChallenge {
 }
 
 model AdminUser {
-  id                    String                   @id @default(uuid())
-  email                 String                   @unique
-  passwordHash          String
-  role                  AdminRole
-  totpSecretEncrypted   String?
-  totpEnabledAt         DateTime?
-  createdAt             DateTime                 @default(now())
-  sessions              AdminSession[]
-  recoveryCodes         AdminRecoveryCode[]
-  createdArtists        Artist[]                 @relation("ArtistCreatedByAdmin")
-  createdAudioContents  AudioContent[]            @relation("AudioContentCreatedByAdmin")
-  publications          ContentPublication[]
-  auditLogs             AuditLog[]
-  idempotencyRecords    AdminIdempotencyRecord[]
+  id                   String                   @id @default(uuid())
+  email                String                   @unique
+  passwordHash         String
+  role                 AdminRole
+  totpSecretEncrypted  String?
+  totpEnabledAt        DateTime?
+  createdAt            DateTime                 @default(now())
+  sessions             AdminSession[]
+  recoveryCodes        AdminRecoveryCode[]
+  createdArtists       Artist[]                 @relation("ArtistCreatedByAdmin")
+  createdAudioContents AudioContent[]           @relation("AudioContentCreatedByAdmin")
+  publications         ContentPublication[]
+  auditLogs            AuditLog[]
+  idempotencyRecords   AdminIdempotencyRecord[]
 }
 
 model AdminSession {
-  id                String     @id @default(uuid())
-  adminUserId       String
-  adminUser         AdminUser  @relation(fields: [adminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  tokenFamilyId     String
-  accessTokenJti    String     @unique
-  refreshTokenHash  String     @unique
-  refreshTokenVersion Int      @default(1)
-  lastTwoFactorAt   DateTime
-  lastActivityAt    DateTime   @default(now())
-  expiresAt         DateTime
-  revokedAt         DateTime?
-  createdAt         DateTime   @default(now())
-  updatedAt         DateTime   @updatedAt
-  auditLogs         AuditLog[]
+  id                  String     @id @default(uuid())
+  adminUserId         String
+  adminUser           AdminUser  @relation(fields: [adminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  tokenFamilyId       String
+  accessTokenJti      String     @unique
+  refreshTokenHash    String     @unique
+  refreshTokenVersion Int        @default(1)
+  lastTwoFactorAt     DateTime
+  lastActivityAt      DateTime   @default(now())
+  expiresAt           DateTime
+  revokedAt           DateTime?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  auditLogs           AuditLog[]
 
   @@unique([id, adminUserId])
   @@unique([adminUserId, tokenFamilyId])
@@ -225,12 +226,12 @@ model AdminSession {
 }
 
 model AdminRecoveryCode {
-  id          String     @id @default(uuid())
+  id          String    @id @default(uuid())
   adminUserId String
-  adminUser   AdminUser  @relation(fields: [adminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  adminUser   AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   codeHash    String
   usedAt      DateTime?
-  createdAt   DateTime   @default(now())
+  createdAt   DateTime  @default(now())
 
   @@unique([adminUserId, codeHash])
   @@index([adminUserId, usedAt])
@@ -253,46 +254,46 @@ model Artist {
 }
 
 model AudioContent {
-  id                    String               @id @default(uuid())
-  artistId              String
-  artist                 Artist               @relation(fields: [artistId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  createdByAdminId      String
-  createdByAdmin        AdminUser            @relation("AudioContentCreatedByAdmin", fields: [createdByAdminId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  title                 String
-  description           String?
-  priceCfa              Int
-  previewSeconds        Int                  @default(30)
-  createdAt             DateTime             @default(now())
-  updatedAt             DateTime             @updatedAt
-  mediaAssets           MediaAsset[]
-  publications          ContentPublication[]
-  orderItems            OrderItem[]
-  entitlements          Entitlement[]
-  previewGrants         PreviewGrant[]
-  artistEarnings        ArtistEarning[]
+  id               String               @id @default(uuid())
+  artistId         String
+  artist           Artist               @relation(fields: [artistId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  createdByAdminId String
+  createdByAdmin   AdminUser            @relation("AudioContentCreatedByAdmin", fields: [createdByAdminId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  title            String
+  description      String?
+  priceCfa         Int
+  previewSeconds   Int                  @default(30)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  mediaAssets      MediaAsset[]
+  publications     ContentPublication[]
+  orderItems       OrderItem[]
+  entitlements     Entitlement[]
+  previewGrants    PreviewGrant[]
+  artistEarnings   ArtistEarning[]
 
   @@unique([id, artistId])
   @@index([artistId, createdAt])
 }
 
 model MediaAsset {
-  id                      String                  @id @default(uuid())
-  audioContentId          String
-  audioContent            AudioContent            @relation(fields: [audioContentId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  kind                    MediaAssetKind
-  processingStatus        MediaProcessingStatus   @default(PREPARING)
-  version                 Int                     @default(1)
-  checksumSha256          String?
-  durationSeconds         Int?
-  privateStorageObjectKey String?
+  id                       String                  @id @default(uuid())
+  audioContentId           String
+  audioContent             AudioContent            @relation(fields: [audioContentId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  kind                     MediaAssetKind
+  processingStatus         MediaProcessingStatus   @default(PREPARING)
+  version                  Int                     @default(1)
+  checksumSha256           String?
+  durationSeconds          Int?
+  privateStorageObjectKey  String?
   privateProviderUploadRef String?
-  privateProviderAssetRef String?
-  provider                MediaProvider?
-  failureCode             String?
-  createdAt               DateTime                @default(now())
-  updatedAt               DateTime                @updatedAt
-  publicationLinks        PublicationMediaAsset[]
-  webhookInboxEvents      MediaWebhookInbox[]
+  privateProviderAssetRef  String?
+  provider                 MediaProvider?
+  failureCode              String?
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
+  publicationLinks         PublicationMediaAsset[]
+  webhookInboxEvents       MediaWebhookInbox[]
 
   @@unique([audioContentId, kind, version])
   @@unique([id, audioContentId, kind, version])
@@ -303,10 +304,10 @@ model MediaAsset {
 
 model MediaWebhookInbox {
   id                  String                @id @default(uuid())
-  provider            MediaProvider          @default(MUX)
+  provider            MediaProvider         @default(MUX)
   providerEventKey    String
   mediaAssetId        String?
-  mediaAsset          MediaAsset?            @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  mediaAsset          MediaAsset?           @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   eventType           String
   payloadHash         String
   encryptedPayload    String
@@ -701,9 +702,9 @@ model AdminIdempotencyRecord {
 // Critical mutation and audit insert must share one transaction. Application
 // roles receive no UPDATE/DELETE privilege on this table.
 model AuditLog {
-  id             String    @id @default(uuid())
+  id             String       @id @default(uuid())
   adminUserId    String
-  adminUser      AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  adminUser      AdminUser    @relation(fields: [adminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   adminSessionId String
   adminSession   AdminSession @relation(fields: [adminSessionId, adminUserId], references: [id, adminUserId], onDelete: Restrict, onUpdate: Restrict)
   action         String
@@ -713,7 +714,7 @@ model AuditLog {
   maskedAfter    Json?
   reason         String
   requestId      String
-  createdAt      DateTime  @default(now())
+  createdAt      DateTime     @default(now())
 
   @@index([entityType, entityId, createdAt])
   @@index([adminUserId, createdAt])

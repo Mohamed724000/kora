@@ -41,11 +41,17 @@ jamais leur valeur.
 
 ## Prisma et BullMQ
 
-Le schéma Prisma contient désormais le modèle cible contractuel S1.2-01 de
-33 modèles. Il ne possède toujours aucune migration, ne modifie aucune base et
-n’implémente aucune route métier P2. BullMQ reçoit une configuration Redis
-partagée sans queue, worker ou job. Ces frontières seront étendues uniquement
-par un lot runtime explicitement autorisé.
+Le schéma Prisma canonique de 33 modèles est matérialisé par les deux migrations
+S1.2-02 : la baseline générée depuis `schema.prisma`, puis la couche d’intégrité
+PostgreSQL (`CHECK`, index partiels, fonctions et triggers). Le validateur
+`prisma/validate-baseline.mjs` exige un PostgreSQL éphémère local explicitement
+marqué, crée deux bases isolées, prouve leur reproductibilité et ne supprime que
+ces deux bases.
+
+Cette baseline n’implémente aucune route métier P2. BullMQ conserve sa
+configuration Redis partagée sans queue, worker ou job. Les transactions
+applicatives et le runtime restent réservés à des lots ultérieurs explicitement
+autorisés.
 
 ## Commandes
 
@@ -55,3 +61,10 @@ par un lot runtime explicitement autorisé.
 - `npm.cmd test --workspace @kora-plus/api`
 - `npm.cmd run build --workspace @kora-plus/api`
 - `npm.cmd run db:generate --workspace @kora-plus/api`
+- `powershell -File apps/api/prisma/run-baseline-validation.ps1` depuis la
+  racine : crée le conteneur PostgreSQL 18.4 au digest verrouillé, en `tmpfs` et
+  sur un port loopback aléatoire, exécute les deux bases du validateur, puis
+  supprime uniquement ce conteneur ;
+- `node apps/api/prisma/validate-baseline.mjs` reste le validateur interne et
+  refuse de s’exécuter sans `S1202_EPHEMERAL_POSTGRES=1` et une connexion
+  administrateur PostgreSQL locale éphémère.
