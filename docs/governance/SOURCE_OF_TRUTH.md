@@ -1,6 +1,6 @@
 # KORA+ Final — Source de vérité
 
-Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 IMPLÉMENTÉ — REVUE CTO REQUISE**
+Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ ET FUSIONNÉ — S1.2-03 NON DÉMARRÉ**
 
 Date d’effet : 2026-07-28
 Dernière réconciliation documentaire : 2026-09-15
@@ -87,8 +87,20 @@ Les contrats OpenAPI et Prisma présents, ainsi que les types clients générés
 contredire un ADR accepté. S1.1 est fusionné au merge
 `bcb579916c1ca73e3cfb186683cb932f4f3905e9`. S1.2-01 complète la préparation
 contractuelle et du modèle cible. S1.2-02, démarré depuis le merge S1.2-01
-`dfb6445cb157b03142b7f1b01952fa76fdef16f9`, matérialise les 33 modèles et les
+`dfb6445cb157b03142b7f1b01952fa76fdef16f9`, a matérialisé les 33 modèles et les
 invariants SQL documentés, sans endpoint, service ou worker métier. Sa preuve
-locale prépublication est datée du 2026-09-15. S1.2-03 n’est pas démarré.
-L’état Git et l’état de publication font foi dans l’historique Git, la PR et
-les workflows associés.
+locale prépublication est datée du 2026-09-15 et demeure une preuve historique.
+
+Après cet instantané, l’unique commit S1.2-02 publié
+`2022f5a229c8cb5138205f5fb02d37ea344ef73b`, portant 14 fichiers, a été préservé
+par la PR #43, fusionnée et fermée dans `main`. Le merge
+`4a1f4306871cac661fa12d4f326495fc43cddbb4`, d’arbre
+`95a9036ec5e287b78cdd2771010509d24292fa29`, possède dans l’ordre les parents
+`dfb6445cb157b03142b7f1b01952fa76fdef16f9` et
+`2022f5a229c8cb5138205f5fb02d37ea344ef73b`. Les workflows post-fusion
+`push/main` Infrastructure `34986168463`, Launcher Windows `34986168571`,
+Security `34986168621` et Quality Linux `34986168424` ont tous conclu
+`completed/success`. Aucun tag, release ou déploiement n’a été créé et cette
+fusion n’ajoute aucun endpoint, service, worker, seed, runtime métier ou
+interface. S1.2-03 reste **Not started** ; son analyse demeure une proposition
+soumise à une décision séparée et S1.2-03A n’est ni autorisé ni démarré.

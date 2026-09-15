@@ -1,7 +1,8 @@
 # KORA+ Final — Threat Model initial
 
 Périmètre durable couvert : **BASELINE + S0.4/S0.5/M0.1/M0.2/S0.6 ET M0.3
-FUSIONNÉS ET CLÔTURÉS + S1.1 FERMÉ + CONTRACT & DATA READINESS S1.2-01**.
+FUSIONNÉS ET CLÔTURÉS + S1.1 FERMÉ + CONTRACT & DATA READINESS S1.2-01 +
+S1.2-02 CLÔTURÉ ET FUSIONNÉ**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
 commit, push ou changement GitHub S1.1 n’avait encore été effectué : il s’agit
@@ -10,9 +11,10 @@ d’un instantané historique de prépublication. Tout statut GitHub ultérieur 
 
 Ce modèle décrit les frontières et mesures attendues. Sprint 0.3 introduit des
 shells et quelques contrôles de fondation étroits. S1.1 ajoute des contrats, un
-modèle Prisma cible et des composants visuels. S1.2-01 renforce uniquement le
-contrat, la cible de données et leurs gates ; aucun contrôle métier, financier,
-média ou d’identité ci-dessous n’est déclaré opérationnel.
+modèle Prisma cible et des composants visuels. S1.2-01 renforce le contrat, la
+cible de données et leurs gates. S1.2-02 matérialise uniquement les contrôles
+d’intégrité SQL explicitement énumérés plus bas ; aucun endpoint, service,
+worker, seed, runtime métier ou interface n’est déclaré opérationnel.
 
 ## Actifs
 
@@ -473,6 +475,24 @@ Le modèle canonique ne porte pas de statut de clôture de groupe ledger. Même 
 l’équilibre est réévalué à chaque commit, la prévention d’une paire équilibrée
 ajoutée tardivement exige le futur rôle d’écriture borné et la transaction de
 création unique du service. Elle n’est pas déclarée opérationnelle ici.
+
+## Clôture post-fusion S1.2-02
+
+L’instantané local prépublication du 2026-09-15 demeure une preuve historique.
+Postérieurement, la PR #43 a été fusionnée et fermée dans `main` au merge
+`4a1f4306871cac661fa12d4f326495fc43cddbb4`, parents ordonnés
+`dfb6445cb157b03142b7f1b01952fa76fdef16f9` puis
+`2022f5a229c8cb5138205f5fb02d37ea344ef73b`, arbre
+`95a9036ec5e287b78cdd2771010509d24292fa29`. L’unique commit S1.2-02 publié
+`2022f5a229c8cb5138205f5fb02d37ea344ef73b` et ses 14 fichiers sont préservés.
+
+Les workflows post-fusion `push/main` Infrastructure `34986168463`, Launcher
+Windows `34986168571`, Security `34986168621` et Quality Linux `34986168424`
+ont tous conclu `completed/success`. Aucun tag, release ou déploiement n’a été
+créé. Cette clôture ne transforme aucun contrôle différé en promesse runtime :
+aucun endpoint, service, worker, seed, runtime métier ou interface n’est livré.
+S1.2-03 reste `Not started`; son analyse est une proposition soumise à une
+décision séparée et S1.2-03A n’est ni autorisé ni démarré.
 
 ## Méthode de mise à jour
 

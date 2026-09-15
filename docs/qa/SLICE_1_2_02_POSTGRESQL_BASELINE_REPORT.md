@@ -1,7 +1,7 @@
 # S1.2-02 — Rapport de validation de la baseline PostgreSQL canonique
 
 Date : 2026-09-15
-Statut : **INSTANTANÉ TECHNIQUE PRÉPUBLICATION DU 2026-09-15 — VALIDÉ**
+Statut : **S1.2-02 CLÔTURÉ ET FUSIONNÉ — PREUVE PRÉPUBLICATION DU 2026-09-15 CONSERVÉE**
 
 ## Verdict
 
@@ -228,3 +228,37 @@ Verdict historique de cet instantané :
 **S1.2-02 CANONICAL POSTGRESQL BASELINE AND SQL CONSTRAINTS VALIDATED LOCALLY —
 READY FOR CTO COMMIT DECISION — NO ENDPOINT OR RUNTIME STARTED — S1.2-03 NOT
 STARTED**
+
+## Preuve post-fusion du 2026-09-15
+
+Cette preuve est postérieure à l’instantané historique ci-dessus et ne le
+réécrit pas. La PR #43 est `MERGED` et fermée dans `main` au merge
+`4a1f4306871cac661fa12d4f326495fc43cddbb4`. Ses parents exacts, dans l’ordre
+Git, sont :
+
+1. `dfb6445cb157b03142b7f1b01952fa76fdef16f9` ;
+2. `2022f5a229c8cb5138205f5fb02d37ea344ef73b`.
+
+L’arbre du merge est `95a9036ec5e287b78cdd2771010509d24292fa29`.
+Le head publié S1.2-02 est
+`2022f5a229c8cb5138205f5fb02d37ea344ef73b` : l’écart depuis le premier parent
+compte exactement un commit et les 14 fichiers S1.2-02 sont préservés.
+
+Les quatre workflows post-fusion ont été déclenchés par `push` sur `main` au
+merge exact et ont tous conclu `completed/success` :
+
+| Workflow         | Run ID        | Événement/branche | Résultat            |
+| ---------------- | ------------- | ----------------- | ------------------- |
+| Infrastructure   | `34986168463` | `push/main`       | `completed/success` |
+| Launcher Windows | `34986168571` | `push/main`       | `completed/success` |
+| Security         | `34986168621` | `push/main`       | `completed/success` |
+| Quality Linux    | `34986168424` | `push/main`       | `completed/success` |
+
+Aucun tag local ou distant, release ou déploiement n’accompagne cette fusion.
+S1.2-02 ne livre aucun endpoint, service, worker, seed, runtime métier ou
+interface. S1.2-03 reste **Not started** : aucune branche, PR, commit ou chemin
+S1.2-03 n’est présent. Son analyse demeure une proposition soumise à une
+décision séparée ; S1.2-03A n’est ni autorisé ni démarré.
+
+**S1.2-02 POST-MERGE EVIDENCE RECONCILED LOCALLY — DOCUMENTATION CLOSURE
+VALIDATED — READY FOR CTO COMMIT DECISION — S1.2-03 NOT STARTED**

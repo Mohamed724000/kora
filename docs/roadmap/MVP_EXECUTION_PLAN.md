@@ -10,25 +10,25 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 
 ## État des gates et lots
 
-| Gate ou lot        | Objectif                                     | Statut                                        |
-| ------------------ | -------------------------------------------- | --------------------------------------------- |
-| Gate 0             | Sources approuvées et readiness clean room   | Completed                                     |
-| Lot 00             | Preflight read-only                          | Completed                                     |
-| Lot 00B            | Remédiation documentaire                     | Completed                                     |
-| Lot 00C            | Canonicalisation AdminLTE                    | Completed                                     |
-| S0.1               | Gouvernance et Git                           | Completed                                     |
-| S0.2               | Contrat monorepo et versions                 | Completed                                     |
-| S0.3               | Fondations applicatives                      | Closed and merged                             |
-| S0.4               | Infrastructure locale                        | Closed and merged                             |
-| S0.5               | CI, sécurité et observabilité                | Closed and merged                             |
-| M0.1               | Dependency Governance                        | Closed and merged                             |
-| M0.2               | Supply-chain Security Hotfix                 | Closed and merged                             |
-| S0.6               | Foundation Gate                              | Closed and merged                             |
-| Slice 1 / S1.1     | Contrats, données cibles et expérience audio | Closed and merged                             |
-| Slice 1 / S1.2-01  | Contract & Data Readiness Gate               | Contract and data gate complete               |
-| Slice 1 / S1.2-02  | Baseline PostgreSQL et contraintes SQL       | Implementation complete — CTO review required |
-| Slice 1 / S1.2-03+ | Fonctionnalités runtime du pilote            | Not started                                   |
-| Slices suivantes   | Fonctionnalités produit ultérieures          | Not started                                   |
+| Gate ou lot        | Objectif                                     | Statut                          |
+| ------------------ | -------------------------------------------- | ------------------------------- |
+| Gate 0             | Sources approuvées et readiness clean room   | Completed                       |
+| Lot 00             | Preflight read-only                          | Completed                       |
+| Lot 00B            | Remédiation documentaire                     | Completed                       |
+| Lot 00C            | Canonicalisation AdminLTE                    | Completed                       |
+| S0.1               | Gouvernance et Git                           | Completed                       |
+| S0.2               | Contrat monorepo et versions                 | Completed                       |
+| S0.3               | Fondations applicatives                      | Closed and merged               |
+| S0.4               | Infrastructure locale                        | Closed and merged               |
+| S0.5               | CI, sécurité et observabilité                | Closed and merged               |
+| M0.1               | Dependency Governance                        | Closed and merged               |
+| M0.2               | Supply-chain Security Hotfix                 | Closed and merged               |
+| S0.6               | Foundation Gate                              | Closed and merged               |
+| Slice 1 / S1.1     | Contrats, données cibles et expérience audio | Closed and merged               |
+| Slice 1 / S1.2-01  | Contract & Data Readiness Gate               | Contract and data gate complete |
+| Slice 1 / S1.2-02  | Baseline PostgreSQL et contraintes SQL       | Closed and merged — PR #43      |
+| Slice 1 / S1.2-03+ | Fonctionnalités runtime du pilote            | Not started                     |
+| Slices suivantes   | Fonctionnalités produit ultérieures          | Not started                     |
 
 ## Sprint 0 — Clean-room foundation
 
@@ -135,7 +135,7 @@ démarrait ni Slice 1 ni aucune exigence produit.
 
 ## Slice 1 — Audio purchase pilot
 
-Statut : **In progress — S1.1 closed — S1.2-01 gate complete — runtime not started**
+Statut : **In progress — S1.1 closed — S1.2-01 gate complete — S1.2-02 closed and merged — S1.2-03 runtime not started**
 
 Parcours cible :
 
@@ -220,6 +220,19 @@ garanties figurent dans le
 Le runtime S1.2-03 reste **Not started** : aucun catalogue, auth administrateur,
 paiement, webhook, upload, Entitlement ou playback runtime n’est livré par cette
 baseline.
+
+État post-fusion constaté le 2026-09-15 : la PR #43 est fusionnée et fermée dans
+`main` au merge `4a1f4306871cac661fa12d4f326495fc43cddbb4`, parents ordonnés
+`dfb6445cb157b03142b7f1b01952fa76fdef16f9` puis
+`2022f5a229c8cb5138205f5fb02d37ea344ef73b`, arbre
+`95a9036ec5e287b78cdd2771010509d24292fa29`. L’unique commit S1.2-02 publié
+`2022f5a229c8cb5138205f5fb02d37ea344ef73b` et ses 14 fichiers sont préservés.
+Les workflows post-fusion `push/main` Infrastructure `34986168463`, Launcher
+Windows `34986168571`, Security `34986168621` et Quality Linux `34986168424`
+ont tous conclu `completed/success`. Aucun tag, release ou déploiement n’a été
+créé ; aucun endpoint, service, worker, seed, runtime métier ou interface n’est
+livré. L’analyse S1.2-03 demeure une proposition soumise à une décision séparée
+et n’autorise ni ne démarre S1.2-03A.
 
 Avant toute nouvelle chaîne visible du futur runtime mobile, un lot autorisé
 devra intégrer `AppLocalizations`, les ressources de langues et leurs tests de
