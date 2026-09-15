@@ -94,21 +94,21 @@ métier ou runtime.
 
 ## Menaces et mesures attendues
 
-| Domaine      | Menaces principales                                                                            | Mesures attendues / autorités                                                                                                                                         | État                                                                                     |
-| ------------ | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Identité/OTP | Brute force, interception, replay, enumeration                                                 | Rate limits, OTP court et haché, rotation session, logs masqués ; ADR-010                                                                                             | Contract/target model S1.1 — runtime not implemented                                     |
-| Admin        | Vol de session, MFA contournée, récupération abusive                                           | TOTP RFC 6238, codes Argon2id, cookies httpOnly, rotation/replay, step-up, révocation ; ADR-002/005/008                                                              | Contract/data target S1.2-01 — runtime not implemented                                   |
-| RBAC         | Escalade verticale/horizontale, champs sensibles                                               | Contrôle serveur route/action/champ, moindre privilège ; ADR-020                                                                                                      | Not implemented                                                                          |
-| Paiement     | Double débit, faux webhook, replay, ordre inversé                                              | Signature, idempotence, Inbox/Outbox, PaymentAttempts immuables ; ADR-012/015                                                                                         | Sandbox contract/target model S1.1 — runtime not implemented                             |
-| Ledger       | Altération, déséquilibre, double comptage                                                      | Append-only, groupes équilibrés, compensation, reconciliation ; ADR-013/014                                                                                           | Target model S1.1 — runtime balance not implemented                                      |
-| Droits       | Accès sans achat, révocation excessive                                                         | Entitlement permanent ciblé, checks serveur ; ADR-016                                                                                                                 | Contract/target model S1.1 — runtime not implemented                                     |
-| Média        | URL brute, faux callback/replay, partage, scraping, logs sensibles                              | Stockage privé, représentation contrôlée, Inbox Mux signée/chiffrée/dédupliquée, descriptor court ; ADR-011/015/017                                                 | Contract/target model S1.2-01 — runtime not implemented                                  |
-| Offline      | Extraction clé/fichier, replay licence, copie appareil                                         | AES-256-GCM, clé non exportable, licence renouvelable ; ADR-018                                                                                                       | Not implemented                                                                          |
-| Audit        | Suppression, falsification ou attribution au mauvais acteur/session                             | Écriture transactionnelle, liaison composite acteur/session, `Restrict`, blocage UPDATE/DELETE ; ADR-019                                                            | Target model S1.2-01 — runtime not implemented                                           |
-| Capture      | Enregistrement écran et dispositif externe                                                     | `FLAG_SECURE`, détection/pause iOS, protections en couches sans promesse absolue ; ADR-024                                                                            | Not implemented                                                                          |
-| Données/logs | Fuite PII, token ou secret                                                                     | Redaction des champs et messages, `msg` catégoriel, minimisation, contrôle accès, rétention et tests                                                                  | Foundation validated locally by S0.6 — no business PII flow                              |
-| Supply chain | Package compromis, licence incompatible, épuisement de pile, SSRF ou déni de service transitif | Versions verrouillées, revue, audit, provenance, scripts qualifiés, parents exacts, gates de graphe, sorties Next reproductibles et exceptions de licence nominatives | M0.3 publié et vert ; S1.1-R2 et R3 publiés dans la Draft PR #36, R3 au head `7d23f146…` |
-| CI/CD        | Secret exposé, artefact altéré, déploiement non autorisé                                       | Permissions lecture seule, actions épinglées, scans, timeouts et rollback                                                                                             | Workflows M0.3 #45 verts ; quatre workflows S1.1-R3 verts sur le head publié exact       |
+| Domaine      | Menaces principales                                                                            | Mesures attendues / autorités                                                                                                                                         | État                                                                                                              |
+| ------------ | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Identité/OTP | Brute force, interception, replay, enumeration                                                 | Rate limits, OTP court et haché, rotation session, logs masqués ; ADR-010                                                                                             | Contract/target model S1.1 — runtime not implemented                                                              |
+| Admin        | Vol de session, MFA contournée, récupération abusive                                           | TOTP RFC 6238, codes Argon2id, cookies httpOnly, rotation/replay, step-up, révocation ; ADR-002/005/008                                                               | Contract/data target S1.2-01 — runtime not implemented                                                            |
+| RBAC         | Escalade verticale/horizontale, champs sensibles                                               | Contrôle serveur route/action/champ, moindre privilège ; ADR-020                                                                                                      | Not implemented                                                                                                   |
+| Paiement     | Double débit, faux webhook, replay, ordre inversé                                              | Signature, idempotence, Inbox/Outbox, PaymentAttempts immuables ; ADR-012/015                                                                                         | Sandbox contract/target model S1.1 — runtime not implemented                                                      |
+| Ledger       | Altération, déséquilibre, double comptage                                                      | Append-only, groupes équilibrés, compensation, reconciliation ; ADR-013/014                                                                                           | SQL integrity S1.2-02 validated in the 2026-09-15 prepublication proof — runtime orchestration not implemented    |
+| Droits       | Accès sans achat, révocation excessive                                                         | Entitlement permanent ciblé, checks serveur ; ADR-016                                                                                                                 | SQL grant immutability S1.2-02 validated in the 2026-09-15 prepublication proof — runtime checks not implemented  |
+| Média        | URL brute, faux callback/replay, partage, scraping, logs sensibles                             | Stockage privé, représentation contrôlée, Inbox Mux signée/chiffrée/dédupliquée, descriptor court ; ADR-011/015/017                                                   | Contract/target model S1.2-01 — runtime not implemented                                                           |
+| Offline      | Extraction clé/fichier, replay licence, copie appareil                                         | AES-256-GCM, clé non exportable, licence renouvelable ; ADR-018                                                                                                       | Not implemented                                                                                                   |
+| Audit        | Suppression, falsification ou attribution au mauvais acteur/session                            | Écriture transactionnelle, liaison composite acteur/session, `Restrict`, blocage UPDATE/DELETE ; ADR-019                                                              | SQL immutability S1.2-02 validated in the 2026-09-15 prepublication proof — transactional runtime not implemented |
+| Capture      | Enregistrement écran et dispositif externe                                                     | `FLAG_SECURE`, détection/pause iOS, protections en couches sans promesse absolue ; ADR-024                                                                            | Not implemented                                                                                                   |
+| Données/logs | Fuite PII, token ou secret                                                                     | Redaction des champs et messages, `msg` catégoriel, minimisation, contrôle accès, rétention et tests                                                                  | Foundation validated locally by S0.6 — no business PII flow                                                       |
+| Supply chain | Package compromis, licence incompatible, épuisement de pile, SSRF ou déni de service transitif | Versions verrouillées, revue, audit, provenance, scripts qualifiés, parents exacts, gates de graphe, sorties Next reproductibles et exceptions de licence nominatives | M0.3 publié et vert ; S1.1-R2 et R3 publiés dans la Draft PR #36, R3 au head `7d23f146…`                          |
+| CI/CD        | Secret exposé, artefact altéré, déploiement non autorisé                                       | Permissions lecture seule, actions épinglées, scans, timeouts et rollback                                                                                             | Workflows M0.3 #45 verts ; quatre workflows S1.1-R3 verts sur le head publié exact                                |
 
 ## Risques ouverts et gates
 
@@ -432,6 +432,47 @@ lockfile, workflow ou dépendance. Il ne livre aucune migration, route runtime
 ou interface et ne démarre pas S1.2-02. À la date de cet instantané, aucun
 commit R3, push ou changement de la Draft PR #42 n’a eu lieu ; aucun SHA R3 ni
 Run ID futur n’est affirmé. Les preuves R2 publiées demeurent historiques.
+
+## Matérialisation PostgreSQL S1.2-02
+
+S1.2-02 matérialise les 33 modèles canoniques sans démarrer de runtime. Les
+menaces de réécriture directe et de croisement relationnel disposent désormais
+de protections réellement actives après migration :
+
+- provenance catalogue et publication non réaffectable ; `AuditLog`, événements,
+  finance réglée, ledger et liens de publication rejettent `UPDATE`/`DELETE` ;
+- références fournisseur paiement/Mux uniques, liées au provider et attribuables
+  une seule fois ;
+- relations composites de même client et de même acteur/session matérialisées,
+  avec test négatif inter-client ;
+- publication active unique et assertion différée exigeant exactement master
+  audio et cover `READY` avec version, SHA-256 et chronologie cohérents ;
+- historiques initiaux, états, séquences, montants, quantités et durées bornés ;
+  transitions terminales refusées ;
+- Settlement lié au dernier état Order `SETTLED`; ledger non vide et équilibré
+  en fin de transaction ; comptes immuables ; revenus bruts et bases gelées
+  rapprochés des lignes/Settlement ; carry conservé avec prédécesseur verrouillé ;
+- code de récupération et marqueurs Inbox/Outbox/Entitlement attribuables une
+  seule fois et chronologiquement bornés.
+
+La comparaison Prisma/base accepte uniquement l’extension PostgreSQL déclarée
+(`CHECK`, index partiels, fonctions et triggers) et refuse une dérive de table,
+colonne ou enum. Deux bases PostgreSQL 18.4 vides et isolées ont produit le même
+inventaire et la même signature avant suppression ciblée.
+
+Les contrôles suivants ne sont pas présentés comme opérationnels : transaction
+applicative Settlement/ledger/earning/Entitlement/Outbox, audit atomique avec la
+mutation admin, OTP/TOTP et sessions, HMAC avant Inbox, limite du corps webhook,
+KMS, RBAC, sérialisation publique, endpoints, workers, Mux, paiements et données
+de production. Les futurs privilèges du rôle applicatif `AuditLog` limités à
+`INSERT/SELECT` restent également à créer. Les triggers protègent les rôles
+ordinaires, pas un superuser/propriétaire capable de DDL, de les désactiver ou
+d’utiliser `TRUNCATE`.
+
+Le modèle canonique ne porte pas de statut de clôture de groupe ledger. Même si
+l’équilibre est réévalué à chaque commit, la prévention d’une paire équilibrée
+ajoutée tardivement exige le futur rôle d’écriture borné et la transaction de
+création unique du service. Elle n’est pas déclarée opérationnelle ici.
 
 ## Méthode de mise à jour
 
