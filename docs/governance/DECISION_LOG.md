@@ -387,6 +387,7 @@ succès des workflows `push/main` Infrastructure `35082285457`, Launcher Windows
 | DEC-S1.2-03A-04 | Validation  | Deux bases PostgreSQL 18.4 indépendantes reçoivent les migrations existantes sous des propriétaires distincts. Le script livré prouve création, convergence, idempotence et récupération de dérive, puis DDL, `TRUNCATE`, trigger, `SET ROLE` et écritures sont refusés avec `42501`.                    | Preuves locales S1.2-03A                     | Executed — reproducible and cleaned      |
 | DEC-S1.2-03A-05 | Périmètre   | Le rôle runtime reste en lecture seule. Aucun schéma, migration, OpenAPI, contrat, workflow, endpoint, service métier, worker, seed, interface, média ou paiement n’est ajouté. La publication autorisée reste limitée à un commit, un push normal et une Draft PR ; Ready et merge demeurent interdits. | Autorisation Product Owner et limites du lot | Executed — Draft PR #45 open; not merged |
 | DEC-S1.2-03A-06 | CI propre   | Les commandes API `build`, `typecheck` et `test` doivent générer Prisma 7.9.1 avant leur exécution et réussir après `npm ci` sans dépendre d’un client produit par une commande antérieure. Un test de contrat verrouille les trois hooks npm.                                                           | Échecs CI initiaux de la Draft PR #45        | Executed — R1 integrated on Draft branch |
+| DEC-S1.2-03A-07 | Smoke infra | Le smoke Infrastructure applique les migrations sous le propriétaire/migrateur, reprovisionne les ACL, exige son refus par le garde, puis lance l’API exclusivement avec le rôle runtime. Une sortie prématurée remonte le fatal neutralisé sans attendre le timeout.                                    | Échec Infrastructure R1 `35155026285`        | R2 validated locally before publication  |
 
 L’absence de commit, push et PR constatée lors de la validation locale du
 2026-09-16 reste l’instantané historique prépublication. Elle ne décrit pas
@@ -400,6 +401,20 @@ correction DEC-S1.2-03A-06 a été validée dans un clone propre puis intégrée
 R1 sur la branche de la Draft PR. Aucun run initial n’est relancé ; les nouveaux
 runs sont attachés au head R1 distinct. La PR demeure Draft et S1.2-03B reste
 `Not started`.
+
+R1 est publié au commit `41b3d8f33a637108814208258a3e99b105be1afc`.
+Launcher Windows `35155026009`, Security `35155025993` et Quality Linux
+`35155026016` ont réussi ; Infrastructure `35155026285` a échoué. Le log complet
+montre que le provisionnement runtime et les contrôles de l’infrastructure
+réussissent. Dans la version R1 publiée, `verify-api-health.mjs` transmettait
+encore `KORA_POSTGRES_USER` et `postgres_password` au processus API. La
+reproduction isolée neutralisée obtient le fatal `RuntimeDatabaseBoundaryError`
+attendu pour le propriétaire. DEC-S1.2-03A-07 corrige localement ce câblage sans
+modifier le garde, les privilèges PostgreSQL, les migrations, le workflow ou le
+lockfile. Cette preuve décrit l’instantané local prépublication R2 : à cet
+instant, la correction n’avait fait l’objet d’aucun commit, push, rerun ou
+changement de la Draft PR #45 et ne préjugeait pas du résultat de ses futurs
+workflows.
 
 ## Catégories d’autorité
 

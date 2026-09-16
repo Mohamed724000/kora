@@ -1,7 +1,7 @@
 # S1.2-03A — PostgreSQL Least-Privilege Runtime Boundary & Prisma Adapter
 
 Date : 2026-09-16
-État : **DRAFT PR #45 OUVERTE — CORRECTION CI R1 INTÉGRÉE À LA BRANCHE — NON FUSIONNÉ**
+État : **DRAFT PR #45 OUVERTE — R1 PUBLIÉ — PREUVE LOCALE PRÉPUBLICATION R2 VALIDÉE — NON FUSIONNÉ**
 
 ## Baseline et autorisation
 
@@ -20,7 +20,7 @@ Le travail local est isolé sur la branche
 `feat/s1-2-03a-postgresql-runtime-boundary` et un worktree dédié. Les anciens
 worktrees ne sont ni réutilisés ni modifiés.
 
-## Publication Draft et correction CI locale
+## Publication Draft, R1 et preuve locale prépublication R2
 
 Le commit initial publié `974d7afa9d4dc9ceb88a35bd5bd7ae3f477cb875`, parent
 `95bdfcf30a14e05ae90b09150cf289e1e0343c0d`, était le head de la Draft PR #45
@@ -41,6 +41,46 @@ qu’un test de contrat. Client supprimé avant chaque essai dans le clone, les
 trois commandes régénèrent Prisma 7.9.1 et réussissent indépendamment. R1 est
 intégré à la branche de la Draft PR ; aucun run initial n’est relancé et les
 nouveaux workflows sont attachés à son head distinct.
+
+Le commit R1 publié `41b3d8f33a637108814208258a3e99b105be1afc`, parent
+`974d7afa9d4dc9ceb88a35bd5bd7ae3f477cb875`, est le head local, distant et de
+la Draft PR #45. Ses workflows `pull_request` ont conclu :
+
+- Launcher Windows `35155026009` : `completed/success` ;
+- Security `35155025993` : `completed/success` ;
+- Quality Linux `35155026016` : `completed/success` ;
+- Infrastructure `35155026285` : `completed/failure` dans
+  « Build and verify API health transitions ».
+
+Le log Infrastructure complet montre que préparation, validation, pull, cycle
+de vie, génération Prisma 7.9.1 et build API réussissent. Le provisionneur crée
+et vérifie aussi le rôle runtime. L’ancien `verify-api-health.mjs` transmettait
+cependant au processus API `KORA_POSTGRES_USER` avec `postgres_password`. L’API
+sortait avec le code 1 ; le script n’inspectait pas cette sortie et concluait
+seulement après 30 secondes : `API did not respond within 30000ms`.
+
+Une reproduction PostgreSQL isolée, secrets neutralisés, capture la cause
+exacte : `RuntimeDatabaseBoundaryError` avec les violations
+`administrative_role_attribute`, `role_inheritance_enabled`,
+`runtime_owns_database_object`, `database_or_schema_write_privilege`,
+`unexpected_table_privilege` et `unexpected_routine_privilege`. Ce refus du
+propriétaire/migrateur est le comportement de sécurité attendu.
+
+Dans son instantané local antérieur au commit, le correctif R2 :
+
+1. exécute `prisma migrate deploy` sous le propriétaire/migrateur sur le runner
+   neuf ;
+2. reprovisionne le rôle runtime et ses ACL après les migrations ;
+3. exige explicitement que l’API refuse le propriétaire pour les violations
+   privilégiées attendues ;
+4. lance le processus API avec `KORA_POSTGRES_RUNTIME_USER` et
+   `postgres_runtime_password` ;
+5. détecte une sortie prématurée du processus et joint immédiatement un extrait
+   fatal borné, après neutralisation des secrets et URL de connexion.
+
+Le garde API, le provisionneur, les droits PostgreSQL et les migrations restent
+inchangés. Aucun droit propriétaire n’est accordé au rôle runtime. Ces résultats
+locaux ne préjugent pas du résultat des futurs workflows R2.
 
 ## Frontière livrée
 
@@ -128,24 +168,27 @@ image ou ressource étrangère n’est supprimé.
 
 ## Validations
 
-| Validation                         | Résultat courant                                                                        |
-| ---------------------------------- | --------------------------------------------------------------------------------------- |
-| Prisma Client 7.9.1 generate       | PASS                                                                                    |
-| Prettier ciblé                     | PASS                                                                                    |
-| Typecheck API après correction     | PASS — `pretypecheck` génère Prisma 7.9.1 avant `tsc`                                   |
-| Tests applicatifs                  | PASS — API 26/26 rejoué après correction ; 60 tests des workspaces inchangés déjà verts |
-| Tests d’outillage                  | PASS — 297/297, dont le contrat de génération Prisma en checkout propre                 |
-| Builds                             | PASS — API rejoué ; Web, Admin, Contracts, Config, UI et Android inchangés déjà verts   |
-| Compose rendu et absence de secret | PASS                                                                                    |
-| Upgrade `infra:prepare` historique | PASS — valeurs préservées, clé runtime ajoutée une fois, second passage identique       |
-| Validation réelle sur deux bases   | PASS — script livré, 3 passages/base, dérive réparée, 14 refus `42501`                  |
-| Audits npm complet et production   | PASS pré-correction — zéro vulnérabilité ; graphe inchangé, non rejoué ensuite          |
-| Signatures et attestations npm     | PASS pré-correction — 1 132 signatures, 198 attestations ; non rejoué ensuite           |
-| Licences npm                       | PASS pré-correction — 1 134 paquets, zéro écart ; graphe inchangé, non rejoué ensuite   |
-| Scanner officiel                   | PASS — 353 fichiers, historique et 52 sources immuables contrôlés                       |
-| Workflows et OpenAPI               | PASS — 4 workflows, 4 actions verrouillées ; 34 chemins, 87 schémas, 18 invariants      |
-| Reproduction CI avant correction   | PASS — clone neuf, client absent ; TS2305 et trois TS2339 reproduits                    |
-| Correction CI en clone neuf        | PASS — génération indépendante avant typecheck, build et API 26/26                      |
+| Validation                         | Résultat courant                                                                         |
+| ---------------------------------- | ---------------------------------------------------------------------------------------- |
+| Prisma Client 7.9.1 generate       | PASS                                                                                     |
+| Prettier ciblé                     | PASS                                                                                     |
+| Typecheck API après correction     | PASS — `pretypecheck` génère Prisma 7.9.1 avant `tsc`                                    |
+| Tests applicatifs                  | PASS — API 26/26 rejoué après correction ; 60 tests des workspaces inchangés déjà verts  |
+| Tests d’outillage                  | PASS — 297/297, dont le contrat de génération Prisma en checkout propre                  |
+| Builds                             | PASS — API rejoué ; Web, Admin, Contracts, Config, UI et Android inchangés déjà verts    |
+| Compose rendu et absence de secret | PASS                                                                                     |
+| Upgrade `infra:prepare` historique | PASS — valeurs préservées, clé runtime ajoutée une fois, second passage identique        |
+| Validation réelle sur deux bases   | PASS — script livré, 3 passages/base, dérive réparée, 14 refus `42501`                   |
+| Audits npm complet et production   | PASS pré-correction — zéro vulnérabilité ; graphe inchangé, non rejoué ensuite           |
+| Signatures et attestations npm     | PASS pré-correction — 1 132 signatures, 198 attestations ; non rejoué ensuite            |
+| Licences npm                       | PASS pré-correction — 1 134 paquets, zéro écart ; graphe inchangé, non rejoué ensuite    |
+| Scanner officiel                   | PASS — 353 fichiers, historique et 52 sources immuables contrôlés                        |
+| Workflows et OpenAPI               | PASS — 4 workflows, 4 actions verrouillées ; 34 chemins, 87 schémas, 18 invariants       |
+| Reproduction CI avant correction   | PASS — clone neuf, client absent ; TS2305 et trois TS2339 reproduits                     |
+| Correction CI en clone neuf        | PASS — génération indépendante avant typecheck, build et API 26/26                       |
+| Reproduction Infrastructure R1     | PASS — propriétaire transmis ; fatal `RuntimeDatabaseBoundaryError` neutralisé           |
+| Correctif Infrastructure isolé     | PASS — migrations owner, refus owner, runtime live/ready, pannes et reprises 200/503/200 |
+| Confidentialité du smoke corrigé   | PASS — aucun secret ni URL PostgreSQL/Redis dans les sorties capturées                   |
 
 Le premier lancement post-reprise s’est arrêté avant création de conteneur car
 Docker Desktop était arrêté ; ses deux fichiers secrets temporaires ont été
@@ -170,6 +213,24 @@ aucune ressource de validation.
 
 Après réconciliation, aucune contre-revue ne conserve de finding fondé ouvert.
 
+### Contre-revues du correctif Infrastructure
+
+1. Architecture/données : la première correction envisagée passait au runtime
+   sans matérialiser le schéma sur un runner neuf. Le finding était fondé ; les
+   migrations sont maintenant exécutées sous le propriétaire, puis les ACL sont
+   reprovisionnées avant le démarrage runtime.
+2. Sécurité/intégrité : le propriétaire devait rester refusé et la nouvelle
+   remontée d’erreur ne devait exposer ni secret ni DSN. Le smoke exige le
+   `RuntimeDatabaseBoundaryError`, ne relâche aucun contrôle et neutralise trois
+   secrets ainsi que les URL PostgreSQL/Redis avant toute sortie.
+3. Gouvernance/reproductibilité : le correctif reste limité au smoke causal et
+   aux cinq documents S1.2-03A. Le banc isolé confirme live/ready `200/200`, les
+   pannes Redis et PostgreSQL `live=200`/`ready=503`, puis les deux reprises à
+   `ready=200`; ses conteneurs, volume et secrets jetables sont supprimés.
+
+Après réconciliation, aucune de ces trois contre-revues ne conserve de finding
+fondé ouvert.
+
 ## Limites explicites
 
 - aucun endpoint, service métier, worker, queue, seed ou interface n’est livré ;
@@ -184,4 +245,7 @@ Après réconciliation, aucune contre-revue ne conserve de finding fondé ouvert
 - l’instantané local prépublication du 2026-09-16 a été établi sans commit,
   push, PR, Ready, merge, tag, release ou déploiement ; la publication Draft
   ultérieurement autorisée ne vaut ni Ready, ni merge, ni démarrage de
-  S1.2-03B.
+  S1.2-03B ;
+- le correctif Infrastructure R2 décrit ci-dessus est un instantané local
+  postérieur à R1 et antérieur à son commit : à cet instant, aucun commit, push,
+  rerun ou changement de la PR #45 n’avait été effectué.

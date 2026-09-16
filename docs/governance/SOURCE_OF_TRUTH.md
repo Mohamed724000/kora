@@ -1,6 +1,6 @@
 # KORA+ Final — Source de vérité
 
-Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A EN DRAFT PR #45 — CORRECTION CI R1 INTÉGRÉE À LA BRANCHE — NON FUSIONNÉ**
+Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A EN DRAFT PR #45 — R1 PUBLIÉ — PREUVE LOCALE PRÉPUBLICATION R2 VALIDÉE — NON FUSIONNÉ**
 
 Date d’effet : 2026-07-28
 Dernière réconciliation documentaire : 2026-09-16
@@ -114,8 +114,8 @@ Infrastructure `35082285457`, Launcher Windows `35082285515`, Security
 
 Sur autorisation Product Owner distincte du 2026-09-16, S1.2-03A est démarré
 depuis ce merge dans une branche et un worktree dédiés. Son état courant est
-**Draft PR #45 ouverte ; correction CI R1 intégrée à la branche dédiée ; non
-fusionné**.
+**Draft PR #45 ouverte ; R1 publié ; preuve locale prépublication R2 validée ;
+non fusionné**.
 L’instantané local prépublication du 2026-09-16 a été établi alors que les 26
 fichiers étaient non indexés, non commités et non publiés ; cette formulation
 reste une preuve historique datée. Le lot sépare le compte
@@ -136,3 +136,18 @@ La correction R1 ajoute aux seules commandes API les hooks de génération
 Prisma et un test de contrat ; elle ne change ni dépendance, ni lockfile, ni
 workflow, ni schéma, migration, OpenAPI ou frontière PostgreSQL. Aucun des runs
 initiaux n’est relancé ; R1 produit des workflows distincts sur son propre head.
+
+Le commit R1 publié `41b3d8f33a637108814208258a3e99b105be1afc` est le head
+courant de la Draft PR #45. Launcher Windows `35155026009`, Security
+`35155025993` et Quality Linux `35155026016` ont conclu `completed/success` ;
+Infrastructure `35155026285` a conclu `completed/failure`. Cet échec R1 est une
+preuve historique : le smoke test provisionnait bien le rôle runtime, mais
+lançait l’API avec le propriétaire/migrateur. Le garde a donc refusé ce compte
+par `RuntimeDatabaseBoundaryError`, puis le script a masqué cette sortie sous un
+timeout de 30 secondes. Dans l’instantané local antérieur à son commit, le
+correctif R2 déploie les migrations sous le propriétaire, reprovisionne les ACL,
+vérifie explicitement son refus, lance ensuite l’API avec le rôle runtime et
+remonte immédiatement toute sortie fatale après neutralisation des secrets.
+Aucun contrôle de privilèges n’est relâché et aucun droit propriétaire n’est
+accordé au runtime. Cette preuve locale ne préjuge pas du résultat des futurs
+workflows R2.
