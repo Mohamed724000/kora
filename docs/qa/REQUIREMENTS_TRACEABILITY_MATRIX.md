@@ -169,11 +169,16 @@ merge `main` `95bdfcf30a14e05ae90b09150cf289e1e0343c0d`.
 | GOV-S1.2-03A-04 | Refus des mutations et élévations         | Vérifié localement | SQLSTATE `42501` pour DDL, `TRUNCATE`, trigger, `SET ROLE`, `INSERT`, `UPDATE` et `DELETE`, sur deux bases                               |
 | GOV-S1.2-03A-05 | Idempotence et nettoyage ciblé            | Vérifié localement | script livré exécuté trois fois sur deux bases ; création, convergence, signature complète et récupération de dérive ; nettoyage ciblé   |
 | GOV-S1.2-03A-06 | Dépendance, licence et audit              | Vérifié localement | instantané prépublication du 2026-09-16 : provenance/licences contrôlées et audits à zéro ; graphe inchangé après correction, non rejoué |
-| GOV-S1.2-03A-07 | Périmètre et publication contrôlée        | Draft autorisée    | schéma, migrations, OpenAPI, contrats, workflows et clients inchangés ; aucun Ready, merge, endpoint ou runtime métier                   |
+| GOV-S1.2-03A-07 | Périmètre et publication contrôlée        | Draft #45 ouverte  | head publié `974d7afa…` ; aucun Ready ou merge ; schéma, migrations, OpenAPI, contrats, workflows et clients inchangés                   |
+| GOV-S1.2-03A-08 | Reproductibilité du client Prisma en CI   | R1 intégré         | clone neuf après `npm ci` : client absent, puis génération automatique et succès indépendants de typecheck, build et 26 tests API        |
 
 Le [rapport S1.2-03A](SLICE_1_2_03A_POSTGRESQL_RUNTIME_BOUNDARY_REPORT.md)
 porte le détail reproductible. Les fonctionnalités métier S1.2-03B+ restent
-`Not started`.
+`Not started`. Les runs initiaux de la Draft PR #45 ont réussi pour Security
+`35119052015` et échoué pour Infrastructure `35119052104`, Launcher Windows
+`35119052049` et Quality Linux `35119052101`. La correction
+GOV-S1.2-03A-08 est intégrée par R1 ; aucun run initial n’est relancé et la
+preuve des nouveaux runs distincts est portée par la Draft PR #45.
 
 ## Contrôles de gouvernance de Sprint 0.1
 

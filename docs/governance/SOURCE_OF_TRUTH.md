@@ -1,6 +1,6 @@
 # KORA+ Final — Source de vérité
 
-Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A VALIDÉ LOCALEMENT — PUBLICATION DRAFT AUTORISÉE — NON FUSIONNÉ**
+Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A EN DRAFT PR #45 — CORRECTION CI R1 INTÉGRÉE À LA BRANCHE — NON FUSIONNÉ**
 
 Date d’effet : 2026-07-28
 Dernière réconciliation documentaire : 2026-09-16
@@ -114,7 +114,8 @@ Infrastructure `35082285457`, Launcher Windows `35082285515`, Security
 
 Sur autorisation Product Owner distincte du 2026-09-16, S1.2-03A est démarré
 depuis ce merge dans une branche et un worktree dédiés. Son état courant est
-**validé localement ; publication en Draft PR autorisée ; non fusionné**.
+**Draft PR #45 ouverte ; correction CI R1 intégrée à la branche dédiée ; non
+fusionné**.
 L’instantané local prépublication du 2026-09-16 a été établi alors que les 26
 fichiers étaient non indexés, non commités et non publiés ; cette formulation
 reste une preuve historique datée. Le lot sépare le compte
@@ -125,3 +126,13 @@ compris via `PUBLIC`. Il n’ajoute aucun endpoint, service métier, worker, see
 écran, paiement, média, tag, release ou déploiement. Les capacités métier de
 S1.2-03 au-delà de cette frontière technique restent **Not started** et
 requièrent une autorisation séparée.
+
+Le commit publié `974d7afa9d4dc9ceb88a35bd5bd7ae3f477cb875` était le head
+initial de la Draft PR #45 avant R1. Ses premiers workflows `pull_request` ont
+conclu Security `35119052015` en succès et Infrastructure `35119052104`,
+Launcher Windows `35119052049` et Quality Linux `35119052101` en échec : après
+`npm ci`, le client Prisma n’était pas généré avant build, typecheck ou tests.
+La correction R1 ajoute aux seules commandes API les hooks de génération
+Prisma et un test de contrat ; elle ne change ni dépendance, ni lockfile, ni
+workflow, ni schéma, migration, OpenAPI ou frontière PostgreSQL. Aucun des runs
+initiaux n’est relancé ; R1 produit des workflows distincts sur son propre head.

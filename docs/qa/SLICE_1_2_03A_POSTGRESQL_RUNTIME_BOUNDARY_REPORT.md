@@ -1,7 +1,7 @@
 # S1.2-03A — PostgreSQL Least-Privilege Runtime Boundary & Prisma Adapter
 
 Date : 2026-09-16
-État : **PREUVE LOCALE PRÉPUBLICATION VALIDÉE — PUBLICATION DRAFT AUTORISÉE — NON FUSIONNÉ**
+État : **DRAFT PR #45 OUVERTE — CORRECTION CI R1 INTÉGRÉE À LA BRANCHE — NON FUSIONNÉ**
 
 ## Baseline et autorisation
 
@@ -19,6 +19,28 @@ tous `completed/success` : Infrastructure `35082285457`, Launcher Windows
 Le travail local est isolé sur la branche
 `feat/s1-2-03a-postgresql-runtime-boundary` et un worktree dédié. Les anciens
 worktrees ne sont ni réutilisés ni modifiés.
+
+## Publication Draft et correction CI locale
+
+Le commit initial publié `974d7afa9d4dc9ceb88a35bd5bd7ae3f477cb875`, parent
+`95bdfcf30a14e05ae90b09150cf289e1e0343c0d`, était le head de la Draft PR #45
+avant R1. Ses workflows `pull_request` initiaux ont conclu :
+
+- Security `35119052015` : `completed/success` ;
+- Infrastructure `35119052104` : `completed/failure` pendant le build API ;
+- Launcher Windows `35119052049` : `completed/failure` pendant les tests API ;
+- Quality Linux `35119052101` : `completed/failure` pendant le typecheck API.
+
+Un clone neuf a reproduit la cause après `npm ci` :
+`node_modules/.prisma/client/default.d.ts` était absent, puis TS2305 sur
+`PrismaClient` entraînait trois TS2339 sur `$queryRaw` et `$disconnect`. Les
+workflows exécutent réellement build, typecheck ou tests sans commande de
+génération préalable. Le correctif R1 ajoute `prebuild`, `pretypecheck` et
+`pretest` dans le workspace API, tous délégués au `db:generate` existant, ainsi
+qu’un test de contrat. Client supprimé avant chaque essai dans le clone, les
+trois commandes régénèrent Prisma 7.9.1 et réussissent indépendamment. R1 est
+intégré à la branche de la Draft PR ; aucun run initial n’est relancé et les
+nouveaux workflows sont attachés à son head distinct.
 
 ## Frontière livrée
 
@@ -57,10 +79,11 @@ Le contrôle a été effectué avant toute installation de `node_modules`.
 Les avertissements de dépréciation émis pendant `npm ci` concernent des
 transitives déjà présentes dans le graphe global ; l’audit final reste à zéro.
 Ces contrôles supply-chain appartiennent à l’instantané local prépublication du
-2026-09-16. Les corrections de contre-revue n’ont modifié ni
-`apps/api/package.json` ni `package-lock.json` après ces contrôles ; installation,
-audits, signatures et licences n’ont donc pas été rejoués après la dernière
-correction.
+2026-09-16. Les corrections de contre-revue antérieures à la publication
+n’avaient modifié ni `apps/api/package.json` ni `package-lock.json`. La
+correction CI R1 ultérieure modifie uniquement les scripts du manifeste
+API, sans dépendance ni changement du lockfile ; audits, signatures et licences
+n’ont pas été rejoués après cette correction.
 
 ## Preuve PostgreSQL réelle
 
@@ -109,9 +132,9 @@ image ou ressource étrangère n’est supprimé.
 | ---------------------------------- | --------------------------------------------------------------------------------------- |
 | Prisma Client 7.9.1 generate       | PASS                                                                                    |
 | Prettier ciblé                     | PASS                                                                                    |
-| Format, lint et typecheck racine   | PASS                                                                                    |
+| Typecheck API après correction     | PASS — `pretypecheck` génère Prisma 7.9.1 avant `tsc`                                   |
 | Tests applicatifs                  | PASS — API 26/26 rejoué après correction ; 60 tests des workspaces inchangés déjà verts |
-| Tests d’outillage                  | PASS — 296/296 rejoués après correction                                                 |
+| Tests d’outillage                  | PASS — 297/297, dont le contrat de génération Prisma en checkout propre                 |
 | Builds                             | PASS — API rejoué ; Web, Admin, Contracts, Config, UI et Android inchangés déjà verts   |
 | Compose rendu et absence de secret | PASS                                                                                    |
 | Upgrade `infra:prepare` historique | PASS — valeurs préservées, clé runtime ajoutée une fois, second passage identique       |
@@ -121,6 +144,8 @@ image ou ressource étrangère n’est supprimé.
 | Licences npm                       | PASS pré-correction — 1 134 paquets, zéro écart ; graphe inchangé, non rejoué ensuite   |
 | Scanner officiel                   | PASS — 353 fichiers, historique et 52 sources immuables contrôlés                       |
 | Workflows et OpenAPI               | PASS — 4 workflows, 4 actions verrouillées ; 34 chemins, 87 schémas, 18 invariants      |
+| Reproduction CI avant correction   | PASS — clone neuf, client absent ; TS2305 et trois TS2339 reproduits                    |
+| Correction CI en clone neuf        | PASS — génération indépendante avant typecheck, build et API 26/26                      |
 
 Le premier lancement post-reprise s’est arrêté avant création de conteneur car
 Docker Desktop était arrêté ; ses deux fichiers secrets temporaires ont été
