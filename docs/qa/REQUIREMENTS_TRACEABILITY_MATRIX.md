@@ -155,6 +155,26 @@ l’appelant.
 | GOV-S1.2-02-08 | Workflows post-fusion                     | Vérifié post-fusion | `push/main`, tous `completed/success` : Infrastructure `34986168463`, Launcher Windows `34986168571`, Security `34986168621`, Quality Linux `34986168424`                                                                                                                                                                         |
 | GOV-S1.2-02-09 | Distribution et lot suivant               | Vérifié post-fusion | aucun tag, release ou déploiement ; aucun endpoint, service, worker, seed, runtime métier ou interface livré ; S1.2-03 `Not started`, analyse soumise à décision séparée, S1.2-03A ni autorisé ni démarré                                                                                                                         |
 
+Cette dernière ligne reste le constat historique de clôture S1.2-02. Une
+autorisation Product Owner séparée a démarré S1.2-03A le 2026-09-16 depuis le
+merge `main` `95bdfcf30a14e05ae90b09150cf289e1e0343c0d`.
+
+## Contrôles S1.2-03A — PostgreSQL Least-Privilege Runtime Boundary
+
+| ID              | Contrôle                                  | État               | Preuve attendue                                                                                                                          |
+| --------------- | ----------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| GOV-S1.2-03A-01 | Séparation propriétaire/runtime           | Vérifié localement | identifiants et secrets distincts ; rôle runtime non propriétaire, `NOINHERIT`, sans attribut administratif ni membership                |
+| GOV-S1.2-03A-02 | Prisma 7.9.1 et attestation au démarrage  | Vérifié localement | `@prisma/adapter-pg` 7.9.1 sur pool runtime ; API accepte le rôle lecture et refuse le propriétaire/migrateur avant `application.init()` |
+| GOV-S1.2-03A-03 | Privilèges effectifs et héritage `PUBLIC` | Vérifié localement | `CONNECT`, `USAGE`, `SELECT` uniquement ; colonnes, vues, `MAINTAIN` et ACL par défaut inclus ; zéro droit `PUBLIC`                      |
+| GOV-S1.2-03A-04 | Refus des mutations et élévations         | Vérifié localement | SQLSTATE `42501` pour DDL, `TRUNCATE`, trigger, `SET ROLE`, `INSERT`, `UPDATE` et `DELETE`, sur deux bases                               |
+| GOV-S1.2-03A-05 | Idempotence et nettoyage ciblé            | Vérifié localement | script livré exécuté trois fois sur deux bases ; création, convergence, signature complète et récupération de dérive ; nettoyage ciblé   |
+| GOV-S1.2-03A-06 | Dépendance, licence et audit              | Vérifié localement | instantané prépublication du 2026-09-16 : provenance/licences contrôlées et audits à zéro ; graphe inchangé après correction, non rejoué |
+| GOV-S1.2-03A-07 | Périmètre et publication contrôlée        | Draft autorisée    | schéma, migrations, OpenAPI, contrats, workflows et clients inchangés ; aucun Ready, merge, endpoint ou runtime métier                   |
+
+Le [rapport S1.2-03A](SLICE_1_2_03A_POSTGRESQL_RUNTIME_BOUNDARY_REPORT.md)
+porte le détail reproductible. Les fonctionnalités métier S1.2-03B+ restent
+`Not started`.
+
 ## Contrôles de gouvernance de Sprint 0.1
 
 | ID          | Contrôle                                                        | État     | Preuve attendue                                           |

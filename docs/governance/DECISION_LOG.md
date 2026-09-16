@@ -371,6 +371,26 @@ ci-dessus et ne le réécrivent pas.
 | DEC-S1.2-02-08 | Distribution | Aucun tag, release ou déploiement n’accompagne la fusion. Aucun endpoint, service, worker, seed, runtime métier ou interface n’est livré par S1.2-02.                                                                                                                                                                                                                          | Périmètre et état GitHub constatés         | Accepted — scope preserved        |
 | DEC-S1.2-02-09 | Séquencement | S1.2-03 reste `Not started`. Son analyse demeure une proposition soumise à une décision séparée ; S1.2-03A n’est ni autorisé ni démarré par la clôture S1.2-02.                                                                                                                                                                                                                | Gouvernance et autorisation Product Owner  | Accepted — next slice not started |
 
+## 2026-09-16 — S1.2-03A PostgreSQL Least-Privilege Runtime Boundary
+
+Cette autorisation est postérieure à DEC-S1.2-02-09 et ne réécrit pas son
+constat historique. Elle part du merge `main`
+`95bdfcf30a14e05ae90b09150cf289e1e0343c0d`, après fusion de la PR #44 et
+succès des workflows `push/main` Infrastructure `35082285457`, Launcher Windows
+`35082285515`, Security `35082285620` et Quality Linux `35082285461`.
+
+| ID              | Nature      | Décision                                                                                                                                                                                                                                                                                                 | Autorité                                     | Statut                                              |
+| --------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- | --------------------------------------------------- |
+| DEC-S1.2-03A-01 | Accès base  | Le compte propriétaire/migrateur ne doit jamais être utilisé par l’API. Le rôle API est non propriétaire, `NOINHERIT`, sans membership ni attribut administratif, et limité à `CONNECT`, `USAGE` et `SELECT`.                                                                                            | Autorisation Product Owner du 2026-09-16     | Executed — locally validated                        |
+| DEC-S1.2-03A-02 | Fail closed | Avant `application.init()`, l’API vérifie identité, attributs, memberships, propriété et privilèges effectifs, y compris `PUBLIC`; tout droit inattendu bloque le démarrage avec des codes sûrs sans valeur de connexion.                                                                                | Objectif de sécurité S1.2-03A                | Executed — locally validated                        |
+| DEC-S1.2-03A-03 | Prisma      | Prisma 7.9.1 utilise `@prisma/adapter-pg` 7.9.1 sur le pool runtime unique partagé par la readiness. La version, provenance SLSA, licence, graphe et audit sont contrôlés avant installation.                                                                                                            | Stack verrouillée et gate supply-chain       | Accepted — zero audit vulnerability                 |
+| DEC-S1.2-03A-04 | Validation  | Deux bases PostgreSQL 18.4 indépendantes reçoivent les migrations existantes sous des propriétaires distincts. Le script livré prouve création, convergence, idempotence et récupération de dérive, puis DDL, `TRUNCATE`, trigger, `SET ROLE` et écritures sont refusés avec `42501`.                    | Preuves locales S1.2-03A                     | Executed — reproducible and cleaned                 |
+| DEC-S1.2-03A-05 | Périmètre   | Le rôle runtime reste en lecture seule. Aucun schéma, migration, OpenAPI, contrat, workflow, endpoint, service métier, worker, seed, interface, média ou paiement n’est ajouté. La publication autorisée reste limitée à un commit, un push normal et une Draft PR ; Ready et merge demeurent interdits. | Autorisation Product Owner et limites du lot | Accepted — Draft publication authorized; not merged |
+
+L’absence de commit, push et PR constatée lors de la validation locale du
+2026-09-16 reste l’instantané historique prépublication. Elle ne décrit pas
+l’état postérieur à l’autorisation de publication Draft.
+
 ## Catégories d’autorité
 
 - **Produit** : vision, économie, marque, contrats et périmètre irréversible ;

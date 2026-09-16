@@ -494,6 +494,46 @@ aucun endpoint, service, worker, seed, runtime métier ou interface n’est livr
 S1.2-03 reste `Not started`; son analyse est une proposition soumise à une
 décision séparée et S1.2-03A n’est ni autorisé ni démarré.
 
+Ce dernier état est conservé comme preuve historique de la clôture S1.2-02.
+Une autorisation Product Owner séparée du 2026-09-16 a ensuite démarré
+S1.2-03A depuis `main` au merge
+`95bdfcf30a14e05ae90b09150cf289e1e0343c0d`.
+
+## Frontière PostgreSQL runtime S1.2-03A
+
+S1.2-03A réduit l’impact d’une compromission de l’API en séparant le compte
+propriétaire/migrateur du rôle utilisé par le processus NestJS. Le rôle runtime
+est exclusivement lecteur : `CONNECT` sur la base, `USAGE` sur `public` et
+`SELECT` sur les tables. Il est `NOINHERIT`, ne possède aucun objet ni
+membership et n’a aucun attribut superuser, création de rôle/base, réplication
+ou contournement RLS. `CREATE`, `TEMPORARY`, droits de séquence, exécution des
+fonctions applicatives et droits d’écriture table sont absents.
+
+Les ACL effectives sont calculées avec `has_*_privilege` et les ACL catalogues
+dépliées avec `aclexplode`. Cette combinaison inclut les droits hérités de
+`PUBLIC`; le provisionneur révoque explicitement `PUBLIC` sur la base, le
+schéma, les tables, séquences et fonctions applicatives, ainsi que dans les
+privilèges par défaut du propriétaire/migrateur.
+
+| Menace                                                 | Mesure S1.2-03A                                                            | Preuve locale                                                        | Risque résiduel                                                        |
+| ------------------------------------------------------ | -------------------------------------------------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| API configurée avec le propriétaire ou un compte admin | attestation bloquante avant `application.init()`                           | démarrage propriétaire refusé, démarrage runtime accepté sur 2 bases | protection dépend du maintien de l’attestation dans les futurs lots    |
+| Privilège indirect via rôle ou `PUBLIC`                | `NOINHERIT`, zéro membership, inspection ACL, colonnes et droits effectifs | membership, ownership et `public_grant_count` à zéro                 | nouveaux schémas hors `public` devront être ajoutés explicitement      |
+| Altération du schéma ou neutralisation des triggers    | aucun `CREATE`, propriété, `TRIGGER` ou `TRUNCATE`                         | DDL, `TRUNCATE` et `ALTER TABLE ... DISABLE TRIGGER` refusés `42501` | le propriétaire/migrateur reste puissant et doit rester hors API       |
+| Élévation par `SET ROLE`                               | aucun rôle accordé au runtime                                              | `SET ROLE` propriétaire refusé `42501`                               | toute future délégation de rôle doit repasser cette gate               |
+| Écriture métier directe                                | `SELECT` seul sur les 34 tables, aucun droit de séquence                   | `INSERT`, `UPDATE` et `DELETE` refusés `42501`                       | les futurs services d’écriture exigeront des rôles distincts et bornés |
+| Dérive de provisioning                                 | script livré idempotent, ACL par défaut globales et `public`, deux bases   | création/convergence, signature complète et récupération de dérive   | le provisioning de production reste hors périmètre                     |
+
+Le pool `pg` est détenu par le client Prisma 7.9.1 via
+`@prisma/adapter-pg` 7.9.1 ; la readiness réutilise ce même chemin. Les erreurs
+de frontière exposent uniquement des codes de violation sûrs. Aucun secret,
+DSN ou nom de compte n’est journalisé.
+
+Ce contrôle n’autorise aucun endpoint, mutation métier, authentification
+administrateur, worker, seed, média ou paiement. Le rôle de lecture ne devra
+pas être élargi pour les futurs besoins d’écriture : ceux-ci nécessitent une
+frontière séparée, une transaction documentée et une nouvelle autorisation.
+
 ## Méthode de mise à jour
 
 Chaque lot affectant une frontière :

@@ -1,9 +1,9 @@
 # KORA+ Final — Source de vérité
 
-Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ ET FUSIONNÉ — S1.2-03 NON DÉMARRÉ**
+Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A VALIDÉ LOCALEMENT — PUBLICATION DRAFT AUTORISÉE — NON FUSIONNÉ**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-09-15
+Dernière réconciliation documentaire : 2026-09-16
 
 ## Hiérarchie normative
 
@@ -104,3 +104,24 @@ Security `34986168621` et Quality Linux `34986168424` ont tous conclu
 fusion n’ajoute aucun endpoint, service, worker, seed, runtime métier ou
 interface. S1.2-03 reste **Not started** ; son analyse demeure une proposition
 soumise à une décision séparée et S1.2-03A n’est ni autorisé ni démarré.
+
+Cette dernière phrase décrit l’état historique de la clôture S1.2-02. La PR #44
+a ensuite été fusionnée et fermée au merge `main`
+`95bdfcf30a14e05ae90b09150cf289e1e0343c0d`. Les workflows `push/main`
+Infrastructure `35082285457`, Launcher Windows `35082285515`, Security
+`35082285620` et Quality Linux `35082285461` ont tous conclu
+`completed/success` sur ce merge.
+
+Sur autorisation Product Owner distincte du 2026-09-16, S1.2-03A est démarré
+depuis ce merge dans une branche et un worktree dédiés. Son état courant est
+**validé localement ; publication en Draft PR autorisée ; non fusionné**.
+L’instantané local prépublication du 2026-09-16 a été établi alors que les 26
+fichiers étaient non indexés, non commités et non publiés ; cette formulation
+reste une preuve historique datée. Le lot sépare le compte
+propriétaire/migrateur PostgreSQL du rôle API de lecture, connecte Prisma 7.9.1
+par `@prisma/adapter-pg` 7.9.1 et refuse le démarrage si le compte API possède
+un attribut, une propriété, une appartenance ou un privilège inattendu, y
+compris via `PUBLIC`. Il n’ajoute aucun endpoint, service métier, worker, seed,
+écran, paiement, média, tag, release ou déploiement. Les capacités métier de
+S1.2-03 au-delà de cette frontière technique restent **Not started** et
+requièrent une autorisation séparée.

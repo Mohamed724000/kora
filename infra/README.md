@@ -21,12 +21,26 @@ Git. L’API de vérification utilise par défaut le port `3102`.
 
 `npm run infra:prepare` génère des valeurs aléatoires dans
 `infra/.local/secrets/` et une configuration locale dans
-`infra/.local/compose.env`. Les fichiers existants ne sont jamais écrasés.
+`infra/.local/compose.env`. Les fichiers existants ne sont jamais écrasés. Pour
+une configuration antérieure à S1.2-03A, la seule clé absente
+`KORA_POSTGRES_RUNTIME_USER=kora_runtime` est ajoutée en fin de fichier sans
+modifier les valeurs déjà présentes.
 
-PostgreSQL lit son mot de passe avec `POSTGRES_PASSWORD_FILE`. Redis reçoit son
+PostgreSQL reçoit deux secrets distincts : `postgres_password` pour le compte
+local propriétaire/migrateur et `postgres_runtime_password` pour l’API. Le
+second n’est jamais injecté comme variable Compose ni argument de processus ;
+le provisionneur le lit depuis `/run/secrets`. Redis reçoit également son
 secret comme fichier Compose et construit une configuration privée dans un
-`tmpfs` interne ; le mot de passe n’apparaît ni dans Compose rendu ni dans les
-arguments du processus `redis-server`.
+`tmpfs` interne.
+
+`infra:up` et `infra:check` rejouent le provisionneur idempotent. Le rôle
+`KORA_POSTGRES_RUNTIME_USER` est `NOINHERIT`, sans attribut administratif ni
+membership ; ses droits effectifs sont limités à `CONNECT`, `USAGE` du schéma
+`public` et `SELECT` sur les tables. Les droits de `PUBLIC`, les écritures,
+colonnes, vues, `MAINTAIN`, séquences, routines, DDL et objets temporaires sont
+révoqués, y compris dans les privilèges par défaut. Le compte
+`KORA_POSTGRES_USER` reste réservé aux migrations locales et ne doit jamais
+être fourni à l’API.
 
 Ces identifiants sont exclusivement locaux. Ils ne doivent jamais être copiés
 dans un fichier versionné ou un environnement partagé.
@@ -40,9 +54,9 @@ Sous Windows, utiliser `npm.cmd` :
 | `npm.cmd run infra:prepare`    | Crée les fichiers locaux ignorés sans écraser l’existant |
 | `npm.cmd run infra:validate`   | Valide Compose et ses invariants sans afficher de secret |
 | `npm.cmd run infra:pull`       | Télécharge seulement les deux images verrouillées        |
-| `npm.cmd run infra:up`         | Démarre et attend les deux health checks                 |
+| `npm.cmd run infra:up`         | Démarre, attend la santé et provisionne le rôle runtime  |
 | `npm.cmd run infra:status`     | Affiche uniquement l’état du projet local                |
-| `npm.cmd run infra:check`      | Vérifie labels, santé, PostgreSQL et Redis               |
+| `npm.cmd run infra:check`      | Vérifie la pile et reprovisionne la frontière runtime    |
 | `npm.cmd run infra:down`       | Arrête la pile sans supprimer les volumes                |
 | `npm.cmd run infra:verify`     | Vérifie persistance, reset ciblé et idempotence          |
 | `npm.cmd run infra:verify-api` | Vérifie les probes API et les pannes contrôlées          |
