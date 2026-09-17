@@ -1,9 +1,9 @@
 # KORA+ Final — Source de vérité
 
-Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A EN DRAFT PR #45 — R1 PUBLIÉ — PREUVE LOCALE PRÉPUBLICATION R2 VALIDÉE — NON FUSIONNÉ**
+Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A EN DRAFT PR #45 — R2 PUBLIÉ — CI R2 VERTE — NON FUSIONNÉ**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-09-16
+Dernière réconciliation documentaire : 2026-09-17
 
 ## Hiérarchie normative
 
@@ -114,8 +114,8 @@ Infrastructure `35082285457`, Launcher Windows `35082285515`, Security
 
 Sur autorisation Product Owner distincte du 2026-09-16, S1.2-03A est démarré
 depuis ce merge dans une branche et un worktree dédiés. Son état courant est
-**Draft PR #45 ouverte ; R1 publié ; preuve locale prépublication R2 validée ;
-non fusionné**.
+**Draft PR #45 ouverte ; R2 publié ; quatre workflows R2 réussis ; non
+fusionné**.
 L’instantané local prépublication du 2026-09-16 a été établi alors que les 26
 fichiers étaient non indexés, non commités et non publiés ; cette formulation
 reste une preuve historique datée. Le lot sépare le compte
@@ -132,13 +132,14 @@ initial de la Draft PR #45 avant R1. Ses premiers workflows `pull_request` ont
 conclu Security `35119052015` en succès et Infrastructure `35119052104`,
 Launcher Windows `35119052049` et Quality Linux `35119052101` en échec : après
 `npm ci`, le client Prisma n’était pas généré avant build, typecheck ou tests.
+Ces échecs R0 sont historiques.
 La correction R1 ajoute aux seules commandes API les hooks de génération
 Prisma et un test de contrat ; elle ne change ni dépendance, ni lockfile, ni
 workflow, ni schéma, migration, OpenAPI ou frontière PostgreSQL. Aucun des runs
 initiaux n’est relancé ; R1 produit des workflows distincts sur son propre head.
 
-Le commit R1 publié `41b3d8f33a637108814208258a3e99b105be1afc` est le head
-courant de la Draft PR #45. Launcher Windows `35155026009`, Security
+Le commit R1 publié `41b3d8f33a637108814208258a3e99b105be1afc` était le head
+de la Draft PR #45 avant R2. Launcher Windows `35155026009`, Security
 `35155025993` et Quality Linux `35155026016` ont conclu `completed/success` ;
 Infrastructure `35155026285` a conclu `completed/failure`. Cet échec R1 est une
 preuve historique : le smoke test provisionnait bien le rôle runtime, mais
@@ -149,5 +150,17 @@ correctif R2 déploie les migrations sous le propriétaire, reprovisionne les AC
 vérifie explicitement son refus, lance ensuite l’API avec le rôle runtime et
 remonte immédiatement toute sortie fatale après neutralisation des secrets.
 Aucun contrôle de privilèges n’est relâché et aucun droit propriétaire n’est
-accordé au runtime. Cette preuve locale ne préjuge pas du résultat des futurs
+accordé au runtime. Cette preuve locale R2, antérieure au commit, demeure un
+instantané historique du 2026-09-16 et ne préjugeait pas alors du résultat des
 workflows R2.
+
+R2 a ensuite été publié au commit
+`9d163cc34caa57cd671b6783048d89dde6d18069`. Les workflows `pull_request`
+Infrastructure `35162113781`, Launcher Windows `35162113686`, Security
+`35162113920` et Quality Linux `35162113691` ont tous conclu
+`completed/success` sur ce head exact. La PR #45 reste ouverte, Draft, non
+fusionnée et sans passage en Ready. S1.2-03B reste **Not started**.
+
+L’instantané local prépublication R3 daté du 2026-09-17 a été établi alors
+qu’aucun commit, push, changement de PR, rerun, Ready ou merge R3 n’avait été
+effectué ; aucun SHA ou Run ID R3 futur n’y était affirmé.

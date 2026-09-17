@@ -379,15 +379,15 @@ constat historique. Elle part du merge `main`
 succès des workflows `push/main` Infrastructure `35082285457`, Launcher Windows
 `35082285515`, Security `35082285620` et Quality Linux `35082285461`.
 
-| ID              | Nature      | Décision                                                                                                                                                                                                                                                                                                 | Autorité                                     | Statut                                   |
-| --------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- | ---------------------------------------- |
-| DEC-S1.2-03A-01 | Accès base  | Le compte propriétaire/migrateur ne doit jamais être utilisé par l’API. Le rôle API est non propriétaire, `NOINHERIT`, sans membership ni attribut administratif, et limité à `CONNECT`, `USAGE` et `SELECT`.                                                                                            | Autorisation Product Owner du 2026-09-16     | Executed — locally validated             |
-| DEC-S1.2-03A-02 | Fail closed | Avant `application.init()`, l’API vérifie identité, attributs, memberships, propriété et privilèges effectifs, y compris `PUBLIC`; tout droit inattendu bloque le démarrage avec des codes sûrs sans valeur de connexion.                                                                                | Objectif de sécurité S1.2-03A                | Executed — locally validated             |
-| DEC-S1.2-03A-03 | Prisma      | Prisma 7.9.1 utilise `@prisma/adapter-pg` 7.9.1 sur le pool runtime unique partagé par la readiness. La version, provenance SLSA, licence, graphe et audit sont contrôlés avant installation.                                                                                                            | Stack verrouillée et gate supply-chain       | Accepted — zero audit vulnerability      |
-| DEC-S1.2-03A-04 | Validation  | Deux bases PostgreSQL 18.4 indépendantes reçoivent les migrations existantes sous des propriétaires distincts. Le script livré prouve création, convergence, idempotence et récupération de dérive, puis DDL, `TRUNCATE`, trigger, `SET ROLE` et écritures sont refusés avec `42501`.                    | Preuves locales S1.2-03A                     | Executed — reproducible and cleaned      |
-| DEC-S1.2-03A-05 | Périmètre   | Le rôle runtime reste en lecture seule. Aucun schéma, migration, OpenAPI, contrat, workflow, endpoint, service métier, worker, seed, interface, média ou paiement n’est ajouté. La publication autorisée reste limitée à un commit, un push normal et une Draft PR ; Ready et merge demeurent interdits. | Autorisation Product Owner et limites du lot | Executed — Draft PR #45 open; not merged |
-| DEC-S1.2-03A-06 | CI propre   | Les commandes API `build`, `typecheck` et `test` doivent générer Prisma 7.9.1 avant leur exécution et réussir après `npm ci` sans dépendre d’un client produit par une commande antérieure. Un test de contrat verrouille les trois hooks npm.                                                           | Échecs CI initiaux de la Draft PR #45        | Executed — R1 integrated on Draft branch |
-| DEC-S1.2-03A-07 | Smoke infra | Le smoke Infrastructure applique les migrations sous le propriétaire/migrateur, reprovisionne les ACL, exige son refus par le garde, puis lance l’API exclusivement avec le rôle runtime. Une sortie prématurée remonte le fatal neutralisé sans attendre le timeout.                                    | Échec Infrastructure R1 `35155026285`        | R2 validated locally before publication  |
+| ID              | Nature      | Décision                                                                                                                                                                                                                                                                                  | Autorité                                     | Statut                                                  |
+| --------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- | ------------------------------------------------------- |
+| DEC-S1.2-03A-01 | Accès base  | Le compte propriétaire/migrateur ne doit jamais être utilisé par l’API. Le rôle API est non propriétaire, `NOINHERIT`, sans membership ni attribut administratif, et limité à `CONNECT`, `USAGE` et `SELECT`.                                                                             | Autorisation Product Owner du 2026-09-16     | Executed — locally validated                            |
+| DEC-S1.2-03A-02 | Fail closed | Avant `application.init()`, l’API vérifie identité, attributs, memberships, propriété et privilèges effectifs, y compris `PUBLIC`; tout droit inattendu bloque le démarrage avec des codes sûrs sans valeur de connexion.                                                                 | Objectif de sécurité S1.2-03A                | Executed — locally validated                            |
+| DEC-S1.2-03A-03 | Prisma      | Prisma 7.9.1 utilise `@prisma/adapter-pg` 7.9.1 sur le pool runtime unique partagé par la readiness. La version, provenance SLSA, licence, graphe et audit sont contrôlés avant installation.                                                                                             | Stack verrouillée et gate supply-chain       | Accepted — initial audit zero; not replayed after R1/R2 |
+| DEC-S1.2-03A-04 | Validation  | Deux bases PostgreSQL 18.4 indépendantes reçoivent les migrations existantes sous des propriétaires distincts. Le script livré prouve création, convergence, idempotence et récupération de dérive, puis DDL, `TRUNCATE`, trigger, `SET ROLE` et écritures sont refusés avec `42501`.     | Preuves locales S1.2-03A                     | Executed — reproducible and cleaned                     |
+| DEC-S1.2-03A-05 | Périmètre   | Le rôle runtime reste en lecture seule. Aucun schéma, migration, OpenAPI, contrat, workflow, endpoint, service métier, worker, seed, interface, média ou paiement n’est ajouté. La publication initiale, puis R1 et R2 ont été autorisés séparément ; Ready et merge demeurent interdits. | Autorisation Product Owner et limites du lot | Executed — Draft PR #45 open; not merged                |
+| DEC-S1.2-03A-06 | CI propre   | Les commandes API `build`, `typecheck` et `test` doivent générer Prisma 7.9.1 avant leur exécution et réussir après `npm ci` sans dépendre d’un client produit par une commande antérieure. Un test de contrat verrouille les trois hooks npm.                                            | Échecs CI initiaux de la Draft PR #45        | Executed — R1 integrated on Draft branch                |
+| DEC-S1.2-03A-07 | Smoke infra | Le smoke Infrastructure applique les migrations sous le propriétaire/migrateur, reprovisionne les ACL, exige son refus par le garde, puis lance l’API exclusivement avec le rôle runtime. Une sortie prématurée remonte le fatal neutralisé sans attendre le timeout.                     | Échec Infrastructure R1 `35155026285`        | R2 published — CI green on Draft branch                 |
 
 L’absence de commit, push et PR constatée lors de la validation locale du
 2026-09-16 reste l’instantané historique prépublication. Elle ne décrit pas
@@ -396,17 +396,18 @@ l’état postérieur à l’autorisation de publication Draft.
 La Draft PR #45 a ensuite été créée au head
 `974d7afa9d4dc9ceb88a35bd5bd7ae3f477cb875`. Security `35119052015` a réussi ;
 Infrastructure `35119052104`, Launcher Windows `35119052049` et Quality Linux
-`35119052101` ont échoué faute de génération Prisma après `npm ci`. La
-correction DEC-S1.2-03A-06 a été validée dans un clone propre puis intégrée par
-R1 sur la branche de la Draft PR. Aucun run initial n’est relancé ; les nouveaux
-runs sont attachés au head R1 distinct. La PR demeure Draft et S1.2-03B reste
-`Not started`.
+`35119052101` ont échoué faute de génération Prisma après `npm ci`. La séquence
+R0 et ses échecs sont historiques. La correction DEC-S1.2-03A-06 a été validée
+dans un clone propre puis intégrée par R1 sur la branche de la Draft PR. Aucun
+run initial n’est relancé ; les nouveaux runs sont attachés au head R1 distinct.
+La PR demeure Draft et S1.2-03B reste `Not started`.
 
 R1 est publié au commit `41b3d8f33a637108814208258a3e99b105be1afc`.
 Launcher Windows `35155026009`, Security `35155025993` et Quality Linux
 `35155026016` ont réussi ; Infrastructure `35155026285` a échoué. Le log complet
-montre que le provisionnement runtime et les contrôles de l’infrastructure
-réussissent. Dans la version R1 publiée, `verify-api-health.mjs` transmettait
+de cet échec R1 historique montre que le provisionnement runtime et les
+contrôles de l’infrastructure réussissent. Dans la version R1 publiée,
+`verify-api-health.mjs` transmettait
 encore `KORA_POSTGRES_USER` et `postgres_password` au processus API. La
 reproduction isolée neutralisée obtient le fatal `RuntimeDatabaseBoundaryError`
 attendu pour le propriétaire. DEC-S1.2-03A-07 corrige localement ce câblage sans
@@ -414,7 +415,19 @@ modifier le garde, les privilèges PostgreSQL, les migrations, le workflow ou le
 lockfile. Cette preuve décrit l’instantané local prépublication R2 : à cet
 instant, la correction n’avait fait l’objet d’aucun commit, push, rerun ou
 changement de la Draft PR #45 et ne préjugeait pas du résultat de ses futurs
-workflows.
+workflows. Cet instantané local R2 du 2026-09-16 reste une preuve historique.
+
+R2 a ensuite été publié au commit
+`9d163cc34caa57cd671b6783048d89dde6d18069`. Infrastructure `35162113781`,
+Launcher Windows `35162113686`, Security `35162113920` et Quality Linux
+`35162113691` ont tous terminé `pull_request/completed/success` sur ce head
+exact. La PR #45 demeure ouverte, Draft et non fusionnée ; S1.2-03B reste
+`Not started`.
+
+L’instantané local prépublication de la réconciliation documentaire R3 du
+2026-09-17 a été établi alors qu’aucun commit, push, changement de PR, rerun,
+Ready ou merge R3 n’avait été effectué ; aucun SHA ou Run ID R3 futur n’y était
+affirmé.
 
 ## Catégories d’autorité
 

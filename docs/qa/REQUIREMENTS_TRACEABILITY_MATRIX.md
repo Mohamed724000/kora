@@ -169,24 +169,33 @@ merge `main` `95bdfcf30a14e05ae90b09150cf289e1e0343c0d`.
 | GOV-S1.2-03A-04 | Refus des mutations et élévations         | Vérifié localement | SQLSTATE `42501` pour DDL, `TRUNCATE`, trigger, `SET ROLE`, `INSERT`, `UPDATE` et `DELETE`, sur deux bases                               |
 | GOV-S1.2-03A-05 | Idempotence et nettoyage ciblé            | Vérifié localement | script livré exécuté trois fois sur deux bases ; création, convergence, signature complète et récupération de dérive ; nettoyage ciblé   |
 | GOV-S1.2-03A-06 | Dépendance, licence et audit              | Vérifié localement | instantané prépublication du 2026-09-16 : provenance/licences contrôlées et audits à zéro ; graphe inchangé après correction, non rejoué |
-| GOV-S1.2-03A-07 | Périmètre et publication contrôlée        | Draft #45 ouverte  | head R1 publié `41b3d8f…` ; aucun Ready ou merge ; schéma, migrations, OpenAPI, contrats, workflows et clients inchangés                 |
+| GOV-S1.2-03A-07 | Périmètre et publication contrôlée        | Draft #45 ouverte  | head R2 publié `9d163cc…` ; aucun Ready ou merge ; schéma, migrations, OpenAPI, contrats, workflows et clients inchangés                 |
 | GOV-S1.2-03A-08 | Reproductibilité du client Prisma en CI   | R1 publié          | clone neuf après `npm ci` : client absent, puis génération automatique et succès indépendants de typecheck, build et 26 tests API        |
-| GOV-S1.2-03A-09 | Identité du smoke Infrastructure          | Preuve locale R2   | migrations propriétaire ; refus propriétaire explicite ; API runtime saine ; fatal fail-fast neutralisé ; aucun privilège relâché        |
+| GOV-S1.2-03A-09 | Identité du smoke Infrastructure          | R2 publié et vert  | migrations propriétaire ; refus propriétaire explicite ; API runtime saine ; fatal fail-fast neutralisé ; quatre workflows R2 réussis    |
 
 Le [rapport S1.2-03A](SLICE_1_2_03A_POSTGRESQL_RUNTIME_BOUNDARY_REPORT.md)
 porte le détail reproductible. Les fonctionnalités métier S1.2-03B+ restent
 `Not started`. Les runs initiaux de la Draft PR #45 ont réussi pour Security
 `35119052015` et échoué pour Infrastructure `35119052104`, Launcher Windows
-`35119052049` et Quality Linux `35119052101`. La correction
-GOV-S1.2-03A-08 est intégrée par R1 ; aucun run initial n’est relancé et la
-preuve des nouveaux runs distincts est portée par la Draft PR #45. Au head R1
+`35119052049` et Quality Linux `35119052101`. Les échecs R0 sont historiques.
+La correction GOV-S1.2-03A-08 est intégrée par R1 ; aucun run initial n’est
+relancé et la preuve des nouveaux runs distincts est portée par la Draft PR #45. Au head R1
 `41b3d8f33a637108814208258a3e99b105be1afc`, Launcher Windows `35155026009`,
 Security `35155025993` et Quality Linux `35155026016` sont
-`completed/success`, tandis qu’Infrastructure `35155026285` est
-`completed/failure`. GOV-S1.2-03A-09 consigne l’instantané local antérieur au
-commit R2 : le smoke ne confond plus le propriétaire/migrateur avec le rôle
-runtime et remonte une sortie fatale neutralisée sans attendre un timeout. Cette
-preuve ne préjuge pas du résultat des futurs workflows R2.
+`completed/success`, tandis que l’échec historique Infrastructure R1
+`35155026285` est `completed/failure`. GOV-S1.2-03A-09 conserve comme preuve
+historique l’instantané local R2 du 2026-09-16, antérieur au commit : le smoke
+ne confond plus le propriétaire/migrateur avec le rôle runtime et remonte une sortie
+fatale neutralisée sans attendre un timeout.
+
+R2 est ensuite publié au head
+`9d163cc34caa57cd671b6783048d89dde6d18069`. Infrastructure `35162113781`,
+Launcher Windows `35162113686`, Security `35162113920` et Quality Linux
+`35162113691` sont tous `pull_request/completed/success` sur ce SHA exact. La
+PR #45 reste ouverte, Draft et non fusionnée ; S1.2-03B reste `Not started`.
+L’instantané local prépublication de la réconciliation R3 du 2026-09-17 a été
+établi alors qu’aucun commit, push, changement de PR, rerun, Ready ou merge R3
+n’avait été effectué ; aucun SHA ou Run ID R3 futur n’y était affirmé.
 
 ## Contrôles de gouvernance de Sprint 0.1
 

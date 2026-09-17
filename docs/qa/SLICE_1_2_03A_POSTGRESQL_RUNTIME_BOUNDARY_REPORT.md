@@ -1,7 +1,8 @@
 # S1.2-03A — PostgreSQL Least-Privilege Runtime Boundary & Prisma Adapter
 
-Date : 2026-09-16
-État : **DRAFT PR #45 OUVERTE — R1 PUBLIÉ — PREUVE LOCALE PRÉPUBLICATION R2 VALIDÉE — NON FUSIONNÉ**
+Date initiale : 2026-09-16
+Dernière réconciliation : 2026-09-17
+État : **DRAFT PR #45 OUVERTE — R2 PUBLIÉ — QUATRE WORKFLOWS R2 RÉUSSIS — NON FUSIONNÉ**
 
 ## Baseline et autorisation
 
@@ -20,7 +21,7 @@ Le travail local est isolé sur la branche
 `feat/s1-2-03a-postgresql-runtime-boundary` et un worktree dédié. Les anciens
 worktrees ne sont ni réutilisés ni modifiés.
 
-## Publication Draft, R1 et preuve locale prépublication R2
+## Publication Draft, échecs R0/R1 historiques et R2 publié
 
 Le commit initial publié `974d7afa9d4dc9ceb88a35bd5bd7ae3f477cb875`, parent
 `95bdfcf30a14e05ae90b09150cf289e1e0343c0d`, était le head de la Draft PR #45
@@ -30,6 +31,8 @@ avant R1. Ses workflows `pull_request` initiaux ont conclu :
 - Infrastructure `35119052104` : `completed/failure` pendant le build API ;
 - Launcher Windows `35119052049` : `completed/failure` pendant les tests API ;
 - Quality Linux `35119052101` : `completed/failure` pendant le typecheck API.
+
+Ces trois échecs R0 sont historiques.
 
 Un clone neuf a reproduit la cause après `npm ci` :
 `node_modules/.prisma/client/default.d.ts` était absent, puis TS2305 sur
@@ -43,14 +46,16 @@ intégré à la branche de la Draft PR ; aucun run initial n’est relancé et l
 nouveaux workflows sont attachés à son head distinct.
 
 Le commit R1 publié `41b3d8f33a637108814208258a3e99b105be1afc`, parent
-`974d7afa9d4dc9ceb88a35bd5bd7ae3f477cb875`, est le head local, distant et de
-la Draft PR #45. Ses workflows `pull_request` ont conclu :
+`974d7afa9d4dc9ceb88a35bd5bd7ae3f477cb875`, était le head local, distant et de
+la Draft PR #45 avant R2. Ses workflows `pull_request` ont conclu :
 
 - Launcher Windows `35155026009` : `completed/success` ;
 - Security `35155025993` : `completed/success` ;
 - Quality Linux `35155026016` : `completed/success` ;
 - Infrastructure `35155026285` : `completed/failure` dans
   « Build and verify API health transitions ».
+
+L’échec Infrastructure R1 est historique.
 
 Le log Infrastructure complet montre que préparation, validation, pull, cycle
 de vie, génération Prisma 7.9.1 et build API réussissent. Le provisionneur crée
@@ -66,7 +71,7 @@ exacte : `RuntimeDatabaseBoundaryError` avec les violations
 `unexpected_table_privilege` et `unexpected_routine_privilege`. Ce refus du
 propriétaire/migrateur est le comportement de sécurité attendu.
 
-Dans son instantané local antérieur au commit, le correctif R2 :
+Dans son instantané local du 2026-09-16 antérieur au commit, le correctif R2 :
 
 1. exécute `prisma migrate deploy` sous le propriétaire/migrateur sur le runner
    neuf ;
@@ -80,7 +85,25 @@ Dans son instantané local antérieur au commit, le correctif R2 :
 
 Le garde API, le provisionneur, les droits PostgreSQL et les migrations restent
 inchangés. Aucun droit propriétaire n’est accordé au rôle runtime. Ces résultats
-locaux ne préjugent pas du résultat des futurs workflows R2.
+locaux constituent une preuve historique antérieure à la publication R2 et ne
+préjugeaient pas alors du résultat de ses workflows.
+
+R2 a ensuite été publié au commit
+`9d163cc34caa57cd671b6783048d89dde6d18069`, parent
+`41b3d8f33a637108814208258a3e99b105be1afc`. Les quatre workflows
+`pull_request` ont conclu sur ce head exact :
+
+- Infrastructure `35162113781` : `completed/success` ;
+- Launcher Windows `35162113686` : `completed/success` ;
+- Security `35162113920` : `completed/success` ;
+- Quality Linux `35162113691` : `completed/success`.
+
+La PR #45 reste ouverte, Draft et non fusionnée. Aucun passage en Ready ou
+merge n’a été effectué et S1.2-03B reste `Not started`.
+
+L’instantané local prépublication de la réconciliation R3 du 2026-09-17 a été
+établi alors qu’aucun commit, push, changement de PR, rerun, Ready ou merge R3
+n’avait été effectué ; aucun SHA ou Run ID R3 futur n’y était affirmé.
 
 ## Frontière livrée
 
@@ -189,6 +212,7 @@ image ou ressource étrangère n’est supprimé.
 | Reproduction Infrastructure R1     | PASS — propriétaire transmis ; fatal `RuntimeDatabaseBoundaryError` neutralisé           |
 | Correctif Infrastructure isolé     | PASS — migrations owner, refus owner, runtime live/ready, pannes et reprises 200/503/200 |
 | Confidentialité du smoke corrigé   | PASS — aucun secret ni URL PostgreSQL/Redis dans les sorties capturées                   |
+| Workflows R2 publiés               | PASS — quatre `pull_request/completed/success` sur `9d163cc…`                            |
 
 Le premier lancement post-reprise s’est arrêté avant création de conteneur car
 Docker Desktop était arrêté ; ses deux fichiers secrets temporaires ont été
@@ -246,6 +270,9 @@ fondé ouvert.
   push, PR, Ready, merge, tag, release ou déploiement ; la publication Draft
   ultérieurement autorisée ne vaut ni Ready, ni merge, ni démarrage de
   S1.2-03B ;
-- le correctif Infrastructure R2 décrit ci-dessus est un instantané local
-  postérieur à R1 et antérieur à son commit : à cet instant, aucun commit, push,
-  rerun ou changement de la PR #45 n’avait été effectué.
+- le correctif Infrastructure R2 décrit ci-dessus conserve son instantané local
+  historique, postérieur à R1 et antérieur à son commit ; sa publication et ses
+  quatre workflows réussis sont consignés séparément sans réécrire cette preuve ;
+- l’instantané local prépublication de la réconciliation R3 du 2026-09-17 a été
+  établi avant tout commit, push, changement de PR, rerun, Ready ou merge R3 et
+  n’affirmait aucun SHA ou Run ID R3 futur.

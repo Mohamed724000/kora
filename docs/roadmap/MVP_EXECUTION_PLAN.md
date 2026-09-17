@@ -10,26 +10,26 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 
 ## État des gates et lots
 
-| Gate ou lot         | Objectif                                      | Statut                           |
-| ------------------- | --------------------------------------------- | -------------------------------- |
-| Gate 0              | Sources approuvées et readiness clean room    | Completed                        |
-| Lot 00              | Preflight read-only                           | Completed                        |
-| Lot 00B             | Remédiation documentaire                      | Completed                        |
-| Lot 00C             | Canonicalisation AdminLTE                     | Completed                        |
-| S0.1                | Gouvernance et Git                            | Completed                        |
-| S0.2                | Contrat monorepo et versions                  | Completed                        |
-| S0.3                | Fondations applicatives                       | Closed and merged                |
-| S0.4                | Infrastructure locale                         | Closed and merged                |
-| S0.5                | CI, sécurité et observabilité                 | Closed and merged                |
-| M0.1                | Dependency Governance                         | Closed and merged                |
-| M0.2                | Supply-chain Security Hotfix                  | Closed and merged                |
-| S0.6                | Foundation Gate                               | Closed and merged                |
-| Slice 1 / S1.1      | Contrats, données cibles et expérience audio  | Closed and merged                |
-| Slice 1 / S1.2-01   | Contract & Data Readiness Gate                | Contract and data gate complete  |
-| Slice 1 / S1.2-02   | Baseline PostgreSQL et contraintes SQL        | Closed and merged — PR #43       |
-| Slice 1 / S1.2-03A  | Frontière PostgreSQL runtime en lecture seule | Draft PR #45 — R2 local evidence |
-| Slice 1 / S1.2-03B+ | Fonctionnalités runtime métier du pilote      | Not started                      |
-| Slices suivantes    | Fonctionnalités produit ultérieures           | Not started                      |
+| Gate ou lot         | Objectif                                      | Statut                            |
+| ------------------- | --------------------------------------------- | --------------------------------- |
+| Gate 0              | Sources approuvées et readiness clean room    | Completed                         |
+| Lot 00              | Preflight read-only                           | Completed                         |
+| Lot 00B             | Remédiation documentaire                      | Completed                         |
+| Lot 00C             | Canonicalisation AdminLTE                     | Completed                         |
+| S0.1                | Gouvernance et Git                            | Completed                         |
+| S0.2                | Contrat monorepo et versions                  | Completed                         |
+| S0.3                | Fondations applicatives                       | Closed and merged                 |
+| S0.4                | Infrastructure locale                         | Closed and merged                 |
+| S0.5                | CI, sécurité et observabilité                 | Closed and merged                 |
+| M0.1                | Dependency Governance                         | Closed and merged                 |
+| M0.2                | Supply-chain Security Hotfix                  | Closed and merged                 |
+| S0.6                | Foundation Gate                               | Closed and merged                 |
+| Slice 1 / S1.1      | Contrats, données cibles et expérience audio  | Closed and merged                 |
+| Slice 1 / S1.2-01   | Contract & Data Readiness Gate                | Contract and data gate complete   |
+| Slice 1 / S1.2-02   | Baseline PostgreSQL et contraintes SQL        | Closed and merged — PR #43        |
+| Slice 1 / S1.2-03A  | Frontière PostgreSQL runtime en lecture seule | Draft PR #45 — R2 published/green |
+| Slice 1 / S1.2-03B+ | Fonctionnalités runtime métier du pilote      | Not started                       |
+| Slices suivantes    | Fonctionnalités produit ultérieures           | Not started                       |
 
 ## Sprint 0 — Clean-room foundation
 
@@ -136,7 +136,7 @@ démarrait ni Slice 1 ni aucune exigence produit.
 
 ## Slice 1 — Audio purchase pilot
 
-Statut : **In progress — S1.2-02 closed — S1.2-03A Draft PR #45, R2 prepublication evidence validated — business runtime not started**
+Statut : **In progress — S1.2-02 closed — S1.2-03A Draft PR #45, R2 published and green — business runtime not started**
 
 Parcours cible :
 
@@ -242,7 +242,7 @@ fusion de la PR #44 et les quatre workflows `push/main` réussis.
 
 ### S1.2-03A — PostgreSQL Least-Privilege Runtime Boundary & Prisma Adapter
 
-Statut : **Draft PR #45 open — R1 published — R2 local prepublication evidence validated — not merged**
+Statut : **Draft PR #45 open — R2 published — four R2 workflows green — not merged**
 
 L’instantané local prépublication du 2026-09-16 a été validé avant indexation,
 commit, push ou création de PR. Ces absences décrivent uniquement cet instantané
@@ -250,15 +250,27 @@ historique. La Draft PR #45 avait pour head initial publié
 `974d7afa9d4dc9ceb88a35bd5bd7ae3f477cb875`. Ses runs initiaux ont réussi pour
 Security `35119052015` et échoué pour Infrastructure `35119052104`, Launcher
 Windows `35119052049` et Quality Linux `35119052101`, faute de génération du
-client Prisma après `npm ci`. La correction R1 est publiée au head courant
+client Prisma après `npm ci`. Ces échecs R0 sont historiques. La correction R1
+a été publiée au head
 `41b3d8f33a637108814208258a3e99b105be1afc`. Launcher Windows `35155026009`,
-Security `35155025993` et Quality Linux `35155026016` y ont réussi ;
-Infrastructure `35155026285` y a échoué parce que son smoke lançait encore l’API
-avec le propriétaire/migrateur, que le garde a correctement refusé. Dans son
-instantané local antérieur au commit, le correctif R2 conserve les migrations
-sous le propriétaire, vérifie ce refus puis lance l’API avec le rôle runtime
-provisionné. Cette preuve n’annonce aucun résultat CI R2 futur. Aucun run n’est
-relancé et aucun passage en Ready ou merge n’est autorisé.
+Security `35155025993` et Quality Linux `35155026016` y ont réussi ; l’échec
+historique Infrastructure R1 `35155026285` venait du smoke qui lançait encore
+l’API avec le propriétaire/migrateur, que le garde a correctement refusé. Dans
+son instantané local antérieur au commit, le correctif R2 conservait les migrations
+sous le propriétaire, vérifiait ce refus puis lançait l’API avec le rôle runtime
+provisionné. Cette preuve locale R2 du 2026-09-16 est historique et n’annonçait
+aucun résultat CI futur.
+
+R2 a ensuite été publié au head
+`9d163cc34caa57cd671b6783048d89dde6d18069`. Infrastructure `35162113781`,
+Launcher Windows `35162113686`, Security `35162113920` et Quality Linux
+`35162113691` ont tous conclu `pull_request/completed/success` sur ce head
+exact. La PR #45 reste ouverte, Draft et non fusionnée ; aucun passage en Ready
+ou merge n’est autorisé et S1.2-03B reste `Not started`.
+
+L’instantané local prépublication de la réconciliation R3 du 2026-09-17 a été
+établi alors qu’aucun commit, push, changement de PR ou rerun R3 n’avait été
+effectué ; aucun SHA ou Run ID R3 futur n’y était affirmé.
 
 Périmètre livré localement :
 
