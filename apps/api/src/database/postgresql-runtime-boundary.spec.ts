@@ -17,7 +17,9 @@ function validSnapshot(): RuntimeBoundarySnapshot {
     canCreateTemporaryObjects: false,
     canUseSchema: true,
     currentUser: SAFE_RUNTIME_USER,
+    defaultPrivilegeViolationCount: 0,
     directMembershipCount: 0,
+    grantOptionViolationCount: 0,
     ownedObjectCount: 0,
     publicGrantCount: 0,
     roleCanBypassRls: false,
@@ -32,6 +34,8 @@ function validSnapshot(): RuntimeBoundarySnapshot {
     sessionUser: SAFE_RUNTIME_USER,
     tableCount: 34,
     tablePrivilegeViolationCount: 0,
+    typePrivilegeCount: 0,
+    unexpectedSchemaPrivilegeCount: 0,
   };
 }
 
@@ -70,15 +74,23 @@ describe('PostgresqlRuntimeBoundary', () => {
     const snapshot = {
       ...validSnapshot(),
       canCreateSchemaObjects: true,
+      defaultPrivilegeViolationCount: 1,
+      grantOptionViolationCount: 1,
       publicGrantCount: 1,
       roleIsSuperuser: true,
       tablePrivilegeViolationCount: 1,
+      typePrivilegeCount: 1,
+      unexpectedSchemaPrivilegeCount: 1,
     };
 
     expect(runtimeBoundaryViolations(snapshot, SAFE_RUNTIME_USER)).toEqual([
       'administrative_role_attribute',
       'database_or_schema_write_privilege',
+      'unexpected_schema_privilege',
       'unexpected_table_privilege',
+      'unexpected_type_privilege',
+      'unexpected_default_privilege',
+      'unexpected_grant_option',
       'public_privilege_present',
     ]);
   });

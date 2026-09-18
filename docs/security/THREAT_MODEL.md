@@ -506,23 +506,39 @@ propriétaire/migrateur du rôle utilisé par le processus NestJS. Le rôle runt
 est exclusivement lecteur : `CONNECT` sur la base, `USAGE` sur `public` et
 `SELECT` sur les tables. Il est `NOINHERIT`, ne possède aucun objet ni
 membership et n’a aucun attribut superuser, création de rôle/base, réplication
-ou contournement RLS. `CREATE`, `TEMPORARY`, droits de séquence, exécution des
-fonctions applicatives et droits d’écriture table sont absents.
+ou contournement RLS. `CREATE`, `TEMPORARY`, droits de séquence ou de type,
+exécution des fonctions applicatives, options de redélégation et droits
+d’écriture table sont absents dans tous les schémas non système de la base
+courante.
 
 Les ACL effectives sont calculées avec `has_*_privilege` et les ACL catalogues
 dépliées avec `aclexplode`. Cette combinaison inclut les droits hérités de
-`PUBLIC`; le provisionneur révoque explicitement `PUBLIC` sur la base, le
-schéma, les tables, séquences et fonctions applicatives, ainsi que dans les
-privilèges par défaut du propriétaire/migrateur.
+`PUBLIC`; le provisionneur révoque explicitement `PUBLIC` sur la base et le
+périmètre `public`, ainsi que dans les privilèges par défaut du
+propriétaire/migrateur. Pour les autres schémas non système, il inspecte
+propriété exhaustive via `pg_shdepend`, accès de schéma, objets, colonnes,
+séquences, routines, types, options de redélégation et ACL par défaut. Tout état
+hors profil est refusé sans réattribution de propriété ni réécriture automatique
+d’une ACL tierce.
 
-| Menace                                                 | Mesure S1.2-03A                                                            | Preuve locale                                                        | Risque résiduel                                                        |
-| ------------------------------------------------------ | -------------------------------------------------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| API configurée avec le propriétaire ou un compte admin | attestation bloquante avant `application.init()`                           | démarrage propriétaire refusé, démarrage runtime accepté sur 2 bases | protection dépend du maintien de l’attestation dans les futurs lots    |
-| Privilège indirect via rôle ou `PUBLIC`                | `NOINHERIT`, zéro membership, inspection ACL, colonnes et droits effectifs | membership, ownership et `public_grant_count` à zéro                 | nouveaux schémas hors `public` devront être ajoutés explicitement      |
-| Altération du schéma ou neutralisation des triggers    | aucun `CREATE`, propriété, `TRIGGER` ou `TRUNCATE`                         | DDL, `TRUNCATE` et `ALTER TABLE ... DISABLE TRIGGER` refusés `42501` | le propriétaire/migrateur reste puissant et doit rester hors API       |
-| Élévation par `SET ROLE`                               | aucun rôle accordé au runtime                                              | `SET ROLE` propriétaire refusé `42501`                               | toute future délégation de rôle doit repasser cette gate               |
-| Écriture métier directe                                | `SELECT` seul sur les 34 tables, aucun droit de séquence                   | `INSERT`, `UPDATE` et `DELETE` refusés `42501`                       | les futurs services d’écriture exigeront des rôles distincts et bornés |
-| Dérive de provisioning                                 | script livré idempotent, ACL par défaut globales et `public`, deux bases   | création/convergence, signature complète et récupération de dérive   | le provisioning de production reste hors périmètre                     |
+| Menace                                                 | Mesure S1.2-03A                                                          | Preuve locale                                                        | Risque résiduel                                                        |
+| ------------------------------------------------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| API configurée avec le propriétaire ou un compte admin | attestation bloquante avant `application.init()`                         | démarrage propriétaire refusé, démarrage runtime accepté sur 2 bases | protection dépend du maintien de l’attestation dans les futurs lots    |
+| Privilège indirect via rôle ou `PUBLIC`                | `NOINHERIT`, zéro membership, inspection de tous les schémas non système | propriété runtime et `PUBLIC CREATE` externes refusés sur 2 bases    | la classification des schémas système doit suivre PostgreSQL           |
+| Altération du schéma ou neutralisation des triggers    | aucun `CREATE`, propriété, `TRIGGER` ou `TRUNCATE`                       | DDL, `TRUNCATE` et `ALTER TABLE ... DISABLE TRIGGER` refusés `42501` | le propriétaire/migrateur reste puissant et doit rester hors API       |
+| Élévation par `SET ROLE`                               | aucun rôle accordé au runtime                                            | `SET ROLE` propriétaire refusé `42501`                               | toute future délégation de rôle doit repasser cette gate               |
+| Écriture métier directe                                | `SELECT` seul sur les 34 tables, aucun droit de séquence                 | `INSERT`, `UPDATE` et `DELETE` refusés `42501`                       | les futurs services d’écriture exigeront des rôles distincts et bornés |
+| Dérive de provisioning                                 | idempotence sur `public`, refus déterministe des états tiers dangereux   | 18 succès, 11 refus inchangés et 4 grant options réparées par base   | le provisioning de production reste hors périmètre                     |
+
+La preuve locale R4 du 2026-09-18 ajoute sur chacune des deux bases un schéma
+sain inaccessible, puis isole 11 états négatifs : propriété de schéma, objet
+`public` et collation, `CREATE` via `PUBLIC`, privilèges de table, colonne,
+séquence, routine et type, default ACL externe et default ACL tiers dans
+`public`. L’API et le provisionneur les refusent sans modifier leur signature.
+Quatre options de redélégation — base, schéma, table et default ACL — sont
+isolément détectées puis normalisées. Cet instantané historique prépublication
+a été établi avant tout commit ou push R4 et ne décrit pas l’état GitHub
+ultérieur.
 
 Le pool `pg` est détenu par le client Prisma 7.9.1 via
 `@prisma/adapter-pg` 7.9.1 ; la readiness réutilise ce même chemin. Les erreurs

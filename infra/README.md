@@ -37,10 +37,23 @@ secret comme fichier Compose et construit une configuration privée dans un
 `KORA_POSTGRES_RUNTIME_USER` est `NOINHERIT`, sans attribut administratif ni
 membership ; ses droits effectifs sont limités à `CONNECT`, `USAGE` du schéma
 `public` et `SELECT` sur les tables. Les droits de `PUBLIC`, les écritures,
-colonnes, vues, `MAINTAIN`, séquences, routines, DDL et objets temporaires sont
-révoqués, y compris dans les privilèges par défaut. Le compte
+colonnes, vues, `MAINTAIN`, séquences, routines, types, options de redélégation,
+DDL et objets temporaires sont révoqués, y compris dans les privilèges par
+défaut. Le compte
 `KORA_POSTGRES_USER` reste réservé aux migrations locales et ne doit jamais
 être fourni à l’API.
+
+Avant de normaliser les ACL du périmètre `public`, le provisionneur inspecte
+tous les schémas non système de la base courante. Un schéma tiers possédé ou
+accessible par le runtime, un objet possédé dans `public` ou ailleurs, un
+`CREATE` hérité de `PUBLIC`, un privilège d’objet/colonne/séquence/routine/type,
+une option de redélégation ou une ACL par défaut hors profil — y compris celle
+d’un propriétaire tiers dans `public` — provoque un refus non nul avec un
+diagnostic borné sans secret. Le script ne réattribue pas la propriété et ne
+réécrit pas les ACL de ces schémas préexistants : leur correction exige une
+décision explicite du propriétaire de la base. Toutes les mutations du rôle,
+du credential et des ACL sont dans la même transaction : un refus restaure
+l’état antérieur complet.
 
 Ces identifiants sont exclusivement locaux. Ils ne doivent jamais être copiés
 dans un fichier versionné ou un environnement partagé.

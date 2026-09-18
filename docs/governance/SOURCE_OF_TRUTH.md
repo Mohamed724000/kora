@@ -1,9 +1,9 @@
 # KORA+ Final — Source de vérité
 
-Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A EN DRAFT PR #45 — R2 PUBLIÉ — CI R2 VERTE — NON FUSIONNÉ**
+Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A EN DRAFT PR #45 — R3 PUBLIÉ — CI R3 VERTE — R4 VALIDÉ LOCALEMENT — PUBLICATION R4 AUTORISÉE — NON FUSIONNÉ**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-09-17
+Dernière réconciliation documentaire : 2026-09-18
 
 ## Hiérarchie normative
 
@@ -114,8 +114,8 @@ Infrastructure `35082285457`, Launcher Windows `35082285515`, Security
 
 Sur autorisation Product Owner distincte du 2026-09-16, S1.2-03A est démarré
 depuis ce merge dans une branche et un worktree dédiés. Son état courant est
-**Draft PR #45 ouverte ; R2 publié ; quatre workflows R2 réussis ; non
-fusionné**.
+**Draft PR #45 ouverte ; R3 publié ; quatre workflows R3 réussis ; validation
+locale R4 achevée ; publication R4 autorisée ; non fusionné**.
 L’instantané local prépublication du 2026-09-16 a été établi alors que les 26
 fichiers étaient non indexés, non commités et non publiés ; cette formulation
 reste une preuve historique datée. Le lot sépare le compte
@@ -164,3 +164,24 @@ fusionnée et sans passage en Ready. S1.2-03B reste **Not started**.
 L’instantané local prépublication R3 daté du 2026-09-17 a été établi alors
 qu’aucun commit, push, changement de PR, rerun, Ready ou merge R3 n’avait été
 effectué ; aucun SHA ou Run ID R3 futur n’y était affirmé.
+
+R3 a ensuite été publié au commit
+`8f8c447b9badd3c8bd330982a1c0e7ef38e246cf`. Les workflows `pull_request`
+Infrastructure `35209186465`, Launcher Windows `35209186447`, Security
+`35209186482` et Quality Linux `35209186464` ont tous conclu
+`completed/success` sur ce head exact.
+
+La revue CTO post-R3 a bloqué la fusion sur deux constats : le compteur
+historique R1 du corps de PR et l’inspection PostgreSQL limitée à `public`.
+L’unique correction GitHub autorisée le 2026-09-18 a remplacé le compteur R1
+`+116/-42` par sa valeur Git/GitHub `+118/-42`, sans changer le cumul R3
+`4 commits, 28 fichiers, +2761/-187`, le titre, le head, la base ou le statut
+Draft. Le correctif local R4 étend l’attestation à tous les schémas non système
+de la base courante, aux types, aux options de redélégation et à toute propriété
+enregistrée dans la base. Il refuse sans les réécrire les ACL ou propriétés
+tierces hors profil. Les deux bases éphémères ont chacune validé le témoin sain,
+18 provisionnements réussis, 11 refus déterministes avec signature inchangée,
+quatre réparations isolées de `WITH GRANT OPTION`, Prisma, sept refus `42501` et
+le nettoyage ciblé. Cet état R4 constitue l’instantané historique local
+prépublication daté du 2026-09-18 : au moment de sa capture, aucun commit, push,
+rerun, Ready ou merge R4 n’avait été effectué. S1.2-03B reste **Not started**.

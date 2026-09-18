@@ -1,8 +1,8 @@
 # S1.2-03A — PostgreSQL Least-Privilege Runtime Boundary & Prisma Adapter
 
 Date initiale : 2026-09-16
-Dernière réconciliation : 2026-09-17
-État : **DRAFT PR #45 OUVERTE — R2 PUBLIÉ — QUATRE WORKFLOWS R2 RÉUSSIS — NON FUSIONNÉ**
+Dernière réconciliation : 2026-09-18
+État : **DRAFT PR #45 OUVERTE — R3 PUBLIÉ — QUATRE WORKFLOWS R3 RÉUSSIS — R4 VALIDÉ LOCALEMENT — PUBLICATION R4 AUTORISÉE — NON FUSIONNÉ**
 
 ## Baseline et autorisation
 
@@ -105,6 +105,21 @@ L’instantané local prépublication de la réconciliation R3 du 2026-09-17 a �
 établi alors qu’aucun commit, push, changement de PR, rerun, Ready ou merge R3
 n’avait été effectué ; aucun SHA ou Run ID R3 futur n’y était affirmé.
 
+R3 a ensuite été publié au commit
+`8f8c447b9badd3c8bd330982a1c0e7ef38e246cf`, parent
+`9d163cc34caa57cd671b6783048d89dde6d18069`. Infrastructure `35209186465`,
+Launcher Windows `35209186447`, Security `35209186482` et Quality Linux
+`35209186464` sont tous `pull_request/completed/success` sur ce head exact.
+
+La revue CTO post-R3 a conclu `BLOCK` sur deux findings. Le corps de la PR
+portait pour R1 `+116/-42` au lieu du résultat Git et GitHub `+118/-42` ;
+l’unique correction autorisée a été appliquée sans changer le cumul R3
+`4 commits, 28 fichiers, +2761/-187`, le titre, la base, le head ou le statut
+Draft. Le second finding démontrait que l’attestation était limitée à
+`public`. Dans l’instantané historique prépublication du 2026-09-18, R4
+corrige localement cette limite sans annoncer de SHA ou Run ID futur et sans
+présenter ces changements comme déjà publiés à cette date.
+
 ## Frontière livrée
 
 - le compte PostgreSQL propriétaire/migrateur reste distinct du rôle API ;
@@ -112,9 +127,18 @@ n’avait été effectué ; aucun SHA ou Run ID R3 futur n’y était affirmé.
   base, réplication, contournement RLS, membership ou propriété ;
 - les seuls droits attendus sont `CONNECT` sur la base, `USAGE` sur le schéma
   `public` et `SELECT` sur les tables ;
-- les droits de `PUBLIC` sont révoqués sur la base, le schéma, les tables,
-  colonnes, vues, séquences et routines, y compris dans les privilèges par
-  défaut globaux et propres au schéma ;
+- l’attestation inspecte tous les schémas non système de la base courante :
+  toute propriété enregistrée dans la base et, hors `public`, toute ACL
+  effective de schéma, table, colonne, vue, séquence, routine, type ou privilège
+  par défaut est interdite ;
+- les droits attendus ne portent jamais `WITH GRANT OPTION` ; la base, le schéma
+  `public`, ses tables et les ACL par défaut sont contrôlés séparément ;
+- les droits de `PUBLIC` sont révoqués sur la base et `public`, puis contrôlés
+  sur tous les autres schémas non système et leurs objets ;
+- le provisionneur refuse un état dangereux tiers avec un diagnostic borné sans
+  secret, y compris une propriété dans `public` ou un default ACL d’un autre
+  propriétaire ; il ne réattribue ni propriété ni ACL tierce et la signature
+  avant/après refus doit rester identique ;
 - Prisma 7.9.1 utilise `@prisma/adapter-pg` 7.9.1 sur le pool runtime partagé
   avec la readiness ;
 - avant `application.init()`, l’API exécute `SELECT 1`, inspecte les catalogues
@@ -144,9 +168,10 @@ transitives déjà présentes dans le graphe global ; l’audit final reste à z
 Ces contrôles supply-chain appartiennent à l’instantané local prépublication du
 2026-09-16. Les corrections de contre-revue antérieures à la publication
 n’avaient modifié ni `apps/api/package.json` ni `package-lock.json`. La
-correction CI R1 ultérieure modifie uniquement les scripts du manifeste
-API, sans dépendance ni changement du lockfile ; audits, signatures et licences
-n’ont pas été rejoués après cette correction.
+correction CI R1 ultérieure modifie uniquement les scripts du manifeste API.
+R2, R3 et R4 ne changent ni dépendance ni lockfile ; audits, signatures et
+licences n’ont pas été rejoués après R0 et ne sont pas présentés comme des
+résultats R4.
 
 ## Preuve PostgreSQL réelle
 
@@ -161,18 +186,28 @@ Deux bases indépendantes sont créées. Chacune reçoit :
 2. un rôle runtime distinct, absent sur A et volontairement privilégié,
    membre du rôle propriétaire et doté d’ACL excessives sur B ;
 3. les deux migrations S1.2-02 existantes ;
-4. trois exécutions du provisionneur livré et monté en lecture seule : les deux
-   premières produisent une signature identique couvrant ACL courantes, ACL par
-   défaut, attributs, memberships et paramètres de rôle ; la troisième répare
-   une dérive de privilège de colonne détectée par le démarrage API ;
-5. une connexion `pg`, `SELECT 1`, une lecture Prisma de `Customer` et le
+4. 18 exécutions réussies du provisionneur livré : les deux premières
+   produisent une signature identique couvrant tous les schémas non système,
+   ACL courantes/par défaut, options de redélégation, propriétés, attributs,
+   memberships et paramètres de rôle ; la troisième répare une dérive de
+   colonne dans `public`, onze passages confirment la convergence après
+   réparation explicite des états refusés et quatre réparent isolément les
+   options de redélégation ;
+5. onze refus déterministes du provisionneur, avec diagnostic borné et signature
+   inchangée : schéma possédé par le runtime, `PUBLIC CREATE`, objet `public`,
+   collation, privilèges de table, colonne, séquence, routine et type, default ACL
+   externe et default ACL d’un propriétaire tiers dans `public` ;
+6. une connexion `pg`, `SELECT 1`, une lecture Prisma de `Customer` et le
    démarrage réel de l’API avec le rôle runtime ;
-6. un essai de démarrage API avec le propriétaire, obligatoirement refusé.
+7. un essai de démarrage API avec le propriétaire, obligatoirement refusé.
 
 Résultats identiques sur A et B : 34 tables lisibles, zéro violation de droits
-table, colonne, vue, `MAINTAIN`, séquence ou routine, zéro membership,
-propriété ou droit `PUBLIC`. Une table, sa séquence et une fonction créées après
-provisioning confirment également les ACL par défaut minimales.
+table, colonne, vue, `MAINTAIN`, séquence, routine, type ou option de
+redélégation, zéro membership, propriété ou droit `PUBLIC`. Un schéma tiers sain
+reste inaccessible. Des tables, séquences, fonctions et types créés après
+provisioning dans `public` et ce schéma confirment les ACL par défaut minimales.
+Les onze états dangereux sont isolément refusés par le démarrage API et le
+provisionneur sur A et B, sans mutation de leur signature.
 
 | Opération runtime interdite | Résultat A | Résultat B |
 | --------------------------- | ---------- | ---------- |
@@ -184,7 +219,7 @@ provisioning confirment également les ACL par défaut minimales.
 | `UPDATE` métier             | `42501`    | `42501`    |
 | `DELETE` métier             | `42501`    | `42501`    |
 
-Après validation, seules les deux bases, les quatre rôles, le conteneur et les
+Après validation, seules les deux bases, les six rôles, le conteneur et les
 deux fichiers secrets créés par l’essai sont supprimés. Le nettoyage tente
 chaque cible même si une autre suppression échoue. Aucun volume nommé, réseau,
 image ou ressource étrangère n’est supprimé.
@@ -196,12 +231,12 @@ image ou ressource étrangère n’est supprimé.
 | Prisma Client 7.9.1 generate       | PASS                                                                                     |
 | Prettier ciblé                     | PASS                                                                                     |
 | Typecheck API après correction     | PASS — `pretypecheck` génère Prisma 7.9.1 avant `tsc`                                    |
-| Tests applicatifs                  | PASS — API 26/26 rejoué après correction ; 60 tests des workspaces inchangés déjà verts  |
-| Tests d’outillage                  | PASS — 297/297, dont le contrat de génération Prisma en checkout propre                  |
-| Builds                             | PASS — API rejoué ; Web, Admin, Contracts, Config, UI et Android inchangés déjà verts    |
+| Tests applicatifs                  | PASS R4 — API 26/26 ; aucun autre workspace applicatif touché                            |
+| Tests d’outillage                  | PASS R4 — 297/297, dont le contrat de génération Prisma en checkout propre               |
+| Builds                             | PASS R4 — API construit par le validateur ; autres applications inchangées               |
 | Compose rendu et absence de secret | PASS                                                                                     |
 | Upgrade `infra:prepare` historique | PASS — valeurs préservées, clé runtime ajoutée une fois, second passage identique        |
-| Validation réelle sur deux bases   | PASS — script livré, 3 passages/base, dérive réparée, 14 refus `42501`                   |
+| Validation réelle sur deux bases   | PASS R4 — 36 succès, 22 refus inchangés, 8 grant options réparées, 14 refus `42501`      |
 | Audits npm complet et production   | PASS pré-correction — zéro vulnérabilité ; graphe inchangé, non rejoué ensuite           |
 | Signatures et attestations npm     | PASS pré-correction — 1 132 signatures, 198 attestations ; non rejoué ensuite            |
 | Licences npm                       | PASS pré-correction — 1 134 paquets, zéro écart ; graphe inchangé, non rejoué ensuite    |
@@ -213,11 +248,50 @@ image ou ressource étrangère n’est supprimé.
 | Correctif Infrastructure isolé     | PASS — migrations owner, refus owner, runtime live/ready, pannes et reprises 200/503/200 |
 | Confidentialité du smoke corrigé   | PASS — aucun secret ni URL PostgreSQL/Redis dans les sorties capturées                   |
 | Workflows R2 publiés               | PASS — quatre `pull_request/completed/success` sur `9d163cc…`                            |
+| Workflows R3 publiés               | PASS — quatre `pull_request/completed/success` sur `8f8c447…`                            |
 
-Le premier lancement post-reprise s’est arrêté avant création de conteneur car
-Docker Desktop était arrêté ; ses deux fichiers secrets temporaires ont été
-supprimés. Docker démarré, la reprise complète ci-dessus a réussi et n’a laissé
-aucune ressource de validation.
+Le premier lancement R4 s’est arrêté avant création de conteneur car Docker
+Desktop était arrêté ; ses deux fichiers secrets temporaires ont été supprimés.
+Après démarrage de Docker, un premier passage a révélé qu’un `\quit 3` psql
+était ignoré et laissait le provisionneur poursuivre malgré son diagnostic. Le
+refus utilise désormais une erreur SQL sous `ON_ERROR_STOP`. Un passage complet
+a ensuite réussi. Les contre-revues R4 ont toutefois trouvé les options de
+redélégation, les ACL de types, les propriétés génériques, les default ACL tiers
+et l’isolation des causes encore incomplètes. Après correction, un essai a
+échoué sur la syntaxe PostgreSQL non supportée `ALL TYPES IN SCHEMA`; son
+nettoyage ciblé a réussi. La révocation type par type qui l’a remplacée a passé
+deux validations réelles complètes successives, dont la dernière après ajout du
+contrôle post-provisionnement. Après la correction transactionnelle, une
+reprise a correctement échoué parce que l’empreinte SCRAM avait été incluse
+dans la signature d’idempotence alors qu’un provisionnement réussi resale le
+même secret. La signature opérationnelle et la signature de refus ont été
+séparées : seule la seconde inclut l’empreinte en mémoire afin de prouver le
+rollback. Le passage complet final a ensuite réussi. Aucun essai n’a laissé de
+base, rôle, conteneur ou ressource secrète de validation.
+
+### Findings R4 réconciliés
+
+1. Architecture/données a bloqué la première version R4 : ACL de types et
+   propriété dans `public` non attestées, inventaire de propriété limité à
+   quelques catalogues. L’attestation et le provisionneur utilisent désormais
+   `pg_shdepend` pour toute propriété de la base, inspectent et révoquent les ACL
+   des types porteurs de privilèges, puis testent un objet `public` et une
+   collation possédés par le runtime.
+2. Sécurité/intégrité PostgreSQL a bloqué les options de redélégation, le default
+   ACL tiers dans `public`, le scénario d’objets agrégé et l’absence de preuve
+   avant/après refus. Quatre `WITH GRANT OPTION` sont maintenant isolés ; chaque
+   droit externe, chaque default ACL et chaque propriété sont injectés dans un
+   scénario distinct ; la signature complète doit rester byte-for-byte identique
+   autour de chaque refus.
+3. La seconde passe architecture a relevé que le rôle et son vérificateur de mot
+   de passe étaient modifiés avant le refus. Le provisioning est désormais une
+   transaction unique ; la signature exhaustive de refus inclut une empreinte
+   mémoire non journalisée du vérificateur, distincte de la signature
+   opérationnelle d’idempotence, et les refus prouvent aussi son rollback.
+4. Gouvernance/reproductibilité a relevé la date de réconciliation et les anciens
+   compteurs devenus caducs pendant la correction. Les huit documents portent le
+   ledger final, distinguent l’échec de syntaxe nettoyé des deux passages complets
+   et conservent R4 comme instantané local non publié.
 
 ## Contre-revues indépendantes
 
@@ -266,6 +340,9 @@ fondé ouvert.
 - le provisioning de production et tout rôle d’écriture futur sont hors
   périmètre ; ils exigent une autorisation, un rôle distinct et des tests
   propres ;
+- les schémas non système préexistants hors `public` ne sont jamais corrigés
+  automatiquement : toute propriété ou ACL dangereuse fait échouer le
+  provisioning jusqu’à une remédiation explicite par leur propriétaire ;
 - l’instantané local prépublication du 2026-09-16 a été établi sans commit,
   push, PR, Ready, merge, tag, release ou déploiement ; la publication Draft
   ultérieurement autorisée ne vaut ni Ready, ni merge, ni démarrage de
@@ -276,3 +353,8 @@ fondé ouvert.
 - l’instantané local prépublication de la réconciliation R3 du 2026-09-17 a été
   établi avant tout commit, push, changement de PR, rerun, Ready ou merge R3 et
   n’affirmait aucun SHA ou Run ID R3 futur.
+- l’instantané historique local prépublication R4 du 2026-09-18 est postérieur
+  à la publication R3. À sa date de capture, la seule mutation GitHub effectuée
+  était la correction historique R1 du corps de PR ; aucun fichier R4 n’était
+  alors commité ou publié et aucun rerun, Ready ou merge R4 n’avait été effectué.
+  S1.2-03B reste `Not started`.

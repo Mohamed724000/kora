@@ -161,17 +161,18 @@ merge `main` `95bdfcf30a14e05ae90b09150cf289e1e0343c0d`.
 
 ## Contrôles S1.2-03A — PostgreSQL Least-Privilege Runtime Boundary
 
-| ID              | Contrôle                                  | État               | Preuve attendue                                                                                                                          |
-| --------------- | ----------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| GOV-S1.2-03A-01 | Séparation propriétaire/runtime           | Vérifié localement | identifiants et secrets distincts ; rôle runtime non propriétaire, `NOINHERIT`, sans attribut administratif ni membership                |
-| GOV-S1.2-03A-02 | Prisma 7.9.1 et attestation au démarrage  | Vérifié localement | `@prisma/adapter-pg` 7.9.1 sur pool runtime ; API accepte le rôle lecture et refuse le propriétaire/migrateur avant `application.init()` |
-| GOV-S1.2-03A-03 | Privilèges effectifs et héritage `PUBLIC` | Vérifié localement | `CONNECT`, `USAGE`, `SELECT` uniquement ; colonnes, vues, `MAINTAIN` et ACL par défaut inclus ; zéro droit `PUBLIC`                      |
-| GOV-S1.2-03A-04 | Refus des mutations et élévations         | Vérifié localement | SQLSTATE `42501` pour DDL, `TRUNCATE`, trigger, `SET ROLE`, `INSERT`, `UPDATE` et `DELETE`, sur deux bases                               |
-| GOV-S1.2-03A-05 | Idempotence et nettoyage ciblé            | Vérifié localement | script livré exécuté trois fois sur deux bases ; création, convergence, signature complète et récupération de dérive ; nettoyage ciblé   |
-| GOV-S1.2-03A-06 | Dépendance, licence et audit              | Vérifié localement | instantané prépublication du 2026-09-16 : provenance/licences contrôlées et audits à zéro ; graphe inchangé après correction, non rejoué |
-| GOV-S1.2-03A-07 | Périmètre et publication contrôlée        | Draft #45 ouverte  | head R2 publié `9d163cc…` ; aucun Ready ou merge ; schéma, migrations, OpenAPI, contrats, workflows et clients inchangés                 |
-| GOV-S1.2-03A-08 | Reproductibilité du client Prisma en CI   | R1 publié          | clone neuf après `npm ci` : client absent, puis génération automatique et succès indépendants de typecheck, build et 26 tests API        |
-| GOV-S1.2-03A-09 | Identité du smoke Infrastructure          | R2 publié et vert  | migrations propriétaire ; refus propriétaire explicite ; API runtime saine ; fatal fail-fast neutralisé ; quatre workflows R2 réussis    |
+| ID              | Contrôle                                  | État                     | Preuve attendue                                                                                                                                        |
+| --------------- | ----------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| GOV-S1.2-03A-01 | Séparation propriétaire/runtime           | Vérifié localement       | identifiants et secrets distincts ; rôle runtime non propriétaire, `NOINHERIT`, sans attribut administratif ni membership                              |
+| GOV-S1.2-03A-02 | Prisma 7.9.1 et attestation au démarrage  | Vérifié localement       | `@prisma/adapter-pg` 7.9.1 sur pool runtime ; API accepte le rôle lecture et refuse le propriétaire/migrateur avant `application.init()`               |
+| GOV-S1.2-03A-03 | Privilèges effectifs et héritage `PUBLIC` | Vérifié localement       | `CONNECT`, `USAGE public`, `SELECT public` sans redélégation ; tous schémas non système, colonnes, vues, types, `MAINTAIN` et ACL par défaut contrôlés |
+| GOV-S1.2-03A-04 | Refus des mutations et élévations         | Vérifié localement       | SQLSTATE `42501` pour DDL, `TRUNCATE`, trigger, `SET ROLE`, `INSERT`, `UPDATE` et `DELETE`, sur deux bases                                             |
+| GOV-S1.2-03A-05 | Idempotence et nettoyage ciblé            | Vérifié localement       | par base : 18 provisionnements réussis, 11 refus déterministes à signature inchangée, 4 grant options réparées ; nettoyage ciblé                       |
+| GOV-S1.2-03A-06 | Dépendance, licence et audit              | Vérifié localement       | instantané prépublication du 2026-09-16 : provenance/licences contrôlées et audits à zéro ; graphe inchangé après correction, non rejoué               |
+| GOV-S1.2-03A-07 | Périmètre et publication contrôlée        | Publication R4 autorisée | head R3 publié `8f8c447…`, quatre runs verts ; instantané prépublication R4 validé ; aucun Ready ou merge                                              |
+| GOV-S1.2-03A-08 | Reproductibilité du client Prisma en CI   | R1 publié                | clone neuf après `npm ci` : client absent, puis génération automatique et succès indépendants de typecheck, build et 26 tests API                      |
+| GOV-S1.2-03A-09 | Identité du smoke Infrastructure          | R2 publié et vert        | migrations propriétaire ; refus propriétaire explicite ; API runtime saine ; fatal fail-fast neutralisé ; quatre workflows R2 réussis                  |
+| GOV-S1.2-03A-10 | Schémas non système                       | R4 vérifié localement    | propriété exhaustive, `PUBLIC CREATE`, privilèges objets/colonnes/séquences/routines/types et default ACL tiers isolément refusés sur deux bases       |
 
 Le [rapport S1.2-03A](SLICE_1_2_03A_POSTGRESQL_RUNTIME_BOUNDARY_REPORT.md)
 porte le détail reproductible. Les fonctionnalités métier S1.2-03B+ restent
@@ -196,6 +197,21 @@ PR #45 reste ouverte, Draft et non fusionnée ; S1.2-03B reste `Not started`.
 L’instantané local prépublication de la réconciliation R3 du 2026-09-17 a été
 établi alors qu’aucun commit, push, changement de PR, rerun, Ready ou merge R3
 n’avait été effectué ; aucun SHA ou Run ID R3 futur n’y était affirmé.
+
+R3 est ensuite publié au head
+`8f8c447b9badd3c8bd330982a1c0e7ef38e246cf`. Infrastructure `35209186465`,
+Launcher Windows `35209186447`, Security `35209186482` et Quality Linux
+`35209186464` sont tous `pull_request/completed/success` sur ce SHA. La revue
+CTO postérieure bloque la fusion et autorise R4. La correction du corps de PR
+porte le compteur R1 à `+118/-42` tout en conservant le cumul R3
+`4 commits, 28 fichiers, +2761/-187`.
+
+L’instantané historique R4 du 2026-09-18 a été établi localement avant
+publication. Les tests réels sur deux bases isolent et rejettent propriété runtime, `CREATE` via
+`PUBLIC`, droits de table, colonne, séquence, routine, type et default ACL tiers,
+sans normalisation automatique des ACL tierces. Quatre cas `WITH GRANT OPTION`
+sont détectés puis réparés. Au moment de cet instantané, aucun commit, push,
+rerun, Ready ou merge R4 n’avait été effectué ; S1.2-03B reste `Not started`.
 
 ## Contrôles de gouvernance de Sprint 0.1
 

@@ -242,7 +242,7 @@ fusion de la PR #44 et les quatre workflows `push/main` réussis.
 
 ### S1.2-03A — PostgreSQL Least-Privilege Runtime Boundary & Prisma Adapter
 
-Statut : **Draft PR #45 open — R2 published — four R2 workflows green — not merged**
+Statut : **Draft PR #45 open — R3 published — four R3 workflows green — R4 validated locally — R4 publication authorized — not merged**
 
 L’instantané local prépublication du 2026-09-16 a été validé avant indexation,
 commit, push ou création de PR. Ces absences décrivent uniquement cet instantané
@@ -272,11 +272,29 @@ L’instantané local prépublication de la réconciliation R3 du 2026-09-17 a �
 établi alors qu’aucun commit, push, changement de PR ou rerun R3 n’avait été
 effectué ; aucun SHA ou Run ID R3 futur n’y était affirmé.
 
+R3 a ensuite été publié au head
+`8f8c447b9badd3c8bd330982a1c0e7ef38e246cf`. Infrastructure `35209186465`,
+Launcher Windows `35209186447`, Security `35209186482` et Quality Linux
+`35209186464` ont tous conclu `pull_request/completed/success`. La revue CTO
+a maintenu la PR en Draft et bloqué la fusion sur le compteur historique R1 et
+la couverture des schémas hors `public`. Le corps de PR porte désormais le
+compteur R1 exact `+118/-42`, sans modifier son cumul R3
+`4 commits, 28 fichiers, +2761/-187`.
+
+Dans l’instantané historique local prépublication du 2026-09-18, le correctif
+R4 étend l’attestation à tous les schémas non système de la base courante, aux
+types, aux options de redélégation et à toute propriété enregistrée. Un état
+dangereux tiers, y compris un default ACL d’un autre propriétaire dans `public`,
+est refusé par l’API et le provisionneur ; sa signature reste inchangée. Au
+moment de cet instantané, aucun commit, push, rerun, Ready ou merge R4 n’avait
+été effectué.
+
 Périmètre livré localement :
 
 - compte propriétaire/migrateur distinct du rôle API runtime ;
 - rôle runtime `LOGIN`, `NOINHERIT`, sans attribut administratif, membership,
-  propriété, DDL, écriture table, privilège de séquence ou exécution de routine ;
+  propriété, option de redélégation, DDL, écriture table, privilège de séquence,
+  type ou exécution de routine dans tout schéma non système de la base courante ;
 - droits effectifs bornés à `CONNECT`, `USAGE` du schéma `public` et `SELECT`
   sur les tables canoniques, après révocation des droits hérités de `PUBLIC` ;
 - pool PostgreSQL unique connecté à Prisma 7.9.1 par
@@ -284,9 +302,11 @@ Périmètre livré localement :
 - génération Prisma 7.9.1 systématique avant build, typecheck et tests API,
   avec un test de contrat empêchant une dépendance à un client préexistant ;
 - attestation bloquante avant `application.init()` et fermeture contrôlée si
-  le compte reçu est privilégié ou dispose de droits inattendus ;
+  le compte reçu est privilégié ou dispose de droits inattendus, directement
+  ou via `PUBLIC`, sur `public` ou un autre schéma non système ;
 - provisioning local idempotent et validateur isolé sur deux bases PostgreSQL
-  18.4 indépendantes ;
+  18.4 indépendantes ; les états tiers dangereux sont refusés de façon
+  déterministe sans réécriture d’ACL ou de propriété ;
 - preuves négatives `42501` pour DDL, `TRUNCATE`, modification de trigger,
   `SET ROLE` propriétaire et `INSERT`/`UPDATE`/`DELETE` métier.
 

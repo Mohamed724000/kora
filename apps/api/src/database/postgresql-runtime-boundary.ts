@@ -51,6 +51,9 @@ export function runtimeBoundaryViolations(
   ) {
     violations.push('database_or_schema_write_privilege');
   }
+  if (snapshot.unexpectedSchemaPrivilegeCount !== 0) {
+    violations.push('unexpected_schema_privilege');
+  }
   if (snapshot.tableCount === 0) {
     violations.push('application_tables_missing');
   }
@@ -62,6 +65,15 @@ export function runtimeBoundaryViolations(
   }
   if (snapshot.routineExecutePrivilegeCount !== 0) {
     violations.push('unexpected_routine_privilege');
+  }
+  if (snapshot.typePrivilegeCount !== 0) {
+    violations.push('unexpected_type_privilege');
+  }
+  if (snapshot.defaultPrivilegeViolationCount !== 0) {
+    violations.push('unexpected_default_privilege');
+  }
+  if (snapshot.grantOptionViolationCount !== 0) {
+    violations.push('unexpected_grant_option');
   }
   if (snapshot.publicGrantCount !== 0) {
     violations.push('public_privilege_present');
