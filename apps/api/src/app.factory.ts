@@ -4,6 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule, type AppModuleOptions } from './app.module';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import type { RuntimeConfig } from './config/runtime-config';
+import { RuntimeDatabaseBoundary } from './database/runtime-database-boundary';
 import { createHttpLogger } from './observability/http-logger';
 import { captureSentryException, initializeSentry } from './observability/sentry';
 import { createStructuredLogger, NestStructuredLogger } from './observability/structured-logger';
@@ -28,7 +29,14 @@ export async function createApplication(options: AppModuleOptions = {}): Promise
       { path: 'health/ready', method: RequestMethod.GET },
     ],
   });
-  await application.init();
+  try {
+    const runtimeDatabaseBoundary = application.get(RuntimeDatabaseBoundary);
+    await runtimeDatabaseBoundary.assertLeastPrivilege();
+    await application.init();
+  } catch (error: unknown) {
+    await application.close();
+    throw error;
+  }
 
   return application;
 }

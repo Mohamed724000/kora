@@ -494,6 +494,74 @@ aucun endpoint, service, worker, seed, runtime métier ou interface n’est livr
 S1.2-03 reste `Not started`; son analyse est une proposition soumise à une
 décision séparée et S1.2-03A n’est ni autorisé ni démarré.
 
+Ce dernier état est conservé comme preuve historique de la clôture S1.2-02.
+Une autorisation Product Owner séparée du 2026-09-16 a ensuite démarré
+S1.2-03A depuis `main` au merge
+`95bdfcf30a14e05ae90b09150cf289e1e0343c0d`.
+
+## Frontière PostgreSQL runtime S1.2-03A
+
+S1.2-03A réduit l’impact d’une compromission de l’API en séparant le compte
+propriétaire/migrateur du rôle utilisé par le processus NestJS. Le rôle runtime
+est exclusivement lecteur : `CONNECT` sur la base, `USAGE` sur `public` et
+`SELECT` sur les tables. Il est `NOINHERIT`, ne possède aucun objet ni
+membership et n’a aucun attribut superuser, création de rôle/base, réplication
+ou contournement RLS. `CREATE`, `TEMPORARY`, droits de séquence ou de type,
+exécution des fonctions applicatives, options de redélégation et droits
+d’écriture table sont absents dans tous les schémas non système de la base
+courante.
+
+Les ACL effectives sont calculées avec `has_*_privilege` et les ACL catalogues
+dépliées avec `aclexplode`. Cette combinaison inclut les droits hérités de
+`PUBLIC`; le provisionneur révoque explicitement `PUBLIC` sur la base et le
+périmètre `public`, ainsi que dans les privilèges par défaut du
+propriétaire/migrateur. Pour les autres schémas non système, il inspecte
+propriété exhaustive via `pg_shdepend`, accès de schéma, objets, colonnes,
+séquences, routines, types, options de redélégation et ACL par défaut. Tout état
+hors profil est refusé sans réattribution de propriété ni réécriture automatique
+d’une ACL tierce.
+
+| Menace                                                 | Mesure S1.2-03A                                                          | Preuve locale                                                        | Risque résiduel                                                        |
+| ------------------------------------------------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| API configurée avec le propriétaire ou un compte admin | attestation bloquante avant `application.init()`                         | démarrage propriétaire refusé, démarrage runtime accepté sur 2 bases | protection dépend du maintien de l’attestation dans les futurs lots    |
+| Privilège indirect via rôle ou `PUBLIC`                | `NOINHERIT`, zéro membership, inspection de tous les schémas non système | propriété runtime et `PUBLIC CREATE` externes refusés sur 2 bases    | la classification des schémas système doit suivre PostgreSQL           |
+| Altération du schéma ou neutralisation des triggers    | aucun `CREATE`, propriété, `TRIGGER` ou `TRUNCATE`                       | DDL, `TRUNCATE` et `ALTER TABLE ... DISABLE TRIGGER` refusés `42501` | le propriétaire/migrateur reste puissant et doit rester hors API       |
+| Élévation par `SET ROLE`                               | aucun rôle accordé au runtime                                            | `SET ROLE` propriétaire refusé `42501`                               | toute future délégation de rôle doit repasser cette gate               |
+| Écriture métier directe                                | `SELECT` seul sur les 34 tables, aucun droit de séquence                 | `INSERT`, `UPDATE` et `DELETE` refusés `42501`                       | les futurs services d’écriture exigeront des rôles distincts et bornés |
+| Dérive de provisioning                                 | idempotence sur `public`, refus déterministe des états tiers dangereux   | 18 succès, 11 refus inchangés et 4 grant options réparées par base   | le provisioning de production reste hors périmètre                     |
+
+La preuve locale R4 du 2026-09-18 ajoute sur chacune des deux bases un schéma
+sain inaccessible, puis isole 11 états négatifs : propriété de schéma, objet
+`public` et collation, `CREATE` via `PUBLIC`, privilèges de table, colonne,
+séquence, routine et type, default ACL externe et default ACL tiers dans
+`public`. L’API et le provisionneur les refusent sans modifier leur signature.
+Quatre options de redélégation — base, schéma, table et default ACL — sont
+isolément détectées puis normalisées. Cet instantané historique prépublication
+a été établi avant tout commit ou push R4 et ne décrit pas l’état GitHub
+ultérieur.
+
+R4 est ensuite publié au commit
+`ebcd3fc02c15b0ee9cf679978ab197e9865a1737`. Infrastructure `35402506742`
+échoue alors que le propriétaire est correctement refusé : l’oracle exigeait
+`runtime_owns_database_object`, mais PostgreSQL 18.4 expose ce propriétaire dans
+`pg_database.datdba` sans dépendance de propriété dans `pg_shdepend`. Dans
+l’instantané prépublication R5 du 2026-09-18, le correctif local ne relâche pas
+le garde : il conserve l’erreur typée, `administrative_role_attribute`,
+`database_or_schema_write_privilege` et `unexpected_table_privilege` comme
+minimum obligatoire. Les tests séparés de propriété runtime R4 restent
+inchangés. À la date de cet instantané, aucun SHA ou Run ID R5 futur n’était
+affirmé.
+
+Le pool `pg` est détenu par le client Prisma 7.9.1 via
+`@prisma/adapter-pg` 7.9.1 ; la readiness réutilise ce même chemin. Les erreurs
+de frontière exposent uniquement des codes de violation sûrs. Aucun secret,
+DSN ou nom de compte n’est journalisé.
+
+Ce contrôle n’autorise aucun endpoint, mutation métier, authentification
+administrateur, worker, seed, média ou paiement. Le rôle de lecture ne devra
+pas être élargi pour les futurs besoins d’écriture : ceux-ci nécessitent une
+frontière séparée, une transaction documentée et une nouvelle autorisation.
+
 ## Méthode de mise à jour
 
 Chaque lot affectant une frontière :

@@ -371,6 +371,93 @@ ci-dessus et ne le réécrivent pas.
 | DEC-S1.2-02-08 | Distribution | Aucun tag, release ou déploiement n’accompagne la fusion. Aucun endpoint, service, worker, seed, runtime métier ou interface n’est livré par S1.2-02.                                                                                                                                                                                                                          | Périmètre et état GitHub constatés         | Accepted — scope preserved        |
 | DEC-S1.2-02-09 | Séquencement | S1.2-03 reste `Not started`. Son analyse demeure une proposition soumise à une décision séparée ; S1.2-03A n’est ni autorisé ni démarré par la clôture S1.2-02.                                                                                                                                                                                                                | Gouvernance et autorisation Product Owner  | Accepted — next slice not started |
 
+## 2026-09-16 — S1.2-03A PostgreSQL Least-Privilege Runtime Boundary
+
+Cette autorisation est postérieure à DEC-S1.2-02-09 et ne réécrit pas son
+constat historique. Elle part du merge `main`
+`95bdfcf30a14e05ae90b09150cf289e1e0343c0d`, après fusion de la PR #44 et
+succès des workflows `push/main` Infrastructure `35082285457`, Launcher Windows
+`35082285515`, Security `35082285620` et Quality Linux `35082285461`.
+
+| ID              | Nature      | Décision                                                                                                                                                                                                                                                                                  | Autorité                                     | Statut                                                  |
+| --------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- | ------------------------------------------------------- |
+| DEC-S1.2-03A-01 | Accès base  | Le compte propriétaire/migrateur ne doit jamais être utilisé par l’API. Le rôle API est non propriétaire, `NOINHERIT`, sans membership ni attribut administratif, et limité à `CONNECT`, `USAGE` et `SELECT`.                                                                             | Autorisation Product Owner du 2026-09-16     | Executed — locally validated                            |
+| DEC-S1.2-03A-02 | Fail closed | Avant `application.init()`, l’API vérifie identité, attributs, memberships, propriété et privilèges effectifs, y compris `PUBLIC`; tout droit inattendu bloque le démarrage avec des codes sûrs sans valeur de connexion.                                                                 | Objectif de sécurité S1.2-03A                | Executed — locally validated                            |
+| DEC-S1.2-03A-03 | Prisma      | Prisma 7.9.1 utilise `@prisma/adapter-pg` 7.9.1 sur le pool runtime unique partagé par la readiness. La version, provenance SLSA, licence, graphe et audit sont contrôlés avant installation.                                                                                             | Stack verrouillée et gate supply-chain       | Accepted — initial audit zero; not replayed after R1/R2 |
+| DEC-S1.2-03A-04 | Validation  | Deux bases PostgreSQL 18.4 indépendantes reçoivent les migrations existantes sous des propriétaires distincts. Le script livré prouve création, convergence, idempotence et récupération de dérive, puis DDL, `TRUNCATE`, trigger, `SET ROLE` et écritures sont refusés avec `42501`.     | Preuves locales S1.2-03A                     | Executed — reproducible and cleaned                     |
+| DEC-S1.2-03A-05 | Périmètre   | Le rôle runtime reste en lecture seule. Aucun schéma, migration, OpenAPI, contrat, workflow, endpoint, service métier, worker, seed, interface, média ou paiement n’est ajouté. La publication initiale, puis R1 et R2 ont été autorisés séparément ; Ready et merge demeurent interdits. | Autorisation Product Owner et limites du lot | Executed — Draft PR #45 open; not merged                |
+| DEC-S1.2-03A-06 | CI propre   | Les commandes API `build`, `typecheck` et `test` doivent générer Prisma 7.9.1 avant leur exécution et réussir après `npm ci` sans dépendre d’un client produit par une commande antérieure. Un test de contrat verrouille les trois hooks npm.                                            | Échecs CI initiaux de la Draft PR #45        | Executed — R1 integrated on Draft branch                |
+| DEC-S1.2-03A-07 | Smoke infra | Le smoke Infrastructure applique les migrations sous le propriétaire/migrateur, reprovisionne les ACL, exige son refus par le garde, puis lance l’API exclusivement avec le rôle runtime. Une sortie prématurée remonte le fatal neutralisé sans attendre le timeout.                     | Échec Infrastructure R1 `35155026285`        | R2 published — CI green on Draft branch                 |
+
+L’absence de commit, push et PR constatée lors de la validation locale du
+2026-09-16 reste l’instantané historique prépublication. Elle ne décrit pas
+l’état postérieur à l’autorisation de publication Draft.
+
+La Draft PR #45 a ensuite été créée au head
+`974d7afa9d4dc9ceb88a35bd5bd7ae3f477cb875`. Security `35119052015` a réussi ;
+Infrastructure `35119052104`, Launcher Windows `35119052049` et Quality Linux
+`35119052101` ont échoué faute de génération Prisma après `npm ci`. La séquence
+R0 et ses échecs sont historiques. La correction DEC-S1.2-03A-06 a été validée
+dans un clone propre puis intégrée par R1 sur la branche de la Draft PR. Aucun
+run initial n’est relancé ; les nouveaux runs sont attachés au head R1 distinct.
+La PR demeure Draft et S1.2-03B reste `Not started`.
+
+R1 est publié au commit `41b3d8f33a637108814208258a3e99b105be1afc`.
+Launcher Windows `35155026009`, Security `35155025993` et Quality Linux
+`35155026016` ont réussi ; Infrastructure `35155026285` a échoué. Le log complet
+de cet échec R1 historique montre que le provisionnement runtime et les
+contrôles de l’infrastructure réussissent. Dans la version R1 publiée,
+`verify-api-health.mjs` transmettait
+encore `KORA_POSTGRES_USER` et `postgres_password` au processus API. La
+reproduction isolée neutralisée obtient le fatal `RuntimeDatabaseBoundaryError`
+attendu pour le propriétaire. DEC-S1.2-03A-07 corrige localement ce câblage sans
+modifier le garde, les privilèges PostgreSQL, les migrations, le workflow ou le
+lockfile. Cette preuve décrit l’instantané local prépublication R2 : à cet
+instant, la correction n’avait fait l’objet d’aucun commit, push, rerun ou
+changement de la Draft PR #45 et ne préjugeait pas du résultat de ses futurs
+workflows. Cet instantané local R2 du 2026-09-16 reste une preuve historique.
+
+R2 a ensuite été publié au commit
+`9d163cc34caa57cd671b6783048d89dde6d18069`. Infrastructure `35162113781`,
+Launcher Windows `35162113686`, Security `35162113920` et Quality Linux
+`35162113691` ont tous terminé `pull_request/completed/success` sur ce head
+exact. La PR #45 demeure ouverte, Draft et non fusionnée ; S1.2-03B reste
+`Not started`.
+
+L’instantané local prépublication de la réconciliation documentaire R3 du
+2026-09-17 a été établi alors qu’aucun commit, push, changement de PR, rerun,
+Ready ou merge R3 n’avait été effectué ; aucun SHA ou Run ID R3 futur n’y était
+affirmé.
+
+## 2026-09-18 — S1.2-03A-R4 All Non-System Schemas Boundary
+
+| ID              | Nature         | Décision                                                                                                                                                                                                                                                                                                                                                                                                                | Autorité                                 | Statut                                     |
+| --------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------ |
+| DEC-S1.2-03A-08 | Publication R3 | R3 est publié au head `8f8c447b9badd3c8bd330982a1c0e7ef38e246cf`. Infrastructure `35209186465`, Launcher Windows `35209186447`, Security `35209186482` et Quality Linux `35209186464` sont tous `pull_request/completed/success` sur ce SHA exact.                                                                                                                                                                      | Preuves GitHub R3                        | Accepted — historical publication evidence |
+| DEC-S1.2-03A-09 | Preuve R1      | Le corps de la Draft PR #45 corrige une seule fois le compteur historique R1 de `+116/-42` vers `+118/-42`, valeur confirmée par Git et GitHub. Le cumul R3 reste `4 commits, 28 fichiers, +2761/-187` ; titre, head, base et statut Draft sont inchangés.                                                                                                                                                              | Verdict CTO et autorisation 2026-09-18   | Executed — PR body correction only         |
+| DEC-S1.2-03A-10 | Attestation    | Le profil runtime est contrôlé sur tous les schémas non système de la base courante. Toute propriété enregistrée, option de redélégation ou ACL inattendue de schéma, relation, colonne, séquence, routine, type ou privilège par défaut accordée au runtime ou à `PUBLIC` bloque le démarrage ; `public` conserve uniquement `USAGE` et la lecture des tables canoniques.                                              | Verdict CTO BLOCK post-R3                | R4 locally implemented and validated       |
+| DEC-S1.2-03A-11 | Provisioning   | Le provisionneur normalise exclusivement le rôle runtime, la base, `public` et les privilèges par défaut du propriétaire/migrateur qui relèvent du lot. Toute propriété runtime, tout état dangereux tiers ou tout default ACL d’un autre propriétaire dans `public` est refusé avec un code non nul et un diagnostic borné sans secret ; aucune propriété ou ACL tierce n’est réattribuée ou réécrite automatiquement. | Décision CTO R4                          | R4 locally implemented and validated       |
+| DEC-S1.2-03A-12 | Validation     | Deux bases éphémères indépendantes valident chacune un schéma tiers sain, 18 provisionnements réussis, 11 refus déterministes à signature inchangée et quatre réparations isolées de `WITH GRANT OPTION`, puis Prisma, `SELECT 1`, lecture `Customer`, refus propriétaire et sept refus `42501`. Le nettoyage des deux bases, six rôles, du conteneur et des secrets reste strictement ciblé.                           | Preuves locales R4                       | Executed — reproducible and cleaned        |
+| DEC-S1.2-03A-13 | Périmètre      | R4 ne modifie ni dépendance, lockfile, schéma Prisma, migration S1.2-02, OpenAPI, contrat généré, workflow ou client Web/Admin/Mobile. Il ne publie aucun code et ne démarre pas S1.2-03B.                                                                                                                                                                                                                              | Autorisation Product Owner du 2026-09-18 | Accepted — local prepublication scope      |
+
+Ces décisions décrivent l’instantané local prépublication R4 du 2026-09-18.
+Aucun SHA ou Run ID R4 futur n’est affirmé. En dehors de l’unique correction
+historique du corps de la Draft PR #45 consignée par DEC-S1.2-03A-09, aucun
+commit, push, rerun, changement de statut, Ready ou merge R4 n’a été effectué.
+
+## 2026-09-18 — S1.2-03A-R5 Infrastructure owner rejection oracle
+
+| ID              | Nature         | Décision                                                                                                                                                                                                                                                                                                                                  | Autorité                              | Statut                                     |
+| --------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | ------------------------------------------ |
+| DEC-S1.2-03A-14 | Publication R4 | R4 est publié au commit `ebcd3fc02c15b0ee9cf679978ab197e9865a1737`, parent `8f8c447b9badd3c8bd330982a1c0e7ef38e246cf`, avec 13 fichiers et `+1507/-228`. Launcher Windows `35402506744`, Security `35402506756` et Quality Linux `35402506746` réussissent ; Infrastructure `35402506742` échoue.                                         | Preuves Git/GitHub R4                 | Accepted — historical publication evidence |
+| DEC-S1.2-03A-15 | Diagnostic     | Le propriétaire initial est bien `pg_database.datdba`, mais c’est le superutilisateur bootstrap épinglé, dont PostgreSQL 18.4 omet les dépendances partagées dans `pg_shdepend`. L’attestation ne produit donc pas `runtime_owns_database_object` dans ce cas, tout en produisant les violations administratives et d’écriture attendues. | Reproduction PostgreSQL isolée R5     | Accepted — causal finding                  |
+| DEC-S1.2-03A-16 | Correctif      | L’oracle du smoke exige toujours `RuntimeDatabaseBoundaryError`, `administrative_role_attribute`, `database_or_schema_write_privilege` et `unexpected_table_privilege`. Il n’exige plus un code de propriété absent de l’état observé et continue d’accepter les violations supplémentaires sans les substituer au minimum requis.        | Décision CTO R5                       | R5 locally implemented and validated       |
+| DEC-S1.2-03A-17 | Non-régression | Six tests ciblés couvrent refus propriétaire sans code de propriété, violations administratives ou d’écriture manquantes, erreur étrangère, API acceptée et neutralisation des secrets. Le smoke réel passe après migrations sur PostgreSQL éphémère ; les scénarios R4 de propriété runtime restent séparément verts sur deux bases.     | Preuves locales R5                    | Executed — local prepublication evidence   |
+| DEC-S1.2-03A-18 | Périmètre      | R5 ne modifie ni le garde API, ni le provisionneur, le schéma Prisma, les migrations S1.2-02, OpenAPI, les contrats, workflows, lockfiles ou clients. La description de PR reste inchangée et aucun commit, push, rerun, Ready ou merge R5 n’est effectué. S1.2-03B reste `Not started`.                                                  | Autorisation Product Owner 2026-09-18 | Accepted — local prepublication scope      |
+
+Ces décisions R5 décrivent uniquement l’instantané local du 2026-09-18. Aucun
+SHA ou Run ID R5 futur n’est affirmé.
+
 ## Catégories d’autorité
 
 - **Produit** : vision, économie, marque, contrats et périmètre irréversible ;

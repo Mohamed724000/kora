@@ -1,9 +1,9 @@
 # KORA+ Final — Source de vérité
 
-Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ ET FUSIONNÉ — S1.2-03 NON DÉMARRÉ**
+Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A EN DRAFT PR #45 — R4 PUBLIÉ — INFRASTRUCTURE R4 EN ÉCHEC — R5 VALIDÉ LOCALEMENT — NON FUSIONNÉ**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-09-15
+Dernière réconciliation documentaire : 2026-09-18
 
 ## Hiérarchie normative
 
@@ -104,3 +104,103 @@ Security `34986168621` et Quality Linux `34986168424` ont tous conclu
 fusion n’ajoute aucun endpoint, service, worker, seed, runtime métier ou
 interface. S1.2-03 reste **Not started** ; son analyse demeure une proposition
 soumise à une décision séparée et S1.2-03A n’est ni autorisé ni démarré.
+
+Cette dernière phrase décrit l’état historique de la clôture S1.2-02. La PR #44
+a ensuite été fusionnée et fermée au merge `main`
+`95bdfcf30a14e05ae90b09150cf289e1e0343c0d`. Les workflows `push/main`
+Infrastructure `35082285457`, Launcher Windows `35082285515`, Security
+`35082285620` et Quality Linux `35082285461` ont tous conclu
+`completed/success` sur ce merge.
+
+Sur autorisation Product Owner distincte du 2026-09-16, S1.2-03A est démarré
+depuis ce merge dans une branche et un worktree dédiés. L’état observé dans
+l’instantané prépublication R5 du 2026-09-18 est **Draft PR #45 ouverte ; R4
+publié ; Infrastructure R4 en échec ; trois autres workflows R4 réussis ;
+correctif R5 validé localement ; non fusionné**.
+L’instantané local prépublication du 2026-09-16 a été établi alors que les 26
+fichiers étaient non indexés, non commités et non publiés ; cette formulation
+reste une preuve historique datée. Le lot sépare le compte
+propriétaire/migrateur PostgreSQL du rôle API de lecture, connecte Prisma 7.9.1
+par `@prisma/adapter-pg` 7.9.1 et refuse le démarrage si le compte API possède
+un attribut, une propriété, une appartenance ou un privilège inattendu, y
+compris via `PUBLIC`. Il n’ajoute aucun endpoint, service métier, worker, seed,
+écran, paiement, média, tag, release ou déploiement. Les capacités métier de
+S1.2-03 au-delà de cette frontière technique restent **Not started** et
+requièrent une autorisation séparée.
+
+Le commit publié `974d7afa9d4dc9ceb88a35bd5bd7ae3f477cb875` était le head
+initial de la Draft PR #45 avant R1. Ses premiers workflows `pull_request` ont
+conclu Security `35119052015` en succès et Infrastructure `35119052104`,
+Launcher Windows `35119052049` et Quality Linux `35119052101` en échec : après
+`npm ci`, le client Prisma n’était pas généré avant build, typecheck ou tests.
+Ces échecs R0 sont historiques.
+La correction R1 ajoute aux seules commandes API les hooks de génération
+Prisma et un test de contrat ; elle ne change ni dépendance, ni lockfile, ni
+workflow, ni schéma, migration, OpenAPI ou frontière PostgreSQL. Aucun des runs
+initiaux n’est relancé ; R1 produit des workflows distincts sur son propre head.
+
+Le commit R1 publié `41b3d8f33a637108814208258a3e99b105be1afc` était le head
+de la Draft PR #45 avant R2. Launcher Windows `35155026009`, Security
+`35155025993` et Quality Linux `35155026016` ont conclu `completed/success` ;
+Infrastructure `35155026285` a conclu `completed/failure`. Cet échec R1 est une
+preuve historique : le smoke test provisionnait bien le rôle runtime, mais
+lançait l’API avec le propriétaire/migrateur. Le garde a donc refusé ce compte
+par `RuntimeDatabaseBoundaryError`, puis le script a masqué cette sortie sous un
+timeout de 30 secondes. Dans l’instantané local antérieur à son commit, le
+correctif R2 déploie les migrations sous le propriétaire, reprovisionne les ACL,
+vérifie explicitement son refus, lance ensuite l’API avec le rôle runtime et
+remonte immédiatement toute sortie fatale après neutralisation des secrets.
+Aucun contrôle de privilèges n’est relâché et aucun droit propriétaire n’est
+accordé au runtime. Cette preuve locale R2, antérieure au commit, demeure un
+instantané historique du 2026-09-16 et ne préjugeait pas alors du résultat des
+workflows R2.
+
+R2 a ensuite été publié au commit
+`9d163cc34caa57cd671b6783048d89dde6d18069`. Les workflows `pull_request`
+Infrastructure `35162113781`, Launcher Windows `35162113686`, Security
+`35162113920` et Quality Linux `35162113691` ont tous conclu
+`completed/success` sur ce head exact. La PR #45 reste ouverte, Draft, non
+fusionnée et sans passage en Ready. S1.2-03B reste **Not started**.
+
+L’instantané local prépublication R3 daté du 2026-09-17 a été établi alors
+qu’aucun commit, push, changement de PR, rerun, Ready ou merge R3 n’avait été
+effectué ; aucun SHA ou Run ID R3 futur n’y était affirmé.
+
+R3 a ensuite été publié au commit
+`8f8c447b9badd3c8bd330982a1c0e7ef38e246cf`. Les workflows `pull_request`
+Infrastructure `35209186465`, Launcher Windows `35209186447`, Security
+`35209186482` et Quality Linux `35209186464` ont tous conclu
+`completed/success` sur ce head exact.
+
+La revue CTO post-R3 a bloqué la fusion sur deux constats : le compteur
+historique R1 du corps de PR et l’inspection PostgreSQL limitée à `public`.
+L’unique correction GitHub autorisée le 2026-09-18 a remplacé le compteur R1
+`+116/-42` par sa valeur Git/GitHub `+118/-42`, sans changer le cumul R3
+`4 commits, 28 fichiers, +2761/-187`, le titre, le head, la base ou le statut
+Draft. Le correctif local R4 étend l’attestation à tous les schémas non système
+de la base courante, aux types, aux options de redélégation et à toute propriété
+enregistrée dans la base. Il refuse sans les réécrire les ACL ou propriétés
+tierces hors profil. Les deux bases éphémères ont chacune validé le témoin sain,
+18 provisionnements réussis, 11 refus déterministes avec signature inchangée,
+quatre réparations isolées de `WITH GRANT OPTION`, Prisma, sept refus `42501` et
+le nettoyage ciblé. Cet état R4 constitue l’instantané historique local
+prépublication daté du 2026-09-18 : au moment de sa capture, aucun commit, push,
+rerun, Ready ou merge R4 n’avait été effectué. S1.2-03B reste **Not started**.
+
+R4 a ensuite été publié au commit
+`ebcd3fc02c15b0ee9cf679978ab197e9865a1737`, parent direct
+`8f8c447b9badd3c8bd330982a1c0e7ef38e246cf`, avec 13 fichiers et
+`+1507/-228`. Launcher Windows `35402506744`, Security `35402506756` et
+Quality Linux `35402506746` ont conclu `completed/success` ; Infrastructure
+`35402506742` a conclu `completed/failure`. Le garde refusait correctement le
+propriétaire, mais le smoke exigeait en plus `runtime_owns_database_object`.
+PostgreSQL confirme que le propriétaire initial est `pg_database.datdba` sans
+ligne de propriété correspondante dans `pg_shdepend` ; ce code n’est donc pas
+une preuve minimale exigible dans ce scénario.
+
+L’instantané local R5 du 2026-09-18 conserve l’erreur typée, l’attribut
+administratif et les violations d’écriture comme preuves obligatoires, tout en
+acceptant les violations supplémentaires. Il ne modifie ni le garde API, ni le
+provisionneur, ni le schéma, les migrations, OpenAPI, les contrats, workflows,
+lockfiles ou clients. Au moment de cet instantané, aucun commit, push, rerun ou
+changement de PR R5 n’avait été effectué et S1.2-03B restait **Not started**.
