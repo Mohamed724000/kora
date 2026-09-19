@@ -445,6 +445,19 @@ Aucun SHA ou Run ID R4 futur n’est affirmé. En dehors de l’unique correctio
 historique du corps de la Draft PR #45 consignée par DEC-S1.2-03A-09, aucun
 commit, push, rerun, changement de statut, Ready ou merge R4 n’a été effectué.
 
+## 2026-09-18 — S1.2-03A-R5 Infrastructure owner rejection oracle
+
+| ID              | Nature         | Décision                                                                                                                                                                                                                                                                                                                                  | Autorité                              | Statut                                     |
+| --------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | ------------------------------------------ |
+| DEC-S1.2-03A-14 | Publication R4 | R4 est publié au commit `ebcd3fc02c15b0ee9cf679978ab197e9865a1737`, parent `8f8c447b9badd3c8bd330982a1c0e7ef38e246cf`, avec 13 fichiers et `+1507/-228`. Launcher Windows `35402506744`, Security `35402506756` et Quality Linux `35402506746` réussissent ; Infrastructure `35402506742` échoue.                                         | Preuves Git/GitHub R4                 | Accepted — historical publication evidence |
+| DEC-S1.2-03A-15 | Diagnostic     | Le propriétaire initial est bien `pg_database.datdba`, mais c’est le superutilisateur bootstrap épinglé, dont PostgreSQL 18.4 omet les dépendances partagées dans `pg_shdepend`. L’attestation ne produit donc pas `runtime_owns_database_object` dans ce cas, tout en produisant les violations administratives et d’écriture attendues. | Reproduction PostgreSQL isolée R5     | Accepted — causal finding                  |
+| DEC-S1.2-03A-16 | Correctif      | L’oracle du smoke exige toujours `RuntimeDatabaseBoundaryError`, `administrative_role_attribute`, `database_or_schema_write_privilege` et `unexpected_table_privilege`. Il n’exige plus un code de propriété absent de l’état observé et continue d’accepter les violations supplémentaires sans les substituer au minimum requis.        | Décision CTO R5                       | R5 locally implemented and validated       |
+| DEC-S1.2-03A-17 | Non-régression | Six tests ciblés couvrent refus propriétaire sans code de propriété, violations administratives ou d’écriture manquantes, erreur étrangère, API acceptée et neutralisation des secrets. Le smoke réel passe après migrations sur PostgreSQL éphémère ; les scénarios R4 de propriété runtime restent séparément verts sur deux bases.     | Preuves locales R5                    | Executed — local prepublication evidence   |
+| DEC-S1.2-03A-18 | Périmètre      | R5 ne modifie ni le garde API, ni le provisionneur, le schéma Prisma, les migrations S1.2-02, OpenAPI, les contrats, workflows, lockfiles ou clients. La description de PR reste inchangée et aucun commit, push, rerun, Ready ou merge R5 n’est effectué. S1.2-03B reste `Not started`.                                                  | Autorisation Product Owner 2026-09-18 | Accepted — local prepublication scope      |
+
+Ces décisions R5 décrivent uniquement l’instantané local du 2026-09-18. Aucun
+SHA ou Run ID R5 futur n’est affirmé.
+
 ## Catégories d’autorité
 
 - **Produit** : vision, économie, marque, contrats et périmètre irréversible ;

@@ -2,7 +2,7 @@
 
 Date initiale : 2026-09-16
 Dernière réconciliation : 2026-09-18
-État : **DRAFT PR #45 OUVERTE — R3 PUBLIÉ — QUATRE WORKFLOWS R3 RÉUSSIS — R4 VALIDÉ LOCALEMENT — PUBLICATION R4 AUTORISÉE — NON FUSIONNÉ**
+État : **DRAFT PR #45 OUVERTE — R4 PUBLIÉ — INFRASTRUCTURE R4 EN ÉCHEC — TROIS WORKFLOWS R4 RÉUSSIS — R5 VALIDÉ LOCALEMENT — NON FUSIONNÉ**
 
 ## Baseline et autorisation
 
@@ -358,3 +358,40 @@ fondé ouvert.
   était la correction historique R1 du corps de PR ; aucun fichier R4 n’était
   alors commité ou publié et aucun rerun, Ready ou merge R4 n’avait été effectué.
   S1.2-03B reste `Not started`.
+
+## Publication R4 et correctif local R5
+
+R4 est publié au commit `ebcd3fc02c15b0ee9cf679978ab197e9865a1737`,
+parent direct `8f8c447b9badd3c8bd330982a1c0e7ef38e246cf`, arbre
+`bfa5e59cdd82e2ef1c478ff66daa3ac2f92f0434`, avec 13 fichiers et
+`+1507/-228`. Les workflows `pull_request` sur ce head exact concluent :
+
+- Infrastructure `35402506742` : `completed/failure` ;
+- Launcher Windows `35402506744` : `completed/success` ;
+- Security `35402506756` : `completed/success` ;
+- Quality Linux `35402506746` : `completed/success`.
+
+Infrastructure échoue dans le job `compose`, étape « Build and verify API health
+transitions ». Génération Prisma, build, migrations et provisioning réussissent.
+Le propriétaire est ensuite correctement refusé par
+`RuntimeDatabaseBoundaryError`, mais l’oracle du smoke exige aussi
+`runtime_owns_database_object`, absent de l’erreur réelle.
+
+La reproduction isolée PostgreSQL 18.4 montre simultanément le rôle courant
+comme propriétaire dans `pg_database.datdba` et zéro dépendance de propriété
+pour cette base dans `pg_shdepend`. Ce propriétaire est le superutilisateur
+bootstrap, un rôle épinglé dont PostgreSQL omet les dépendances partagées. Le
+code de violation est donc absent dans ce contexte sans que l’attestation soit
+relâchée. Les tests R4 continuent de rejeter séparément un schéma, un objet
+`public` et une collation réellement possédés par le rôle runtime.
+
+Le correctif local R5 exige toujours l’erreur typée, la violation
+`administrative_role_attribute` et les violations d’écriture
+`database_or_schema_write_privilege` et `unexpected_table_privilege`. Les codes
+supplémentaires, dont `unexpected_type_privilege` et
+`unexpected_default_privilege`, restent acceptés mais ne remplacent aucune
+preuve minimale. Six tests ciblés et un smoke réel après migrations sur une base
+éphémère passent sans secret. Cet instantané prépublication du 2026-09-18
+n’affirme aucun SHA ou Run ID R5 futur ; à cette date, la description de PR
+demeurait inchangée et aucun commit, push, rerun, Ready ou merge R5 n’avait été
+effectué.

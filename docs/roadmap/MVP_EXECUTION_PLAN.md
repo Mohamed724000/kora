@@ -27,7 +27,7 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 | Slice 1 / S1.1      | Contrats, données cibles et expérience audio  | Closed and merged                 |
 | Slice 1 / S1.2-01   | Contract & Data Readiness Gate                | Contract and data gate complete   |
 | Slice 1 / S1.2-02   | Baseline PostgreSQL et contraintes SQL        | Closed and merged — PR #43        |
-| Slice 1 / S1.2-03A  | Frontière PostgreSQL runtime en lecture seule | Draft PR #45 — R2 published/green |
+| Slice 1 / S1.2-03A  | Frontière PostgreSQL runtime en lecture seule | Draft #45 — R4 FAIL; R5 snapshot. |
 | Slice 1 / S1.2-03B+ | Fonctionnalités runtime métier du pilote      | Not started                       |
 | Slices suivantes    | Fonctionnalités produit ultérieures           | Not started                       |
 
@@ -136,7 +136,7 @@ démarrait ni Slice 1 ni aucune exigence produit.
 
 ## Slice 1 — Audio purchase pilot
 
-Statut : **In progress — S1.2-02 closed — S1.2-03A Draft PR #45, R2 published and green — business runtime not started**
+Statut : **In progress — S1.2-02 closed — S1.2-03A Draft PR #45, R4 published, Infrastructure failed, R5 prepublication snapshot dated 2026-09-18 — business runtime not started**
 
 Parcours cible :
 
@@ -242,7 +242,7 @@ fusion de la PR #44 et les quatre workflows `push/main` réussis.
 
 ### S1.2-03A — PostgreSQL Least-Privilege Runtime Boundary & Prisma Adapter
 
-Statut : **Draft PR #45 open — R3 published — four R3 workflows green — R4 validated locally — R4 publication authorized — not merged**
+Statut : **Draft PR #45 open — R4 published — Infrastructure R4 failed — three R4 workflows green — R5 prepublication snapshot validated — not merged**
 
 L’instantané local prépublication du 2026-09-16 a été validé avant indexation,
 commit, push ou création de PR. Ces absences décrivent uniquement cet instantané
@@ -288,6 +288,16 @@ dangereux tiers, y compris un default ACL d’un autre propriétaire dans `publi
 est refusé par l’API et le provisionneur ; sa signature reste inchangée. Au
 moment de cet instantané, aucun commit, push, rerun, Ready ou merge R4 n’avait
 été effectué.
+
+R4 est ensuite publié au commit
+`ebcd3fc02c15b0ee9cf679978ab197e9865a1737`. Launcher Windows `35402506744`,
+Security `35402506756` et Quality Linux `35402506746` réussissent ;
+Infrastructure `35402506742` échoue parce que le smoke exige un code de
+propriété absent de l’état PostgreSQL observé. Dans l’instantané prépublication
+R5 du 2026-09-18, l’oracle est corrigé sans changer l’attestation API : l’erreur
+typée, l’attribut administratif et les droits d’écriture restent obligatoires.
+À la date de cet instantané, R5 n’était ni commité ni publié, aucun rerun
+n’avait été lancé et S1.2-03B restait `Not started`.
 
 Périmètre livré localement :
 

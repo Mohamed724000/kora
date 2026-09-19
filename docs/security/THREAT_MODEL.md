@@ -540,6 +540,18 @@ isolément détectées puis normalisées. Cet instantané historique prépublica
 a été établi avant tout commit ou push R4 et ne décrit pas l’état GitHub
 ultérieur.
 
+R4 est ensuite publié au commit
+`ebcd3fc02c15b0ee9cf679978ab197e9865a1737`. Infrastructure `35402506742`
+échoue alors que le propriétaire est correctement refusé : l’oracle exigeait
+`runtime_owns_database_object`, mais PostgreSQL 18.4 expose ce propriétaire dans
+`pg_database.datdba` sans dépendance de propriété dans `pg_shdepend`. Dans
+l’instantané prépublication R5 du 2026-09-18, le correctif local ne relâche pas
+le garde : il conserve l’erreur typée, `administrative_role_attribute`,
+`database_or_schema_write_privilege` et `unexpected_table_privilege` comme
+minimum obligatoire. Les tests séparés de propriété runtime R4 restent
+inchangés. À la date de cet instantané, aucun SHA ou Run ID R5 futur n’était
+affirmé.
+
 Le pool `pg` est détenu par le client Prisma 7.9.1 via
 `@prisma/adapter-pg` 7.9.1 ; la readiness réutilise ce même chemin. Les erreurs
 de frontière exposent uniquement des codes de violation sûrs. Aucun secret,

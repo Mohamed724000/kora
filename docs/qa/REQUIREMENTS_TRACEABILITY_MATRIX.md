@@ -161,18 +161,19 @@ merge `main` `95bdfcf30a14e05ae90b09150cf289e1e0343c0d`.
 
 ## Contrôles S1.2-03A — PostgreSQL Least-Privilege Runtime Boundary
 
-| ID              | Contrôle                                  | État                     | Preuve attendue                                                                                                                                        |
-| --------------- | ----------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| GOV-S1.2-03A-01 | Séparation propriétaire/runtime           | Vérifié localement       | identifiants et secrets distincts ; rôle runtime non propriétaire, `NOINHERIT`, sans attribut administratif ni membership                              |
-| GOV-S1.2-03A-02 | Prisma 7.9.1 et attestation au démarrage  | Vérifié localement       | `@prisma/adapter-pg` 7.9.1 sur pool runtime ; API accepte le rôle lecture et refuse le propriétaire/migrateur avant `application.init()`               |
-| GOV-S1.2-03A-03 | Privilèges effectifs et héritage `PUBLIC` | Vérifié localement       | `CONNECT`, `USAGE public`, `SELECT public` sans redélégation ; tous schémas non système, colonnes, vues, types, `MAINTAIN` et ACL par défaut contrôlés |
-| GOV-S1.2-03A-04 | Refus des mutations et élévations         | Vérifié localement       | SQLSTATE `42501` pour DDL, `TRUNCATE`, trigger, `SET ROLE`, `INSERT`, `UPDATE` et `DELETE`, sur deux bases                                             |
-| GOV-S1.2-03A-05 | Idempotence et nettoyage ciblé            | Vérifié localement       | par base : 18 provisionnements réussis, 11 refus déterministes à signature inchangée, 4 grant options réparées ; nettoyage ciblé                       |
-| GOV-S1.2-03A-06 | Dépendance, licence et audit              | Vérifié localement       | instantané prépublication du 2026-09-16 : provenance/licences contrôlées et audits à zéro ; graphe inchangé après correction, non rejoué               |
-| GOV-S1.2-03A-07 | Périmètre et publication contrôlée        | Publication R4 autorisée | head R3 publié `8f8c447…`, quatre runs verts ; instantané prépublication R4 validé ; aucun Ready ou merge                                              |
-| GOV-S1.2-03A-08 | Reproductibilité du client Prisma en CI   | R1 publié                | clone neuf après `npm ci` : client absent, puis génération automatique et succès indépendants de typecheck, build et 26 tests API                      |
-| GOV-S1.2-03A-09 | Identité du smoke Infrastructure          | R2 publié et vert        | migrations propriétaire ; refus propriétaire explicite ; API runtime saine ; fatal fail-fast neutralisé ; quatre workflows R2 réussis                  |
-| GOV-S1.2-03A-10 | Schémas non système                       | R4 vérifié localement    | propriété exhaustive, `PUBLIC CREATE`, privilèges objets/colonnes/séquences/routines/types et default ACL tiers isolément refusés sur deux bases       |
+| ID              | Contrôle                                  | État                      | Preuve attendue                                                                                                                                        |
+| --------------- | ----------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| GOV-S1.2-03A-01 | Séparation propriétaire/runtime           | Vérifié localement        | identifiants et secrets distincts ; rôle runtime non propriétaire, `NOINHERIT`, sans attribut administratif ni membership                              |
+| GOV-S1.2-03A-02 | Prisma 7.9.1 et attestation au démarrage  | Vérifié localement        | `@prisma/adapter-pg` 7.9.1 sur pool runtime ; API accepte le rôle lecture et refuse le propriétaire/migrateur avant `application.init()`               |
+| GOV-S1.2-03A-03 | Privilèges effectifs et héritage `PUBLIC` | Vérifié localement        | `CONNECT`, `USAGE public`, `SELECT public` sans redélégation ; tous schémas non système, colonnes, vues, types, `MAINTAIN` et ACL par défaut contrôlés |
+| GOV-S1.2-03A-04 | Refus des mutations et élévations         | Vérifié localement        | SQLSTATE `42501` pour DDL, `TRUNCATE`, trigger, `SET ROLE`, `INSERT`, `UPDATE` et `DELETE`, sur deux bases                                             |
+| GOV-S1.2-03A-05 | Idempotence et nettoyage ciblé            | Vérifié localement        | par base : 18 provisionnements réussis, 11 refus déterministes à signature inchangée, 4 grant options réparées ; nettoyage ciblé                       |
+| GOV-S1.2-03A-06 | Dépendance, licence et audit              | Vérifié localement        | instantané prépublication du 2026-09-16 : provenance/licences contrôlées et audits à zéro ; graphe inchangé après correction, non rejoué               |
+| GOV-S1.2-03A-07 | Périmètre et publication contrôlée        | R4 publié ; Draft bloquée | head R4 `ebcd3fc…` ; trois workflows réussis, Infrastructure `35402506742` en échec ; aucun Ready ou merge                                             |
+| GOV-S1.2-03A-08 | Reproductibilité du client Prisma en CI   | R1 publié                 | clone neuf après `npm ci` : client absent, puis génération automatique et succès indépendants de typecheck, build et 26 tests API                      |
+| GOV-S1.2-03A-09 | Identité du smoke Infrastructure          | R2 publié et vert         | migrations propriétaire ; refus propriétaire explicite ; API runtime saine ; fatal fail-fast neutralisé ; quatre workflows R2 réussis                  |
+| GOV-S1.2-03A-10 | Schémas non système                       | R4 vérifié localement     | propriété exhaustive, `PUBLIC CREATE`, privilèges objets/colonnes/séquences/routines/types et default ACL tiers isolément refusés sur deux bases       |
+| GOV-S1.2-03A-11 | Oracle de refus propriétaire              | R5 vérifié localement     | erreur typée, attribut administratif et droits d’écriture obligatoires ; code de propriété non exigé par cet oracle, détection R4 testée séparément    |
 
 Le [rapport S1.2-03A](SLICE_1_2_03A_POSTGRESQL_RUNTIME_BOUNDARY_REPORT.md)
 porte le détail reproductible. Les fonctionnalités métier S1.2-03B+ restent
@@ -212,6 +213,18 @@ publication. Les tests réels sur deux bases isolent et rejettent propriété ru
 sans normalisation automatique des ACL tierces. Quatre cas `WITH GRANT OPTION`
 sont détectés puis réparés. Au moment de cet instantané, aucun commit, push,
 rerun, Ready ou merge R4 n’avait été effectué ; S1.2-03B reste `Not started`.
+
+R4 est ensuite publié au head
+`ebcd3fc02c15b0ee9cf679978ab197e9865a1737`. Launcher Windows `35402506744`,
+Security `35402506756` et Quality Linux `35402506746` sont
+`completed/success`; Infrastructure `35402506742` est `completed/failure`.
+L’instantané R5 local du 2026-09-18 explique l’absence de
+`runtime_owns_database_object` par l’absence de dépendance `pg_shdepend` pour le
+propriétaire initial pourtant présent dans `pg_database.datdba`. Le smoke
+conserve l’erreur typée et les preuves administratives et d’écriture
+obligatoires. Aucun SHA ou Run ID R5 futur n’y est affirmé ; à la date de cet
+instantané, aucun commit, push, rerun, changement de PR, Ready ou merge R5
+n’avait été effectué.
 
 ## Contrôles de gouvernance de Sprint 0.1
 

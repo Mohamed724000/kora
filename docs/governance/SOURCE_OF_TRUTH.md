@@ -1,6 +1,6 @@
 # KORA+ Final — Source de vérité
 
-Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A EN DRAFT PR #45 — R3 PUBLIÉ — CI R3 VERTE — R4 VALIDÉ LOCALEMENT — PUBLICATION R4 AUTORISÉE — NON FUSIONNÉ**
+Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A EN DRAFT PR #45 — R4 PUBLIÉ — INFRASTRUCTURE R4 EN ÉCHEC — R5 VALIDÉ LOCALEMENT — NON FUSIONNÉ**
 
 Date d’effet : 2026-07-28
 Dernière réconciliation documentaire : 2026-09-18
@@ -113,9 +113,10 @@ Infrastructure `35082285457`, Launcher Windows `35082285515`, Security
 `completed/success` sur ce merge.
 
 Sur autorisation Product Owner distincte du 2026-09-16, S1.2-03A est démarré
-depuis ce merge dans une branche et un worktree dédiés. Son état courant est
-**Draft PR #45 ouverte ; R3 publié ; quatre workflows R3 réussis ; validation
-locale R4 achevée ; publication R4 autorisée ; non fusionné**.
+depuis ce merge dans une branche et un worktree dédiés. L’état observé dans
+l’instantané prépublication R5 du 2026-09-18 est **Draft PR #45 ouverte ; R4
+publié ; Infrastructure R4 en échec ; trois autres workflows R4 réussis ;
+correctif R5 validé localement ; non fusionné**.
 L’instantané local prépublication du 2026-09-16 a été établi alors que les 26
 fichiers étaient non indexés, non commités et non publiés ; cette formulation
 reste une preuve historique datée. Le lot sépare le compte
@@ -185,3 +186,21 @@ quatre réparations isolées de `WITH GRANT OPTION`, Prisma, sept refus `42501` 
 le nettoyage ciblé. Cet état R4 constitue l’instantané historique local
 prépublication daté du 2026-09-18 : au moment de sa capture, aucun commit, push,
 rerun, Ready ou merge R4 n’avait été effectué. S1.2-03B reste **Not started**.
+
+R4 a ensuite été publié au commit
+`ebcd3fc02c15b0ee9cf679978ab197e9865a1737`, parent direct
+`8f8c447b9badd3c8bd330982a1c0e7ef38e246cf`, avec 13 fichiers et
+`+1507/-228`. Launcher Windows `35402506744`, Security `35402506756` et
+Quality Linux `35402506746` ont conclu `completed/success` ; Infrastructure
+`35402506742` a conclu `completed/failure`. Le garde refusait correctement le
+propriétaire, mais le smoke exigeait en plus `runtime_owns_database_object`.
+PostgreSQL confirme que le propriétaire initial est `pg_database.datdba` sans
+ligne de propriété correspondante dans `pg_shdepend` ; ce code n’est donc pas
+une preuve minimale exigible dans ce scénario.
+
+L’instantané local R5 du 2026-09-18 conserve l’erreur typée, l’attribut
+administratif et les violations d’écriture comme preuves obligatoires, tout en
+acceptant les violations supplémentaires. Il ne modifie ni le garde API, ni le
+provisionneur, ni le schéma, les migrations, OpenAPI, les contrats, workflows,
+lockfiles ou clients. Au moment de cet instantané, aucun commit, push, rerun ou
+changement de PR R5 n’avait été effectué et S1.2-03B restait **Not started**.
