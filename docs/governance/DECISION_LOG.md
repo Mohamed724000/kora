@@ -479,6 +479,27 @@ Draft et non fusionnée.
 Ces décisions décrivent l’instantané historique local prépublication R6 du
 2026-09-20. Aucun SHA ou Run ID R6 futur n’y était affirmé.
 
+R6 a ensuite été publié au commit
+`80e8a397b19a98bd85f5ef6fcd2afe8ef4407ab0`, parent
+`afaa652b7446b78ae35fb0bf6f4944af5625cef6`, arbre
+`c7c0c733bd28bacce41206290590c6f9fc043f2a`, avec 13 fichiers et
+`+498/-97`. Infrastructure `36125459701`, Launcher Windows `36125459563`,
+Security `36125459520` et Quality Linux `36125459526` sont tous
+`pull_request/completed/success` sur ce head exact. La PR #45 reste ouverte,
+Draft et non fusionnée.
+
+## 2026-09-25 — S1.2-03A-R7 Large objects and effective session boundary
+
+| ID              | Nature          | Décision                                                                                                                                                                                                                                                                                                                                                        | Autorité                         | Statut                                        |
+| --------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- | --------------------------------------------- |
+| DEC-S1.2-03A-23 | Large objects   | L’attestation couvre indépendamment des schémas `pg_largeobject_metadata.lomowner/lomacl`, les droits effectifs `SELECT`/`UPDATE`, `PUBLIC`, les grant options, les routines `pg_catalog` `lo_*`/`loread`/`lowrite` et `lo_compat_privileges`. Les default ACL `L` du propriétaire sont normalisées ; les états courants dangereux sont refusés avant mutation. | Verdict CTO BLOCK post-R6        | Accepted — local prepublication evidence      |
+| DEC-S1.2-03A-24 | Session runtime | L’attestation Prisma exige `current_setting('session_replication_role') = 'origin'` sur la connexion runtime réelle. Les réglages persistants base, rôle et rôle/base sont inspectés dans `pg_db_role_setting`, refusés avant mutation et jamais corrigés silencieusement.                                                                                      | Verdict CTO BLOCK post-R6        | Accepted — local prepublication evidence      |
+| DEC-S1.2-03A-25 | Validation      | Deux bases PostgreSQL 18.4 valident chacune 36 provisionnements réussis, 27 refus à signature inchangée, quatre réparations de redélégation, une normalisation de default ACL `L`, trois refus de réplication, un refus de `lo_compat_privileges=on`, une ACL tierce de routine préservée, Prisma, `SELECT 1`, lecture `Customer` et douze refus `42501`.       | Preuves locales R7 du 2026-09-25 | Executed — reproducible and cleaned           |
+| DEC-S1.2-03A-26 | Périmètre local | L’instantané R7 ne modifie ni manifeste, lockfile, schéma Prisma, migration S1.2-02, OpenAPI, contrat, workflow ou client Web/Admin/Mobile. Il ne crée aucun fichier. Au moment de cette preuve, aucun commit, push, rerun ou changement GitHub R7 n’avait été effectué ; la PR restait Draft et S1.2-03B n’était pas démarré.                                  | Autorisation Product Owner R7    | Accepted — historical prepublication snapshot |
+
+Ces décisions décrivent l’instantané historique local prépublication R7 du
+2026-09-25. Aucun SHA ou Run ID R7 futur n’y est affirmé.
+
 ## Catégories d’autorité
 
 - **Produit** : vision, économie, marque, contrats et périmètre irréversible ;

@@ -41,6 +41,12 @@ export function runtimeBoundaryViolations(
   if (snapshot.ownedObjectCount !== 0) {
     violations.push('runtime_owns_database_object');
   }
+  if (snapshot.sessionReplicationRole !== 'origin') {
+    violations.push('unexpected_session_replication_role');
+  }
+  if (snapshot.loCompatPrivilegesEnabled) {
+    violations.push('unsafe_large_object_compatibility_mode');
+  }
   if (!snapshot.canConnect || !snapshot.canUseSchema) {
     violations.push('required_read_privilege_missing');
   }
@@ -68,6 +74,12 @@ export function runtimeBoundaryViolations(
   }
   if (snapshot.typePrivilegeCount !== 0) {
     violations.push('unexpected_type_privilege');
+  }
+  if (snapshot.largeObjectPrivilegeCount !== 0) {
+    violations.push('unexpected_large_object_privilege');
+  }
+  if (snapshot.largeObjectRoutineExecutePrivilegeCount !== 0) {
+    violations.push('unexpected_large_object_routine_privilege');
   }
   if (snapshot.parameterPrivilegeCount !== 0) {
     violations.push('unexpected_parameter_privilege');

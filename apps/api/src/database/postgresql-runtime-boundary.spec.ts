@@ -20,6 +20,9 @@ function validSnapshot(): RuntimeBoundarySnapshot {
     defaultPrivilegeViolationCount: 0,
     directMembershipCount: 0,
     grantOptionViolationCount: 0,
+    largeObjectRoutineExecutePrivilegeCount: 0,
+    largeObjectPrivilegeCount: 0,
+    loCompatPrivilegesEnabled: false,
     ownedObjectCount: 0,
     parameterPrivilegeCount: 0,
     publicGrantCount: 0,
@@ -31,6 +34,7 @@ function validSnapshot(): RuntimeBoundarySnapshot {
     roleInherits: false,
     roleIsSuperuser: false,
     routineExecutePrivilegeCount: 0,
+    sessionReplicationRole: 'origin',
     sequencePrivilegeCount: 0,
     sessionUser: SAFE_RUNTIME_USER,
     tableCount: 34,
@@ -77,6 +81,9 @@ describe('PostgresqlRuntimeBoundary', () => {
       canCreateSchemaObjects: true,
       defaultPrivilegeViolationCount: 1,
       grantOptionViolationCount: 1,
+      largeObjectRoutineExecutePrivilegeCount: 1,
+      largeObjectPrivilegeCount: 1,
+      loCompatPrivilegesEnabled: true,
       parameterPrivilegeCount: 1,
       publicGrantCount: 1,
       roleIsSuperuser: true,
@@ -87,14 +94,28 @@ describe('PostgresqlRuntimeBoundary', () => {
 
     expect(runtimeBoundaryViolations(snapshot, SAFE_RUNTIME_USER)).toEqual([
       'administrative_role_attribute',
+      'unsafe_large_object_compatibility_mode',
       'database_or_schema_write_privilege',
       'unexpected_schema_privilege',
       'unexpected_table_privilege',
       'unexpected_type_privilege',
+      'unexpected_large_object_privilege',
+      'unexpected_large_object_routine_privilege',
       'unexpected_parameter_privilege',
       'unexpected_default_privilege',
       'unexpected_grant_option',
       'public_privilege_present',
+    ]);
+  });
+
+  it('refuse une session qui démarre avec le rôle de réplication replica', () => {
+    const snapshot = {
+      ...validSnapshot(),
+      sessionReplicationRole: 'replica',
+    };
+
+    expect(runtimeBoundaryViolations(snapshot, SAFE_RUNTIME_USER)).toEqual([
+      'unexpected_session_replication_role',
     ]);
   });
 

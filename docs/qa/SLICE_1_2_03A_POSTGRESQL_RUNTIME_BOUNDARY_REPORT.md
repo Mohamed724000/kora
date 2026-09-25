@@ -1,8 +1,8 @@
 # S1.2-03A — PostgreSQL Least-Privilege Runtime Boundary & Prisma Adapter
 
 Date initiale : 2026-09-16
-Dernière réconciliation : 2026-09-20
-État : **DRAFT PR #45 OUVERTE — R5 PUBLIÉ — QUATRE WORKFLOWS R5 RÉUSSIS — PREUVE PRÉPUBLICATION R6 VALIDÉE — NON FUSIONNÉ**
+Dernère réconciliation : 2026-09-25
+État : **DRAFT PR #45 OUVERTE — R6 PUBLIÉ — QUATRE WORKFLOWS R6 RÉUSSIS — INSTANTANÉ PRÉPUBLICATION R7 VALIDÉ LOCALEMENT — NON FUSIONNÉ**
 
 ## Baseline et autorisation
 
@@ -220,6 +220,10 @@ provisionneur sur A et B, sans mutation de leur signature.
 | `INSERT` métier                | `42501`    | `42501`    |
 | `UPDATE` métier                | `42501`    | `42501`    |
 | `DELETE` métier                | `42501`    | `42501`    |
+| `lo_create`                    | `42501`    | `42501`    |
+| `lo_from_bytea`                | `42501`    | `42501`    |
+| `lo_put`                       | `42501`    | `42501`    |
+| `lo_open`                      | `42501`    | `42501`    |
 
 Après validation, seules les deux bases, les six rôles, le conteneur et les
 deux fichiers secrets créés par l’essai sont supprimés. Le nettoyage tente
@@ -496,3 +500,119 @@ ont été supprimés de façon ciblée. Les conteneurs KORA+ préexistants n’o
 2026-09-20 : aucun commit, push, changement de PR, rerun, Ready ou merge R6
 n’avait été effectué et aucun SHA ou Run ID R6 futur n’y était affirmé.
 S1.2-03B restait `Not started`.
+
+## Publication R6 et instantané historique prépublication R7
+
+R6 a été publié au commit
+`80e8a397b19a98bd85f5ef6fcd2afe8ef4407ab0`, parent
+`afaa652b7446b78ae35fb0bf6f4944af5625cef6`, arbre
+`c7c0c733bd28bacce41206290590c6f9fc043f2a`, avec 13 fichiers et
+`+498/-97`. Infrastructure `36125459701`, Launcher Windows `36125459563`,
+Security `36125459520` et Quality Linux `36125459526` sont tous
+`pull_request/completed/success` sur ce head exact. La PR #45 affiche
+7 commits, 31 fichiers et `+4700/-201` ; elle reste ouverte, Draft,
+`CLEAN/MERGEABLE` et non fusionnée.
+
+La revue CTO finale du 2026-09-25 a bloqué le passage en Ready sur deux
+findings : les large objects n’étaient pas inclus dans la frontière de droits,
+et une nouvelle connexion pouvait hériter de
+`session_replication_role=replica` depuis `pg_db_role_setting` sans exercer un
+droit `SET`.
+
+### Correctifs de l’instantané historique prépublication R7
+
+L’instantané historique local prépublication R7 du 2026-09-25 ajoute :
+
+- l’inventaire hors schéma de `pg_largeobject_metadata.lomowner/lomacl` ;
+- le refus de toute propriété ou capacité effective `SELECT`/`UPDATE`, y compris
+  via `PUBLIC` et avec grant option ;
+- le traitement des default ACL PostgreSQL 18 `L` : normalisation bornée pour
+  le propriétaire/migrateur et refus inchangé pour un propriétaire tiers ;
+- l’exigence `current_setting('session_replication_role') = 'origin'` sur la
+  connexion Prisma réelle ;
+- l’inspection avant mutation des réglages persistants de portée base
+  (`setrole=0`), rôle (`setdatabase=0`) et rôle/base ;
+- les ACL de large objects et toutes les portées `pg_db_role_setting` dans la
+  signature de refus, distincte de la signature opérationnelle d’idempotence.
+
+La reprise byte-finale a ensuite démontré un finding supplémentaire : malgré
+`lo_compat_privileges=off` et l’absence d’ACL sur les objets existants, le
+runtime héritait encore de `PUBLIC EXECUTE` sur `lo_create`, `lo_from_bytea` et
+`lo_put`; il pouvait créer, posséder et alimenter son propre large object. Le
+byte-final retire donc au runtime et à `PUBLIC` l’exécution de toutes les
+routines `pg_catalog` `lo_*`, `loread` et `lowrite`. L’attestation refuse tout
+droit effectif résiduel et `lo_compat_privileges=on`.
+
+Le provisionneur ne corrige pas silencieusement un large object existant ni un
+réglage persistant dangereux. Il les refuse avant ses mutations avec un
+diagnostic borné, sans secret. Seule la default ACL `L` du propriétaire de base
+appartient au périmètre de normalisation déterministe. Une ACL tierce reste
+intacte jusqu’à sa remédiation explicite.
+
+### Preuve PostgreSQL réelle R7
+
+Le validateur a créé deux bases PostgreSQL 18.4 indépendantes. Sur chacune, il
+a isolé et diagnostiqué séparément :
+
+- un large object possédé par le runtime ;
+- `SELECT` direct, `UPDATE` direct, `UPDATE` via `PUBLIC` et `SELECT WITH GRANT
+OPTION` ;
+- une default ACL `L` dangereuse du propriétaire, normalisée, puis la création
+  d’un nouveau large object inaccessible au runtime ;
+- une default ACL `L` tierce, refusée à signature inchangée, puis remédiée
+  explicitement avant la création d’un large object tiers inaccessible ;
+- une ACL directe `lo_create` du runtime, refusée à signature inchangée ;
+- une ACL directe `lo_create` d’un rôle tiers, préservée par le provisionneur ;
+- les refus `42501` séparés de `lo_create`, `lo_from_bytea`, `lo_put` et
+  `lo_open` après durcissement de `PUBLIC` ;
+- `lo_compat_privileges=on` hérité par une nouvelle connexion, refusé avant
+  mutation, puis `off` après remédiation explicite et nouvelle connexion ;
+- `ALTER DATABASE ... SET session_replication_role=replica`, `ALTER ROLE
+runtime SET ...` et `ALTER ROLE runtime IN DATABASE ... SET ...` ;
+- l’héritage de chaque réglage par une nouvelle connexion runtime, le refus de
+  l’attestation, la signature inchangée et le retour à `origin` sur une nouvelle
+  connexion après remédiation explicite.
+
+Résultats cumulés réels :
+
+| Contrôle                                    | Résultat local de l’instantané R7                          |
+| ------------------------------------------- | ---------------------------------------------------------- |
+| Bases indépendantes                         | 2 PostgreSQL 18.4                                          |
+| Provisionnements réussis                    | 72, soit 36 par base                                       |
+| Refus d’états dangereux sans mutation       | 54, soit 27 par base                                       |
+| Réparations de grant option                 | 8, soit 4 par base                                         |
+| Normalisations de default ACL `L`           | 2, soit 1 par base                                         |
+| ACL tierces de routine préservées           | 2, soit 1 par base                                         |
+| Réglages persistants de réplication refusés | 6, soit les 3 portées sur chaque base                      |
+| Réglages `lo_compat_privileges` refusés     | 2, soit 1 par base                                         |
+| Refus SQLSTATE `42501`                      | 24, soit 12 opérations par base                            |
+| Prisma                                      | 7.9.1, `SELECT 1` et lecture `Customer` réussis            |
+| Démarrage API                               | propriétaire refusé ; runtime sain accepté sur les 2 bases |
+| Nettoyage                                   | 2 bases, 6 rôles, conteneur et secrets éphémères supprimés |
+
+### Validations R7 exécutées
+
+- `npm ci` : installation reproductible ; sa sortie npm a indiqué 0
+  vulnérabilité, sans constituer les deux audits supply-chain dédiés ;
+- génération Prisma 7.9.1 : réussie ;
+- build API requis par le validateur : réussi ;
+- lint API : réussi ;
+- typecheck API : réussi ;
+- tests API : 7 suites, 27 tests réussis ;
+- test unitaire ciblé de frontière : 5 tests réussis, inclus dans les 27 ;
+- tests d’outillage : 303/303 réussis ;
+- syntaxe Node du validateur : réussie ;
+- syntaxe et exécution shell du provisionneur : prouvées par 72 passages
+  réussis et 54 refus contrôlés dans le conteneur Alpine ;
+- Prettier ciblé, scanner officiel, références Markdown, recherche de secrets,
+  contrôle de périmètre et `git diff --check` : exécutés sur l’état final.
+
+Le graphe de dépendances, les manifestes et les lockfiles ne changent pas. Les
+deux audits supply-chain dédiés et le contrôle de licences antérieur n’ont donc
+pas été rejoués. La sortie d’installation de `npm ci` à zéro vulnérabilité est
+rapportée séparément et n’est pas présentée comme ces audits dédiés.
+
+À la date de cet instantané historique prépublication, R7 reste local, non
+commité et non publié. Aucun SHA ou Run ID R7 futur n’est affirmé ; aucun push,
+rerun, changement de PR, Ready ou merge n’a été effectué. La PR #45 reste
+Draft et S1.2-03B reste `Not started`.

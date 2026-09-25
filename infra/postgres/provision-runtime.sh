@@ -34,6 +34,155 @@ WITH runtime_role AS (
   SELECT oid
   FROM pg_catalog.pg_roles
   WHERE rolname = :'runtime_user'
+), current_database_entry AS (
+  SELECT oid
+  FROM pg_catalog.pg_database
+  WHERE datname = current_database()
+), unsafe_session_replication_setting AS (
+  SELECT 1
+  FROM pg_catalog.pg_db_role_setting AS role_setting
+  CROSS JOIN current_database_entry
+  CROSS JOIN LATERAL unnest(role_setting.setconfig) AS setting_entry(setting)
+  WHERE (
+      role_setting.setrole = 0
+      OR role_setting.setrole = (SELECT oid FROM runtime_role)
+    )
+    AND role_setting.setdatabase IN (0, current_database_entry.oid)
+    AND split_part(setting_entry.setting, '=', 1) = 'session_replication_role'
+    AND split_part(setting_entry.setting, '=', 2) <> 'origin'
+  UNION ALL
+  SELECT 1
+  WHERE pg_catalog.current_setting('session_replication_role') <> 'origin'
+)
+SELECT
+  NOT EXISTS (SELECT 1 FROM unsafe_session_replication_setting)
+    AS session_replication_boundary_safe,
+  (SELECT count(*) FROM unsafe_session_replication_setting)
+    AS session_replication_violation_count
+\gset
+
+\if :session_replication_boundary_safe
+\else
+  \echo PostgreSQL runtime provisioning refused unsafe session replication setting count=:session_replication_violation_count.
+  DO $session_replication_refusal$
+  BEGIN
+    RAISE EXCEPTION 'unsafe session replication setting';
+  END
+  $session_replication_refusal$;
+\endif
+
+WITH runtime_role AS (
+  SELECT oid
+  FROM pg_catalog.pg_roles
+  WHERE rolname = :'runtime_user'
+), current_database_entry AS (
+  SELECT oid
+  FROM pg_catalog.pg_database
+  WHERE datname = current_database()
+), unsafe_large_object_compatibility_setting AS (
+  SELECT 1
+  FROM pg_catalog.pg_db_role_setting AS role_setting
+  CROSS JOIN current_database_entry
+  CROSS JOIN LATERAL unnest(role_setting.setconfig) AS setting_entry(setting)
+  WHERE (
+      role_setting.setrole = 0
+      OR role_setting.setrole = (SELECT oid FROM runtime_role)
+    )
+    AND role_setting.setdatabase IN (0, current_database_entry.oid)
+    AND split_part(setting_entry.setting, '=', 1) = 'lo_compat_privileges'
+    AND split_part(setting_entry.setting, '=', 2) <> 'off'
+  UNION ALL
+  SELECT 1
+  WHERE pg_catalog.current_setting('lo_compat_privileges') <> 'off'
+)
+SELECT
+  NOT EXISTS (SELECT 1 FROM unsafe_large_object_compatibility_setting)
+    AS large_object_compatibility_boundary_safe,
+  (SELECT count(*) FROM unsafe_large_object_compatibility_setting)
+    AS large_object_compatibility_violation_count
+\gset
+
+\if :large_object_compatibility_boundary_safe
+\else
+  \echo PostgreSQL runtime provisioning refused unsafe large object compatibility setting count=:large_object_compatibility_violation_count.
+  DO $large_object_compatibility_refusal$
+  BEGIN
+    RAISE EXCEPTION 'unsafe large object compatibility setting';
+  END
+  $large_object_compatibility_refusal$;
+\endif
+
+WITH runtime_role AS (
+  SELECT oid
+  FROM pg_catalog.pg_roles
+  WHERE rolname = :'runtime_user'
+), current_database_entry AS (
+  SELECT oid, datdba
+  FROM pg_catalog.pg_database
+  WHERE datname = current_database()
+), unsafe_large_object_state AS (
+  SELECT 1
+  FROM pg_catalog.pg_largeobject_metadata AS large_object
+  CROSS JOIN LATERAL pg_catalog.aclexplode(
+    COALESCE(
+      large_object.lomacl,
+      pg_catalog.acldefault('L', large_object.lomowner)
+    )
+  ) AS privilege
+  WHERE large_object.lomowner = (SELECT oid FROM runtime_role)
+    OR privilege.grantee = 0
+    OR privilege.grantee = (SELECT oid FROM runtime_role)
+  UNION ALL
+  SELECT 1
+  FROM pg_catalog.pg_default_acl AS default_acl
+  CROSS JOIN current_database_entry
+  CROSS JOIN LATERAL pg_catalog.aclexplode(default_acl.defaclacl) AS privilege
+  WHERE default_acl.defaclobjtype = 'L'
+    AND default_acl.defaclrole <> current_database_entry.datdba
+    AND (
+      privilege.grantee = 0
+      OR privilege.grantee = (SELECT oid FROM runtime_role)
+    )
+  UNION ALL
+  SELECT 1
+  FROM pg_catalog.pg_proc AS routine_entry
+  JOIN pg_catalog.pg_namespace AS namespace_entry
+    ON namespace_entry.oid = routine_entry.pronamespace
+  CROSS JOIN LATERAL pg_catalog.aclexplode(
+    COALESCE(routine_entry.proacl, pg_catalog.acldefault('f', routine_entry.proowner))
+  ) AS privilege
+  WHERE namespace_entry.nspname = 'pg_catalog'
+    AND (
+      routine_entry.proname ~ '^lo_'
+      OR routine_entry.proname IN ('loread', 'lowrite')
+    )
+    AND (
+      privilege.grantee = (SELECT oid FROM runtime_role)
+      OR (
+        privilege.grantee = 0
+        AND (privilege.privilege_type <> 'EXECUTE' OR privilege.is_grantable)
+      )
+    )
+)
+SELECT
+  NOT EXISTS (SELECT 1 FROM unsafe_large_object_state) AS large_object_boundary_safe,
+  (SELECT count(*) FROM unsafe_large_object_state) AS large_object_violation_count
+\gset
+
+\if :large_object_boundary_safe
+\else
+  \echo PostgreSQL runtime provisioning refused unsafe large object state count=:large_object_violation_count.
+  DO $large_object_refusal$
+  BEGIN
+    RAISE EXCEPTION 'unsafe large object state';
+  END
+  $large_object_refusal$;
+\endif
+
+WITH runtime_role AS (
+  SELECT oid
+  FROM pg_catalog.pg_roles
+  WHERE rolname = :'runtime_user'
 ), unsafe_parameter_acl AS (
   SELECT 1
   FROM pg_catalog.pg_parameter_acl AS parameter_acl
@@ -221,11 +370,17 @@ WITH runtime_role AS (
       default_acl.defaclnamespace = 0
       OR namespace_entry.oid IS NOT NULL
     )
-    AND (
-      default_acl.defaclrole <> current_database_entry.datdba
-      OR (
-        default_acl.defaclnamespace <> 0
-        AND namespace_entry.nspname <> 'public'
+    AND NOT (
+      default_acl.defaclrole = current_database_entry.datdba
+      AND (
+        (
+          default_acl.defaclnamespace = 0
+          AND default_acl.defaclobjtype IN ('r', 'S', 'f', 'T', 'L')
+        )
+        OR (
+          namespace_entry.nspname = 'public'
+          AND default_acl.defaclobjtype IN ('r', 'S', 'f', 'T')
+        )
       )
     )
 )
@@ -340,10 +495,34 @@ WHERE namespace_entry.nspname = 'public'
 
 SELECT format('GRANT SELECT ON ALL TABLES IN SCHEMA public TO %I', :'runtime_user') \gexec
 
+SELECT format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC', routine_entry.oid::regprocedure)
+FROM pg_catalog.pg_proc AS routine_entry
+JOIN pg_catalog.pg_namespace AS namespace_entry
+  ON namespace_entry.oid = routine_entry.pronamespace
+WHERE namespace_entry.nspname = 'pg_catalog'
+  AND (
+    routine_entry.proname ~ '^lo_'
+    OR routine_entry.proname IN ('loread', 'lowrite')
+  ) \gexec
+SELECT format(
+  'REVOKE EXECUTE ON FUNCTION %s FROM %I',
+  routine_entry.oid::regprocedure,
+  :'runtime_user'
+)
+FROM pg_catalog.pg_proc AS routine_entry
+JOIN pg_catalog.pg_namespace AS namespace_entry
+  ON namespace_entry.oid = routine_entry.pronamespace
+WHERE namespace_entry.nspname = 'pg_catalog'
+  AND (
+    routine_entry.proname ~ '^lo_'
+    OR routine_entry.proname IN ('loread', 'lowrite')
+  ) \gexec
+
 ALTER DEFAULT PRIVILEGES REVOKE ALL PRIVILEGES ON TABLES FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES REVOKE ALL PRIVILEGES ON SEQUENCES FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES REVOKE ALL PRIVILEGES ON FUNCTIONS FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES REVOKE ALL PRIVILEGES ON TYPES FROM PUBLIC;
+ALTER DEFAULT PRIVILEGES REVOKE ALL PRIVILEGES ON LARGE OBJECTS FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL PRIVILEGES ON TABLES FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL PRIVILEGES ON SEQUENCES FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL PRIVILEGES ON FUNCTIONS FROM PUBLIC;
@@ -362,6 +541,10 @@ SELECT format(
 ) \gexec
 SELECT format(
   'ALTER DEFAULT PRIVILEGES REVOKE ALL PRIVILEGES ON TYPES FROM %I',
+  :'runtime_user'
+) \gexec
+SELECT format(
+  'ALTER DEFAULT PRIVILEGES REVOKE ALL PRIVILEGES ON LARGE OBJECTS FROM %I',
   :'runtime_user'
 ) \gexec
 SELECT format(
@@ -399,7 +582,7 @@ runtime_result="$(
     --tuples-only \
     --no-align \
     --set=ON_ERROR_STOP=1 \
-    --command="WITH runtime_role AS (SELECT oid, rolbypassrls, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolsuper FROM pg_catalog.pg_roles WHERE rolname = current_user), current_database_entry AS (SELECT oid FROM pg_catalog.pg_database WHERE datname = current_database()), non_system_schemas AS (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname <> 'information_schema' AND nspname !~ '^pg_'), privilege_bearing_types AS (SELECT type_entry.oid FROM pg_catalog.pg_type AS type_entry JOIN non_system_schemas AS namespace_entry ON namespace_entry.oid = type_entry.typnamespace LEFT JOIN pg_catalog.pg_class AS composite_entry ON composite_entry.oid = type_entry.typrelid WHERE type_entry.typisdefined AND type_entry.typelem = 0 AND (type_entry.typrelid = 0 OR composite_entry.relkind = 'c')) SELECT current_user = session_user AND NOT runtime_role.rolsuper AND NOT runtime_role.rolcreaterole AND NOT runtime_role.rolcreatedb AND NOT runtime_role.rolinherit AND NOT runtime_role.rolreplication AND NOT runtime_role.rolbypassrls AND has_database_privilege(current_user, current_database(), 'CONNECT') AND NOT has_database_privilege(current_user, current_database(), 'CONNECT WITH GRANT OPTION') AND NOT has_database_privilege(current_user, current_database(), 'CREATE') AND NOT has_database_privilege(current_user, current_database(), 'TEMPORARY') AND has_schema_privilege(current_user, 'public', 'USAGE') AND NOT has_schema_privilege(current_user, 'public', 'USAGE WITH GRANT OPTION') AND NOT has_schema_privilege(current_user, 'public', 'CREATE') AND NOT EXISTS (SELECT 1 FROM privilege_bearing_types AS type_entry WHERE has_type_privilege(current_user, type_entry.oid, 'USAGE')) AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_parameter_acl AS parameter_acl WHERE pg_catalog.has_parameter_privilege(current_user, parameter_acl.parname, 'SET') OR pg_catalog.has_parameter_privilege(current_user, parameter_acl.parname, 'ALTER SYSTEM')) AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_shdepend AS dependency CROSS JOIN current_database_entry WHERE dependency.refclassid = 'pg_catalog.pg_authid'::regclass AND dependency.refobjid = runtime_role.oid AND dependency.deptype = 'o' AND (dependency.dbid = current_database_entry.oid OR (dependency.dbid = 0 AND dependency.classid = 'pg_catalog.pg_database'::regclass AND dependency.objid = current_database_entry.oid))) FROM runtime_role;"
+    --command="WITH runtime_role AS (SELECT oid, rolbypassrls, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolsuper FROM pg_catalog.pg_roles WHERE rolname = current_user), current_database_entry AS (SELECT oid FROM pg_catalog.pg_database WHERE datname = current_database()), non_system_schemas AS (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname <> 'information_schema' AND nspname !~ '^pg_'), privilege_bearing_types AS (SELECT type_entry.oid FROM pg_catalog.pg_type AS type_entry JOIN non_system_schemas AS namespace_entry ON namespace_entry.oid = type_entry.typnamespace LEFT JOIN pg_catalog.pg_class AS composite_entry ON composite_entry.oid = type_entry.typrelid WHERE type_entry.typisdefined AND type_entry.typelem = 0 AND (type_entry.typrelid = 0 OR composite_entry.relkind = 'c')), large_object_routines AS (SELECT routine_entry.oid FROM pg_catalog.pg_proc AS routine_entry JOIN pg_catalog.pg_namespace AS namespace_entry ON namespace_entry.oid = routine_entry.pronamespace WHERE namespace_entry.nspname = 'pg_catalog' AND (routine_entry.proname ~ '^lo_' OR routine_entry.proname IN ('loread', 'lowrite'))) SELECT current_user = session_user AND current_setting('session_replication_role') = 'origin' AND current_setting('lo_compat_privileges') = 'off' AND NOT runtime_role.rolsuper AND NOT runtime_role.rolcreaterole AND NOT runtime_role.rolcreatedb AND NOT runtime_role.rolinherit AND NOT runtime_role.rolreplication AND NOT runtime_role.rolbypassrls AND has_database_privilege(current_user, current_database(), 'CONNECT') AND NOT has_database_privilege(current_user, current_database(), 'CONNECT WITH GRANT OPTION') AND NOT has_database_privilege(current_user, current_database(), 'CREATE') AND NOT has_database_privilege(current_user, current_database(), 'TEMPORARY') AND has_schema_privilege(current_user, 'public', 'USAGE') AND NOT has_schema_privilege(current_user, 'public', 'USAGE WITH GRANT OPTION') AND NOT has_schema_privilege(current_user, 'public', 'CREATE') AND NOT EXISTS (SELECT 1 FROM privilege_bearing_types AS type_entry WHERE has_type_privilege(current_user, type_entry.oid, 'USAGE')) AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_largeobject_metadata AS large_object WHERE large_object.lomowner = runtime_role.oid OR has_largeobject_privilege(current_user, large_object.oid, 'SELECT,UPDATE')) AND NOT EXISTS (SELECT 1 FROM large_object_routines AS routine_entry WHERE has_function_privilege(current_user, routine_entry.oid, 'EXECUTE')) AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_parameter_acl AS parameter_acl WHERE pg_catalog.has_parameter_privilege(current_user, parameter_acl.parname, 'SET') OR pg_catalog.has_parameter_privilege(current_user, parameter_acl.parname, 'ALTER SYSTEM')) AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_shdepend AS dependency CROSS JOIN current_database_entry WHERE dependency.refclassid = 'pg_catalog.pg_authid'::regclass AND dependency.refobjid = runtime_role.oid AND dependency.deptype = 'o' AND (dependency.dbid = current_database_entry.oid OR (dependency.dbid = 0 AND dependency.classid = 'pg_catalog.pg_database'::regclass AND dependency.objid = current_database_entry.oid))) FROM runtime_role;"
 )"
 
 if [ "$runtime_result" != 't' ]; then

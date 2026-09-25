@@ -510,7 +510,11 @@ ou contournement RLS. `CREATE`, `TEMPORARY`, droits de séquence ou de type,
 exécution des fonctions applicatives, options de redélégation et droits
 d’écriture table sont absents dans tous les schémas non système de la base
 courante. Le runtime ne dispose d’aucun droit PostgreSQL `SET` ou
-`ALTER SYSTEM` sur les paramètres, directement ou via `PUBLIC`.
+`ALTER SYSTEM` sur les paramètres, directement ou via `PUBLIC`. Il ne possède
+aucun large object, ne peut en lire, modifier ou tronquer aucun et doit observer
+`session_replication_role=origin` et `lo_compat_privileges=off` sur sa connexion
+réelle. Il ne peut exécuter aucune routine `pg_catalog` `lo_*`, `loread` ou
+`lowrite`.
 
 Les ACL effectives sont calculées avec `has_*_privilege` et les ACL catalogues
 dépliées avec `aclexplode`. Cette combinaison inclut les droits hérités de
@@ -520,7 +524,13 @@ propriétaire/migrateur. Pour les autres schémas non système, il inspecte
 propriété exhaustive via `pg_shdepend`, accès de schéma, objets, colonnes,
 séquences, routines, types, options de redélégation et ACL par défaut. Tout état
 hors profil est refusé sans réattribution de propriété ni réécriture automatique
-d’une ACL tierce.
+d’une ACL tierce. Les large objects sont contrôlés séparément dans
+`pg_largeobject_metadata`, puisqu’ils n’appartiennent à aucun schéma. Les
+routines large-object de `pg_catalog` sont durcies séparément : `PUBLIC` et le
+runtime perdent `EXECUTE`, tandis qu’une ACL directe d’un rôle tiers n’est pas
+réécrite. Les
+réglages persistants de session sont contrôlés dans `pg_db_role_setting` avant
+toute mutation du provisionneur.
 
 | Menace                                                 | Mesure S1.2-03A                                                          | Preuve locale                                                        | Risque résiduel                                                        |
 | ------------------------------------------------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------------- | ---------------------------------------------------------------------- |
@@ -529,9 +539,11 @@ d’une ACL tierce.
 | Altération du schéma ou neutralisation des triggers    | aucun `CREATE`, propriété, `TRIGGER` ou `TRUNCATE`                       | DDL, `TRUNCATE` et `ALTER TABLE ... DISABLE TRIGGER` refusés `42501` | le propriétaire/migrateur reste puissant et doit rester hors API       |
 | Élévation par `SET ROLE`                               | aucun rôle accordé au runtime                                            | `SET ROLE` propriétaire refusé `42501`                               | toute future délégation de rôle doit repasser cette gate               |
 | Altération de session par ACL de paramètre             | aucun `SET`/`ALTER SYSTEM`, contrôle global avant mutation               | cinq scénarios directs/`PUBLIC`/redélégation refusés sur 2 bases     | toute ACL de cluster existante exige une remédiation propriétaire      |
+| Session ouverte en mode réplication                    | `session_replication_role=origin` attesté sur la connexion Prisma        | portées base, rôle et rôle/base refusées sur nouvelle connexion      | tout autre réglage global reste détecté par l’attestation effective    |
+| Lecture ou écriture d’un large object                  | zéro propriété, ACL, routine `lo_*` ou mode compatibilité dangereux      | ACL, default ACL, quatre routines et `lo_compat` testés sur 2 bases  | tout large object tiers dangereux exige une remédiation explicite      |
 | Fuite par default ACL d’un rôle tiers                  | exception `SELECT public` limitée au propriétaire de base                | ACL refusée inchangée ; table tierce illisible après remédiation     | les rôles tiers gardent l’autorité sur leurs propres ACL               |
 | Écriture métier directe                                | `SELECT` seul sur les 34 tables, aucun droit de séquence                 | `INSERT`, `UPDATE` et `DELETE` refusés `42501`                       | les futurs services d’écriture exigeront des rôles distincts et bornés |
-| Dérive de provisioning                                 | idempotence sur `public`, refus déterministe des états tiers dangereux   | 23 succès, 16 refus inchangés et 4 grant options réparées par base   | le provisioning de production reste hors périmètre                     |
+| Dérive de provisioning                                 | idempotence, refus déterministe et ACL tierces préservées                | 36 succès, 27 refus inchangés, 4 grant options et 1 ACL `L` réparées | le provisioning de production reste hors périmètre                     |
 
 La preuve locale R4 du 2026-09-18 ajoute sur chacune des deux bases un schéma
 sain inaccessible, puis isole 11 états négatifs : propriété de schéma, objet
@@ -573,6 +585,40 @@ le provisionneur et l’API restent fail-closed et aucune création d’objet ti
 ne doit être poursuivie. Le runtime sain échoue aussi avec `42501` sur
 `SET session_replication_role = replica`. Aucun SHA ou Run ID R6 futur n’y
 était affirmé ; la PR #45 demeurait Draft et S1.2-03B restait `Not started`.
+
+R6 est ensuite publié au commit
+`80e8a397b19a98bd85f5ef6fcd2afe8ef4407ab0`. Infrastructure `36125459701`,
+Launcher Windows `36125459563`, Security `36125459520` et Quality Linux
+`36125459526` sont tous `pull_request/completed/success` sur ce head exact. La
+PR #45 reste ouverte, Draft et non fusionnée.
+
+Dans l’instantané historique local prépublication R7 du 2026-09-25, les deux
+findings CTO post-R6 et le finding large-object découvert à la reprise sont
+fermés. L’attestation et le provisionneur couvrent les
+ACL courantes des large objects, les droits effectifs, `PUBLIC`, les grant
+options et les default ACL PostgreSQL 18 `L`. Seules les default ACL `L` du
+propriétaire/migrateur sont normalisées ; tout état tiers est refusé avant
+mutation et sa signature reste identique. La valeur effective
+`session_replication_role` doit être `origin`, et les réglages persistants base,
+rôle et rôle/base sont testés sur une nouvelle connexion puis refusés sans
+correction silencieuse.
+
+Le contrôle byte-final a démontré que les ACL des large objects existants ne
+suffisaient pas : `PUBLIC EXECUTE` permettait encore au runtime d’appeler
+`lo_create`, `lo_from_bytea` et `lo_put`, puis de posséder son propre objet. Le
+provisionneur retire donc `EXECUTE` à `PUBLIC` et au runtime sur toutes les
+routines `pg_catalog` `lo_*`, `loread` et `lowrite`; l’API refuse toute dérive
+effective. `lo_compat_privileges=on` est également refusé avant mutation.
+
+Deux bases PostgreSQL 18.4 indépendantes confirment au total 72
+provisionnements réussis, 54 refus inchangés, huit réparations de grant option,
+deux normalisations de default ACL `L`, deux ACL tierces de routine préservées,
+six refus de réglages persistants de réplication, deux refus de
+`lo_compat_privileges=on` et 24 refus `42501`. Les bases, rôles, large objects,
+conteneur et secrets créés
+pour la validation ont été supprimés de façon ciblée. Au moment de cette preuve,
+R7 reste local, non commité et non publié ; aucun SHA ou Run ID R7 futur n’est
+affirmé, la PR reste Draft et S1.2-03B reste `Not started`.
 
 Le pool `pg` est détenu par le client Prisma 7.9.1 via
 `@prisma/adapter-pg` 7.9.1 ; la readiness réutilise ce même chemin. Les erreurs

@@ -10,26 +10,26 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 
 ## État des gates et lots
 
-| Gate ou lot         | Objectif                                      | Statut                                        |
-| ------------------- | --------------------------------------------- | --------------------------------------------- |
-| Gate 0              | Sources approuvées et readiness clean room    | Completed                                     |
-| Lot 00              | Preflight read-only                           | Completed                                     |
-| Lot 00B             | Remédiation documentaire                      | Completed                                     |
-| Lot 00C             | Canonicalisation AdminLTE                     | Completed                                     |
-| S0.1                | Gouvernance et Git                            | Completed                                     |
-| S0.2                | Contrat monorepo et versions                  | Completed                                     |
-| S0.3                | Fondations applicatives                       | Closed and merged                             |
-| S0.4                | Infrastructure locale                         | Closed and merged                             |
-| S0.5                | CI, sécurité et observabilité                 | Closed and merged                             |
-| M0.1                | Dependency Governance                         | Closed and merged                             |
-| M0.2                | Supply-chain Security Hotfix                  | Closed and merged                             |
-| S0.6                | Foundation Gate                               | Closed and merged                             |
-| Slice 1 / S1.1      | Contrats, données cibles et expérience audio  | Closed and merged                             |
-| Slice 1 / S1.2-01   | Contract & Data Readiness Gate                | Contract and data gate complete               |
-| Slice 1 / S1.2-02   | Baseline PostgreSQL et contraintes SQL        | Closed and merged — PR #43                    |
-| Slice 1 / S1.2-03A  | Frontière PostgreSQL runtime en lecture seule | Draft #45 — preuve prépublication R6 validée. |
-| Slice 1 / S1.2-03B+ | Fonctionnalités runtime métier du pilote      | Not started                                   |
-| Slices suivantes    | Fonctionnalités produit ultérieures           | Not started                                   |
+| Gate ou lot         | Objectif                                      | Statut                                                              |
+| ------------------- | --------------------------------------------- | ------------------------------------------------------------------- |
+| Gate 0              | Sources approuvées et readiness clean room    | Completed                                                           |
+| Lot 00              | Preflight read-only                           | Completed                                                           |
+| Lot 00B             | Remédiation documentaire                      | Completed                                                           |
+| Lot 00C             | Canonicalisation AdminLTE                     | Completed                                                           |
+| S0.1                | Gouvernance et Git                            | Completed                                                           |
+| S0.2                | Contrat monorepo et versions                  | Completed                                                           |
+| S0.3                | Fondations applicatives                       | Closed and merged                                                   |
+| S0.4                | Infrastructure locale                         | Closed and merged                                                   |
+| S0.5                | CI, sécurité et observabilité                 | Closed and merged                                                   |
+| M0.1                | Dependency Governance                         | Closed and merged                                                   |
+| M0.2                | Supply-chain Security Hotfix                  | Closed and merged                                                   |
+| S0.6                | Foundation Gate                               | Closed and merged                                                   |
+| Slice 1 / S1.1      | Contrats, données cibles et expérience audio  | Closed and merged                                                   |
+| Slice 1 / S1.2-01   | Contract & Data Readiness Gate                | Contract and data gate complete                                     |
+| Slice 1 / S1.2-02   | Baseline PostgreSQL et contraintes SQL        | Closed and merged — PR #43                                          |
+| Slice 1 / S1.2-03A  | Frontière PostgreSQL runtime en lecture seule | Draft #45 — R6 publié, preuve historique prépublication R7 validée. |
+| Slice 1 / S1.2-03B+ | Fonctionnalités runtime métier du pilote      | Not started                                                         |
+| Slices suivantes    | Fonctionnalités produit ultérieures           | Not started                                                         |
 
 ## Sprint 0 — Clean-room foundation
 
@@ -136,7 +136,7 @@ démarrait ni Slice 1 ni aucune exigence produit.
 
 ## Slice 1 — Audio purchase pilot
 
-Statut : **In progress — S1.2-02 closed — S1.2-03A Draft PR #45, R5 published and CI green, historical R6 prepublication evidence dated 2026-09-20 validated — business runtime not started**
+Statut : **In progress — S1.2-02 closed — S1.2-03A Draft PR #45, R6 published and CI green, historical R7 prepublication evidence dated 2026-09-25 validated — business runtime not started**
 
 Parcours cible :
 
@@ -242,7 +242,7 @@ fusion de la PR #44 et les quatre workflows `push/main` réussis.
 
 ### S1.2-03A — PostgreSQL Least-Privilege Runtime Boundary & Prisma Adapter
 
-Statut : **Draft PR #45 open — R5 published — four R5 workflows green — historical R6 prepublication evidence validated — not merged**
+Statut : **Draft PR #45 open — R6 published — four R6 workflows green — historical R7 prepublication evidence validated — not merged**
 
 L’instantané local prépublication du 2026-09-16 a été validé avant indexation,
 commit, push ou création de PR. Ces absences décrivent uniquement cet instantané
@@ -318,6 +318,35 @@ signature inchangée, quatre réparations de redélégation et huit refus `42501
 À la date de cet instantané, R6 n’était ni commité ni publié et aucun SHA ou
 Run ID R6 futur n’y était affirmé.
 
+R6 est ensuite publié au commit
+`80e8a397b19a98bd85f5ef6fcd2afe8ef4407ab0`, parent
+`afaa652b7446b78ae35fb0bf6f4944af5625cef6`, arbre
+`c7c0c733bd28bacce41206290590c6f9fc043f2a`, avec 13 fichiers et
+`+498/-97`. Infrastructure `36125459701`, Launcher Windows `36125459563`,
+Security `36125459520` et Quality Linux `36125459526` sont tous
+`pull_request/completed/success` sur ce head exact. La PR #45 compte alors
+7 commits, 31 fichiers et `+4700/-201` ; elle reste ouverte, Draft et non
+fusionnée.
+
+L’instantané historique local prépublication R7 du 2026-09-25 ferme les deux
+findings CTO post-R6. Les large objects sont attestés hors schéma : propriété,
+ACL `SELECT`/`UPDATE`, `PUBLIC`, grant options et default ACL PostgreSQL 18
+`L`. Les default ACL `L` du propriétaire sont normalisées ; celles d’un tiers
+et les ACL courantes dangereuses sont refusées sans mutation. La reprise
+byte-finale a aussi fermé `PUBLIC EXECUTE` sur les routines `pg_catalog`
+`lo_*`/`loread`/`lowrite` et impose `lo_compat_privileges=off`. La connexion
+Prisma doit observer `session_replication_role=origin`; les réglages
+persistants de portée base, rôle ou rôle/base sont refusés avant mutation et
+testés sur une nouvelle connexion.
+
+Deux bases PostgreSQL 18.4 indépendantes valident chacune 36 provisionnements
+réussis, 27 refus à signature inchangée, quatre réparations de redélégation,
+une normalisation de default ACL `L`, une ACL tierce de routine préservée,
+trois refus de réglages persistants de réplication, un refus de
+`lo_compat_privileges=on` et douze refus `42501`. Au moment de cet instantané, R7 est local, non commité et
+non publié ; aucun SHA ou Run ID R7 futur n’est affirmé, aucun Ready ou merge
+n’est effectué et S1.2-03B reste `Not started`.
+
 Périmètre validé dans cet instantané historique :
 
 - compte propriétaire/migrateur distinct du rôle API runtime ;
@@ -340,7 +369,8 @@ Périmètre validé dans cet instantané historique :
   déterministe sans réécriture d’ACL ou de propriété ;
 - preuves négatives `42501` pour DDL, `TRUNCATE`, modification de trigger,
   `SET ROLE` propriétaire, `SET session_replication_role = replica` et
-  `INSERT`/`UPDATE`/`DELETE` métier.
+  `INSERT`/`UPDATE`/`DELETE` métier, ainsi que `lo_create`, `lo_from_bytea`,
+  `lo_put` et `lo_open`.
 
 Le lot ne modifie ni `schema.prisma`, ni les migrations S1.2-02, ni OpenAPI,
 les contrats générés ou les workflows. Il ne livre aucun endpoint, flux métier,

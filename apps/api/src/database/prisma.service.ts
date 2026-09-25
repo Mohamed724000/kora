@@ -15,6 +15,9 @@ export interface RuntimeBoundarySnapshot {
   defaultPrivilegeViolationCount: number;
   directMembershipCount: number;
   grantOptionViolationCount: number;
+  largeObjectRoutineExecutePrivilegeCount: number;
+  largeObjectPrivilegeCount: number;
+  loCompatPrivilegesEnabled: boolean;
   ownedObjectCount: number;
   parameterPrivilegeCount: number;
   publicGrantCount: number;
@@ -26,6 +29,7 @@ export interface RuntimeBoundarySnapshot {
   roleInherits: boolean;
   roleIsSuperuser: boolean;
   routineExecutePrivilegeCount: number;
+  sessionReplicationRole: string;
   sessionUser: string;
   tableCount: number;
   tablePrivilegeViolationCount: number;
@@ -176,6 +180,16 @@ export class PrismaService extends PrismaClient implements OnApplicationShutdown
         WHERE privilege.grantee = 0
         UNION ALL
         SELECT 1
+        FROM pg_catalog.pg_largeobject_metadata AS large_object
+        CROSS JOIN LATERAL pg_catalog.aclexplode(
+          COALESCE(
+            large_object.lomacl,
+            pg_catalog.acldefault('L', large_object.lomowner)
+          )
+        ) AS privilege
+        WHERE privilege.grantee = 0
+        UNION ALL
+        SELECT 1
         FROM pg_catalog.pg_default_acl AS default_acl
         LEFT JOIN non_system_schemas AS namespace_entry
           ON namespace_entry.oid = default_acl.defaclnamespace
@@ -284,6 +298,18 @@ export class PrismaService extends PrismaClient implements OnApplicationShutdown
           AND privilege.is_grantable
         UNION ALL
         SELECT 1
+        FROM pg_catalog.pg_largeobject_metadata AS large_object
+        CROSS JOIN runtime_role
+        CROSS JOIN LATERAL pg_catalog.aclexplode(
+          COALESCE(
+            large_object.lomacl,
+            pg_catalog.acldefault('L', large_object.lomowner)
+          )
+        ) AS privilege
+        WHERE privilege.grantee = runtime_role.oid
+          AND privilege.is_grantable
+        UNION ALL
+        SELECT 1
         FROM pg_catalog.pg_default_acl AS default_acl
         LEFT JOIN non_system_schemas AS namespace_entry
           ON namespace_entry.oid = default_acl.defaclnamespace
@@ -313,6 +339,8 @@ export class PrismaService extends PrismaClient implements OnApplicationShutdown
         runtime_role.rolbypassrls AS "roleCanBypassRls",
         runtime_role.rolcanlogin AS "roleCanLogin",
         runtime_role.rolinherit AS "roleInherits",
+        pg_catalog.current_setting('session_replication_role') AS "sessionReplicationRole",
+        pg_catalog.current_setting('lo_compat_privileges') = 'on' AS "loCompatPrivilegesEnabled",
         pg_catalog.has_database_privilege(current_user, current_database(), 'CONNECT') AS "canConnect",
         pg_catalog.has_database_privilege(current_user, current_database(), 'CREATE') AS "canCreateDatabaseObjects",
         pg_catalog.has_database_privilege(current_user, current_database(), 'TEMPORARY') AS "canCreateTemporaryObjects",
@@ -421,6 +449,32 @@ export class PrismaService extends PrismaClient implements OnApplicationShutdown
           FROM privilege_bearing_types AS type_entry
           WHERE pg_catalog.has_type_privilege(current_user, type_entry.oid, 'USAGE')
         ) AS "typePrivilegeCount",
+        (
+          SELECT count(*)::integer
+          FROM pg_catalog.pg_largeobject_metadata AS large_object
+          WHERE large_object.lomowner = runtime_role.oid
+            OR pg_catalog.has_largeobject_privilege(
+              current_user,
+              large_object.oid,
+              'SELECT,UPDATE'
+            )
+        ) AS "largeObjectPrivilegeCount",
+        (
+          SELECT count(*)::integer
+          FROM pg_catalog.pg_proc AS routine_entry
+          JOIN pg_catalog.pg_namespace AS namespace_entry
+            ON namespace_entry.oid = routine_entry.pronamespace
+          WHERE namespace_entry.nspname = 'pg_catalog'
+            AND (
+              routine_entry.proname ~ '^lo_'
+              OR routine_entry.proname IN ('loread', 'lowrite')
+            )
+            AND pg_catalog.has_function_privilege(
+              current_user,
+              routine_entry.oid,
+              'EXECUTE'
+            )
+        ) AS "largeObjectRoutineExecutePrivilegeCount",
         (
           SELECT count(*)::integer
           FROM pg_catalog.pg_parameter_acl AS parameter_acl

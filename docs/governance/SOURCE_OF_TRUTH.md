@@ -1,9 +1,9 @@
 # KORA+ Final — Source de vérité
 
-Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A EN DRAFT PR #45 — R5 PUBLIÉ ET CI VERTE — PREUVE PRÉPUBLICATION R6 VALIDÉE — NON FUSIONNÉ**
+Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A EN DRAFT PR #45 — R6 PUBLIÉ ET CI VERTE — INSTANTANÉ PRÉPUBLICATION R7 VALIDÉ LOCALEMENT — NON FUSIONNÉ**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-09-20
+Dernère réconciliation documentaire : 2026-09-25
 
 ## Hiérarchie normative
 
@@ -229,3 +229,46 @@ inchangée, quatre réparations de redélégation, Prisma, `SELECT 1`, lecture
 `Customer` et huit refus `42501`. À la date de cet instantané, R6 n’était ni
 commité ni publié, aucun SHA ou Run ID R6 futur n’y était affirmé, la PR #45
 restait Draft et S1.2-03B restait **Not started**.
+
+R6 a ensuite été publié au commit
+`80e8a397b19a98bd85f5ef6fcd2afe8ef4407ab0`, parent direct
+`afaa652b7446b78ae35fb0bf6f4944af5625cef6`, arbre
+`c7c0c733bd28bacce41206290590c6f9fc043f2a`, avec 13 fichiers et
+`+498/-97`. Infrastructure `36125459701`, Launcher Windows `36125459563`,
+Security `36125459520` et Quality Linux `36125459526` ont tous conclu
+`pull_request/completed/success` sur ce head exact. La PR #45 compte alors
+7 commits, 31 fichiers et `+4700/-201` ; elle reste ouverte, Draft, proprement
+fusionnable et non fusionnée.
+
+La revue CTO finale en lecture seule du 2026-09-25 a ensuite bloqué le passage
+en Ready sur deux lacunes PostgreSQL : les ACL courantes et par défaut des
+large objects PostgreSQL 18, qui sont hors schéma, et une valeur persistante
+`session_replication_role=replica` héritée par une nouvelle connexion sans
+exécuter `SET`.
+
+L’instantané historique local prépublication R7 du 2026-09-25 ferme ces deux
+lacunes et le finding fondé découvert lors de la reprise byte-finale, sans
+modifier le schéma Prisma, les migrations, OpenAPI, les contrats,
+les workflows, les manifestes, les lockfiles ou les clients. L’attestation API
+refuse la propriété et tout droit effectif `SELECT`/`UPDATE` sur un large
+object, y compris via `PUBLIC` ou avec redélégation, et exige
+zéro droit d’exécution effectif sur les routines `pg_catalog` `lo_*`, `loread`
+et `lowrite`, ainsi que `lo_compat_privileges=off`. Elle exige aussi
+`current_setting('session_replication_role') = 'origin'` sur la connexion
+runtime réelle. Le provisionneur normalise seulement les default ACL `L` du
+propriétaire/migrateur et retire l’exécution des routines large-object à
+`PUBLIC` et au runtime. Un large object dangereux, une ACL directe de routine
+du runtime, une default ACL `L` tierce ou un réglage persistant dangereux est
+refusé avant mutation avec signature inchangée ; les ACL directes de rôles
+tiers sur ces routines restent intactes.
+
+Deux bases PostgreSQL 18.4 indépendantes valident chacune 36 provisionnements
+réussis, 27 refus déterministes sans mutation, quatre réparations de
+redélégation, une normalisation de default ACL de large objects, trois refus
+de réglages persistants de réplication, un refus de
+`lo_compat_privileges=on`, une ACL tierce de routine préservée et douze refus
+`42501`. Prisma
+7.9.1, `SELECT 1`, la lecture `Customer`, le démarrage runtime et le refus du
+propriétaire restent validés. À la date de cet instantané, R7 demeure local,
+non commité et non publié ; aucun SHA ou Run ID R7 futur n’est affirmé, la PR
+#45 reste Draft et S1.2-03B reste **Not started**.
