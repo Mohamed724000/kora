@@ -69,6 +69,9 @@ export function runtimeBoundaryViolations(
   if (snapshot.typePrivilegeCount !== 0) {
     violations.push('unexpected_type_privilege');
   }
+  if (snapshot.parameterPrivilegeCount !== 0) {
+    violations.push('unexpected_parameter_privilege');
+  }
   if (snapshot.defaultPrivilegeViolationCount !== 0) {
     violations.push('unexpected_default_privilege');
   }

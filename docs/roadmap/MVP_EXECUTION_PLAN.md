@@ -10,26 +10,26 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 
 ## État des gates et lots
 
-| Gate ou lot         | Objectif                                      | Statut                            |
-| ------------------- | --------------------------------------------- | --------------------------------- |
-| Gate 0              | Sources approuvées et readiness clean room    | Completed                         |
-| Lot 00              | Preflight read-only                           | Completed                         |
-| Lot 00B             | Remédiation documentaire                      | Completed                         |
-| Lot 00C             | Canonicalisation AdminLTE                     | Completed                         |
-| S0.1                | Gouvernance et Git                            | Completed                         |
-| S0.2                | Contrat monorepo et versions                  | Completed                         |
-| S0.3                | Fondations applicatives                       | Closed and merged                 |
-| S0.4                | Infrastructure locale                         | Closed and merged                 |
-| S0.5                | CI, sécurité et observabilité                 | Closed and merged                 |
-| M0.1                | Dependency Governance                         | Closed and merged                 |
-| M0.2                | Supply-chain Security Hotfix                  | Closed and merged                 |
-| S0.6                | Foundation Gate                               | Closed and merged                 |
-| Slice 1 / S1.1      | Contrats, données cibles et expérience audio  | Closed and merged                 |
-| Slice 1 / S1.2-01   | Contract & Data Readiness Gate                | Contract and data gate complete   |
-| Slice 1 / S1.2-02   | Baseline PostgreSQL et contraintes SQL        | Closed and merged — PR #43        |
-| Slice 1 / S1.2-03A  | Frontière PostgreSQL runtime en lecture seule | Draft #45 — R4 FAIL; R5 snapshot. |
-| Slice 1 / S1.2-03B+ | Fonctionnalités runtime métier du pilote      | Not started                       |
-| Slices suivantes    | Fonctionnalités produit ultérieures           | Not started                       |
+| Gate ou lot         | Objectif                                      | Statut                                        |
+| ------------------- | --------------------------------------------- | --------------------------------------------- |
+| Gate 0              | Sources approuvées et readiness clean room    | Completed                                     |
+| Lot 00              | Preflight read-only                           | Completed                                     |
+| Lot 00B             | Remédiation documentaire                      | Completed                                     |
+| Lot 00C             | Canonicalisation AdminLTE                     | Completed                                     |
+| S0.1                | Gouvernance et Git                            | Completed                                     |
+| S0.2                | Contrat monorepo et versions                  | Completed                                     |
+| S0.3                | Fondations applicatives                       | Closed and merged                             |
+| S0.4                | Infrastructure locale                         | Closed and merged                             |
+| S0.5                | CI, sécurité et observabilité                 | Closed and merged                             |
+| M0.1                | Dependency Governance                         | Closed and merged                             |
+| M0.2                | Supply-chain Security Hotfix                  | Closed and merged                             |
+| S0.6                | Foundation Gate                               | Closed and merged                             |
+| Slice 1 / S1.1      | Contrats, données cibles et expérience audio  | Closed and merged                             |
+| Slice 1 / S1.2-01   | Contract & Data Readiness Gate                | Contract and data gate complete               |
+| Slice 1 / S1.2-02   | Baseline PostgreSQL et contraintes SQL        | Closed and merged — PR #43                    |
+| Slice 1 / S1.2-03A  | Frontière PostgreSQL runtime en lecture seule | Draft #45 — preuve prépublication R6 validée. |
+| Slice 1 / S1.2-03B+ | Fonctionnalités runtime métier du pilote      | Not started                                   |
+| Slices suivantes    | Fonctionnalités produit ultérieures           | Not started                                   |
 
 ## Sprint 0 — Clean-room foundation
 
@@ -136,7 +136,7 @@ démarrait ni Slice 1 ni aucune exigence produit.
 
 ## Slice 1 — Audio purchase pilot
 
-Statut : **In progress — S1.2-02 closed — S1.2-03A Draft PR #45, R4 published, Infrastructure failed, R5 prepublication snapshot dated 2026-09-18 — business runtime not started**
+Statut : **In progress — S1.2-02 closed — S1.2-03A Draft PR #45, R5 published and CI green, historical R6 prepublication evidence dated 2026-09-20 validated — business runtime not started**
 
 Parcours cible :
 
@@ -242,7 +242,7 @@ fusion de la PR #44 et les quatre workflows `push/main` réussis.
 
 ### S1.2-03A — PostgreSQL Least-Privilege Runtime Boundary & Prisma Adapter
 
-Statut : **Draft PR #45 open — R4 published — Infrastructure R4 failed — three R4 workflows green — R5 prepublication snapshot validated — not merged**
+Statut : **Draft PR #45 open — R5 published — four R5 workflows green — historical R6 prepublication evidence validated — not merged**
 
 L’instantané local prépublication du 2026-09-16 a été validé avant indexation,
 commit, push ou création de PR. Ces absences décrivent uniquement cet instantané
@@ -299,12 +299,33 @@ typée, l’attribut administratif et les droits d’écriture restent obligatoi
 À la date de cet instantané, R5 n’était ni commité ni publié, aucun rerun
 n’avait été lancé et S1.2-03B restait `Not started`.
 
-Périmètre livré localement :
+R5 est ensuite publié au commit
+`afaa652b7446b78ae35fb0bf6f4944af5625cef6`, parent
+`ebcd3fc02c15b0ee9cf679978ab197e9865a1737`, avec 10 fichiers et
+`+350/-105`. Infrastructure `35454834845`, Launcher Windows `35454834879`,
+Security `35454834839` et Quality Linux `35454834904` sont tous
+`pull_request/completed/success` sur ce head exact. La PR #45 reste ouverte,
+Draft et non fusionnée.
+
+L’instantané historique local prépublication R6 du 2026-09-20 ajoute le refus de tout droit
+effectif `SET` ou `ALTER SYSTEM` accordé au runtime ou à `PUBLIC`, sans
+normalisation des ACL globales du cluster. Il limite aussi l’exception de
+`SELECT` par défaut au propriétaire explicite de la base : la même ACL d’un
+rôle tiers est refusée sans mutation, puis sa future table reste illisible
+après remédiation explicite. Deux
+bases indépendantes valident chacune 23 provisionnements réussis, 16 refus à
+signature inchangée, quatre réparations de redélégation et huit refus `42501`.
+À la date de cet instantané, R6 n’était ni commité ni publié et aucun SHA ou
+Run ID R6 futur n’y était affirmé.
+
+Périmètre validé dans cet instantané historique :
 
 - compte propriétaire/migrateur distinct du rôle API runtime ;
 - rôle runtime `LOGIN`, `NOINHERIT`, sans attribut administratif, membership,
   propriété, option de redélégation, DDL, écriture table, privilège de séquence,
   type ou exécution de routine dans tout schéma non système de la base courante ;
+- aucun droit PostgreSQL `SET` ou `ALTER SYSTEM` sur un paramètre, directement
+  ou via `PUBLIC`, avec ou sans option de redélégation ;
 - droits effectifs bornés à `CONNECT`, `USAGE` du schéma `public` et `SELECT`
   sur les tables canoniques, après révocation des droits hérités de `PUBLIC` ;
 - pool PostgreSQL unique connecté à Prisma 7.9.1 par
@@ -318,7 +339,8 @@ Périmètre livré localement :
   18.4 indépendantes ; les états tiers dangereux sont refusés de façon
   déterministe sans réécriture d’ACL ou de propriété ;
 - preuves négatives `42501` pour DDL, `TRUNCATE`, modification de trigger,
-  `SET ROLE` propriétaire et `INSERT`/`UPDATE`/`DELETE` métier.
+  `SET ROLE` propriétaire, `SET session_replication_role = replica` et
+  `INSERT`/`UPDATE`/`DELETE` métier.
 
 Le lot ne modifie ni `schema.prisma`, ni les migrations S1.2-02, ni OpenAPI,
 les contrats générés ou les workflows. Il ne livre aucun endpoint, flux métier,

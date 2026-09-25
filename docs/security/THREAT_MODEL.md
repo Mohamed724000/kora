@@ -509,7 +509,8 @@ membership et n’a aucun attribut superuser, création de rôle/base, réplicat
 ou contournement RLS. `CREATE`, `TEMPORARY`, droits de séquence ou de type,
 exécution des fonctions applicatives, options de redélégation et droits
 d’écriture table sont absents dans tous les schémas non système de la base
-courante.
+courante. Le runtime ne dispose d’aucun droit PostgreSQL `SET` ou
+`ALTER SYSTEM` sur les paramètres, directement ou via `PUBLIC`.
 
 Les ACL effectives sont calculées avec `has_*_privilege` et les ACL catalogues
 dépliées avec `aclexplode`. Cette combinaison inclut les droits hérités de
@@ -527,8 +528,10 @@ d’une ACL tierce.
 | Privilège indirect via rôle ou `PUBLIC`                | `NOINHERIT`, zéro membership, inspection de tous les schémas non système | propriété runtime et `PUBLIC CREATE` externes refusés sur 2 bases    | la classification des schémas système doit suivre PostgreSQL           |
 | Altération du schéma ou neutralisation des triggers    | aucun `CREATE`, propriété, `TRIGGER` ou `TRUNCATE`                       | DDL, `TRUNCATE` et `ALTER TABLE ... DISABLE TRIGGER` refusés `42501` | le propriétaire/migrateur reste puissant et doit rester hors API       |
 | Élévation par `SET ROLE`                               | aucun rôle accordé au runtime                                            | `SET ROLE` propriétaire refusé `42501`                               | toute future délégation de rôle doit repasser cette gate               |
+| Altération de session par ACL de paramètre             | aucun `SET`/`ALTER SYSTEM`, contrôle global avant mutation               | cinq scénarios directs/`PUBLIC`/redélégation refusés sur 2 bases     | toute ACL de cluster existante exige une remédiation propriétaire      |
+| Fuite par default ACL d’un rôle tiers                  | exception `SELECT public` limitée au propriétaire de base                | ACL refusée inchangée ; table tierce illisible après remédiation     | les rôles tiers gardent l’autorité sur leurs propres ACL               |
 | Écriture métier directe                                | `SELECT` seul sur les 34 tables, aucun droit de séquence                 | `INSERT`, `UPDATE` et `DELETE` refusés `42501`                       | les futurs services d’écriture exigeront des rôles distincts et bornés |
-| Dérive de provisioning                                 | idempotence sur `public`, refus déterministe des états tiers dangereux   | 18 succès, 11 refus inchangés et 4 grant options réparées par base   | le provisioning de production reste hors périmètre                     |
+| Dérive de provisioning                                 | idempotence sur `public`, refus déterministe des états tiers dangereux   | 23 succès, 16 refus inchangés et 4 grant options réparées par base   | le provisioning de production reste hors périmètre                     |
 
 La preuve locale R4 du 2026-09-18 ajoute sur chacune des deux bases un schéma
 sain inaccessible, puis isole 11 états négatifs : propriété de schéma, objet
@@ -551,6 +554,25 @@ le garde : il conserve l’erreur typée, `administrative_role_attribute`,
 minimum obligatoire. Les tests séparés de propriété runtime R4 restent
 inchangés. À la date de cet instantané, aucun SHA ou Run ID R5 futur n’était
 affirmé.
+
+R5 est ensuite publié au commit
+`afaa652b7446b78ae35fb0bf6f4944af5625cef6`. Infrastructure `35454834845`,
+Launcher Windows `35454834879`, Security `35454834839` et Quality Linux
+`35454834904` concluent tous `pull_request/completed/success` sur ce head exact.
+
+Dans l’instantané historique local prépublication R6 du 2026-09-20, l’attestation inclut
+`pg_parameter_acl` et les privilèges effectifs `SET`/`ALTER SYSTEM`. Le
+provisionneur contrôle cette ACL globale avant toute mutation, la conserve
+intacte en cas de refus et ne tente jamais de la normaliser. L’exception de
+default ACL `SELECT` sur `public` exige désormais que `defaclrole` soit le
+propriétaire de la base. Deux bases isolées confirment le refus distinct des
+ACL de paramètres directes, via `PUBLIC` et avec redélégation, puis le refus
+sans mutation d’un default ACL tiers puis, après sa remédiation explicite,
+l’absence de lecture de sa future table. Tant que cette ACL dangereuse subsiste,
+le provisionneur et l’API restent fail-closed et aucune création d’objet tierce
+ne doit être poursuivie. Le runtime sain échoue aussi avec `42501` sur
+`SET session_replication_role = replica`. Aucun SHA ou Run ID R6 futur n’y
+était affirmé ; la PR #45 demeurait Draft et S1.2-03B restait `Not started`.
 
 Le pool `pg` est détenu par le client Prisma 7.9.1 via
 `@prisma/adapter-pg` 7.9.1 ; la readiness réutilise ce même chemin. Les erreurs

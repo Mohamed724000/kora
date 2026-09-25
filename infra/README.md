@@ -39,7 +39,9 @@ membership ; ses droits effectifs sont limités à `CONNECT`, `USAGE` du schéma
 `public` et `SELECT` sur les tables. Les droits de `PUBLIC`, les écritures,
 colonnes, vues, `MAINTAIN`, séquences, routines, types, options de redélégation,
 DDL et objets temporaires sont révoqués, y compris dans les privilèges par
-défaut. Le compte
+défaut. Tout droit `SET` ou `ALTER SYSTEM` sur un paramètre PostgreSQL accordé
+directement au runtime ou à `PUBLIC`, y compris avec option de redélégation,
+est interdit. Le compte
 `KORA_POSTGRES_USER` reste réservé aux migrations locales et ne doit jamais
 être fourni à l’API.
 
@@ -54,6 +56,14 @@ réécrit pas les ACL de ces schémas préexistants : leur correction exige une
 décision explicite du propriétaire de la base. Toutes les mutations du rôle,
 du credential et des ACL sont dans la même transaction : un refus restaure
 l’état antérieur complet.
+
+Les ACL de paramètres sont globales au cluster. Le provisionneur les contrôle
+avant toute mutation et refuse avec un diagnostic borné sans secret ; il ne les
+révoque jamais automatiquement. Dans `public`, le `SELECT` par défaut destiné
+au runtime n’est réparable que lorsqu’il appartient explicitement au
+propriétaire de la base. Une ACL par défaut équivalente créée par un rôle tiers
+est refusée sans modification ; sa remédiation reste sous l’autorité de ce
+propriétaire tiers.
 
 Ces identifiants sont exclusivement locaux. Ils ne doivent jamais être copiés
 dans un fichier versionné ou un environnement partagé.

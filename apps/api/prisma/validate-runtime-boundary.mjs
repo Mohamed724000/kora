@@ -106,6 +106,7 @@ async function assertProvisionerRefusesUnsafeState(
   ownerClient,
   secrets,
   scenario,
+  diagnosticPattern = /PostgreSQL runtime provisioning refused unsafe pre-existing database state count=[1-9][0-9]*\./u,
 ) {
   const signatureBefore = await refusalStateSignature(ownerClient, runtime, database);
   const result = executeProvisioner(database, owner, runtime);
@@ -117,12 +118,7 @@ async function assertProvisionerRefusesUnsafeState(
     fail('the refused provisioner output exposed an ephemeral credential');
   }
   const normalized = normalizedOutput(output, secrets).trim();
-  if (
-    result.status === 0 ||
-    !/PostgreSQL runtime provisioning refused unsafe pre-existing database state count=[1-9][0-9]*\./u.test(
-      normalized,
-    )
-  ) {
+  if (result.status === 0 || !diagnosticPattern.test(normalized)) {
     fail(
       `the delivered provisioner did not deterministically refuse ${scenario}; exit=${result.status ?? 'unknown'}; diagnostic=${normalized.slice(-1_000) || '<empty>'}`,
     );
@@ -387,11 +383,21 @@ async function privilegeSignature(ownerClient, runtime, database) {
     `,
     [runtime, database],
   );
+  const parameterAcl = await ownerClient.query(`
+    SELECT parameter_entry.parname AS parameter_name,
+           privilege.grantee::regrole::text AS grantee,
+           privilege.privilege_type,
+           privilege.is_grantable
+    FROM pg_catalog.pg_parameter_acl AS parameter_entry
+    CROSS JOIN LATERAL pg_catalog.aclexplode(parameter_entry.paracl) AS privilege
+    ORDER BY parameter_name, grantee, privilege_type, is_grantable
+  `);
   return JSON.stringify({
     acl: acl.rows,
     defaultAcl: defaultAcl.rows,
     memberships: memberships.rows,
     owners: owners.rows,
+    parameterAcl: parameterAcl.rows,
     role: role.rows,
     settings: settings.rows,
   });
@@ -420,7 +426,7 @@ async function runtimeSnapshot(client) {
       FROM pg_catalog.pg_roles
       WHERE rolname = current_user
     ), current_database_entry AS (
-      SELECT oid
+      SELECT oid, datdba
       FROM pg_catalog.pg_database
       WHERE datname = current_database()
     ), non_system_schemas AS (
@@ -511,12 +517,18 @@ async function runtimeSnapshot(client) {
           default_acl.defaclnamespace = 0
           OR namespace_entry.oid IS NOT NULL
         )
+      UNION ALL
+      SELECT 1
+      FROM pg_catalog.pg_parameter_acl AS parameter_entry
+      CROSS JOIN LATERAL pg_catalog.aclexplode(parameter_entry.paracl) AS privilege
+      WHERE privilege.grantee = 0
     ), default_privilege_violations AS (
       SELECT 1
       FROM pg_catalog.pg_default_acl AS default_acl
       LEFT JOIN non_system_schemas AS namespace_entry
         ON namespace_entry.oid = default_acl.defaclnamespace
       CROSS JOIN runtime_role
+      CROSS JOIN current_database_entry
       CROSS JOIN LATERAL pg_catalog.aclexplode(default_acl.defaclacl) AS privilege
       WHERE (
           default_acl.defaclnamespace = 0
@@ -526,6 +538,7 @@ async function runtimeSnapshot(client) {
         AND NOT (
           privilege.grantee = runtime_role.oid
           AND default_acl.defaclobjtype = 'r'
+          AND default_acl.defaclrole = current_database_entry.datdba
           AND namespace_entry.nspname = 'public'
           AND privilege.privilege_type = 'SELECT'
           AND NOT privilege.is_grantable
@@ -539,6 +552,13 @@ async function runtimeSnapshot(client) {
       ) AS privilege
       WHERE database_entry.datname = current_database()
         AND privilege.grantee = runtime_role.oid
+        AND privilege.is_grantable
+      UNION ALL
+      SELECT 1
+      FROM pg_catalog.pg_parameter_acl AS parameter_entry
+      CROSS JOIN runtime_role
+      CROSS JOIN LATERAL pg_catalog.aclexplode(parameter_entry.paracl) AS privilege
+      WHERE privilege.grantee = runtime_role.oid
         AND privilege.is_grantable
       UNION ALL
       SELECT 1
@@ -731,6 +751,20 @@ async function runtimeSnapshot(client) {
         AS default_privilege_violation_count,
       (SELECT count(*)::integer FROM grant_option_violations)
         AS grant_option_violation_count,
+      (
+        SELECT count(*)::integer
+        FROM pg_catalog.pg_parameter_acl AS parameter_entry
+        WHERE pg_catalog.has_parameter_privilege(
+                current_user,
+                parameter_entry.parname,
+                'SET'
+              )
+           OR pg_catalog.has_parameter_privilege(
+                current_user,
+                parameter_entry.parname,
+                'ALTER SYSTEM'
+              )
+      ) AS parameter_privilege_count,
       (SELECT count(*)::integer FROM public_grants) AS public_grant_count
     FROM runtime_role
   `);
@@ -771,6 +805,7 @@ function assertRuntimeSnapshot(snapshot) {
     'type_privilege_count',
     'default_privilege_violation_count',
     'grant_option_violation_count',
+    'parameter_privilege_count',
     'public_grant_count',
   ]) {
     if (snapshot[field] !== 0) {
@@ -813,8 +848,9 @@ async function assertDefaultPrivilegeBoundary(ownerClient, runtime) {
       CROSS JOIN LATERAL pg_catalog.aclexplode(default_acl.defaclacl) AS privilege
       LEFT JOIN pg_catalog.pg_roles AS grantee_role ON grantee_role.oid = privilege.grantee
       WHERE default_acl.defaclrole = (
-        SELECT owner_role.oid FROM pg_catalog.pg_roles AS owner_role
-        WHERE owner_role.rolname = current_user
+        SELECT database_entry.datdba
+        FROM pg_catalog.pg_database AS database_entry
+        WHERE database_entry.datname = current_database()
       )
       ORDER BY object_type, schema_name, grantee, privilege_type
     `,
@@ -1111,6 +1147,7 @@ async function verifyPublicCreateSchemaRejected({
 async function verifyIsolatedUnsafeState({
   cleanupSql,
   database,
+  diagnosticPattern,
   expectedViolations,
   owner,
   ownerClient,
@@ -1130,6 +1167,7 @@ async function verifyIsolatedUnsafeState({
       ownerClient,
       secrets,
       scenario,
+      diagnosticPattern,
     );
   } finally {
     await ownerClient.query(cleanupSql);
@@ -1267,18 +1305,89 @@ async function verifyExternalDefaultPrivilegeRejected(context) {
 }
 
 async function verifyThirdPartyPublicDefaultPrivilegeRejected(context) {
+  const quotedRuntime = quoteIdentifier(context.runtime);
+  const quotedThirdParty = quoteIdentifier(context.thirdParty);
   await verifyIsolatedUnsafeState({
     ...context,
     cleanupSql: `
-      ALTER DEFAULT PRIVILEGES FOR ROLE ${quoteIdentifier(context.thirdParty)} IN SCHEMA public
-        REVOKE ALL PRIVILEGES ON TABLES FROM PUBLIC;
+      ALTER DEFAULT PRIVILEGES FOR ROLE ${quotedThirdParty} IN SCHEMA public
+        REVOKE ALL PRIVILEGES ON TABLES FROM ${quotedRuntime};
     `,
-    expectedViolations: ['unexpected_default_privilege', 'public_privilege_present'],
-    scenario: 'third_party_public_default_privilege',
+    expectedViolations: ['unexpected_default_privilege'],
+    scenario: 'third_party_runtime_default_select_privilege',
     setupSql: `
-      ALTER DEFAULT PRIVILEGES FOR ROLE ${quoteIdentifier(context.thirdParty)} IN SCHEMA public
-        GRANT UPDATE ON TABLES TO PUBLIC;
+      ALTER DEFAULT PRIVILEGES FOR ROLE ${quotedThirdParty} IN SCHEMA public
+        GRANT SELECT ON TABLES TO ${quotedRuntime};
     `,
+  });
+
+  await context.ownerClient.query(`
+    GRANT USAGE, CREATE ON SCHEMA public TO ${quotedThirdParty};
+    SET ROLE ${quotedThirdParty};
+    CREATE TABLE public.s1203a_thirdparty_future_probe (id integer);
+    RESET ROLE;
+  `);
+  try {
+    const result = await context.ownerClient.query(
+      `SELECT pg_catalog.has_table_privilege(
+         $1,
+         'public.s1203a_thirdparty_future_probe',
+         'SELECT'
+       ) AS can_select`,
+      [context.runtime],
+    );
+    if (result.rows[0]?.can_select !== false) {
+      fail('a future third-party table remained readable after explicit ACL remediation');
+    }
+    process.stdout.write('THIRD_PARTY_FUTURE_TABLE_AFTER_REMEDIATION_PASS runtime_select=false\n');
+  } finally {
+    await context.ownerClient.query(`
+      DROP TABLE IF EXISTS public.s1203a_thirdparty_future_probe;
+      REVOKE ALL PRIVILEGES ON SCHEMA public FROM ${quotedThirdParty};
+    `);
+  }
+}
+
+async function verifyParameterPrivilegeRejected(context, scenario) {
+  const scenarios = {
+    parameter_direct_alter_system: {
+      cleanup: `REVOKE ALL PRIVILEGES ON PARAMETER work_mem FROM ${quoteIdentifier(context.runtime)}`,
+      expected: ['unexpected_parameter_privilege'],
+      setup: `GRANT ALTER SYSTEM ON PARAMETER work_mem TO ${quoteIdentifier(context.runtime)}`,
+    },
+    parameter_direct_set: {
+      cleanup: `REVOKE ALL PRIVILEGES ON PARAMETER session_replication_role FROM ${quoteIdentifier(context.runtime)}`,
+      expected: ['unexpected_parameter_privilege'],
+      setup: `GRANT SET ON PARAMETER session_replication_role TO ${quoteIdentifier(context.runtime)}`,
+    },
+    parameter_public_alter_system: {
+      cleanup: 'REVOKE ALL PRIVILEGES ON PARAMETER work_mem FROM PUBLIC',
+      expected: ['unexpected_parameter_privilege', 'public_privilege_present'],
+      setup: 'GRANT ALTER SYSTEM ON PARAMETER work_mem TO PUBLIC',
+    },
+    parameter_public_set: {
+      cleanup: 'REVOKE ALL PRIVILEGES ON PARAMETER session_replication_role FROM PUBLIC',
+      expected: ['unexpected_parameter_privilege', 'public_privilege_present'],
+      setup: 'GRANT SET ON PARAMETER session_replication_role TO PUBLIC',
+    },
+    parameter_set_grant_option: {
+      cleanup: `REVOKE ALL PRIVILEGES ON PARAMETER work_mem FROM ${quoteIdentifier(context.runtime)}`,
+      expected: ['unexpected_parameter_privilege', 'unexpected_grant_option'],
+      setup: `GRANT SET ON PARAMETER work_mem TO ${quoteIdentifier(context.runtime)} WITH GRANT OPTION`,
+    },
+  };
+  const definition = scenarios[scenario];
+  if (definition === undefined) {
+    fail(`unknown parameter ACL scenario ${scenario}`);
+  }
+  await verifyIsolatedUnsafeState({
+    ...context,
+    cleanupSql: `${definition.cleanup};`,
+    diagnosticPattern:
+      /PostgreSQL runtime provisioning refused unsafe cluster parameter ACL count=[1-9][0-9]*\./u,
+    expectedViolations: definition.expected,
+    scenario,
+    setupSql: `${definition.setup};`,
   });
 }
 
@@ -1370,6 +1479,11 @@ async function validateDatabase(admin, label, suffix, cleanup) {
       verifyExternalTypePrivilegeRejected,
       verifyExternalDefaultPrivilegeRejected,
       verifyThirdPartyPublicDefaultPrivilegeRejected,
+      (context) => verifyParameterPrivilegeRejected(context, 'parameter_direct_set'),
+      (context) => verifyParameterPrivilegeRejected(context, 'parameter_public_set'),
+      (context) => verifyParameterPrivilegeRejected(context, 'parameter_direct_alter_system'),
+      (context) => verifyParameterPrivilegeRejected(context, 'parameter_public_alter_system'),
+      (context) => verifyParameterPrivilegeRejected(context, 'parameter_set_grant_option'),
     ];
     for (const verifyScenario of unsafeScenarios) {
       await verifyScenario({
@@ -1446,6 +1560,11 @@ async function validateDatabase(admin, label, suffix, cleanup) {
       'ALTER TABLE public."Order" DISABLE TRIGGER "Order_immutable"',
     );
     await assertDenied(runtimeClient, 'set_role', `SET ROLE ${quoteIdentifier(owner)}`);
+    await assertDenied(
+      runtimeClient,
+      'set_session_replication_role',
+      'SET session_replication_role = replica',
+    );
     await assertDenied(runtimeClient, 'insert', 'INSERT INTO public."Customer" DEFAULT VALUES');
     await assertDenied(
       runtimeClient,
@@ -1463,7 +1582,7 @@ async function validateDatabase(admin, label, suffix, cleanup) {
     runtimeConfiguration,
   );
   process.stdout.write(
-    `RUNTIME_DATABASE_${label.toUpperCase()}_PASS tables=34 prisma_adapter=7.9.1 public_grants=0 type_privileges=0 grant_options=0\n`,
+    `RUNTIME_DATABASE_${label.toUpperCase()}_PASS tables=34 prisma_adapter=7.9.1 public_grants=0 type_privileges=0 parameter_privileges=0 grant_options=0\n`,
   );
 }
 
@@ -1528,7 +1647,7 @@ async function main() {
     await validateDatabase(admin, 'a', suffix, cleanup);
     await validateDatabase(admin, 'b', suffix, cleanup);
     process.stdout.write(
-      'S1.2-03A_RUNTIME_BOUNDARY_PASS databases=2 idempotent=true prisma_select=true denials=14 successful_provisioning_runs=36 unsafe_state_rejections=22 grant_option_repairs=8\n',
+      'S1.2-03A_RUNTIME_BOUNDARY_PASS databases=2 idempotent=true prisma_select=true denials=16 successful_provisioning_runs=46 unsafe_state_rejections=32 grant_option_repairs=8\n',
     );
   } catch (error) {
     validationError = error;

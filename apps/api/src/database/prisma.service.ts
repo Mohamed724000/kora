@@ -16,6 +16,7 @@ export interface RuntimeBoundarySnapshot {
   directMembershipCount: number;
   grantOptionViolationCount: number;
   ownedObjectCount: number;
+  parameterPrivilegeCount: number;
   publicGrantCount: number;
   roleCanBypassRls: boolean;
   roleCanCreateDatabase: boolean;
@@ -89,7 +90,7 @@ export class PrismaService extends PrismaClient implements OnApplicationShutdown
         FROM pg_catalog.pg_roles
         WHERE rolname = current_user
       ), current_database_entry AS (
-        SELECT oid
+        SELECT oid, datdba
         FROM pg_catalog.pg_database
         WHERE datname = current_database()
       ), non_system_schemas AS (
@@ -184,12 +185,18 @@ export class PrismaService extends PrismaClient implements OnApplicationShutdown
             default_acl.defaclnamespace = 0
             OR namespace_entry.oid IS NOT NULL
           )
+        UNION ALL
+        SELECT 1
+        FROM pg_catalog.pg_parameter_acl AS parameter_acl
+        CROSS JOIN LATERAL pg_catalog.aclexplode(parameter_acl.paracl) AS privilege
+        WHERE privilege.grantee = 0
       ), default_privilege_violations AS (
         SELECT 1
         FROM pg_catalog.pg_default_acl AS default_acl
         LEFT JOIN non_system_schemas AS namespace_entry
           ON namespace_entry.oid = default_acl.defaclnamespace
         CROSS JOIN runtime_role
+        CROSS JOIN current_database_entry
         CROSS JOIN LATERAL pg_catalog.aclexplode(default_acl.defaclacl) AS privilege
         WHERE (
             default_acl.defaclnamespace = 0
@@ -199,6 +206,7 @@ export class PrismaService extends PrismaClient implements OnApplicationShutdown
           AND NOT (
             privilege.grantee = runtime_role.oid
             AND default_acl.defaclobjtype = 'r'
+            AND default_acl.defaclrole = current_database_entry.datdba
             AND namespace_entry.nspname = 'public'
             AND privilege.privilege_type = 'SELECT'
             AND NOT privilege.is_grantable
@@ -286,6 +294,13 @@ export class PrismaService extends PrismaClient implements OnApplicationShutdown
             OR namespace_entry.oid IS NOT NULL
           )
           AND privilege.grantee = runtime_role.oid
+          AND privilege.is_grantable
+        UNION ALL
+        SELECT 1
+        FROM pg_catalog.pg_parameter_acl AS parameter_acl
+        CROSS JOIN runtime_role
+        CROSS JOIN LATERAL pg_catalog.aclexplode(parameter_acl.paracl) AS privilege
+        WHERE privilege.grantee = runtime_role.oid
           AND privilege.is_grantable
       )
       SELECT
@@ -406,6 +421,16 @@ export class PrismaService extends PrismaClient implements OnApplicationShutdown
           FROM privilege_bearing_types AS type_entry
           WHERE pg_catalog.has_type_privilege(current_user, type_entry.oid, 'USAGE')
         ) AS "typePrivilegeCount",
+        (
+          SELECT count(*)::integer
+          FROM pg_catalog.pg_parameter_acl AS parameter_acl
+          WHERE pg_catalog.has_parameter_privilege(current_user, parameter_acl.parname, 'SET')
+            OR pg_catalog.has_parameter_privilege(
+              current_user,
+              parameter_acl.parname,
+              'ALTER SYSTEM'
+            )
+        ) AS "parameterPrivilegeCount",
         (
           SELECT count(*)::integer
           FROM default_privilege_violations

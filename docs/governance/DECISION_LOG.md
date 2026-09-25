@@ -458,6 +458,27 @@ commit, push, rerun, changement de statut, Ready ou merge R4 n’a été effectu
 Ces décisions R5 décrivent uniquement l’instantané local du 2026-09-18. Aucun
 SHA ou Run ID R5 futur n’est affirmé.
 
+R5 a ensuite été publié au commit
+`afaa652b7446b78ae35fb0bf6f4944af5625cef6`, parent
+`ebcd3fc02c15b0ee9cf679978ab197e9865a1737`, arbre
+`19e365f5ed0b1e06abfbef7c909dac0f9867b66d`, avec 10 fichiers et
+`+350/-105`. Infrastructure `35454834845`, Launcher Windows `35454834879`,
+Security `35454834839` et Quality Linux `35454834904` ont tous conclu
+`pull_request/completed/success` sur ce head exact. La PR #45 reste ouverte,
+Draft et non fusionnée.
+
+## 2026-09-20 — S1.2-03A-R6 Parameter ACL and default-owner boundary
+
+| ID              | Nature          | Décision                                                                                                                                                                                                                                                                                                                                                              | Autorité                         | Statut                                        |
+| --------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- | --------------------------------------------- |
+| DEC-S1.2-03A-19 | Paramètres      | L’API refuse tout droit effectif `SET` ou `ALTER SYSTEM` sur un paramètre PostgreSQL accordé directement au runtime ou via `PUBLIC`, avec ou sans option de redélégation. Le provisionneur contrôle l’ACL globale avant toute mutation, échoue avec un diagnostic borné sans secret et ne la normalise jamais.                                                        | Verdict CTO BLOCK post-R5        | Accepted — historical prepublication evidence |
+| DEC-S1.2-03A-20 | Default ACL     | L’unique exception de privilège par défaut est le `SELECT` non redélégable sur les futures tables `public` du propriétaire explicite de la base. Une ACL équivalente créée par un rôle tiers est refusée avant mutation ; après sa remédiation explicite, une future table de ce tiers demeure illisible par le runtime.                                              | Verdict CTO BLOCK post-R5        | Accepted — historical prepublication evidence |
+| DEC-S1.2-03A-21 | Validation      | Deux bases éphémères indépendantes valident chacune 23 provisionnements réussis, 16 états dangereux refusés à signature inchangée, quatre réparations de redélégation, Prisma, `SELECT 1`, lecture `Customer` et huit refus `42501`, dont `SET session_replication_role = replica`. Les ACL de paramètres sont testées séquentiellement et nettoyées entre scénarios. | Preuves locales R6 du 2026-09-20 | Executed — reproducible and cleaned           |
+| DEC-S1.2-03A-22 | Périmètre local | Dans l’instantané historique du 2026-09-20, R6 ne modifiait ni dépendance, manifeste, lockfile, schéma Prisma, migration S1.2-02, OpenAPI, contrat, workflow ou client Web/Admin/Mobile. Aucun commit, push ou changement GitHub R6 n’avait été effectué et S1.2-03B n’était pas démarré.                                                                             | Autorisation Product Owner R6    | Accepted — historical prepublication snapshot |
+
+Ces décisions décrivent l’instantané historique local prépublication R6 du
+2026-09-20. Aucun SHA ou Run ID R6 futur n’y était affirmé.
+
 ## Catégories d’autorité
 
 - **Produit** : vision, économie, marque, contrats et périmètre irréversible ;

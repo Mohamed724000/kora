@@ -1,9 +1,9 @@
 # KORA+ Final — Source de vérité
 
-Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A EN DRAFT PR #45 — R4 PUBLIÉ — INFRASTRUCTURE R4 EN ÉCHEC — R5 VALIDÉ LOCALEMENT — NON FUSIONNÉ**
+Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A EN DRAFT PR #45 — R5 PUBLIÉ ET CI VERTE — PREUVE PRÉPUBLICATION R6 VALIDÉE — NON FUSIONNÉ**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-09-18
+Dernière réconciliation documentaire : 2026-09-20
 
 ## Hiérarchie normative
 
@@ -204,3 +204,28 @@ acceptant les violations supplémentaires. Il ne modifie ni le garde API, ni le
 provisionneur, ni le schéma, les migrations, OpenAPI, les contrats, workflows,
 lockfiles ou clients. Au moment de cet instantané, aucun commit, push, rerun ou
 changement de PR R5 n’avait été effectué et S1.2-03B restait **Not started**.
+
+R5 a ensuite été publié au commit
+`afaa652b7446b78ae35fb0bf6f4944af5625cef6`, parent direct
+`ebcd3fc02c15b0ee9cf679978ab197e9865a1737`, arbre
+`19e365f5ed0b1e06abfbef7c909dac0f9867b66d`, avec 10 fichiers et
+`+350/-105`. Infrastructure `35454834845`, Launcher Windows `35454834879`,
+Security `35454834839` et Quality Linux `35454834904` ont tous conclu
+`pull_request/completed/success` sur ce head exact. La Draft PR #45 compte alors
+6 commits, 31 fichiers et `+4299/-201` ; elle reste ouverte, Draft et non
+fusionnée.
+
+L’instantané historique local prépublication R6 du 2026-09-20 corrige deux constats CTO
+sans prétendre à une publication future. L’attestation bloque désormais tout
+droit PostgreSQL `SET` ou `ALTER SYSTEM` effectif accordé au runtime ou à
+`PUBLIC`, avec ou sans option de redélégation. Le provisionneur contrôle ces ACL
+globales avant toute mutation et refuse sans les normaliser. L’exception de
+`SELECT` par défaut sur les futures tables `public` est limitée au propriétaire
+explicite de la base ; la même ACL créée par un rôle tiers est refusée sans
+mutation, puis sa future table est non lisible après remédiation explicite de
+cette ACL. Deux bases éphémères ont
+chacune validé 23 provisionnements réussis, 16 refus déterministes à signature
+inchangée, quatre réparations de redélégation, Prisma, `SELECT 1`, lecture
+`Customer` et huit refus `42501`. À la date de cet instantané, R6 n’était ni
+commité ni publié, aucun SHA ou Run ID R6 futur n’y était affirmé, la PR #45
+restait Draft et S1.2-03B restait **Not started**.

@@ -30,6 +30,35 @@ psql \
 
 BEGIN;
 
+WITH runtime_role AS (
+  SELECT oid
+  FROM pg_catalog.pg_roles
+  WHERE rolname = :'runtime_user'
+), unsafe_parameter_acl AS (
+  SELECT 1
+  FROM pg_catalog.pg_parameter_acl AS parameter_acl
+  CROSS JOIN LATERAL pg_catalog.aclexplode(parameter_acl.paracl) AS privilege
+  WHERE privilege.privilege_type IN ('SET', 'ALTER SYSTEM')
+    AND (
+      privilege.grantee = 0
+      OR privilege.grantee = (SELECT oid FROM runtime_role)
+    )
+)
+SELECT
+  NOT EXISTS (SELECT 1 FROM unsafe_parameter_acl) AS parameter_boundary_safe,
+  (SELECT count(*) FROM unsafe_parameter_acl) AS parameter_violation_count
+\gset
+
+\if :parameter_boundary_safe
+\else
+  \echo PostgreSQL runtime provisioning refused unsafe cluster parameter ACL count=:parameter_violation_count.
+  DO $parameter_boundary_refusal$
+  BEGIN
+    RAISE EXCEPTION 'unsafe cluster parameter ACL';
+  END
+  $parameter_boundary_refusal$;
+\endif
+
 SELECT format(
   'CREATE ROLE %I LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
   :'runtime_user',
@@ -56,7 +85,7 @@ WITH runtime_role AS (
   FROM pg_catalog.pg_roles
   WHERE rolname = :'runtime_user'
 ), current_database_entry AS (
-  SELECT oid
+  SELECT oid, datdba
   FROM pg_catalog.pg_database
   WHERE datname = current_database()
 ), non_system_schemas AS (
@@ -185,6 +214,7 @@ WITH runtime_role AS (
   LEFT JOIN non_system_schemas AS namespace_entry
     ON namespace_entry.oid = default_acl.defaclnamespace
   CROSS JOIN runtime_role
+  CROSS JOIN current_database_entry
   CROSS JOIN LATERAL pg_catalog.aclexplode(default_acl.defaclacl) AS privilege
   WHERE privilege.grantee IN (0, runtime_role.oid)
     AND (
@@ -192,11 +222,7 @@ WITH runtime_role AS (
       OR namespace_entry.oid IS NOT NULL
     )
     AND (
-      default_acl.defaclrole <> (
-        SELECT owner_role.oid
-        FROM pg_catalog.pg_roles AS owner_role
-        WHERE owner_role.rolname = current_user
-      )
+      default_acl.defaclrole <> current_database_entry.datdba
       OR (
         default_acl.defaclnamespace <> 0
         AND namespace_entry.nspname <> 'public'
@@ -373,7 +399,7 @@ runtime_result="$(
     --tuples-only \
     --no-align \
     --set=ON_ERROR_STOP=1 \
-    --command="WITH runtime_role AS (SELECT oid, rolbypassrls, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolsuper FROM pg_catalog.pg_roles WHERE rolname = current_user), current_database_entry AS (SELECT oid FROM pg_catalog.pg_database WHERE datname = current_database()), non_system_schemas AS (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname <> 'information_schema' AND nspname !~ '^pg_'), privilege_bearing_types AS (SELECT type_entry.oid FROM pg_catalog.pg_type AS type_entry JOIN non_system_schemas AS namespace_entry ON namespace_entry.oid = type_entry.typnamespace LEFT JOIN pg_catalog.pg_class AS composite_entry ON composite_entry.oid = type_entry.typrelid WHERE type_entry.typisdefined AND type_entry.typelem = 0 AND (type_entry.typrelid = 0 OR composite_entry.relkind = 'c')) SELECT current_user = session_user AND NOT runtime_role.rolsuper AND NOT runtime_role.rolcreaterole AND NOT runtime_role.rolcreatedb AND NOT runtime_role.rolinherit AND NOT runtime_role.rolreplication AND NOT runtime_role.rolbypassrls AND has_database_privilege(current_user, current_database(), 'CONNECT') AND NOT has_database_privilege(current_user, current_database(), 'CONNECT WITH GRANT OPTION') AND NOT has_database_privilege(current_user, current_database(), 'CREATE') AND NOT has_database_privilege(current_user, current_database(), 'TEMPORARY') AND has_schema_privilege(current_user, 'public', 'USAGE') AND NOT has_schema_privilege(current_user, 'public', 'USAGE WITH GRANT OPTION') AND NOT has_schema_privilege(current_user, 'public', 'CREATE') AND NOT EXISTS (SELECT 1 FROM privilege_bearing_types AS type_entry WHERE has_type_privilege(current_user, type_entry.oid, 'USAGE')) AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_shdepend AS dependency CROSS JOIN current_database_entry WHERE dependency.refclassid = 'pg_catalog.pg_authid'::regclass AND dependency.refobjid = runtime_role.oid AND dependency.deptype = 'o' AND (dependency.dbid = current_database_entry.oid OR (dependency.dbid = 0 AND dependency.classid = 'pg_catalog.pg_database'::regclass AND dependency.objid = current_database_entry.oid))) FROM runtime_role;"
+    --command="WITH runtime_role AS (SELECT oid, rolbypassrls, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolsuper FROM pg_catalog.pg_roles WHERE rolname = current_user), current_database_entry AS (SELECT oid FROM pg_catalog.pg_database WHERE datname = current_database()), non_system_schemas AS (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname <> 'information_schema' AND nspname !~ '^pg_'), privilege_bearing_types AS (SELECT type_entry.oid FROM pg_catalog.pg_type AS type_entry JOIN non_system_schemas AS namespace_entry ON namespace_entry.oid = type_entry.typnamespace LEFT JOIN pg_catalog.pg_class AS composite_entry ON composite_entry.oid = type_entry.typrelid WHERE type_entry.typisdefined AND type_entry.typelem = 0 AND (type_entry.typrelid = 0 OR composite_entry.relkind = 'c')) SELECT current_user = session_user AND NOT runtime_role.rolsuper AND NOT runtime_role.rolcreaterole AND NOT runtime_role.rolcreatedb AND NOT runtime_role.rolinherit AND NOT runtime_role.rolreplication AND NOT runtime_role.rolbypassrls AND has_database_privilege(current_user, current_database(), 'CONNECT') AND NOT has_database_privilege(current_user, current_database(), 'CONNECT WITH GRANT OPTION') AND NOT has_database_privilege(current_user, current_database(), 'CREATE') AND NOT has_database_privilege(current_user, current_database(), 'TEMPORARY') AND has_schema_privilege(current_user, 'public', 'USAGE') AND NOT has_schema_privilege(current_user, 'public', 'USAGE WITH GRANT OPTION') AND NOT has_schema_privilege(current_user, 'public', 'CREATE') AND NOT EXISTS (SELECT 1 FROM privilege_bearing_types AS type_entry WHERE has_type_privilege(current_user, type_entry.oid, 'USAGE')) AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_parameter_acl AS parameter_acl WHERE pg_catalog.has_parameter_privilege(current_user, parameter_acl.parname, 'SET') OR pg_catalog.has_parameter_privilege(current_user, parameter_acl.parname, 'ALTER SYSTEM')) AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_shdepend AS dependency CROSS JOIN current_database_entry WHERE dependency.refclassid = 'pg_catalog.pg_authid'::regclass AND dependency.refobjid = runtime_role.oid AND dependency.deptype = 'o' AND (dependency.dbid = current_database_entry.oid OR (dependency.dbid = 0 AND dependency.classid = 'pg_catalog.pg_database'::regclass AND dependency.objid = current_database_entry.oid))) FROM runtime_role;"
 )"
 
 if [ "$runtime_result" != 't' ]; then

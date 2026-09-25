@@ -1,8 +1,8 @@
 # S1.2-03A — PostgreSQL Least-Privilege Runtime Boundary & Prisma Adapter
 
 Date initiale : 2026-09-16
-Dernière réconciliation : 2026-09-18
-État : **DRAFT PR #45 OUVERTE — R4 PUBLIÉ — INFRASTRUCTURE R4 EN ÉCHEC — TROIS WORKFLOWS R4 RÉUSSIS — R5 VALIDÉ LOCALEMENT — NON FUSIONNÉ**
+Dernière réconciliation : 2026-09-20
+État : **DRAFT PR #45 OUVERTE — R5 PUBLIÉ — QUATRE WORKFLOWS R5 RÉUSSIS — PREUVE PRÉPUBLICATION R6 VALIDÉE — NON FUSIONNÉ**
 
 ## Baseline et autorisation
 
@@ -169,11 +169,11 @@ Ces contrôles supply-chain appartiennent à l’instantané local prépublicati
 2026-09-16. Les corrections de contre-revue antérieures à la publication
 n’avaient modifié ni `apps/api/package.json` ni `package-lock.json`. La
 correction CI R1 ultérieure modifie uniquement les scripts du manifeste API.
-R2, R3 et R4 ne changent ni dépendance ni lockfile ; audits, signatures et
+R2 à R6 ne changent ni dépendance ni lockfile ; audits, signatures et
 licences n’ont pas été rejoués après R0 et ne sont pas présentés comme des
-résultats R4.
+résultats courants R6.
 
-## Preuve PostgreSQL réelle
+## Preuve PostgreSQL réelle R6
 
 `powershell -NoProfile -ExecutionPolicy Bypass -File
 apps/api/prisma/run-runtime-boundary-validation.ps1` construit l’API puis démarre un
@@ -186,38 +186,40 @@ Deux bases indépendantes sont créées. Chacune reçoit :
 2. un rôle runtime distinct, absent sur A et volontairement privilégié,
    membre du rôle propriétaire et doté d’ACL excessives sur B ;
 3. les deux migrations S1.2-02 existantes ;
-4. 18 exécutions réussies du provisionneur livré : les deux premières
+4. 23 exécutions réussies du provisionneur livré : les deux premières
    produisent une signature identique couvrant tous les schémas non système,
    ACL courantes/par défaut, options de redélégation, propriétés, attributs,
    memberships et paramètres de rôle ; la troisième répare une dérive de
-   colonne dans `public`, onze passages confirment la convergence après
+   colonne dans `public`, seize passages confirment la convergence après
    réparation explicite des états refusés et quatre réparent isolément les
    options de redélégation ;
-5. onze refus déterministes du provisionneur, avec diagnostic borné et signature
+5. seize refus déterministes du provisionneur, avec diagnostic borné et signature
    inchangée : schéma possédé par le runtime, `PUBLIC CREATE`, objet `public`,
    collation, privilèges de table, colonne, séquence, routine et type, default ACL
-   externe et default ACL d’un propriétaire tiers dans `public` ;
+   externe et default ACL d’un propriétaire tiers dans `public`, puis les cinq
+   variantes `SET`/`ALTER SYSTEM` directes, via `PUBLIC` et avec redélégation ;
 6. une connexion `pg`, `SELECT 1`, une lecture Prisma de `Customer` et le
    démarrage réel de l’API avec le rôle runtime ;
 7. un essai de démarrage API avec le propriétaire, obligatoirement refusé.
 
 Résultats identiques sur A et B : 34 tables lisibles, zéro violation de droits
-table, colonne, vue, `MAINTAIN`, séquence, routine, type ou option de
+table, colonne, vue, `MAINTAIN`, séquence, routine, type, paramètre ou option de
 redélégation, zéro membership, propriété ou droit `PUBLIC`. Un schéma tiers sain
 reste inaccessible. Des tables, séquences, fonctions et types créés après
 provisioning dans `public` et ce schéma confirment les ACL par défaut minimales.
-Les onze états dangereux sont isolément refusés par le démarrage API et le
+Les seize états dangereux sont isolément refusés par le démarrage API et le
 provisionneur sur A et B, sans mutation de leur signature.
 
-| Opération runtime interdite | Résultat A | Résultat B |
-| --------------------------- | ---------- | ---------- |
-| `CREATE TABLE`              | `42501`    | `42501`    |
-| `TRUNCATE`                  | `42501`    | `42501`    |
-| désactivation de trigger    | `42501`    | `42501`    |
-| `SET ROLE` propriétaire     | `42501`    | `42501`    |
-| `INSERT` métier             | `42501`    | `42501`    |
-| `UPDATE` métier             | `42501`    | `42501`    |
-| `DELETE` métier             | `42501`    | `42501`    |
+| Opération runtime interdite    | Résultat A | Résultat B |
+| ------------------------------ | ---------- | ---------- |
+| `CREATE TABLE`                 | `42501`    | `42501`    |
+| `TRUNCATE`                     | `42501`    | `42501`    |
+| désactivation de trigger       | `42501`    | `42501`    |
+| `SET ROLE` propriétaire        | `42501`    | `42501`    |
+| `SET session_replication_role` | `42501`    | `42501`    |
+| `INSERT` métier                | `42501`    | `42501`    |
+| `UPDATE` métier                | `42501`    | `42501`    |
+| `DELETE` métier                | `42501`    | `42501`    |
 
 Après validation, seules les deux bases, les six rôles, le conteneur et les
 deux fichiers secrets créés par l’essai sont supprimés. Le nettoyage tente
@@ -231,16 +233,16 @@ image ou ressource étrangère n’est supprimé.
 | Prisma Client 7.9.1 generate       | PASS                                                                                     |
 | Prettier ciblé                     | PASS                                                                                     |
 | Typecheck API après correction     | PASS — `pretypecheck` génère Prisma 7.9.1 avant `tsc`                                    |
-| Tests applicatifs                  | PASS R4 — API 26/26 ; aucun autre workspace applicatif touché                            |
-| Tests d’outillage                  | PASS R4 — 297/297, dont le contrat de génération Prisma en checkout propre               |
-| Builds                             | PASS R4 — API construit par le validateur ; autres applications inchangées               |
+| Tests applicatifs                  | PASS R6 — API 26/26 ; aucun autre workspace applicatif touché                            |
+| Tests d’outillage                  | PASS R6 — 303/303, dont le contrat de génération Prisma en checkout propre               |
+| Builds                             | PASS R6 — API construit par le validateur ; autres applications inchangées               |
 | Compose rendu et absence de secret | PASS                                                                                     |
 | Upgrade `infra:prepare` historique | PASS — valeurs préservées, clé runtime ajoutée une fois, second passage identique        |
-| Validation réelle sur deux bases   | PASS R4 — 36 succès, 22 refus inchangés, 8 grant options réparées, 14 refus `42501`      |
+| Validation réelle sur deux bases   | PASS R6 — 46 succès, 32 refus inchangés, 8 grant options réparées, 16 refus `42501`      |
 | Audits npm complet et production   | PASS pré-correction — zéro vulnérabilité ; graphe inchangé, non rejoué ensuite           |
 | Signatures et attestations npm     | PASS pré-correction — 1 132 signatures, 198 attestations ; non rejoué ensuite            |
 | Licences npm                       | PASS pré-correction — 1 134 paquets, zéro écart ; graphe inchangé, non rejoué ensuite    |
-| Scanner officiel                   | PASS — 353 fichiers, historique et 52 sources immuables contrôlés                        |
+| Scanner officiel                   | PASS R6 — 355 fichiers, historique et 52 sources immuables contrôlés                     |
 | Workflows et OpenAPI               | PASS — 4 workflows, 4 actions verrouillées ; 34 chemins, 87 schémas, 18 invariants       |
 | Reproduction CI avant correction   | PASS — clone neuf, client absent ; TS2305 et trois TS2339 reproduits                     |
 | Correction CI en clone neuf        | PASS — génération indépendante avant typecheck, build et API 26/26                       |
@@ -395,3 +397,102 @@ preuve minimale. Six tests ciblés et un smoke réel après migrations sur une b
 n’affirme aucun SHA ou Run ID R5 futur ; à cette date, la description de PR
 demeurait inchangée et aucun commit, push, rerun, Ready ou merge R5 n’avait été
 effectué.
+
+## Publication R5 et instantané historique prépublication R6
+
+R5 est publié au commit `afaa652b7446b78ae35fb0bf6f4944af5625cef6`,
+parent direct `ebcd3fc02c15b0ee9cf679978ab197e9865a1737`, arbre
+`19e365f5ed0b1e06abfbef7c909dac0f9867b66d`, avec 10 fichiers et
+`+350/-105`. Les workflows `pull_request` sur ce head exact concluent :
+
+- Infrastructure `35454834845` : `completed/success` ;
+- Launcher Windows `35454834879` : `completed/success` ;
+- Security `35454834839` : `completed/success` ;
+- Quality Linux `35454834904` : `completed/success`.
+
+La Draft PR #45 compte 6 commits, 31 fichiers et `+4299/-201`. Elle demeure
+ouverte, Draft et non fusionnée.
+
+La revue CTO post-R5 a relevé deux frontières encore incomplètes. Premièrement,
+les ACL de paramètres PostgreSQL sont globales au cluster : un droit `SET` ou
+`ALTER SYSTEM` effectif accordé directement au runtime ou à `PUBLIC` doit
+bloquer l’API, y compris avec option de redélégation. Deuxièmement, l’exception
+de `SELECT` par défaut sur les futures tables `public` ne peut être acceptée que
+si `pg_default_acl.defaclrole` est le propriétaire explicite de la base ; une
+ACL identique créée par un rôle tiers reste dangereuse.
+
+Dans cet instantané historique, le correctif local R6 ajoute
+`unexpected_parameter_privilege`, inclut les ACL
+de paramètres dans les preuves `PUBLIC` et de redélégation, et contrôle le
+propriétaire de chaque default ACL. Le provisionneur inspecte les ACL globales
+avant toute mutation et refuse avec un diagnostic borné sans secret ; il ne
+révoque ni ne réécrit ces ACL. Un default ACL tiers dangereux est également
+refusé avant normalisation, à signature inchangée.
+
+La validation réelle PostgreSQL 18.4 sur deux bases éphémères indépendantes
+confirme, pour chaque base :
+
+- 23 provisionnements réussis, dont la répétition convergente ;
+- 16 états dangereux refusés par l’API et le provisionneur sans mutation ;
+- les cinq cas de paramètres : `SET` et `ALTER SYSTEM` directs ou via `PUBLIC`,
+  puis `SET ... WITH GRANT OPTION` ;
+- le default ACL `SELECT` du propriétaire de base accepté, le même privilège
+  du rôle tiers refusé sans mutation, puis une future table de ce tiers non
+  lisible après remédiation explicite de cette ACL ;
+- quatre réparations isolées de `WITH GRANT OPTION` dans le périmètre réparable ;
+- Prisma 7.9.1, `SELECT 1` et lecture `Customer` réussis ;
+- huit refus SQLSTATE `42501` : DDL, `TRUNCATE`, trigger, `SET ROLE`,
+  `SET session_replication_role = replica`, `INSERT`, `UPDATE` et `DELETE`.
+
+### Contrôles R6 exécutés
+
+Les commandes suivantes ont terminé avec le code `0` sur l’état fonctionnel
+R6 validé :
+
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File apps/api/prisma/run-runtime-boundary-validation.ps1` ;
+- `npm.cmd run lint --workspace @kora-plus/api` ;
+- `npm.cmd run typecheck --workspace @kora-plus/api` ;
+- `npm.cmd run test --workspace @kora-plus/api -- --verbose` : 7 suites et
+  26 tests ;
+- `npm.cmd run test:tooling` : 303/303 ;
+- `npm.cmd run security:scan` : 355 fichiers, historique et 52 sources
+  immuables ;
+- Prettier ciblé, références Markdown relatives, recherche des secrets et
+  `git diff --check`.
+
+Le build API et la génération Prisma 7.9.1 sont exécutés par le validateur
+PostgreSQL. Une première exécution a révélé une jointure manquante vers
+`current_database_entry`; elle a échoué avant les scénarios et ses seules
+ressources éphémères ont été supprimées. Après correction, l’exécution complète
+ci-dessus est verte. La contre-revue ultérieure n’a changé que le libellé de la
+preuve « future table après remédiation » et les documents ; elle n’a modifié
+aucun chemin SQL ni aucune assertion. La longue validation PostgreSQL n’a donc
+pas été rejouée ; `node --check`, Prettier, les références Markdown, le scanner
+et `git diff --check` ont été rejoués sur l’état final. Les audits, signatures
+et licences de l’instantané initial n’ont pas été rejoués : aucun manifeste,
+lockfile, dépendance ou résolution ne change en R6.
+
+Le périmètre de cet instantané historique comprend exactement ces 13 fichiers :
+
+- `apps/api/README.md` ;
+- `apps/api/prisma/validate-runtime-boundary.mjs` ;
+- `apps/api/src/database/postgresql-runtime-boundary.spec.ts` ;
+- `apps/api/src/database/postgresql-runtime-boundary.ts` ;
+- `apps/api/src/database/prisma.service.ts` ;
+- `docs/governance/DECISION_LOG.md` ;
+- `docs/governance/SOURCE_OF_TRUTH.md` ;
+- `docs/qa/REQUIREMENTS_TRACEABILITY_MATRIX.md` ;
+- `docs/qa/SLICE_1_2_03A_POSTGRESQL_RUNTIME_BOUNDARY_REPORT.md` ;
+- `docs/roadmap/MVP_EXECUTION_PLAN.md` ;
+- `docs/security/THREAT_MODEL.md` ;
+- `infra/README.md` ;
+- `infra/postgres/provision-runtime.sh`.
+
+Diff de l’instantané historique après formatage : **13 fichiers, +498/-97**.
+
+Les deux bases, six rôles, le conteneur et les fichiers de secrets éphémères
+ont été supprimés de façon ciblée. Les conteneurs KORA+ préexistants n’ont pas
+été modifiés. Cet état est l’instantané historique local prépublication R6 du
+2026-09-20 : aucun commit, push, changement de PR, rerun, Ready ou merge R6
+n’avait été effectué et aucun SHA ou Run ID R6 futur n’y était affirmé.
+S1.2-03B restait `Not started`.
