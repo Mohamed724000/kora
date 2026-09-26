@@ -21,12 +21,73 @@ Git. L’API de vérification utilise par défaut le port `3102`.
 
 `npm run infra:prepare` génère des valeurs aléatoires dans
 `infra/.local/secrets/` et une configuration locale dans
-`infra/.local/compose.env`. Les fichiers existants ne sont jamais écrasés.
+`infra/.local/compose.env`. Les fichiers existants ne sont jamais écrasés. Pour
+une configuration antérieure à S1.2-03A, la seule clé absente
+`KORA_POSTGRES_RUNTIME_USER=kora_runtime` est ajoutée en fin de fichier sans
+modifier les valeurs déjà présentes.
 
-PostgreSQL lit son mot de passe avec `POSTGRES_PASSWORD_FILE`. Redis reçoit son
+PostgreSQL reçoit deux secrets distincts : `postgres_password` pour le compte
+local propriétaire/migrateur et `postgres_runtime_password` pour l’API. Le
+second n’est jamais injecté comme variable Compose ni argument de processus ;
+le provisionneur le lit depuis `/run/secrets`. Redis reçoit également son
 secret comme fichier Compose et construit une configuration privée dans un
-`tmpfs` interne ; le mot de passe n’apparaît ni dans Compose rendu ni dans les
-arguments du processus `redis-server`.
+`tmpfs` interne.
+
+`infra:up` et `infra:check` rejouent le provisionneur idempotent. Le rôle
+`KORA_POSTGRES_RUNTIME_USER` est `NOINHERIT`, sans attribut administratif ni
+membership ; ses droits effectifs sont limités à `CONNECT`, `USAGE` du schéma
+`public` et `SELECT` sur les tables. Les droits de `PUBLIC`, les écritures,
+colonnes, vues, `MAINTAIN`, séquences, routines, types, large objects, options de
+redélégation, DDL et objets temporaires sont révoqués, y compris dans les
+privilèges par défaut. Tout droit `SET` ou `ALTER SYSTEM` sur un paramètre
+PostgreSQL accordé directement au runtime ou à `PUBLIC`, y compris avec option
+de redélégation, est interdit. Toute nouvelle connexion runtime doit aussi
+hériter de `session_replication_role=origin` et de
+`lo_compat_privileges=off`. Les routines `pg_catalog` de large objects sont
+retirées à `PUBLIC` et au runtime, ce qui bloque notamment `lo_create`,
+`lo_from_bytea`, `lo_put` et `lo_open`. Le compte
+`KORA_POSTGRES_USER` reste réservé aux migrations locales et ne doit jamais
+être fourni à l’API.
+
+Avant de normaliser les ACL du périmètre `public`, le provisionneur inspecte
+tous les schémas non système de la base courante. Un schéma tiers possédé ou
+accessible par le runtime, un objet possédé dans `public` ou ailleurs, un
+`CREATE` hérité de `PUBLIC`, un privilège d’objet/colonne/séquence/routine/type,
+une option de redélégation, un large object possédé ou accessible, ou une ACL
+par défaut hors profil — y compris celle d’un propriétaire tiers dans `public` —
+provoque un refus non nul avec un diagnostic borné sans secret. Les large
+objects, qui sont hors schéma, sont inspectés directement dans
+`pg_largeobject_metadata`; les ACL des routines `pg_catalog` correspondantes
+ainsi que les ACL relationnelles et de colonnes de `pg_largeobject` et
+`pg_largeobject_metadata` sont inspectées séparément. Le runtime ne peut avoir
+aucun droit sur `pg_largeobject`. Sur `pg_largeobject_metadata`, seul le
+`SELECT` système standard de `PUBLIC`, sans redélégation, est admis ; tout droit
+d’écriture, de colonne, de redélégation, direct ou hérité par rôle est refusé
+avant mutation. Le script ne réattribue pas la propriété et ne
+réécrit pas les ACL tierces de ces objets ou routines : leur correction exige
+une décision explicite du propriétaire de la base. Toutes les mutations du rôle, du
+credential et des ACL sont dans la même transaction : un refus restaure l’état
+antérieur complet.
+
+Les ACL de paramètres sont globales au cluster. Le provisionneur les contrôle
+avant toute mutation et refuse avec un diagnostic borné sans secret ; il ne les
+révoque jamais automatiquement. Dans `public`, le `SELECT` par défaut destiné
+au runtime n’est réparable que lorsqu’il appartient explicitement au
+propriétaire de la base. Une ACL par défaut équivalente créée par un rôle tiers
+est refusée sans modification ; sa remédiation reste sous l’autorité de ce
+propriétaire tiers. La même règle s’applique aux default ACL PostgreSQL 18 de
+large objects : celles du propriétaire/migrateur sont normalisées, celles d’un
+tiers sont refusées avant mutation. Les réglages `pg_db_role_setting` aux
+portées base, rôle et rôle/base qui imposent
+`session_replication_role!=origin` sont refusés avant mutation et ne sont jamais
+corrigés silencieusement. La même inspection couvre
+`lo_compat_privileges!=off`, y compris sa valeur effective sur la connexion du
+provisionneur ; ce mode dangereux est refusé plutôt que normalisé. Tout
+override propriétaire/migrateur de l’un de ces deux paramètres est refusé,
+même s’il affiche une valeur sûre : sur cette connexion, il pourrait masquer un
+défaut cluster dangereux hérité par le runtime. Le provisionneur ne tente pas
+de supprimer cet override ; la remédiation explicite doit établir le défaut
+global sûr puis retirer la portée masquante.
 
 Ces identifiants sont exclusivement locaux. Ils ne doivent jamais être copiés
 dans un fichier versionné ou un environnement partagé.
@@ -40,9 +101,9 @@ Sous Windows, utiliser `npm.cmd` :
 | `npm.cmd run infra:prepare`    | Crée les fichiers locaux ignorés sans écraser l’existant |
 | `npm.cmd run infra:validate`   | Valide Compose et ses invariants sans afficher de secret |
 | `npm.cmd run infra:pull`       | Télécharge seulement les deux images verrouillées        |
-| `npm.cmd run infra:up`         | Démarre et attend les deux health checks                 |
+| `npm.cmd run infra:up`         | Démarre, attend la santé et provisionne le rôle runtime  |
 | `npm.cmd run infra:status`     | Affiche uniquement l’état du projet local                |
-| `npm.cmd run infra:check`      | Vérifie labels, santé, PostgreSQL et Redis               |
+| `npm.cmd run infra:check`      | Vérifie la pile et reprovisionne la frontière runtime    |
 | `npm.cmd run infra:down`       | Arrête la pile sans supprimer les volumes                |
 | `npm.cmd run infra:verify`     | Vérifie persistance, reset ciblé et idempotence          |
 | `npm.cmd run infra:verify-api` | Vérifie les probes API et les pannes contrôlées          |

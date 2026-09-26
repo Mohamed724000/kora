@@ -494,6 +494,179 @@ aucun endpoint, service, worker, seed, runtime métier ou interface n’est livr
 S1.2-03 reste `Not started`; son analyse est une proposition soumise à une
 décision séparée et S1.2-03A n’est ni autorisé ni démarré.
 
+Ce dernier état est conservé comme preuve historique de la clôture S1.2-02.
+Une autorisation Product Owner séparée du 2026-09-16 a ensuite démarré
+S1.2-03A depuis `main` au merge
+`95bdfcf30a14e05ae90b09150cf289e1e0343c0d`.
+
+## Frontière PostgreSQL runtime S1.2-03A
+
+S1.2-03A réduit l’impact d’une compromission de l’API en séparant le compte
+propriétaire/migrateur du rôle utilisé par le processus NestJS. Le rôle runtime
+est exclusivement lecteur : `CONNECT` sur la base, `USAGE` sur `public` et
+`SELECT` sur les tables. Il est `NOINHERIT`, ne possède aucun objet ni
+membership et n’a aucun attribut superuser, création de rôle/base, réplication
+ou contournement RLS. `CREATE`, `TEMPORARY`, droits de séquence ou de type,
+exécution des fonctions applicatives, options de redélégation et droits
+d’écriture table sont absents dans tous les schémas non système de la base
+courante. Le runtime ne dispose d’aucun droit PostgreSQL `SET` ou
+`ALTER SYSTEM` sur les paramètres, directement ou via `PUBLIC`. Il ne possède
+aucun large object, ne peut en lire, modifier ou tronquer aucun et doit observer
+`session_replication_role=origin` et `lo_compat_privileges=off` sur sa connexion
+réelle. Il ne peut exécuter aucune routine `pg_catalog` `lo_*`, `loread` ou
+`lowrite`.
+
+Les ACL effectives sont calculées avec `has_*_privilege` et les ACL catalogues
+dépliées avec `aclexplode`. Cette combinaison inclut les droits hérités de
+`PUBLIC`; le provisionneur révoque explicitement `PUBLIC` sur la base et le
+périmètre `public`, ainsi que dans les privilèges par défaut du
+propriétaire/migrateur. Pour les autres schémas non système, il inspecte
+propriété exhaustive via `pg_shdepend`, accès de schéma, objets, colonnes,
+séquences, routines, types, options de redélégation et ACL par défaut. Tout état
+hors profil est refusé sans réattribution de propriété ni réécriture automatique
+d’une ACL tierce. Les large objects sont contrôlés séparément dans
+`pg_largeobject_metadata`, puisqu’ils n’appartiennent à aucun schéma. Les
+routines large-object de `pg_catalog` sont durcies séparément : `PUBLIC` et le
+runtime perdent `EXECUTE`, tandis qu’une ACL directe d’un rôle tiers n’est pas
+réécrite. Les
+réglages persistants de session sont contrôlés dans `pg_db_role_setting` avant
+toute mutation du provisionneur.
+
+| Menace                                                 | Mesure S1.2-03A                                                          | Preuve locale                                                        | Risque résiduel                                                        |
+| ------------------------------------------------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| API configurée avec le propriétaire ou un compte admin | attestation bloquante avant `application.init()`                         | démarrage propriétaire refusé, démarrage runtime accepté sur 2 bases | protection dépend du maintien de l’attestation dans les futurs lots    |
+| Privilège indirect via rôle ou `PUBLIC`                | `NOINHERIT`, zéro membership, inspection de tous les schémas non système | propriété runtime et `PUBLIC CREATE` externes refusés sur 2 bases    | la classification des schémas système doit suivre PostgreSQL           |
+| Altération du schéma ou neutralisation des triggers    | aucun `CREATE`, propriété, `TRIGGER` ou `TRUNCATE`                       | DDL, `TRUNCATE` et `ALTER TABLE ... DISABLE TRIGGER` refusés `42501` | le propriétaire/migrateur reste puissant et doit rester hors API       |
+| Élévation par `SET ROLE`                               | aucun rôle accordé au runtime                                            | `SET ROLE` propriétaire refusé `42501`                               | toute future délégation de rôle doit repasser cette gate               |
+| Altération de session par ACL de paramètre             | aucun `SET`/`ALTER SYSTEM`, contrôle global avant mutation               | cinq scénarios directs/`PUBLIC`/redélégation refusés sur 2 bases     | toute ACL de cluster existante exige une remédiation propriétaire      |
+| Session ouverte en mode réplication                    | `session_replication_role=origin` attesté sur la connexion Prisma        | portées base, rôle et rôle/base refusées sur nouvelle connexion      | tout autre réglage global reste détecté par l’attestation effective    |
+| Lecture ou écriture d’un large object                  | zéro propriété, ACL, routine `lo_*` ou mode compatibilité dangereux      | ACL, default ACL, quatre routines et `lo_compat` testés sur 2 bases  | tout large object tiers dangereux exige une remédiation explicite      |
+| Fuite par default ACL d’un rôle tiers                  | exception `SELECT public` limitée au propriétaire de base                | ACL refusée inchangée ; table tierce illisible après remédiation     | les rôles tiers gardent l’autorité sur leurs propres ACL               |
+| Écriture métier directe                                | `SELECT` seul sur les 34 tables, aucun droit de séquence                 | `INSERT`, `UPDATE` et `DELETE` refusés `42501`                       | les futurs services d’écriture exigeront des rôles distincts et bornés |
+| Dérive de provisioning                                 | idempotence, refus déterministe et ACL tierces préservées                | 36 succès, 27 refus inchangés, 4 grant options et 1 ACL `L` réparées | le provisioning de production reste hors périmètre                     |
+
+La preuve locale R4 du 2026-09-18 ajoute sur chacune des deux bases un schéma
+sain inaccessible, puis isole 11 états négatifs : propriété de schéma, objet
+`public` et collation, `CREATE` via `PUBLIC`, privilèges de table, colonne,
+séquence, routine et type, default ACL externe et default ACL tiers dans
+`public`. L’API et le provisionneur les refusent sans modifier leur signature.
+Quatre options de redélégation — base, schéma, table et default ACL — sont
+isolément détectées puis normalisées. Cet instantané historique prépublication
+a été établi avant tout commit ou push R4 et ne décrit pas l’état GitHub
+ultérieur.
+
+R4 est ensuite publié au commit
+`ebcd3fc02c15b0ee9cf679978ab197e9865a1737`. Infrastructure `35402506742`
+échoue alors que le propriétaire est correctement refusé : l’oracle exigeait
+`runtime_owns_database_object`, mais PostgreSQL 18.4 expose ce propriétaire dans
+`pg_database.datdba` sans dépendance de propriété dans `pg_shdepend`. Dans
+l’instantané prépublication R5 du 2026-09-18, le correctif local ne relâche pas
+le garde : il conserve l’erreur typée, `administrative_role_attribute`,
+`database_or_schema_write_privilege` et `unexpected_table_privilege` comme
+minimum obligatoire. Les tests séparés de propriété runtime R4 restent
+inchangés. À la date de cet instantané, aucun SHA ou Run ID R5 futur n’était
+affirmé.
+
+R5 est ensuite publié au commit
+`afaa652b7446b78ae35fb0bf6f4944af5625cef6`. Infrastructure `35454834845`,
+Launcher Windows `35454834879`, Security `35454834839` et Quality Linux
+`35454834904` concluent tous `pull_request/completed/success` sur ce head exact.
+
+Dans l’instantané historique local prépublication R6 du 2026-09-20, l’attestation inclut
+`pg_parameter_acl` et les privilèges effectifs `SET`/`ALTER SYSTEM`. Le
+provisionneur contrôle cette ACL globale avant toute mutation, la conserve
+intacte en cas de refus et ne tente jamais de la normaliser. L’exception de
+default ACL `SELECT` sur `public` exige désormais que `defaclrole` soit le
+propriétaire de la base. Deux bases isolées confirment le refus distinct des
+ACL de paramètres directes, via `PUBLIC` et avec redélégation, puis le refus
+sans mutation d’un default ACL tiers puis, après sa remédiation explicite,
+l’absence de lecture de sa future table. Tant que cette ACL dangereuse subsiste,
+le provisionneur et l’API restent fail-closed et aucune création d’objet tierce
+ne doit être poursuivie. Le runtime sain échoue aussi avec `42501` sur
+`SET session_replication_role = replica`. Aucun SHA ou Run ID R6 futur n’y
+était affirmé ; la PR #45 demeurait Draft et S1.2-03B restait `Not started`.
+
+R6 est ensuite publié au commit
+`80e8a397b19a98bd85f5ef6fcd2afe8ef4407ab0`. Infrastructure `36125459701`,
+Launcher Windows `36125459563`, Security `36125459520` et Quality Linux
+`36125459526` sont tous `pull_request/completed/success` sur ce head exact. La
+PR #45 reste ouverte, Draft et non fusionnée.
+
+Dans l’instantané historique local prépublication R7 du 2026-09-25, les deux
+findings CTO post-R6 et le finding large-object découvert à la reprise sont
+fermés. L’attestation et le provisionneur couvrent les
+ACL courantes des large objects, les droits effectifs, `PUBLIC`, les grant
+options et les default ACL PostgreSQL 18 `L`. Seules les default ACL `L` du
+propriétaire/migrateur sont normalisées ; tout état tiers est refusé avant
+mutation et sa signature reste identique. La valeur effective
+`session_replication_role` doit être `origin`, et les réglages persistants base,
+rôle et rôle/base sont testés sur une nouvelle connexion puis refusés sans
+correction silencieuse.
+
+Le contrôle byte-final a démontré que les ACL des large objects existants ne
+suffisaient pas : `PUBLIC EXECUTE` permettait encore au runtime d’appeler
+`lo_create`, `lo_from_bytea` et `lo_put`, puis de posséder son propre objet. Le
+provisionneur retire donc `EXECUTE` à `PUBLIC` et au runtime sur toutes les
+routines `pg_catalog` `lo_*`, `loread` et `lowrite`; l’API refuse toute dérive
+effective. `lo_compat_privileges=on` est également refusé avant mutation.
+
+Deux bases PostgreSQL 18.4 indépendantes confirment au total 72
+provisionnements réussis, 54 refus inchangés, huit réparations de grant option,
+deux normalisations de default ACL `L`, deux ACL tierces de routine préservées,
+six refus de réglages persistants de réplication, deux refus de
+`lo_compat_privileges=on` et 24 refus `42501`. Les bases, rôles, large objects,
+conteneur et secrets créés
+pour la validation ont été supprimés de façon ciblée. Au moment de cette preuve,
+R7 reste local, non commité et non publié ; aucun SHA ou Run ID R7 futur n’est
+affirmé, la PR reste Draft et S1.2-03B reste `Not started`.
+
+R7 est ensuite publié au commit
+`3b4e9e2fdf6d2fd53c08ad48edc20e8328e2411e`. Infrastructure `36167761862`,
+Launcher Windows `36167761974`, Security `36167761909` et Quality Linux
+`36167761881` concluent tous `pull_request/completed/success` sur ce head exact.
+La PR #45 reste ouverte, Draft, `CLEAN/MERGEABLE` et non fusionnée.
+
+Dans l’instantané historique local prépublication R8 du 2026-09-26, les ACL
+relationnelles et de colonnes de `pg_largeobject` et
+`pg_largeobject_metadata` entrent explicitement dans l’attestation. Aucun droit
+runtime n’est autorisé sur les chunks ; le `SELECT` système standard de
+`PUBLIC` sur les métadonnées demeure autorisé sans redélégation. Les droits
+directs, via `PUBLIC`, via rôle effectivement hérité et les grant options sont
+contrôlés dans les ACL brutes et effectives. Par base, douze ACL brutes sont
+appliquées puis refusées par l’API et le provisionneur : sept grants effectifs,
+deux ACL persistées que les fonctions `has_*` considèrent non effectives et
+trois ACL `SELECT` de métadonnées redondantes avec la visibilité standard de
+`PUBLIC`.
+
+R8 ferme aussi le masquage des défauts cluster : un override sûr du
+propriétaire/migrateur pour `session_replication_role` ou
+`lo_compat_privileges` ne constitue plus une preuve du défaut global. Le
+provisionneur le refuse avant mutation ; quatre scénarios par base prouvent le
+défaut dangereux depuis une nouvelle connexion runtime et la signature
+inchangée. Cette règle est conservative : un override même sûr doit être
+retiré après établissement explicite du défaut cluster sûr. Elle évite de
+normaliser un état dont le provisionneur ne peut pas prouver la sûreté globale.
+
+Les deux bases PostgreSQL 18.4 cumulent 104 provisionnements réussis, 86 refus
+sans mutation, 24 refus d’ACL brutes de catalogue — 14 effectives, quatre non
+effectives et six redondantes —, huit défauts globaux masqués refusés et 24
+refus `42501`. Prisma,
+`SELECT 1`, la lecture `Customer`, le démarrage runtime, le refus propriétaire
+et les scénarios R7 restent validés. Les ressources d’essai et secrets sont
+supprimés de façon ciblée. R8 reste local, non indexé, non commité et non
+publié dans cet instantané daté ; aucun SHA ou Run ID R8 futur n’est affirmé,
+la PR reste Draft et S1.2-03B reste `Not started`.
+
+Le pool `pg` est détenu par le client Prisma 7.9.1 via
+`@prisma/adapter-pg` 7.9.1 ; la readiness réutilise ce même chemin. Les erreurs
+de frontière exposent uniquement des codes de violation sûrs. Aucun secret,
+DSN ou nom de compte n’est journalisé.
+
+Ce contrôle n’autorise aucun endpoint, mutation métier, authentification
+administrateur, worker, seed, média ou paiement. Le rôle de lecture ne devra
+pas être élargi pour les futurs besoins d’écriture : ceux-ci nécessitent une
+frontière séparée, une transaction documentée et une nouvelle autorisation.
+
 ## Méthode de mise à jour
 
 Chaque lot affectant une frontière :

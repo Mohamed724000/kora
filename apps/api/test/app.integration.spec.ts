@@ -1,6 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { createApplication } from '../src/app.factory';
+import type { RuntimeDatabaseBoundary } from '../src/database/runtime-database-boundary';
 import type { ReadinessCheck } from '../src/health/readiness-check';
 import { SAFE_TEST_ENVIRONMENT } from './safe-test-environment';
 
@@ -39,6 +40,12 @@ function lateFailingCheck(name: 'postgresql' | 'redis'): ReadinessCheck {
   };
 }
 
+function successfulRuntimeBoundary(): RuntimeDatabaseBoundary {
+  return {
+    async assertLeastPrivilege(): Promise<void> {},
+  };
+}
+
 describe('API foundation', () => {
   let application: INestApplication;
 
@@ -56,6 +63,7 @@ describe('API foundation', () => {
     application = await createApplication({
       environment: SAFE_TEST_ENVIRONMENT,
       readinessChecks: checks,
+      runtimeDatabaseBoundary: successfulRuntimeBoundary(),
     });
   }
 
@@ -68,6 +76,22 @@ describe('API foundation', () => {
       .get('/health/live')
       .expect(200)
       .expect({ status: 'live' });
+  });
+
+  it('refuse le démarrage lorsque la frontière PostgreSQL échoue', async () => {
+    const runtimeDatabaseBoundary: RuntimeDatabaseBoundary = {
+      async assertLeastPrivilege(): Promise<void> {
+        throw new Error('controlled runtime boundary failure');
+      },
+    };
+
+    await expect(
+      createApplication({
+        environment: SAFE_TEST_ENVIRONMENT,
+        readinessChecks: [successfulCheck('postgresql'), successfulCheck('redis')],
+        runtimeDatabaseBoundary,
+      }),
+    ).rejects.toThrow('controlled runtime boundary failure');
   });
 
   it('déclare ready uniquement lorsque les deux probes réussissent', async () => {

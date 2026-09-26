@@ -1,9 +1,9 @@
 # KORA+ Final — Source de vérité
 
-Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ ET FUSIONNÉ — S1.2-03 NON DÉMARRÉ**
+Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A EN DRAFT PR #45 — R7 PUBLIÉ ET CI VERTE — INSTANTANÉ PRÉPUBLICATION R8 VALIDÉ LOCALEMENT — NON FUSIONNÉ**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-09-15
+Dernère réconciliation documentaire : 2026-09-26
 
 ## Hiérarchie normative
 
@@ -104,3 +104,208 @@ Security `34986168621` et Quality Linux `34986168424` ont tous conclu
 fusion n’ajoute aucun endpoint, service, worker, seed, runtime métier ou
 interface. S1.2-03 reste **Not started** ; son analyse demeure une proposition
 soumise à une décision séparée et S1.2-03A n’est ni autorisé ni démarré.
+
+Cette dernière phrase décrit l’état historique de la clôture S1.2-02. La PR #44
+a ensuite été fusionnée et fermée au merge `main`
+`95bdfcf30a14e05ae90b09150cf289e1e0343c0d`. Les workflows `push/main`
+Infrastructure `35082285457`, Launcher Windows `35082285515`, Security
+`35082285620` et Quality Linux `35082285461` ont tous conclu
+`completed/success` sur ce merge.
+
+Sur autorisation Product Owner distincte du 2026-09-16, S1.2-03A est démarré
+depuis ce merge dans une branche et un worktree dédiés. L’état observé dans
+l’instantané prépublication R5 du 2026-09-18 est **Draft PR #45 ouverte ; R4
+publié ; Infrastructure R4 en échec ; trois autres workflows R4 réussis ;
+correctif R5 validé localement ; non fusionné**.
+L’instantané local prépublication du 2026-09-16 a été établi alors que les 26
+fichiers étaient non indexés, non commités et non publiés ; cette formulation
+reste une preuve historique datée. Le lot sépare le compte
+propriétaire/migrateur PostgreSQL du rôle API de lecture, connecte Prisma 7.9.1
+par `@prisma/adapter-pg` 7.9.1 et refuse le démarrage si le compte API possède
+un attribut, une propriété, une appartenance ou un privilège inattendu, y
+compris via `PUBLIC`. Il n’ajoute aucun endpoint, service métier, worker, seed,
+écran, paiement, média, tag, release ou déploiement. Les capacités métier de
+S1.2-03 au-delà de cette frontière technique restent **Not started** et
+requièrent une autorisation séparée.
+
+Le commit publié `974d7afa9d4dc9ceb88a35bd5bd7ae3f477cb875` était le head
+initial de la Draft PR #45 avant R1. Ses premiers workflows `pull_request` ont
+conclu Security `35119052015` en succès et Infrastructure `35119052104`,
+Launcher Windows `35119052049` et Quality Linux `35119052101` en échec : après
+`npm ci`, le client Prisma n’était pas généré avant build, typecheck ou tests.
+Ces échecs R0 sont historiques.
+La correction R1 ajoute aux seules commandes API les hooks de génération
+Prisma et un test de contrat ; elle ne change ni dépendance, ni lockfile, ni
+workflow, ni schéma, migration, OpenAPI ou frontière PostgreSQL. Aucun des runs
+initiaux n’est relancé ; R1 produit des workflows distincts sur son propre head.
+
+Le commit R1 publié `41b3d8f33a637108814208258a3e99b105be1afc` était le head
+de la Draft PR #45 avant R2. Launcher Windows `35155026009`, Security
+`35155025993` et Quality Linux `35155026016` ont conclu `completed/success` ;
+Infrastructure `35155026285` a conclu `completed/failure`. Cet échec R1 est une
+preuve historique : le smoke test provisionnait bien le rôle runtime, mais
+lançait l’API avec le propriétaire/migrateur. Le garde a donc refusé ce compte
+par `RuntimeDatabaseBoundaryError`, puis le script a masqué cette sortie sous un
+timeout de 30 secondes. Dans l’instantané local antérieur à son commit, le
+correctif R2 déploie les migrations sous le propriétaire, reprovisionne les ACL,
+vérifie explicitement son refus, lance ensuite l’API avec le rôle runtime et
+remonte immédiatement toute sortie fatale après neutralisation des secrets.
+Aucun contrôle de privilèges n’est relâché et aucun droit propriétaire n’est
+accordé au runtime. Cette preuve locale R2, antérieure au commit, demeure un
+instantané historique du 2026-09-16 et ne préjugeait pas alors du résultat des
+workflows R2.
+
+R2 a ensuite été publié au commit
+`9d163cc34caa57cd671b6783048d89dde6d18069`. Les workflows `pull_request`
+Infrastructure `35162113781`, Launcher Windows `35162113686`, Security
+`35162113920` et Quality Linux `35162113691` ont tous conclu
+`completed/success` sur ce head exact. La PR #45 reste ouverte, Draft, non
+fusionnée et sans passage en Ready. S1.2-03B reste **Not started**.
+
+L’instantané local prépublication R3 daté du 2026-09-17 a été établi alors
+qu’aucun commit, push, changement de PR, rerun, Ready ou merge R3 n’avait été
+effectué ; aucun SHA ou Run ID R3 futur n’y était affirmé.
+
+R3 a ensuite été publié au commit
+`8f8c447b9badd3c8bd330982a1c0e7ef38e246cf`. Les workflows `pull_request`
+Infrastructure `35209186465`, Launcher Windows `35209186447`, Security
+`35209186482` et Quality Linux `35209186464` ont tous conclu
+`completed/success` sur ce head exact.
+
+La revue CTO post-R3 a bloqué la fusion sur deux constats : le compteur
+historique R1 du corps de PR et l’inspection PostgreSQL limitée à `public`.
+L’unique correction GitHub autorisée le 2026-09-18 a remplacé le compteur R1
+`+116/-42` par sa valeur Git/GitHub `+118/-42`, sans changer le cumul R3
+`4 commits, 28 fichiers, +2761/-187`, le titre, le head, la base ou le statut
+Draft. Le correctif local R4 étend l’attestation à tous les schémas non système
+de la base courante, aux types, aux options de redélégation et à toute propriété
+enregistrée dans la base. Il refuse sans les réécrire les ACL ou propriétés
+tierces hors profil. Les deux bases éphémères ont chacune validé le témoin sain,
+18 provisionnements réussis, 11 refus déterministes avec signature inchangée,
+quatre réparations isolées de `WITH GRANT OPTION`, Prisma, sept refus `42501` et
+le nettoyage ciblé. Cet état R4 constitue l’instantané historique local
+prépublication daté du 2026-09-18 : au moment de sa capture, aucun commit, push,
+rerun, Ready ou merge R4 n’avait été effectué. S1.2-03B reste **Not started**.
+
+R4 a ensuite été publié au commit
+`ebcd3fc02c15b0ee9cf679978ab197e9865a1737`, parent direct
+`8f8c447b9badd3c8bd330982a1c0e7ef38e246cf`, avec 13 fichiers et
+`+1507/-228`. Launcher Windows `35402506744`, Security `35402506756` et
+Quality Linux `35402506746` ont conclu `completed/success` ; Infrastructure
+`35402506742` a conclu `completed/failure`. Le garde refusait correctement le
+propriétaire, mais le smoke exigeait en plus `runtime_owns_database_object`.
+PostgreSQL confirme que le propriétaire initial est `pg_database.datdba` sans
+ligne de propriété correspondante dans `pg_shdepend` ; ce code n’est donc pas
+une preuve minimale exigible dans ce scénario.
+
+L’instantané local R5 du 2026-09-18 conserve l’erreur typée, l’attribut
+administratif et les violations d’écriture comme preuves obligatoires, tout en
+acceptant les violations supplémentaires. Il ne modifie ni le garde API, ni le
+provisionneur, ni le schéma, les migrations, OpenAPI, les contrats, workflows,
+lockfiles ou clients. Au moment de cet instantané, aucun commit, push, rerun ou
+changement de PR R5 n’avait été effectué et S1.2-03B restait **Not started**.
+
+R5 a ensuite été publié au commit
+`afaa652b7446b78ae35fb0bf6f4944af5625cef6`, parent direct
+`ebcd3fc02c15b0ee9cf679978ab197e9865a1737`, arbre
+`19e365f5ed0b1e06abfbef7c909dac0f9867b66d`, avec 10 fichiers et
+`+350/-105`. Infrastructure `35454834845`, Launcher Windows `35454834879`,
+Security `35454834839` et Quality Linux `35454834904` ont tous conclu
+`pull_request/completed/success` sur ce head exact. La Draft PR #45 compte alors
+6 commits, 31 fichiers et `+4299/-201` ; elle reste ouverte, Draft et non
+fusionnée.
+
+L’instantané historique local prépublication R6 du 2026-09-20 corrige deux constats CTO
+sans prétendre à une publication future. L’attestation bloque désormais tout
+droit PostgreSQL `SET` ou `ALTER SYSTEM` effectif accordé au runtime ou à
+`PUBLIC`, avec ou sans option de redélégation. Le provisionneur contrôle ces ACL
+globales avant toute mutation et refuse sans les normaliser. L’exception de
+`SELECT` par défaut sur les futures tables `public` est limitée au propriétaire
+explicite de la base ; la même ACL créée par un rôle tiers est refusée sans
+mutation, puis sa future table est non lisible après remédiation explicite de
+cette ACL. Deux bases éphémères ont
+chacune validé 23 provisionnements réussis, 16 refus déterministes à signature
+inchangée, quatre réparations de redélégation, Prisma, `SELECT 1`, lecture
+`Customer` et huit refus `42501`. À la date de cet instantané, R6 n’était ni
+commité ni publié, aucun SHA ou Run ID R6 futur n’y était affirmé, la PR #45
+restait Draft et S1.2-03B restait **Not started**.
+
+R6 a ensuite été publié au commit
+`80e8a397b19a98bd85f5ef6fcd2afe8ef4407ab0`, parent direct
+`afaa652b7446b78ae35fb0bf6f4944af5625cef6`, arbre
+`c7c0c733bd28bacce41206290590c6f9fc043f2a`, avec 13 fichiers et
+`+498/-97`. Infrastructure `36125459701`, Launcher Windows `36125459563`,
+Security `36125459520` et Quality Linux `36125459526` ont tous conclu
+`pull_request/completed/success` sur ce head exact. La PR #45 compte alors
+7 commits, 31 fichiers et `+4700/-201` ; elle reste ouverte, Draft, proprement
+fusionnable et non fusionnée.
+
+La revue CTO finale en lecture seule du 2026-09-25 a ensuite bloqué le passage
+en Ready sur deux lacunes PostgreSQL : les ACL courantes et par défaut des
+large objects PostgreSQL 18, qui sont hors schéma, et une valeur persistante
+`session_replication_role=replica` héritée par une nouvelle connexion sans
+exécuter `SET`.
+
+L’instantané historique local prépublication R7 du 2026-09-25 ferme ces deux
+lacunes et le finding fondé découvert lors de la reprise byte-finale, sans
+modifier le schéma Prisma, les migrations, OpenAPI, les contrats,
+les workflows, les manifestes, les lockfiles ou les clients. L’attestation API
+refuse la propriété et tout droit effectif `SELECT`/`UPDATE` sur un large
+object, y compris via `PUBLIC` ou avec redélégation, et exige
+zéro droit d’exécution effectif sur les routines `pg_catalog` `lo_*`, `loread`
+et `lowrite`, ainsi que `lo_compat_privileges=off`. Elle exige aussi
+`current_setting('session_replication_role') = 'origin'` sur la connexion
+runtime réelle. Le provisionneur normalise seulement les default ACL `L` du
+propriétaire/migrateur et retire l’exécution des routines large-object à
+`PUBLIC` et au runtime. Un large object dangereux, une ACL directe de routine
+du runtime, une default ACL `L` tierce ou un réglage persistant dangereux est
+refusé avant mutation avec signature inchangée ; les ACL directes de rôles
+tiers sur ces routines restent intactes.
+
+Deux bases PostgreSQL 18.4 indépendantes valident chacune 36 provisionnements
+réussis, 27 refus déterministes sans mutation, quatre réparations de
+redélégation, une normalisation de default ACL de large objects, trois refus
+de réglages persistants de réplication, un refus de
+`lo_compat_privileges=on`, une ACL tierce de routine préservée et douze refus
+`42501`. Prisma
+7.9.1, `SELECT 1`, la lecture `Customer`, le démarrage runtime et le refus du
+propriétaire restent validés. À la date de cet instantané, R7 demeure local,
+non commité et non publié ; aucun SHA ou Run ID R7 futur n’est affirmé, la PR
+#45 reste Draft et S1.2-03B reste **Not started**.
+
+R7 a ensuite été publié au commit
+`3b4e9e2fdf6d2fd53c08ad48edc20e8328e2411e`, parent direct
+`80e8a397b19a98bd85f5ef6fcd2afe8ef4407ab0`, arbre
+`50d8cdea797ff50b6fb1cb784c6cefa8904a18d2`, avec 13 fichiers et
+`+1158/-88`. Infrastructure `36167761862`, Launcher Windows `36167761974`,
+Security `36167761909` et Quality Linux `36167761881` ont tous conclu
+`pull_request/completed/success` sur ce head exact. La Draft PR #45 compte
+alors 8 commits, 31 fichiers et `+5770/-201` ; elle reste ouverte, Draft,
+`CLEAN/MERGEABLE` et non fusionnée.
+
+L’instantané historique local prépublication R8 du 2026-09-26 ferme deux
+angles morts supplémentaires sans modifier manifeste, lockfile, workflow,
+schéma Prisma, migration, OpenAPI, contrat ou client. L’attestation et le
+provisionneur contrôlent désormais les ACL relationnelles et de colonnes de
+`pg_catalog.pg_largeobject` et `pg_largeobject_metadata`, directement, via
+`PUBLIC` et via un rôle effectivement hérité, avec leurs grant options. Le
+`SELECT` système standard non redélégable de `PUBLIC` sur
+`pg_largeobject_metadata` reste admis ; tout autre droit sur ces catalogues est
+refusé selon la matrice explicite testée.
+
+Le provisionneur refuse aussi, avant toute mutation, tout override
+propriétaire/migrateur de `session_replication_role` ou
+`lo_compat_privileges`, même sûr, lorsqu’il peut masquer un défaut cluster
+inconnu à cette connexion. Cette limite est volontairement conservative : la
+remédiation doit établir un défaut global sûr et retirer l’override, jamais
+normaliser silencieusement l’état masquant. Deux bases PostgreSQL 18.4
+indépendantes valident au total 104 provisionnements réussis, 86 refus à
+signature inchangée et 24 ACL de catalogue brutes refusées par l’API et le
+provisionneur : 14 grants effectifs, quatre ACL non effectives mais persistées
+et six ACL `SELECT` de métadonnées redondantes avec la visibilité standard de
+`PUBLIC`. Huit défauts globaux masqués sont refusés et 24 opérations rendent
+`42501`. Prisma
+7.9.1, `SELECT 1`, la lecture `Customer`, le démarrage runtime et le refus du
+propriétaire restent validés. À la date de cet instantané, R8 est local, non
+indexé, non commité et non publié ; aucun SHA ou Run ID R8 futur n’est affirmé,
+la PR #45 reste Draft et S1.2-03B reste **Not started**.
