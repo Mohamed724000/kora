@@ -78,6 +78,12 @@ export function runtimeBoundaryViolations(
   if (snapshot.largeObjectPrivilegeCount !== 0) {
     violations.push('unexpected_large_object_privilege');
   }
+  if (snapshot.largeObjectCatalogPrivilegeCount !== 0) {
+    violations.push('unexpected_large_object_catalog_privilege');
+  }
+  if (snapshot.largeObjectCatalogGrantOptionCount !== 0) {
+    violations.push('unexpected_large_object_catalog_grant_option');
+  }
   if (snapshot.largeObjectRoutineExecutePrivilegeCount !== 0) {
     violations.push('unexpected_large_object_routine_privilege');
   }

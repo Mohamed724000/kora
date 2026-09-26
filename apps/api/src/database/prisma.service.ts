@@ -15,6 +15,8 @@ export interface RuntimeBoundarySnapshot {
   defaultPrivilegeViolationCount: number;
   directMembershipCount: number;
   grantOptionViolationCount: number;
+  largeObjectCatalogGrantOptionCount: number;
+  largeObjectCatalogPrivilegeCount: number;
   largeObjectRoutineExecutePrivilegeCount: number;
   largeObjectPrivilegeCount: number;
   loCompatPrivilegesEnabled: boolean;
@@ -88,11 +90,23 @@ export class PrismaService extends PrismaClient implements OnApplicationShutdown
 
   async runtimeBoundarySnapshot(): Promise<RuntimeBoundarySnapshot> {
     const rows = await this.$queryRaw<RuntimeBoundarySnapshot[]>`
-      WITH runtime_role AS (
+      WITH RECURSIVE runtime_role AS (
         SELECT oid, rolbypassrls, rolcanlogin, rolcreatedb, rolcreaterole,
                rolinherit, rolreplication, rolsuper
         FROM pg_catalog.pg_roles
         WHERE rolname = current_user
+      ), runtime_effective_roles AS (
+        SELECT oid
+        FROM runtime_role
+        UNION
+        SELECT membership.roleid
+        FROM pg_catalog.pg_auth_members AS membership
+        JOIN runtime_effective_roles AS effective_role
+          ON effective_role.oid = membership.member
+        JOIN pg_catalog.pg_roles AS member_role
+          ON member_role.oid = membership.member
+        WHERE member_role.rolinherit
+          AND membership.inherit_option
       ), current_database_entry AS (
         SELECT oid, datdba
         FROM pg_catalog.pg_database
@@ -116,6 +130,14 @@ export class PrismaService extends PrismaClient implements OnApplicationShutdown
             type_entry.typrelid = 0
             OR composite_entry.relkind = 'c'
           )
+      ), large_object_catalogs AS (
+        SELECT relation_entry.oid, relation_entry.relacl, relation_entry.relname,
+               relation_entry.relowner
+        FROM pg_catalog.pg_class AS relation_entry
+        JOIN pg_catalog.pg_namespace AS namespace_entry
+          ON namespace_entry.oid = relation_entry.relnamespace
+        WHERE namespace_entry.nspname = 'pg_catalog'
+          AND relation_entry.relname IN ('pg_largeobject', 'pg_largeobject_metadata')
       ), public_grants AS (
         SELECT 1
         FROM pg_catalog.pg_database AS database_entry
@@ -160,6 +182,30 @@ export class PrismaService extends PrismaClient implements OnApplicationShutdown
         CROSS JOIN LATERAL pg_catalog.aclexplode(attribute_entry.attacl) AS privilege
         WHERE relation_entry.relkind IN ('r', 'p', 'v', 'm', 'f')
           AND attribute_entry.attnum > 0
+          AND NOT attribute_entry.attisdropped
+          AND privilege.grantee = 0
+        UNION ALL
+        SELECT 1
+        FROM large_object_catalogs AS catalog_entry
+        CROSS JOIN LATERAL pg_catalog.aclexplode(
+          COALESCE(
+            catalog_entry.relacl,
+            pg_catalog.acldefault('r', catalog_entry.relowner)
+          )
+        ) AS privilege
+        WHERE privilege.grantee = 0
+          AND (
+            catalog_entry.relname = 'pg_largeobject'
+            OR privilege.privilege_type <> 'SELECT'
+            OR privilege.is_grantable
+          )
+        UNION ALL
+        SELECT 1
+        FROM pg_catalog.pg_attribute AS attribute_entry
+        JOIN large_object_catalogs AS catalog_entry
+          ON catalog_entry.oid = attribute_entry.attrelid
+        CROSS JOIN LATERAL pg_catalog.aclexplode(attribute_entry.attacl) AS privilege
+        WHERE attribute_entry.attnum > 0
           AND NOT attribute_entry.attisdropped
           AND privilege.grantee = 0
         UNION ALL
@@ -273,6 +319,29 @@ export class PrismaService extends PrismaClient implements OnApplicationShutdown
         CROSS JOIN LATERAL pg_catalog.aclexplode(attribute_entry.attacl) AS privilege
         WHERE relation_entry.relkind IN ('r', 'p', 'v', 'm', 'f')
           AND attribute_entry.attnum > 0
+          AND NOT attribute_entry.attisdropped
+          AND privilege.grantee = runtime_role.oid
+          AND privilege.is_grantable
+        UNION ALL
+        SELECT 1
+        FROM large_object_catalogs AS catalog_entry
+        CROSS JOIN runtime_role
+        CROSS JOIN LATERAL pg_catalog.aclexplode(
+          COALESCE(
+            catalog_entry.relacl,
+            pg_catalog.acldefault('r', catalog_entry.relowner)
+          )
+        ) AS privilege
+        WHERE privilege.grantee = runtime_role.oid
+          AND privilege.is_grantable
+        UNION ALL
+        SELECT 1
+        FROM pg_catalog.pg_attribute AS attribute_entry
+        JOIN large_object_catalogs AS catalog_entry
+          ON catalog_entry.oid = attribute_entry.attrelid
+        CROSS JOIN runtime_role
+        CROSS JOIN LATERAL pg_catalog.aclexplode(attribute_entry.attacl) AS privilege
+        WHERE attribute_entry.attnum > 0
           AND NOT attribute_entry.attisdropped
           AND privilege.grantee = runtime_role.oid
           AND privilege.is_grantable
@@ -459,6 +528,105 @@ export class PrismaService extends PrismaClient implements OnApplicationShutdown
               'SELECT,UPDATE'
             )
         ) AS "largeObjectPrivilegeCount",
+        (
+          SELECT count(*)::integer
+          FROM large_object_catalogs AS catalog_entry
+          WHERE EXISTS (
+              SELECT 1
+              FROM pg_catalog.aclexplode(
+                COALESCE(
+                  catalog_entry.relacl,
+                  pg_catalog.acldefault('r', catalog_entry.relowner)
+                )
+              ) AS privilege
+              WHERE privilege.grantee IN (SELECT oid FROM runtime_effective_roles)
+                 OR (
+                   privilege.grantee = 0
+                   AND (
+                     catalog_entry.relname = 'pg_largeobject'
+                     OR privilege.privilege_type <> 'SELECT'
+                     OR privilege.is_grantable
+                   )
+                 )
+            )
+            OR EXISTS (
+              SELECT 1
+              FROM pg_catalog.pg_attribute AS attribute_entry
+              CROSS JOIN LATERAL pg_catalog.aclexplode(attribute_entry.attacl) AS privilege
+              WHERE attribute_entry.attrelid = catalog_entry.oid
+                AND attribute_entry.attnum > 0
+                AND NOT attribute_entry.attisdropped
+                AND (
+                  privilege.grantee = 0
+                  OR privilege.grantee IN (SELECT oid FROM runtime_effective_roles)
+                )
+            )
+            OR (
+              catalog_entry.relname = 'pg_largeobject'
+              AND (
+                pg_catalog.has_table_privilege(
+                  current_user,
+                  catalog_entry.oid,
+                  'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'
+                )
+                OR pg_catalog.has_any_column_privilege(
+                  current_user,
+                  catalog_entry.oid,
+                  'SELECT,INSERT,UPDATE,REFERENCES'
+                )
+              )
+            )
+            OR (
+              catalog_entry.relname = 'pg_largeobject_metadata'
+              AND (
+                pg_catalog.has_table_privilege(
+                  current_user,
+                  catalog_entry.oid,
+                  'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'
+                )
+                OR pg_catalog.has_any_column_privilege(
+                  current_user,
+                  catalog_entry.oid,
+                  'INSERT,UPDATE,REFERENCES'
+                )
+              )
+            )
+        ) AS "largeObjectCatalogPrivilegeCount",
+        (
+          SELECT count(*)::integer
+          FROM large_object_catalogs AS catalog_entry
+          WHERE EXISTS (
+              SELECT 1
+              FROM pg_catalog.aclexplode(
+                COALESCE(
+                  catalog_entry.relacl,
+                  pg_catalog.acldefault('r', catalog_entry.relowner)
+                )
+              ) AS privilege
+              WHERE privilege.grantee IN (SELECT oid FROM runtime_effective_roles)
+                AND privilege.is_grantable
+            )
+             OR EXISTS (
+              SELECT 1
+              FROM pg_catalog.pg_attribute AS attribute_entry
+              CROSS JOIN LATERAL pg_catalog.aclexplode(attribute_entry.attacl) AS privilege
+              WHERE attribute_entry.attrelid = catalog_entry.oid
+                AND attribute_entry.attnum > 0
+                AND NOT attribute_entry.attisdropped
+                AND privilege.grantee IN (SELECT oid FROM runtime_effective_roles)
+                AND privilege.is_grantable
+            )
+             OR pg_catalog.has_table_privilege(
+                  current_user,
+                  catalog_entry.oid,
+                  'SELECT WITH GRANT OPTION,INSERT WITH GRANT OPTION,UPDATE WITH GRANT OPTION,DELETE WITH GRANT OPTION,TRUNCATE WITH GRANT OPTION,REFERENCES WITH GRANT OPTION,TRIGGER WITH GRANT OPTION,MAINTAIN WITH GRANT OPTION'
+                )
+             OR pg_catalog.has_any_column_privilege(
+                  current_user,
+                  catalog_entry.oid,
+                  'SELECT WITH GRANT OPTION,INSERT WITH GRANT OPTION,UPDATE WITH GRANT OPTION,REFERENCES WITH GRANT OPTION'
+                )
+        ) AS "largeObjectCatalogGrantOptionCount",
         (
           SELECT count(*)::integer
           FROM pg_catalog.pg_proc AS routine_entry

@@ -620,6 +620,43 @@ pour la validation ont été supprimés de façon ciblée. Au moment de cette pr
 R7 reste local, non commité et non publié ; aucun SHA ou Run ID R7 futur n’est
 affirmé, la PR reste Draft et S1.2-03B reste `Not started`.
 
+R7 est ensuite publié au commit
+`3b4e9e2fdf6d2fd53c08ad48edc20e8328e2411e`. Infrastructure `36167761862`,
+Launcher Windows `36167761974`, Security `36167761909` et Quality Linux
+`36167761881` concluent tous `pull_request/completed/success` sur ce head exact.
+La PR #45 reste ouverte, Draft, `CLEAN/MERGEABLE` et non fusionnée.
+
+Dans l’instantané historique local prépublication R8 du 2026-09-26, les ACL
+relationnelles et de colonnes de `pg_largeobject` et
+`pg_largeobject_metadata` entrent explicitement dans l’attestation. Aucun droit
+runtime n’est autorisé sur les chunks ; le `SELECT` système standard de
+`PUBLIC` sur les métadonnées demeure autorisé sans redélégation. Les droits
+directs, via `PUBLIC`, via rôle effectivement hérité et les grant options sont
+contrôlés dans les ACL brutes et effectives. Par base, douze ACL brutes sont
+appliquées puis refusées par l’API et le provisionneur : sept grants effectifs,
+deux ACL persistées que les fonctions `has_*` considèrent non effectives et
+trois ACL `SELECT` de métadonnées redondantes avec la visibilité standard de
+`PUBLIC`.
+
+R8 ferme aussi le masquage des défauts cluster : un override sûr du
+propriétaire/migrateur pour `session_replication_role` ou
+`lo_compat_privileges` ne constitue plus une preuve du défaut global. Le
+provisionneur le refuse avant mutation ; quatre scénarios par base prouvent le
+défaut dangereux depuis une nouvelle connexion runtime et la signature
+inchangée. Cette règle est conservative : un override même sûr doit être
+retiré après établissement explicite du défaut cluster sûr. Elle évite de
+normaliser un état dont le provisionneur ne peut pas prouver la sûreté globale.
+
+Les deux bases PostgreSQL 18.4 cumulent 104 provisionnements réussis, 86 refus
+sans mutation, 24 refus d’ACL brutes de catalogue — 14 effectives, quatre non
+effectives et six redondantes —, huit défauts globaux masqués refusés et 24
+refus `42501`. Prisma,
+`SELECT 1`, la lecture `Customer`, le démarrage runtime, le refus propriétaire
+et les scénarios R7 restent validés. Les ressources d’essai et secrets sont
+supprimés de façon ciblée. R8 reste local, non indexé, non commité et non
+publié dans cet instantané daté ; aucun SHA ou Run ID R8 futur n’est affirmé,
+la PR reste Draft et S1.2-03B reste `Not started`.
+
 Le pool `pg` est détenu par le client Prisma 7.9.1 via
 `@prisma/adapter-pg` 7.9.1 ; la readiness réutilise ce même chemin. Les erreurs
 de frontière exposent uniquement des codes de violation sûrs. Aucun secret,

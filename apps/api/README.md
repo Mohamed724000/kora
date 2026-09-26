@@ -55,6 +55,9 @@ exécute `SELECT 1` puis refuse le démarrage si le compte reçu :
   utiliser une séquence ou exécuter une routine ;
 - possède un large object ou peut le lire, le modifier ou le tronquer,
   directement ou via `PUBLIC`, avec ou sans option de redélégation ;
+- dispose sur `pg_catalog.pg_largeobject` d’un droit de relation ou de colonne,
+  ou sur `pg_largeobject_metadata` d’un droit autre que le `SELECT` système
+  standard non redélégable ;
 - peut exécuter une routine `pg_catalog` de large objects, notamment
   `lo_create`, `lo_from_bytea`, `lo_put`, `lo_open` ou l’interface `lo_*` ;
 - observe `lo_compat_privileges=on`, qui désactive les contrôles ACL attendus ;
@@ -103,13 +106,17 @@ rôles distincts, sans élargir le rôle de lecture.
 - `powershell -NoProfile -ExecutionPolicy Bypass -File
 apps/api/prisma/run-runtime-boundary-validation.ps1` : build API, crée un conteneur
   PostgreSQL 18.4 isolé en `tmpfs`, applique les migrations existantes sous
-  deux propriétaires distincts, exécute par base 36 provisionnements réussis,
-  27 refus déterministes sans mutation, quatre réparations de `WITH GRANT
+  deux propriétaires distincts, exécute par base 52 provisionnements réussis,
+  43 refus déterministes sans mutation, quatre réparations de `WITH GRANT
 OPTION`, une normalisation de default ACL de large objects et douze refus
   `42501`, vérifie Prisma, les types, les paramètres, les large objects, leurs
-  routines `pg_catalog`, `lo_compat_privileges`, les réglages persistants de
-  session et tous les schémas non système, puis supprime uniquement les
-  ressources créées ;
+  catalogues et routines `pg_catalog`, `lo_compat_privileges`, les réglages
+  persistants de session et tous les schémas non système, puis supprime
+  uniquement les ressources créées. Douze ACL de catalogue brutes sont
+  appliquées puis refusées par l’API et le provisionneur sur chaque base : sept
+  grants deviennent effectifs, deux restent non effectifs malgré leur ACL
+  persistée et trois `SELECT` de métadonnées sont redondants avec la visibilité
+  système standard de `PUBLIC` ;
 - `powershell -File apps/api/prisma/run-baseline-validation.ps1` depuis la
   racine : crée le conteneur PostgreSQL 18.4 au digest verrouillé, en `tmpfs` et
   sur un port loopback aléatoire, exécute les deux bases du validateur, puis

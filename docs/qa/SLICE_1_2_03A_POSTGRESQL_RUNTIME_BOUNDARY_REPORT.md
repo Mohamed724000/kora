@@ -1,8 +1,8 @@
 # S1.2-03A — PostgreSQL Least-Privilege Runtime Boundary & Prisma Adapter
 
 Date initiale : 2026-09-16
-Dernère réconciliation : 2026-09-25
-État : **DRAFT PR #45 OUVERTE — R6 PUBLIÉ — QUATRE WORKFLOWS R6 RÉUSSIS — INSTANTANÉ PRÉPUBLICATION R7 VALIDÉ LOCALEMENT — NON FUSIONNÉ**
+Dernère réconciliation : 2026-09-26
+État : **DRAFT PR #45 OUVERTE — R7 PUBLIÉ — QUATRE WORKFLOWS R7 RÉUSSIS — INSTANTANÉ PRÉPUBLICATION R8 VALIDÉ LOCALEMENT — NON FUSIONNÉ**
 
 ## Baseline et autorisation
 
@@ -230,31 +230,31 @@ deux fichiers secrets créés par l’essai sont supprimés. Le nettoyage tente
 chaque cible même si une autre suppression échoue. Aucun volume nommé, réseau,
 image ou ressource étrangère n’est supprimé.
 
-## Validations
+## Validations — preuves courantes et historiques qualifiées
 
-| Validation                         | Résultat courant                                                                         |
-| ---------------------------------- | ---------------------------------------------------------------------------------------- |
-| Prisma Client 7.9.1 generate       | PASS                                                                                     |
-| Prettier ciblé                     | PASS                                                                                     |
-| Typecheck API après correction     | PASS — `pretypecheck` génère Prisma 7.9.1 avant `tsc`                                    |
-| Tests applicatifs                  | PASS R6 — API 26/26 ; aucun autre workspace applicatif touché                            |
-| Tests d’outillage                  | PASS R6 — 303/303, dont le contrat de génération Prisma en checkout propre               |
-| Builds                             | PASS R6 — API construit par le validateur ; autres applications inchangées               |
-| Compose rendu et absence de secret | PASS                                                                                     |
-| Upgrade `infra:prepare` historique | PASS — valeurs préservées, clé runtime ajoutée une fois, second passage identique        |
-| Validation réelle sur deux bases   | PASS R6 — 46 succès, 32 refus inchangés, 8 grant options réparées, 16 refus `42501`      |
-| Audits npm complet et production   | PASS pré-correction — zéro vulnérabilité ; graphe inchangé, non rejoué ensuite           |
-| Signatures et attestations npm     | PASS pré-correction — 1 132 signatures, 198 attestations ; non rejoué ensuite            |
-| Licences npm                       | PASS pré-correction — 1 134 paquets, zéro écart ; graphe inchangé, non rejoué ensuite    |
-| Scanner officiel                   | PASS R6 — 355 fichiers, historique et 52 sources immuables contrôlés                     |
-| Workflows et OpenAPI               | PASS — 4 workflows, 4 actions verrouillées ; 34 chemins, 87 schémas, 18 invariants       |
-| Reproduction CI avant correction   | PASS — clone neuf, client absent ; TS2305 et trois TS2339 reproduits                     |
-| Correction CI en clone neuf        | PASS — génération indépendante avant typecheck, build et API 26/26                       |
-| Reproduction Infrastructure R1     | PASS — propriétaire transmis ; fatal `RuntimeDatabaseBoundaryError` neutralisé           |
-| Correctif Infrastructure isolé     | PASS — migrations owner, refus owner, runtime live/ready, pannes et reprises 200/503/200 |
-| Confidentialité du smoke corrigé   | PASS — aucun secret ni URL PostgreSQL/Redis dans les sorties capturées                   |
-| Workflows R2 publiés               | PASS — quatre `pull_request/completed/success` sur `9d163cc…`                            |
-| Workflows R3 publiés               | PASS — quatre `pull_request/completed/success` sur `8f8c447…`                            |
+| Validation                         | Résultat et portée                                                                           |
+| ---------------------------------- | -------------------------------------------------------------------------------------------- |
+| Prisma Client 7.9.1 generate       | PASS R8                                                                                      |
+| Prettier ciblé                     | PASS R8                                                                                      |
+| Typecheck API après correction     | PASS — `pretypecheck` génère Prisma 7.9.1 avant `tsc`                                        |
+| Tests applicatifs                  | PASS R8 — API 27/27 ; aucun autre workspace applicatif touché                                |
+| Tests d’outillage                  | PASS R8 — 303/303, dont le contrat de génération Prisma en checkout propre                   |
+| Builds                             | PASS R8 — API construit ; autres applications inchangées                                     |
+| Compose rendu et absence de secret | PASS historique — non rejoué en R8                                                           |
+| Upgrade `infra:prepare` historique | PASS historique — valeurs préservées, clé runtime ajoutée une fois, second passage identique |
+| Validation réelle sur deux bases   | PASS R8 — 104 succès, 86 refus inchangés, 8 grant options réparées, 24 refus `42501`         |
+| Audits npm complet et production   | NON REJOUÉ R8 — preuve antérieure à zéro vulnérabilité ; graphe inchangé                     |
+| Signatures et attestations npm     | NON REJOUÉ R8 — preuve antérieure de 1 132 signatures et 198 attestations                    |
+| Licences npm                       | NON REJOUÉ R8 — preuve antérieure de 1 134 paquets sans écart ; graphe inchangé              |
+| Scanner officiel                   | PASS R8 — 355 fichiers, historique et 52 sources immuables contrôlés                         |
+| Workflows et OpenAPI               | PASS R8 via outillage — politique locale et contrat existant inchangé                        |
+| Reproduction CI avant correction   | PASS historique R1 — clone neuf, client absent ; TS2305 et trois TS2339 reproduits           |
+| Correction CI en clone neuf        | PASS historique R1 — génération indépendante avant typecheck, build et API 26/26             |
+| Reproduction Infrastructure R1     | PASS historique — propriétaire transmis ; fatal `RuntimeDatabaseBoundaryError` neutralisé    |
+| Correctif Infrastructure isolé     | PASS historique R2 — migrations owner, refus owner, runtime live/ready, reprises 200/503/200 |
+| Confidentialité du smoke corrigé   | PASS historique — aucun secret ni URL PostgreSQL/Redis dans les sorties capturées            |
+| Workflows R2 publiés               | PASS historique — quatre `pull_request/completed/success` sur `9d163cc…`                     |
+| Workflows R3 publiés               | PASS historique — quatre `pull_request/completed/success` sur `8f8c447…`                     |
 
 Le premier lancement R4 s’est arrêté avant création de conteneur car Docker
 Desktop était arrêté ; ses deux fichiers secrets temporaires ont été supprimés.
@@ -616,3 +616,116 @@ rapportée séparément et n’est pas présentée comme ces audits dédiés.
 commité et non publié. Aucun SHA ou Run ID R7 futur n’est affirmé ; aucun push,
 rerun, changement de PR, Ready ou merge n’a été effectué. La PR #45 reste
 Draft et S1.2-03B reste `Not started`.
+
+## Publication R7 et instantané historique prépublication R8
+
+R7 a été publié au commit
+`3b4e9e2fdf6d2fd53c08ad48edc20e8328e2411e`, parent
+`80e8a397b19a98bd85f5ef6fcd2afe8ef4407ab0`, arbre
+`50d8cdea797ff50b6fb1cb784c6cefa8904a18d2`, message
+`fix(security): attest PostgreSQL large objects and session defaults`, avec 13
+fichiers et `+1158/-88`. Infrastructure `36167761862`, Launcher Windows
+`36167761974`, Security `36167761909` et Quality Linux `36167761881` sont tous
+`pull_request/completed/success` sur ce head exact. La PR #45 affiche alors 8
+commits, 31 fichiers et `+5770/-201` ; elle reste ouverte, Draft,
+`CLEAN/MERGEABLE` et non fusionnée.
+
+### Findings et politique R8
+
+L’instantané historique local prépublication R8 du 2026-09-26 ferme deux
+findings post-R7 :
+
+1. les ACL relationnelles et de colonnes des catalogues
+   `pg_catalog.pg_largeobject` et `pg_largeobject_metadata` n’étaient pas dans
+   l’attestation ;
+2. un override propriétaire/migrateur sûr pouvait masquer, sur la connexion du
+   provisionneur, un défaut cluster dangereux réellement hérité par une
+   nouvelle connexion runtime.
+
+La matrice de catalogue appliquée est :
+
+| Catalogue                 | Autorisé                                                           | Refusé                                                                                                                                     |
+| ------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pg_largeobject`          | aucun droit runtime de relation ou de colonne                      | `SELECT`, écritures, `TRUNCATE`, `REFERENCES`, `TRIGGER`, `MAINTAIN`, grant option, directement, via `PUBLIC` ou rôle effectivement hérité |
+| `pg_largeobject_metadata` | `SELECT` système standard de `PUBLIC`, sans option de redélégation | écritures, `TRUNCATE`, `REFERENCES`, `TRIGGER`, `MAINTAIN`, droits de colonne d’écriture et toute grant option                             |
+
+Les ACL brutes de `PUBLIC` et du runtime, les privilèges obtenus via un rôle
+effectivement hérité et les grant options sont inclus dans la signature avant
+et après. Chaque scénario prouve d’abord la persistance de son ACL brute avant
+de créditer l’API ou le provisionneur d’un refus ; seules les affirmations de
+grant effectif exigent ensuite une fonction `has_*` vraie. PostgreSQL 18.4
+conserve deux ACL d’écriture par base que les fonctions `has_*` déclarent non
+effectives. Elles sont rapportées séparément, mais restent refusées par l’API
+et le provisionneur parce que l’ACL brute persiste. De même, tout `SELECT`
+direct, de colonne ou `PUBLIC` ajouté aux métadonnées est refusé, même s’il est
+redondant avec la visibilité relationnelle système standard.
+
+Pour `session_replication_role` et `lo_compat_privileges`, le provisionneur
+refuse désormais tout override propriétaire/migrateur aux portées rôle ou
+rôle/base, même lorsque sa valeur visible est sûre. Cette règle conservative
+est nécessaire parce qu’un tel override peut cacher un défaut cluster
+contraire. La preuve lit la valeur dangereuse depuis une nouvelle connexion
+runtime, constate le refus avant mutation et compare rôle, memberships, ACL,
+paramètres et empreinte du credential. Le provisionneur ne supprime jamais
+l’override : la remédiation explicite doit établir le défaut cluster sûr puis
+retirer la portée masquante.
+
+### Preuve PostgreSQL réelle R8
+
+Le validateur PostgreSQL 18.4 a exécuté deux bases éphémères indépendantes. Sur
+chaque base, douze scénarios de catalogue couvrent les droits directs,
+`PUBLIC`, de colonne, avec redélégation et par rôle hérité. Les ACL brutes sont
+prouvées présentes avant chaque refus : sept grants deviennent effectifs, deux
+ACL restent non effectives et trois ACL `SELECT` de métadonnées sont redondantes
+avec le droit système standard. L’attestation et le provisionneur rejettent les
+douze états. Quatre scénarios supplémentaires combinent un défaut cluster
+réplication/large-object dangereux avec un override propriétaire sûr, aux
+portées rôle puis rôle/base. La valeur dangereuse est prouvée sur une nouvelle
+connexion runtime avant le refus.
+
+Résultats cumulés réels :
+
+| Contrôle                                        | Résultat local de l’instantané R8                          |
+| ----------------------------------------------- | ---------------------------------------------------------- |
+| Bases indépendantes                             | 2 PostgreSQL 18.4                                          |
+| Provisionnements réussis                        | 104, soit 52 par base                                      |
+| Refus d’états dangereux sans mutation           | 86, soit 43 par base                                       |
+| Réparations de grant option                     | 8, soit 4 par base                                         |
+| Refus d’ACL brutes de catalogues                | 24, soit 12 par base                                       |
+| Grants de catalogue devenus effectifs           | 14, soit 7 par base                                        |
+| ACL de catalogue persistées mais non effectives | 4, soit 2 par base                                         |
+| ACL `SELECT` de métadonnées redondantes         | 6, soit 3 par base                                         |
+| Défauts globaux masqués refusés                 | 8, soit 4 par base                                         |
+| Normalisations de default ACL `L`               | 2, soit 1 par base                                         |
+| ACL tierces de routine préservées               | 2, soit 1 par base                                         |
+| Refus SQLSTATE `42501`                          | 24, soit 12 opérations par base                            |
+| Prisma                                          | 7.9.1, `SELECT 1` et lecture `Customer` réussis            |
+| Démarrage API                                   | propriétaire refusé ; runtime sain accepté sur les 2 bases |
+| Nettoyage                                       | 2 bases, 6 rôles, conteneur et secrets éphémères supprimés |
+
+Les scénarios R7 de propriété runtime réelle, ACL/default ACL, routines large
+object, `lo_compat_privileges`, réplication persistante et refus DDL,
+`TRUNCATE`, triggers, `SET ROLE` et écritures métier restent inclus. Le
+validateur a aussi exécuté la génération Prisma 7.9.1 et le build API avec
+succès. Le graphe, les manifestes et les lockfiles sont inchangés ; les audits
+et licences antérieurs ne sont donc pas rejoués et ne sont pas présentés comme
+des validations R8.
+
+Après gel du contenu technique, la génération Prisma 7.9.1, le lint, le
+typecheck, le build, les sept suites et 27 tests API, le test ciblé de frontière
+(5/5), les 303 tests d’outillage, les syntaxes Node et shell et le contrôle
+Prettier ciblé réussissent. Le scanner officiel couvre 355 fichiers,
+l’historique Git et 52 sources immuables sans finding. Les références Markdown,
+la chronologie, les secrets, les caractères de contrôle, le périmètre et
+`git diff --check` sont contrôlés sur le byte-final documentaire.
+
+### Périmètre et état de l’instantané R8
+
+R8 modifie les cinq artefacts techniques récupérés après interruption, les
+deux README et les six documents vivants S1.2-03A autorisés, sans créer de
+fichier. Il ne modifie ni manifeste, lockfile, workflow, schéma Prisma,
+migration S1.2-02, OpenAPI, contrat généré ou client Web/Admin/Mobile. À la
+date de cet instantané historique prépublication, R8 reste local, non indexé,
+non commité et non publié. Aucun SHA ou Run ID R8 futur n’est affirmé ; aucune
+nouvelle mutation GitHub, aucun push, rerun, Ready ou merge n’est effectué. La
+PR #45 reste Draft et S1.2-03B reste `Not started`.

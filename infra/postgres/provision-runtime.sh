@@ -34,6 +34,10 @@ WITH runtime_role AS (
   SELECT oid
   FROM pg_catalog.pg_roles
   WHERE rolname = :'runtime_user'
+), current_owner_role AS (
+  SELECT oid
+  FROM pg_catalog.pg_roles
+  WHERE rolname = current_user
 ), current_database_entry AS (
   SELECT oid
   FROM pg_catalog.pg_database
@@ -46,10 +50,14 @@ WITH runtime_role AS (
   WHERE (
       role_setting.setrole = 0
       OR role_setting.setrole = (SELECT oid FROM runtime_role)
+      OR role_setting.setrole = (SELECT oid FROM current_owner_role)
     )
     AND role_setting.setdatabase IN (0, current_database_entry.oid)
     AND split_part(setting_entry.setting, '=', 1) = 'session_replication_role'
-    AND split_part(setting_entry.setting, '=', 2) <> 'origin'
+    AND (
+      role_setting.setrole = (SELECT oid FROM current_owner_role)
+      OR split_part(setting_entry.setting, '=', 2) <> 'origin'
+    )
   UNION ALL
   SELECT 1
   WHERE pg_catalog.current_setting('session_replication_role') <> 'origin'
@@ -75,6 +83,10 @@ WITH runtime_role AS (
   SELECT oid
   FROM pg_catalog.pg_roles
   WHERE rolname = :'runtime_user'
+), current_owner_role AS (
+  SELECT oid
+  FROM pg_catalog.pg_roles
+  WHERE rolname = current_user
 ), current_database_entry AS (
   SELECT oid
   FROM pg_catalog.pg_database
@@ -87,10 +99,14 @@ WITH runtime_role AS (
   WHERE (
       role_setting.setrole = 0
       OR role_setting.setrole = (SELECT oid FROM runtime_role)
+      OR role_setting.setrole = (SELECT oid FROM current_owner_role)
     )
     AND role_setting.setdatabase IN (0, current_database_entry.oid)
     AND split_part(setting_entry.setting, '=', 1) = 'lo_compat_privileges'
-    AND split_part(setting_entry.setting, '=', 2) <> 'off'
+    AND (
+      role_setting.setrole = (SELECT oid FROM current_owner_role)
+      OR split_part(setting_entry.setting, '=', 2) <> 'off'
+    )
   UNION ALL
   SELECT 1
   WHERE pg_catalog.current_setting('lo_compat_privileges') <> 'off'
@@ -110,6 +126,138 @@ SELECT
     RAISE EXCEPTION 'unsafe large object compatibility setting';
   END
   $large_object_compatibility_refusal$;
+\endif
+
+WITH RECURSIVE runtime_role AS (
+  SELECT oid, rolsuper
+  FROM pg_catalog.pg_roles
+  WHERE rolname = :'runtime_user'
+), runtime_effective_roles AS (
+  SELECT oid
+  FROM runtime_role
+  UNION
+  SELECT membership.roleid
+  FROM pg_catalog.pg_auth_members AS membership
+  JOIN runtime_effective_roles AS effective_role
+    ON effective_role.oid = membership.member
+  JOIN pg_catalog.pg_roles AS member_role
+    ON member_role.oid = membership.member
+  WHERE member_role.rolinherit
+    AND membership.inherit_option
+), large_object_catalogs AS (
+  SELECT relation_entry.oid, relation_entry.relacl, relation_entry.relname,
+         relation_entry.relowner
+  FROM pg_catalog.pg_class AS relation_entry
+  JOIN pg_catalog.pg_namespace AS namespace_entry
+    ON namespace_entry.oid = relation_entry.relnamespace
+  WHERE namespace_entry.nspname = 'pg_catalog'
+    AND relation_entry.relname IN ('pg_largeobject', 'pg_largeobject_metadata')
+), unsafe_large_object_catalog_state AS (
+  SELECT 1
+  FROM large_object_catalogs AS catalog_entry
+  CROSS JOIN LATERAL pg_catalog.aclexplode(
+    COALESCE(
+      catalog_entry.relacl,
+      pg_catalog.acldefault('r', catalog_entry.relowner)
+    )
+  ) AS privilege
+  WHERE privilege.grantee = 0
+    AND (
+      catalog_entry.relname = 'pg_largeobject'
+      OR privilege.privilege_type <> 'SELECT'
+      OR privilege.is_grantable
+    )
+  UNION ALL
+  SELECT 1
+  FROM pg_catalog.pg_attribute AS attribute_entry
+  JOIN large_object_catalogs AS catalog_entry
+    ON catalog_entry.oid = attribute_entry.attrelid
+  CROSS JOIN LATERAL pg_catalog.aclexplode(attribute_entry.attacl) AS privilege
+  WHERE attribute_entry.attnum > 0
+    AND NOT attribute_entry.attisdropped
+    AND privilege.grantee = 0
+  UNION ALL
+  SELECT 1
+  FROM large_object_catalogs AS catalog_entry
+  CROSS JOIN LATERAL pg_catalog.aclexplode(
+    COALESCE(
+      catalog_entry.relacl,
+      pg_catalog.acldefault('r', catalog_entry.relowner)
+    )
+  ) AS privilege
+  WHERE privilege.grantee IN (SELECT oid FROM runtime_effective_roles)
+  UNION ALL
+  SELECT 1
+  FROM pg_catalog.pg_attribute AS attribute_entry
+  JOIN large_object_catalogs AS catalog_entry
+    ON catalog_entry.oid = attribute_entry.attrelid
+  CROSS JOIN LATERAL pg_catalog.aclexplode(attribute_entry.attacl) AS privilege
+  WHERE attribute_entry.attnum > 0
+    AND NOT attribute_entry.attisdropped
+    AND privilege.grantee IN (SELECT oid FROM runtime_effective_roles)
+  UNION ALL
+  SELECT 1
+  FROM large_object_catalogs AS catalog_entry
+  CROSS JOIN runtime_role
+  WHERE NOT runtime_role.rolsuper
+    AND (
+    (
+      catalog_entry.relname = 'pg_largeobject'
+      AND (
+        pg_catalog.has_table_privilege(
+          runtime_role.oid,
+          catalog_entry.oid,
+          'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'
+        )
+        OR pg_catalog.has_any_column_privilege(
+          runtime_role.oid,
+          catalog_entry.oid,
+          'SELECT,INSERT,UPDATE,REFERENCES'
+        )
+      )
+    )
+    OR (
+      catalog_entry.relname = 'pg_largeobject_metadata'
+      AND (
+        pg_catalog.has_table_privilege(
+          runtime_role.oid,
+          catalog_entry.oid,
+          'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'
+        )
+        OR pg_catalog.has_any_column_privilege(
+          runtime_role.oid,
+          catalog_entry.oid,
+          'INSERT,UPDATE,REFERENCES'
+        )
+      )
+    )
+    OR pg_catalog.has_table_privilege(
+      runtime_role.oid,
+      catalog_entry.oid,
+      'SELECT WITH GRANT OPTION,INSERT WITH GRANT OPTION,UPDATE WITH GRANT OPTION,DELETE WITH GRANT OPTION,TRUNCATE WITH GRANT OPTION,REFERENCES WITH GRANT OPTION,TRIGGER WITH GRANT OPTION,MAINTAIN WITH GRANT OPTION'
+    )
+    OR pg_catalog.has_any_column_privilege(
+      runtime_role.oid,
+      catalog_entry.oid,
+      'SELECT WITH GRANT OPTION,INSERT WITH GRANT OPTION,UPDATE WITH GRANT OPTION,REFERENCES WITH GRANT OPTION'
+    )
+    )
+)
+SELECT
+  NOT EXISTS (SELECT 1 FROM unsafe_large_object_catalog_state)
+    AS large_object_catalog_boundary_safe,
+  (SELECT count(*) FROM unsafe_large_object_catalog_state)
+    AS large_object_catalog_violation_count
+\gset
+
+\if :large_object_catalog_boundary_safe
+\else
+  \echo PostgreSQL runtime provisioning refused unsafe large object catalog ACL state count=:large_object_catalog_violation_count.
+  DO $large_object_catalog_refusal$
+  BEGIN
+    RAISE EXCEPTION 'unsafe large object catalog ACL state';
+  END
+  $large_object_catalog_refusal$;
 \endif
 
 WITH runtime_role AS (
@@ -587,6 +735,24 @@ runtime_result="$(
 
 if [ "$runtime_result" != 't' ]; then
   echo 'PostgreSQL runtime boundary verification failed.' >&2
+  exit 1
+fi
+
+large_object_catalog_result="$(
+  PGPASSWORD="$(tr -d '\r\n' </run/secrets/postgres_runtime_password)" psql \
+    --host=127.0.0.1 \
+    --port=5432 \
+    --username="$runtime_user" \
+    --dbname="$POSTGRES_DB" \
+    --no-psqlrc \
+    --tuples-only \
+    --no-align \
+    --set=ON_ERROR_STOP=1 \
+    --command="WITH large_object_catalogs AS (SELECT relation_entry.oid, relation_entry.relname FROM pg_catalog.pg_class AS relation_entry JOIN pg_catalog.pg_namespace AS namespace_entry ON namespace_entry.oid = relation_entry.relnamespace WHERE namespace_entry.nspname = 'pg_catalog' AND relation_entry.relname IN ('pg_largeobject', 'pg_largeobject_metadata')) SELECT NOT EXISTS (SELECT 1 FROM large_object_catalogs AS catalog_entry WHERE (catalog_entry.relname = 'pg_largeobject' AND (has_table_privilege(current_user, catalog_entry.oid, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN') OR has_any_column_privilege(current_user, catalog_entry.oid, 'SELECT,INSERT,UPDATE,REFERENCES'))) OR (catalog_entry.relname = 'pg_largeobject_metadata' AND (has_table_privilege(current_user, catalog_entry.oid, 'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN') OR has_any_column_privilege(current_user, catalog_entry.oid, 'INSERT,UPDATE,REFERENCES'))) OR has_table_privilege(current_user, catalog_entry.oid, 'SELECT WITH GRANT OPTION,INSERT WITH GRANT OPTION,UPDATE WITH GRANT OPTION,DELETE WITH GRANT OPTION,TRUNCATE WITH GRANT OPTION,REFERENCES WITH GRANT OPTION,TRIGGER WITH GRANT OPTION,MAINTAIN WITH GRANT OPTION') OR has_any_column_privilege(current_user, catalog_entry.oid, 'SELECT WITH GRANT OPTION,INSERT WITH GRANT OPTION,UPDATE WITH GRANT OPTION,REFERENCES WITH GRANT OPTION'));"
+)"
+
+if [ "$large_object_catalog_result" != 't' ]; then
+  echo 'PostgreSQL runtime large object catalog boundary verification failed.' >&2
   exit 1
 fi
 

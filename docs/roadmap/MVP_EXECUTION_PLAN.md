@@ -27,7 +27,7 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 | Slice 1 / S1.1      | Contrats, données cibles et expérience audio  | Closed and merged                                                   |
 | Slice 1 / S1.2-01   | Contract & Data Readiness Gate                | Contract and data gate complete                                     |
 | Slice 1 / S1.2-02   | Baseline PostgreSQL et contraintes SQL        | Closed and merged — PR #43                                          |
-| Slice 1 / S1.2-03A  | Frontière PostgreSQL runtime en lecture seule | Draft #45 — R6 publié, preuve historique prépublication R7 validée. |
+| Slice 1 / S1.2-03A  | Frontière PostgreSQL runtime en lecture seule | Draft #45 — R7 publié, preuve historique prépublication R8 validée. |
 | Slice 1 / S1.2-03B+ | Fonctionnalités runtime métier du pilote      | Not started                                                         |
 | Slices suivantes    | Fonctionnalités produit ultérieures           | Not started                                                         |
 
@@ -136,7 +136,7 @@ démarrait ni Slice 1 ni aucune exigence produit.
 
 ## Slice 1 — Audio purchase pilot
 
-Statut : **In progress — S1.2-02 closed — S1.2-03A Draft PR #45, R6 published and CI green, historical R7 prepublication evidence dated 2026-09-25 validated — business runtime not started**
+Statut : **In progress — S1.2-02 closed — S1.2-03A Draft PR #45, R7 published and CI green, historical R8 prepublication evidence dated 2026-09-26 validated — business runtime not started**
 
 Parcours cible :
 
@@ -242,7 +242,7 @@ fusion de la PR #44 et les quatre workflows `push/main` réussis.
 
 ### S1.2-03A — PostgreSQL Least-Privilege Runtime Boundary & Prisma Adapter
 
-Statut : **Draft PR #45 open — R6 published — four R6 workflows green — historical R7 prepublication evidence validated — not merged**
+Statut : **Draft PR #45 open — R7 published — four R7 workflows green — historical R8 prepublication evidence validated — not merged**
 
 L’instantané local prépublication du 2026-09-16 a été validé avant indexation,
 commit, push ou création de PR. Ces absences décrivent uniquement cet instantané
@@ -346,6 +346,31 @@ trois refus de réglages persistants de réplication, un refus de
 `lo_compat_privileges=on` et douze refus `42501`. Au moment de cet instantané, R7 est local, non commité et
 non publié ; aucun SHA ou Run ID R7 futur n’est affirmé, aucun Ready ou merge
 n’est effectué et S1.2-03B reste `Not started`.
+
+R7 a ensuite été publié au head
+`3b4e9e2fdf6d2fd53c08ad48edc20e8328e2411e`, parent
+`80e8a397b19a98bd85f5ef6fcd2afe8ef4407ab0`, arbre
+`50d8cdea797ff50b6fb1cb784c6cefa8904a18d2`, avec 13 fichiers et
+`+1158/-88`. Infrastructure `36167761862`, Launcher Windows `36167761974`,
+Security `36167761909` et Quality Linux `36167761881` sont tous
+`pull_request/completed/success` sur ce head exact. La PR #45 reste ouverte,
+Draft, `CLEAN/MERGEABLE` et non fusionnée.
+
+L’instantané historique local prépublication R8 du 2026-09-26 étend la
+frontière aux ACL relationnelles et de colonnes de `pg_largeobject` et
+`pg_largeobject_metadata`, y compris les droits directs, `PUBLIC`, hérités et
+les grant options. Il conserve le `SELECT` système standard non redélégable de
+`PUBLIC` sur les métadonnées, sans autoriser la lecture des chunks. Il refuse
+aussi tout override propriétaire/migrateur des deux paramètres sensibles qui
+pourrait masquer un défaut cluster dangereux. Sur deux bases PostgreSQL 18.4,
+104 provisionnements réussissent, 86 états dangereux sont refusés à signature
+inchangée et 24 ACL de catalogue brutes sont rejetées par les deux garde-fous :
+14 grants effectifs, quatre ACL non effectives persistées et six ACL `SELECT`
+de métadonnées redondantes avec la visibilité standard de `PUBLIC`. Huit
+défauts globaux masqués sont refusés et 24 opérations interdites rendent
+`42501`. R8 reste local, non indexé, non commité et non
+publié dans cet instantané daté ; aucun SHA ou Run ID R8 futur n’est affirmé,
+aucun Ready ou merge n’est effectué et S1.2-03B reste `Not started`.
 
 Périmètre validé dans cet instantané historique :
 

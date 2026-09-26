@@ -13,6 +13,14 @@ const apiDirectory = resolve(prismaDirectory, '..');
 const repositoryRoot = resolve(apiDirectory, '..', '..');
 const prismaEntry = resolve(repositoryRoot, 'node_modules', 'prisma', 'build', 'index.js');
 const SAFE_IDENTIFIER = /^kora_s1203a_(?:database|owner|runtime|thirdparty)_[ab]_[a-f0-9]{8}$/u;
+const validationCounters = {
+  catalogAclRejections: 0,
+  catalogGrantsApplied: 0,
+  catalogNonEffectiveGrantsApplied: 0,
+  catalogRawAclsApplied: 0,
+  catalogRedundantGrantsApplied: 0,
+  unsafeStateRejections: 0,
+};
 
 function fail(message) {
   throw new Error(`S1.2-03A runtime boundary validation failed: ${message}`);
@@ -28,6 +36,13 @@ function quoteIdentifier(value) {
 function quoteSecret(value) {
   if (!/^[A-Za-z0-9_-]{43}$/u.test(value)) {
     fail('a generated PostgreSQL secret failed its in-memory format guard');
+  }
+  return `'${value}'`;
+}
+
+function quoteSettingValue(value) {
+  if (!new Set(['off', 'on', 'origin', 'replica']).has(value)) {
+    fail('an unsupported PostgreSQL setting value reached the validation harness');
   }
   return `'${value}'`;
 }
@@ -192,13 +207,13 @@ async function createThirdPartyRole(admin, role) {
   `);
 }
 
-async function createDegradedRuntimeRole(admin, role, password, owner, database) {
+async function createDegradedRuntimeRole(admin, role, password, thirdParty, database) {
   await admin.query(`
     CREATE ROLE ${quoteIdentifier(role)}
     LOGIN SUPERUSER CREATEDB CREATEROLE INHERIT REPLICATION BYPASSRLS
     PASSWORD ${quoteSecret(password)}
   `);
-  await admin.query(`GRANT ${quoteIdentifier(owner)} TO ${quoteIdentifier(role)}`);
+  await admin.query(`GRANT ${quoteIdentifier(thirdParty)} TO ${quoteIdentifier(role)}`);
   await admin.query(
     `ALTER ROLE ${quoteIdentifier(role)} IN DATABASE ${quoteIdentifier(database)} SET statement_timeout = '0'`,
   );
@@ -327,6 +342,30 @@ async function privilegeSignature(ownerClient, runtime, database) {
     ) AS effective_acl
     ORDER BY kind, object_name, grantee, privilege_type, is_grantable
   `);
+  const largeObjectCatalogAcl = await ownerClient.query(`
+    WITH large_object_catalogs AS (
+      SELECT relation_entry.oid, relation_entry.relacl, relation_entry.relname
+      FROM pg_catalog.pg_class AS relation_entry
+      JOIN pg_catalog.pg_namespace AS namespace_entry
+        ON namespace_entry.oid = relation_entry.relnamespace
+      WHERE namespace_entry.nspname = 'pg_catalog'
+        AND relation_entry.relname IN ('pg_largeobject', 'pg_largeobject_metadata')
+    )
+    SELECT catalog_entry.relname AS relation_name,
+           '' AS column_name,
+           COALESCE(catalog_entry.relacl::text, '<null>') AS raw_acl
+    FROM large_object_catalogs AS catalog_entry
+    UNION ALL
+    SELECT catalog_entry.relname,
+           attribute_entry.attname,
+           COALESCE(attribute_entry.attacl::text, '<null>')
+    FROM pg_catalog.pg_attribute AS attribute_entry
+    JOIN large_object_catalogs AS catalog_entry
+      ON catalog_entry.oid = attribute_entry.attrelid
+    WHERE attribute_entry.attnum > 0
+      AND NOT attribute_entry.attisdropped
+    ORDER BY relation_name, column_name
+  `);
   const defaultAcl = await ownerClient.query(`
     WITH non_system_schemas AS (
       SELECT oid, nspname
@@ -411,7 +450,13 @@ async function privilegeSignature(ownerClient, runtime, database) {
       LEFT JOIN pg_catalog.pg_database AS database_entry
         ON database_entry.oid = role_setting.setdatabase
       CROSS JOIN LATERAL unnest(role_setting.setconfig) AS setting_entry(setting)
-      WHERE (role_setting.setrole = 0 OR role_entry.rolname = $1)
+      WHERE (
+          role_setting.setrole = 0
+          OR role_entry.rolname = $1
+          OR role_setting.setrole = (
+            SELECT oid FROM pg_catalog.pg_roles WHERE rolname = current_user
+          )
+        )
         AND (role_setting.setdatabase = 0 OR database_entry.datname = $2)
       ORDER BY role_setting.setdatabase, role_setting.setrole, setting_entry.setting
     `,
@@ -426,9 +471,17 @@ async function privilegeSignature(ownerClient, runtime, database) {
     CROSS JOIN LATERAL pg_catalog.aclexplode(parameter_entry.paracl) AS privilege
     ORDER BY parameter_name, grantee, privilege_type, is_grantable
   `);
+  const clusterSettings = await ownerClient.query(`
+    SELECT name, setting, applied, COALESCE(error, '') AS error
+    FROM pg_catalog.pg_file_settings
+    WHERE name IN ('session_replication_role', 'lo_compat_privileges')
+    ORDER BY name, seqno
+  `);
   return JSON.stringify({
     acl: acl.rows,
+    clusterSettings: clusterSettings.rows,
     defaultAcl: defaultAcl.rows,
+    largeObjectCatalogAcl: largeObjectCatalogAcl.rows,
     memberships: memberships.rows,
     owners: owners.rows,
     parameterAcl: parameterAcl.rows,
@@ -454,11 +507,23 @@ async function refusalStateSignature(ownerClient, runtime, database) {
 
 async function runtimeSnapshot(client) {
   const result = await client.query(`
-    WITH runtime_role AS (
+    WITH RECURSIVE runtime_role AS (
       SELECT oid, rolbypassrls, rolcanlogin, rolcreatedb, rolcreaterole,
              rolinherit, rolreplication, rolsuper
       FROM pg_catalog.pg_roles
       WHERE rolname = current_user
+    ), runtime_effective_roles AS (
+      SELECT oid
+      FROM runtime_role
+      UNION
+      SELECT membership.roleid
+      FROM pg_catalog.pg_auth_members AS membership
+      JOIN runtime_effective_roles AS effective_role
+        ON effective_role.oid = membership.member
+      JOIN pg_catalog.pg_roles AS member_role
+        ON member_role.oid = membership.member
+      WHERE member_role.rolinherit
+        AND membership.inherit_option
     ), current_database_entry AS (
       SELECT oid, datdba
       FROM pg_catalog.pg_database
@@ -482,6 +547,14 @@ async function runtimeSnapshot(client) {
           type_entry.typrelid = 0
           OR composite_entry.relkind = 'c'
         )
+    ), large_object_catalogs AS (
+      SELECT relation_entry.oid, relation_entry.relacl, relation_entry.relname,
+             relation_entry.relowner
+      FROM pg_catalog.pg_class AS relation_entry
+      JOIN pg_catalog.pg_namespace AS namespace_entry
+        ON namespace_entry.oid = relation_entry.relnamespace
+      WHERE namespace_entry.nspname = 'pg_catalog'
+        AND relation_entry.relname IN ('pg_largeobject', 'pg_largeobject_metadata')
     ), public_grants AS (
       SELECT 1
       FROM pg_catalog.pg_database AS database_entry
@@ -506,6 +579,30 @@ async function runtimeSnapshot(client) {
       CROSS JOIN LATERAL pg_catalog.aclexplode(attribute_entry.attacl) AS privilege
       WHERE relation_entry.relkind IN ('r', 'p', 'v', 'm', 'f')
         AND attribute_entry.attnum > 0
+        AND NOT attribute_entry.attisdropped
+        AND privilege.grantee = 0
+      UNION ALL
+      SELECT 1
+      FROM large_object_catalogs AS catalog_entry
+      CROSS JOIN LATERAL pg_catalog.aclexplode(
+        COALESCE(
+          catalog_entry.relacl,
+          pg_catalog.acldefault('r', catalog_entry.relowner)
+        )
+      ) AS privilege
+      WHERE privilege.grantee = 0
+        AND (
+          catalog_entry.relname = 'pg_largeobject'
+          OR privilege.privilege_type <> 'SELECT'
+          OR privilege.is_grantable
+        )
+      UNION ALL
+      SELECT 1
+      FROM pg_catalog.pg_attribute AS attribute_entry
+      JOIN large_object_catalogs AS catalog_entry
+        ON catalog_entry.oid = attribute_entry.attrelid
+      CROSS JOIN LATERAL pg_catalog.aclexplode(attribute_entry.attacl) AS privilege
+      WHERE attribute_entry.attnum > 0
         AND NOT attribute_entry.attisdropped
         AND privilege.grantee = 0
       UNION ALL
@@ -642,6 +739,29 @@ async function runtimeSnapshot(client) {
       CROSS JOIN LATERAL pg_catalog.aclexplode(attribute_entry.attacl) AS privilege
       WHERE relation_entry.relkind IN ('r', 'p', 'v', 'm', 'f')
         AND attribute_entry.attnum > 0
+        AND NOT attribute_entry.attisdropped
+        AND privilege.grantee = runtime_role.oid
+        AND privilege.is_grantable
+      UNION ALL
+      SELECT 1
+      FROM large_object_catalogs AS catalog_entry
+      CROSS JOIN runtime_role
+      CROSS JOIN LATERAL pg_catalog.aclexplode(
+        COALESCE(
+          catalog_entry.relacl,
+          pg_catalog.acldefault('r', catalog_entry.relowner)
+        )
+      ) AS privilege
+      WHERE privilege.grantee = runtime_role.oid
+        AND privilege.is_grantable
+      UNION ALL
+      SELECT 1
+      FROM pg_catalog.pg_attribute AS attribute_entry
+      JOIN large_object_catalogs AS catalog_entry
+        ON catalog_entry.oid = attribute_entry.attrelid
+      CROSS JOIN runtime_role
+      CROSS JOIN LATERAL pg_catalog.aclexplode(attribute_entry.attacl) AS privilege
+      WHERE attribute_entry.attnum > 0
         AND NOT attribute_entry.attisdropped
         AND privilege.grantee = runtime_role.oid
         AND privilege.is_grantable
@@ -818,6 +938,105 @@ async function runtimeSnapshot(client) {
       ) AS large_object_privilege_count,
       (
         SELECT count(*)::integer
+        FROM large_object_catalogs AS catalog_entry
+        WHERE EXISTS (
+            SELECT 1
+            FROM pg_catalog.aclexplode(
+              COALESCE(
+                catalog_entry.relacl,
+                pg_catalog.acldefault('r', catalog_entry.relowner)
+              )
+            ) AS privilege
+            WHERE privilege.grantee IN (SELECT oid FROM runtime_effective_roles)
+               OR (
+                 privilege.grantee = 0
+                 AND (
+                   catalog_entry.relname = 'pg_largeobject'
+                   OR privilege.privilege_type <> 'SELECT'
+                   OR privilege.is_grantable
+                 )
+               )
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM pg_catalog.pg_attribute AS attribute_entry
+            CROSS JOIN LATERAL pg_catalog.aclexplode(attribute_entry.attacl) AS privilege
+            WHERE attribute_entry.attrelid = catalog_entry.oid
+              AND attribute_entry.attnum > 0
+              AND NOT attribute_entry.attisdropped
+              AND (
+                privilege.grantee = 0
+                OR privilege.grantee IN (SELECT oid FROM runtime_effective_roles)
+              )
+          )
+          OR (
+            catalog_entry.relname = 'pg_largeobject'
+            AND (
+              pg_catalog.has_table_privilege(
+                current_user,
+                catalog_entry.oid,
+                'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'
+              )
+              OR pg_catalog.has_any_column_privilege(
+                current_user,
+                catalog_entry.oid,
+                'SELECT,INSERT,UPDATE,REFERENCES'
+              )
+            )
+          )
+          OR (
+            catalog_entry.relname = 'pg_largeobject_metadata'
+            AND (
+              pg_catalog.has_table_privilege(
+                current_user,
+                catalog_entry.oid,
+                'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'
+              )
+              OR pg_catalog.has_any_column_privilege(
+                current_user,
+                catalog_entry.oid,
+                'INSERT,UPDATE,REFERENCES'
+              )
+            )
+          )
+      ) AS large_object_catalog_privilege_count,
+      (
+        SELECT count(*)::integer
+        FROM large_object_catalogs AS catalog_entry
+        WHERE EXISTS (
+            SELECT 1
+            FROM pg_catalog.aclexplode(
+              COALESCE(
+                catalog_entry.relacl,
+                pg_catalog.acldefault('r', catalog_entry.relowner)
+              )
+            ) AS privilege
+            WHERE privilege.grantee IN (SELECT oid FROM runtime_effective_roles)
+              AND privilege.is_grantable
+          )
+           OR EXISTS (
+            SELECT 1
+            FROM pg_catalog.pg_attribute AS attribute_entry
+            CROSS JOIN LATERAL pg_catalog.aclexplode(attribute_entry.attacl) AS privilege
+            WHERE attribute_entry.attrelid = catalog_entry.oid
+              AND attribute_entry.attnum > 0
+              AND NOT attribute_entry.attisdropped
+              AND privilege.grantee IN (SELECT oid FROM runtime_effective_roles)
+              AND privilege.is_grantable
+          )
+           OR pg_catalog.has_table_privilege(
+                current_user,
+                catalog_entry.oid,
+                'SELECT WITH GRANT OPTION,INSERT WITH GRANT OPTION,UPDATE WITH GRANT OPTION,DELETE WITH GRANT OPTION,TRUNCATE WITH GRANT OPTION,REFERENCES WITH GRANT OPTION,TRIGGER WITH GRANT OPTION,MAINTAIN WITH GRANT OPTION'
+              )
+           OR pg_catalog.has_any_column_privilege(
+                current_user,
+                catalog_entry.oid,
+                'SELECT WITH GRANT OPTION,INSERT WITH GRANT OPTION,UPDATE WITH GRANT OPTION,REFERENCES WITH GRANT OPTION'
+              )
+      ) AS large_object_catalog_grant_option_count,
+      (
+        SELECT count(*)::integer
         FROM pg_catalog.pg_proc AS routine_entry
         JOIN pg_catalog.pg_namespace AS namespace_entry
           ON namespace_entry.oid = routine_entry.pronamespace
@@ -895,6 +1114,8 @@ function assertRuntimeSnapshot(snapshot) {
     'routine_privilege_count',
     'type_privilege_count',
     'large_object_privilege_count',
+    'large_object_catalog_privilege_count',
+    'large_object_catalog_grant_option_count',
     'large_object_routine_privilege_count',
     'default_privilege_violation_count',
     'grant_option_violation_count',
@@ -1667,6 +1888,331 @@ async function verifyThirdPartyLargeObjectRoutineAclPreserved(context) {
   process.stdout.write('THIRD_PARTY_LARGE_OBJECT_ROUTINE_ACL_PRESERVED\n');
 }
 
+async function catalogPrivilegeState(ownerClient, runtime, definition) {
+  const result =
+    definition.column === undefined
+      ? await ownerClient.query(
+          `SELECT pg_catalog.has_table_privilege($1, $2::regclass, $3) AS granted`,
+          [runtime, definition.relation, definition.privilege],
+        )
+      : await ownerClient.query(
+          `SELECT pg_catalog.has_column_privilege($1, $2::regclass, $3, $4) AS granted`,
+          [runtime, definition.relation, definition.column, definition.privilege],
+        );
+  return result.rows[0]?.granted;
+}
+
+async function catalogRawAclState(ownerClient, context, definition) {
+  const grantee =
+    definition.rawAclGrantee === 'PUBLIC'
+      ? 'PUBLIC'
+      : definition.rawAclGrantee === 'thirdParty'
+        ? context.thirdParty
+        : context.runtime;
+  const privilege = definition.privilege.replace(' WITH GRANT OPTION', '');
+  const grantable = definition.privilege.endsWith(' WITH GRANT OPTION');
+  const result =
+    definition.column === undefined
+      ? await ownerClient.query(
+          `SELECT EXISTS (
+             SELECT 1
+             FROM pg_catalog.pg_class AS relation_entry
+             CROSS JOIN LATERAL pg_catalog.aclexplode(relation_entry.relacl) AS acl_entry
+             WHERE relation_entry.oid = $1::regclass
+               AND acl_entry.grantee = CASE
+                 WHEN $2 = 'PUBLIC' THEN 0
+                 ELSE (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = $2)
+               END
+               AND acl_entry.privilege_type = $3
+               AND acl_entry.is_grantable = $4
+           ) AS present`,
+          [definition.relation, grantee, privilege, grantable],
+        )
+      : await ownerClient.query(
+          `SELECT EXISTS (
+             SELECT 1
+             FROM pg_catalog.pg_attribute AS attribute_entry
+             CROSS JOIN LATERAL pg_catalog.aclexplode(attribute_entry.attacl) AS acl_entry
+             WHERE attribute_entry.attrelid = $1::regclass
+               AND attribute_entry.attname = $2
+               AND acl_entry.grantee = CASE
+                 WHEN $3 = 'PUBLIC' THEN 0
+                 ELSE (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = $3)
+               END
+               AND acl_entry.privilege_type = $4
+               AND acl_entry.is_grantable = $5
+           ) AS present`,
+          [definition.relation, definition.column, grantee, privilege, grantable],
+        );
+  return result.rows[0]?.present;
+}
+
+async function verifyLargeObjectCatalogAclRejected(context, definition) {
+  const baselineEffective = await catalogPrivilegeState(
+    context.ownerClient,
+    context.runtime,
+    definition,
+  );
+  const baselineRawAcl = await catalogRawAclState(context.ownerClient, context, definition);
+  if (baselineRawAcl !== false) {
+    fail(`catalog ACL scenario did not start clean for ${definition.scenario}`);
+  }
+  let setupAttempted = false;
+  try {
+    setupAttempted = true;
+    await context.ownerClient.query(definition.setupSql(context));
+    const rawAclApplied = await catalogRawAclState(context.ownerClient, context, definition);
+    if (rawAclApplied !== true) {
+      fail(`catalog ACL setup did not persist the intended ACL for ${definition.scenario}`);
+    }
+    validationCounters.catalogRawAclsApplied += 1;
+    const grantApplied = await catalogPrivilegeState(
+      context.ownerClient,
+      context.runtime,
+      definition,
+    );
+    if (grantApplied === true && baselineEffective !== true) {
+      validationCounters.catalogGrantsApplied += 1;
+      process.stdout.write(
+        `LARGE_OBJECT_CATALOG_GRANT_APPLIED scenario=${definition.scenario} effective=true raw_acl=true\n`,
+      );
+    } else if (grantApplied !== true && definition.allowNonEffectiveGrant === true) {
+      validationCounters.catalogNonEffectiveGrantsApplied += 1;
+      process.stdout.write(
+        `LARGE_OBJECT_CATALOG_NON_EFFECTIVE_ACL_APPLIED scenario=${definition.scenario} effective=false raw_acl=true\n`,
+      );
+    } else if (grantApplied === true && baselineEffective === true) {
+      validationCounters.catalogRedundantGrantsApplied += 1;
+      process.stdout.write(
+        `LARGE_OBJECT_CATALOG_REDUNDANT_ACL_APPLIED scenario=${definition.scenario} effective_already=true raw_acl=true\n`,
+      );
+    } else {
+      fail(`catalog ACL setup did not grant the intended privilege for ${definition.scenario}`);
+    }
+    await verifyApiRejectsPrivileges(
+      context.runtimeConfiguration,
+      definition.expectedViolations,
+      definition.scenario,
+    );
+    await assertProvisionerRefusesUnsafeState(
+      context.database,
+      context.owner,
+      context.runtime,
+      context.ownerClient,
+      context.secrets,
+      definition.scenario,
+      /PostgreSQL runtime provisioning refused unsafe large object catalog ACL state count=[1-9][0-9]*\./u,
+    );
+  } finally {
+    if (setupAttempted) {
+      await context.ownerClient.query(definition.cleanupSql(context));
+    }
+  }
+  if ((await catalogRawAclState(context.ownerClient, context, definition)) !== baselineRawAcl) {
+    fail(`catalog ACL remediation did not remove the raw ACL for ${definition.scenario}`);
+  }
+  if (
+    (await catalogPrivilegeState(context.ownerClient, context.runtime, definition)) !==
+    baselineEffective
+  ) {
+    fail(`catalog ACL remediation did not remove the privilege for ${definition.scenario}`);
+  }
+  process.stdout.write(
+    `LARGE_OBJECT_CATALOG_ACL_REFUSAL_PASS scenario=${definition.scenario} remediated=true\n`,
+  );
+  validationCounters.catalogAclRejections += 1;
+  return true;
+}
+
+function largeObjectCatalogScenario(definition) {
+  return (context) => verifyLargeObjectCatalogAclRejected(context, definition);
+}
+
+const largeObjectCatalogAclScenarios = [
+  largeObjectCatalogScenario({
+    cleanupSql: (context) =>
+      `REVOKE SELECT ON TABLE pg_catalog.pg_largeobject FROM ${quoteIdentifier(context.runtime)}`,
+    expectedViolations: ['unexpected_large_object_catalog_privilege'],
+    privilege: 'SELECT',
+    relation: 'pg_catalog.pg_largeobject',
+    scenario: 'large_object_catalog_direct_select',
+    setupSql: (context) =>
+      `GRANT SELECT ON TABLE pg_catalog.pg_largeobject TO ${quoteIdentifier(context.runtime)}`,
+  }),
+  largeObjectCatalogScenario({
+    allowNonEffectiveGrant: true,
+    cleanupSql: (context) =>
+      `REVOKE UPDATE ON TABLE pg_catalog.pg_largeobject FROM ${quoteIdentifier(context.runtime)}`,
+    expectedViolations: ['unexpected_large_object_catalog_privilege'],
+    privilege: 'UPDATE',
+    relation: 'pg_catalog.pg_largeobject',
+    scenario: 'large_object_catalog_direct_update',
+    setupSql: (context) =>
+      `GRANT UPDATE ON TABLE pg_catalog.pg_largeobject TO ${quoteIdentifier(context.runtime)}`,
+  }),
+  largeObjectCatalogScenario({
+    cleanupSql: () => 'REVOKE SELECT ON TABLE pg_catalog.pg_largeobject FROM PUBLIC',
+    expectedViolations: ['unexpected_large_object_catalog_privilege', 'public_privilege_present'],
+    privilege: 'SELECT',
+    rawAclGrantee: 'PUBLIC',
+    relation: 'pg_catalog.pg_largeobject',
+    scenario: 'large_object_catalog_public_select',
+    setupSql: () => 'GRANT SELECT ON TABLE pg_catalog.pg_largeobject TO PUBLIC',
+  }),
+  largeObjectCatalogScenario({
+    cleanupSql: (context) =>
+      `REVOKE SELECT ON TABLE pg_catalog.pg_largeobject FROM ${quoteIdentifier(context.runtime)}`,
+    expectedViolations: [
+      'unexpected_large_object_catalog_privilege',
+      'unexpected_large_object_catalog_grant_option',
+      'unexpected_grant_option',
+    ],
+    privilege: 'SELECT WITH GRANT OPTION',
+    relation: 'pg_catalog.pg_largeobject',
+    scenario: 'large_object_catalog_select_grant_option',
+    setupSql: (context) =>
+      `GRANT SELECT ON TABLE pg_catalog.pg_largeobject TO ${quoteIdentifier(context.runtime)} WITH GRANT OPTION`,
+  }),
+  largeObjectCatalogScenario({
+    cleanupSql: (context) =>
+      `REVOKE SELECT (data) ON TABLE pg_catalog.pg_largeobject FROM ${quoteIdentifier(context.runtime)}`,
+    column: 'data',
+    expectedViolations: ['unexpected_large_object_catalog_privilege'],
+    privilege: 'SELECT',
+    relation: 'pg_catalog.pg_largeobject',
+    scenario: 'large_object_catalog_column_data_select',
+    setupSql: (context) =>
+      `GRANT SELECT (data) ON TABLE pg_catalog.pg_largeobject TO ${quoteIdentifier(context.runtime)}`,
+  }),
+  largeObjectCatalogScenario({
+    allowNonEffectiveGrant: true,
+    cleanupSql: (context) =>
+      `REVOKE UPDATE (data) ON TABLE pg_catalog.pg_largeobject FROM ${quoteIdentifier(context.runtime)}`,
+    column: 'data',
+    expectedViolations: ['unexpected_large_object_catalog_privilege'],
+    privilege: 'UPDATE',
+    relation: 'pg_catalog.pg_largeobject',
+    scenario: 'large_object_catalog_column_data_update',
+    setupSql: (context) =>
+      `GRANT UPDATE (data) ON TABLE pg_catalog.pg_largeobject TO ${quoteIdentifier(context.runtime)}`,
+  }),
+  largeObjectCatalogScenario({
+    allowNonEffectiveGrant: true,
+    cleanupSql: (context) =>
+      `REVOKE UPDATE ON TABLE pg_catalog.pg_largeobject_metadata FROM ${quoteIdentifier(context.runtime)}`,
+    expectedViolations: ['unexpected_large_object_catalog_privilege'],
+    privilege: 'UPDATE',
+    relation: 'pg_catalog.pg_largeobject_metadata',
+    scenario: 'large_object_metadata_catalog_write',
+    setupSql: (context) =>
+      `GRANT UPDATE ON TABLE pg_catalog.pg_largeobject_metadata TO ${quoteIdentifier(context.runtime)}`,
+  }),
+  largeObjectCatalogScenario({
+    allowNonEffectiveGrant: true,
+    cleanupSql: (context) =>
+      `REVOKE UPDATE (lomacl) ON TABLE pg_catalog.pg_largeobject_metadata FROM ${quoteIdentifier(context.runtime)}`,
+    column: 'lomacl',
+    expectedViolations: ['unexpected_large_object_catalog_privilege'],
+    privilege: 'UPDATE',
+    relation: 'pg_catalog.pg_largeobject_metadata',
+    scenario: 'large_object_metadata_catalog_column_lomacl_update',
+    setupSql: (context) =>
+      `GRANT UPDATE (lomacl) ON TABLE pg_catalog.pg_largeobject_metadata TO ${quoteIdentifier(context.runtime)}`,
+  }),
+  largeObjectCatalogScenario({
+    cleanupSql: (context) =>
+      `REVOKE SELECT ON TABLE pg_catalog.pg_largeobject_metadata FROM ${quoteIdentifier(context.runtime)}`,
+    expectedViolations: ['unexpected_large_object_catalog_privilege'],
+    privilege: 'SELECT',
+    relation: 'pg_catalog.pg_largeobject_metadata',
+    scenario: 'large_object_metadata_catalog_direct_select_acl',
+    setupSql: (context) =>
+      `GRANT SELECT ON TABLE pg_catalog.pg_largeobject_metadata TO ${quoteIdentifier(context.runtime)}`,
+  }),
+  largeObjectCatalogScenario({
+    cleanupSql: (context) =>
+      `REVOKE SELECT (lomowner) ON TABLE pg_catalog.pg_largeobject_metadata FROM ${quoteIdentifier(context.runtime)}`,
+    column: 'lomowner',
+    expectedViolations: ['unexpected_large_object_catalog_privilege'],
+    privilege: 'SELECT',
+    relation: 'pg_catalog.pg_largeobject_metadata',
+    scenario: 'large_object_metadata_catalog_direct_column_select_acl',
+    setupSql: (context) =>
+      `GRANT SELECT (lomowner) ON TABLE pg_catalog.pg_largeobject_metadata TO ${quoteIdentifier(context.runtime)}`,
+  }),
+  largeObjectCatalogScenario({
+    cleanupSql: () =>
+      'REVOKE SELECT (lomowner) ON TABLE pg_catalog.pg_largeobject_metadata FROM PUBLIC',
+    column: 'lomowner',
+    expectedViolations: ['unexpected_large_object_catalog_privilege', 'public_privilege_present'],
+    privilege: 'SELECT',
+    rawAclGrantee: 'PUBLIC',
+    relation: 'pg_catalog.pg_largeobject_metadata',
+    scenario: 'large_object_metadata_catalog_public_column_select_acl',
+    setupSql: () => 'GRANT SELECT (lomowner) ON TABLE pg_catalog.pg_largeobject_metadata TO PUBLIC',
+  }),
+  largeObjectCatalogScenario({
+    cleanupSql: (context) => `
+      REVOKE ${quoteIdentifier(context.thirdParty)} FROM ${quoteIdentifier(context.runtime)};
+      REVOKE SELECT ON TABLE pg_catalog.pg_largeobject FROM ${quoteIdentifier(context.thirdParty)};
+      ALTER ROLE ${quoteIdentifier(context.runtime)} NOINHERIT;
+    `,
+    expectedViolations: [
+      'role_inheritance_enabled',
+      'role_membership_present',
+      'unexpected_large_object_catalog_privilege',
+    ],
+    privilege: 'SELECT',
+    rawAclGrantee: 'thirdParty',
+    relation: 'pg_catalog.pg_largeobject',
+    scenario: 'large_object_catalog_inherited_role_select',
+    setupSql: (context) => `
+      ALTER ROLE ${quoteIdentifier(context.runtime)} INHERIT;
+      GRANT SELECT ON TABLE pg_catalog.pg_largeobject TO ${quoteIdentifier(context.thirdParty)};
+      GRANT ${quoteIdentifier(context.thirdParty)} TO ${quoteIdentifier(context.runtime)};
+    `,
+  }),
+];
+
+async function assertLargeObjectCatalogReadMatrix(ownerClient, runtime) {
+  const result = await ownerClient.query(
+    `
+      SELECT
+        pg_catalog.has_table_privilege(
+          $1,
+          'pg_catalog.pg_largeobject',
+          'SELECT'
+        ) AS can_read_chunks,
+        pg_catalog.has_table_privilege(
+          $1,
+          'pg_catalog.pg_largeobject_metadata',
+          'SELECT'
+        ) AS can_read_metadata,
+        EXISTS (
+          SELECT 1
+          FROM pg_catalog.pg_class AS relation_entry
+          CROSS JOIN LATERAL pg_catalog.aclexplode(relation_entry.relacl) AS privilege
+          WHERE relation_entry.oid = 'pg_catalog.pg_largeobject_metadata'::regclass
+            AND privilege.grantee = 0
+            AND privilege.privilege_type = 'SELECT'
+            AND NOT privilege.is_grantable
+        ) AS metadata_public_select_is_standard
+    `,
+    [runtime],
+  );
+  const row = result.rows[0];
+  if (
+    row?.can_read_chunks !== false ||
+    row?.can_read_metadata !== true ||
+    row?.metadata_public_select_is_standard !== true
+  ) {
+    fail('the PostgreSQL large object catalog read matrix differed from the explicit policy');
+  }
+  process.stdout.write(
+    'LARGE_OBJECT_CATALOG_READ_MATRIX_PASS chunks_select=false metadata_select=standard_public\n',
+  );
+}
+
 async function verifyLargeObjectCompatibilitySettingRejected(context) {
   const quotedDatabase = quoteIdentifier(context.database);
   await context.ownerClient.query(`ALTER DATABASE ${quotedDatabase} SET lo_compat_privileges = on`);
@@ -1723,9 +2269,145 @@ async function settingOnFreshConnection(configuration, setting) {
   }
 }
 
+async function waitForFreshConnectionSetting(configuration, setting, expected) {
+  let observed;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    observed = await settingOnFreshConnection(configuration, setting);
+    if (observed === expected) {
+      return observed;
+    }
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
+  }
+  fail(
+    `a fresh runtime connection did not observe ${setting}=${expected}; observed=${observed ?? 'unknown'}`,
+  );
+}
+
 async function sessionReplicationRoleOnFreshConnection(configuration) {
   return settingOnFreshConnection(configuration, 'session_replication_role');
 }
+
+async function configureClusterSetting(ownerClient, setting, value) {
+  if (!new Set(['lo_compat_privileges', 'session_replication_role']).has(setting)) {
+    fail(`unsupported cluster setting ${setting}`);
+  }
+  if (value === undefined) {
+    await ownerClient.query(`ALTER SYSTEM RESET ${setting}`);
+  } else {
+    await ownerClient.query(`ALTER SYSTEM SET ${setting} = ${quoteSettingValue(value)}`);
+  }
+  const reloaded = await ownerClient.query('SELECT pg_catalog.pg_reload_conf() AS reloaded');
+  if (reloaded.rows[0]?.reloaded !== true) {
+    fail(`PostgreSQL did not reload the cluster setting ${setting}`);
+  }
+}
+
+async function verifyMaskedGlobalSettingRejected(context, definition) {
+  const quotedOwner = quoteIdentifier(context.owner);
+  const quotedDatabase = quoteIdentifier(context.database);
+  const ownerSetting =
+    definition.ownerScope === 'role_database'
+      ? `ALTER ROLE ${quotedOwner} IN DATABASE ${quotedDatabase} SET ${definition.setting} = ${quoteSettingValue(definition.safe)}`
+      : `ALTER ROLE ${quotedOwner} SET ${definition.setting} = ${quoteSettingValue(definition.safe)}`;
+  const ownerReset =
+    definition.ownerScope === 'role_database'
+      ? `ALTER ROLE ${quotedOwner} IN DATABASE ${quotedDatabase} RESET ${definition.setting}`
+      : `ALTER ROLE ${quotedOwner} RESET ${definition.setting}`;
+
+  await configureClusterSetting(context.ownerClient, definition.setting, definition.dangerous);
+  try {
+    await context.ownerClient.query(ownerSetting);
+    const inherited = await waitForFreshConnectionSetting(
+      context.runtimeConfiguration,
+      definition.setting,
+      definition.dangerous,
+    );
+    if (inherited !== definition.dangerous) {
+      fail(
+        `a fresh runtime connection did not inherit the masked global value for ${definition.scenario}`,
+      );
+    }
+    process.stdout.write(
+      `MASKED_GLOBAL_SETTING_INHERITED scenario=${definition.scenario} runtime_value=${definition.dangerous}\n`,
+    );
+    await verifyApiRejectsPrivileges(
+      context.runtimeConfiguration,
+      [definition.expectedViolation],
+      definition.scenario,
+    );
+    await assertProvisionerRefusesUnsafeState(
+      context.database,
+      context.owner,
+      context.runtime,
+      context.ownerClient,
+      context.secrets,
+      definition.scenario,
+      definition.diagnosticPattern,
+    );
+  } finally {
+    await context.ownerClient.query(ownerReset);
+    await configureClusterSetting(context.ownerClient, definition.setting, undefined);
+  }
+
+  const remediated = await waitForFreshConnectionSetting(
+    context.runtimeConfiguration,
+    definition.setting,
+    definition.safe,
+  );
+  if (remediated !== definition.safe) {
+    fail(`the runtime setting did not return to ${definition.safe} for ${definition.scenario}`);
+  }
+  process.stdout.write(
+    `MASKED_GLOBAL_SETTING_REFUSAL_PASS scenario=${definition.scenario} state_unchanged=true remediated=${definition.safe}\n`,
+  );
+}
+
+function maskedGlobalSettingScenario(definition) {
+  return (context) => verifyMaskedGlobalSettingRejected(context, definition);
+}
+
+const maskedGlobalSettingScenarios = [
+  maskedGlobalSettingScenario({
+    dangerous: 'replica',
+    diagnosticPattern:
+      /PostgreSQL runtime provisioning refused unsafe session replication setting count=[1-9][0-9]*\./u,
+    expectedViolation: 'unexpected_session_replication_role',
+    ownerScope: 'role',
+    safe: 'origin',
+    scenario: 'masked_global_session_replication_role_owner_role',
+    setting: 'session_replication_role',
+  }),
+  maskedGlobalSettingScenario({
+    dangerous: 'on',
+    diagnosticPattern:
+      /PostgreSQL runtime provisioning refused unsafe large object compatibility setting count=[1-9][0-9]*\./u,
+    expectedViolation: 'unsafe_large_object_compatibility_mode',
+    ownerScope: 'role',
+    safe: 'off',
+    scenario: 'masked_global_lo_compat_privileges_owner_role',
+    setting: 'lo_compat_privileges',
+  }),
+  maskedGlobalSettingScenario({
+    dangerous: 'replica',
+    diagnosticPattern:
+      /PostgreSQL runtime provisioning refused unsafe session replication setting count=[1-9][0-9]*\./u,
+    expectedViolation: 'unexpected_session_replication_role',
+    ownerScope: 'role_database',
+    safe: 'origin',
+    scenario: 'masked_global_session_replication_role_owner_database',
+    setting: 'session_replication_role',
+  }),
+  maskedGlobalSettingScenario({
+    dangerous: 'on',
+    diagnosticPattern:
+      /PostgreSQL runtime provisioning refused unsafe large object compatibility setting count=[1-9][0-9]*\./u,
+    expectedViolation: 'unsafe_large_object_compatibility_mode',
+    ownerScope: 'role_database',
+    safe: 'off',
+    scenario: 'masked_global_lo_compat_privileges_owner_database',
+    setting: 'lo_compat_privileges',
+  }),
+];
 
 async function verifySessionReplicationSettingRejected(context, scenario) {
   const quotedRuntime = quoteIdentifier(context.runtime);
@@ -1862,7 +2544,7 @@ async function validateDatabase(admin, label, suffix, cleanup) {
   cleanup.databases.push(database);
   cleanup.roles.unshift(runtime);
   if (label === 'b') {
-    await createDegradedRuntimeRole(admin, runtime, runtimePassword, owner, database);
+    await createDegradedRuntimeRole(admin, runtime, runtimePassword, thirdParty, database);
   }
 
   const environment = prismaEnvironment(database, owner, ownerPassword);
@@ -1878,6 +2560,7 @@ async function validateDatabase(admin, label, suffix, cleanup) {
       await injectDefaultAndColumnDrift(ownerClient, runtime);
     }
     runProvisioner(database, owner, runtime, secrets);
+    await assertLargeObjectCatalogReadMatrix(ownerClient, runtime);
     await assertDefaultPrivilegeBoundary(ownerClient, runtime);
     await verifyFutureObjectPrivileges(ownerClient, runtime);
     const firstSignature = await privilegeSignature(ownerClient, runtime, database);
@@ -1963,9 +2646,12 @@ async function validateDatabase(admin, label, suffix, cleanup) {
       (context) => verifyParameterPrivilegeRejected(context, 'parameter_direct_alter_system'),
       (context) => verifyParameterPrivilegeRejected(context, 'parameter_public_alter_system'),
       (context) => verifyParameterPrivilegeRejected(context, 'parameter_set_grant_option'),
+      ...largeObjectCatalogAclScenarios,
+      ...maskedGlobalSettingScenarios,
     ];
+    let unsafeStateRejections = 0;
     for (const verifyScenario of unsafeScenarios) {
-      await verifyScenario({
+      const refused = await verifyScenario({
         database,
         owner,
         ownerClient,
@@ -1974,12 +2660,16 @@ async function validateDatabase(admin, label, suffix, cleanup) {
         secrets,
         thirdParty,
       });
+      if (refused !== false) {
+        unsafeStateRejections += 1;
+      }
       runProvisioner(database, owner, runtime, secrets);
       const repairedSignature = await privilegeSignature(ownerClient, runtime, database);
       if (firstSignature !== repairedSignature) {
         fail(`database ${label.toUpperCase()} unsafe-state refusal recovery did not converge`);
       }
     }
+    validationCounters.unsafeStateRejections += unsafeStateRejections;
 
     const grantOptionScenarios = [
       {
@@ -2017,7 +2707,7 @@ async function validateDatabase(admin, label, suffix, cleanup) {
     }
 
     process.stdout.write(
-      `RUNTIME_DATABASE_${label.toUpperCase()}_SCENARIOS provisioning_runs=${5 + unsafeScenarios.length + grantOptionScenarios.length} refused_unsafe_states=${unsafeScenarios.length} grant_option_repairs=${grantOptionScenarios.length} large_object_default_repairs=1 third_party_large_object_routine_acl_preservations=1\n`,
+      `RUNTIME_DATABASE_${label.toUpperCase()}_SCENARIOS provisioning_runs=${5 + unsafeScenarios.length + grantOptionScenarios.length} refused_unsafe_states=${unsafeStateRejections} grant_option_repairs=${grantOptionScenarios.length} large_object_catalog_scenarios=${largeObjectCatalogAclScenarios.length} masked_global_setting_rejections=${maskedGlobalSettingScenarios.length} large_object_default_repairs=1 third_party_large_object_routine_acl_preservations=1\n`,
     );
   } finally {
     await ownerClient.end();
@@ -2073,7 +2763,7 @@ async function validateDatabase(admin, label, suffix, cleanup) {
     runtimeConfiguration,
   );
   process.stdout.write(
-    `RUNTIME_DATABASE_${label.toUpperCase()}_PASS tables=34 prisma_adapter=7.9.1 public_grants=0 type_privileges=0 large_object_privileges=0 large_object_routine_privileges=0 lo_compat_privileges=off parameter_privileges=0 grant_options=0 session_replication_role=origin\n`,
+    `RUNTIME_DATABASE_${label.toUpperCase()}_PASS tables=34 prisma_adapter=7.9.1 public_grants=0 type_privileges=0 large_object_privileges=0 large_object_catalog_privileges=0 large_object_catalog_grant_options=0 large_object_routine_privileges=0 lo_compat_privileges=off parameter_privileges=0 grant_options=0 session_replication_role=origin\n`,
   );
 }
 
@@ -2138,7 +2828,7 @@ async function main() {
     await validateDatabase(admin, 'a', suffix, cleanup);
     await validateDatabase(admin, 'b', suffix, cleanup);
     process.stdout.write(
-      'S1.2-03A_RUNTIME_BOUNDARY_PASS databases=2 idempotent=true prisma_select=true denials=24 successful_provisioning_runs=72 unsafe_state_rejections=54 grant_option_repairs=8 large_object_default_repairs=2 third_party_large_object_routine_acl_preservations=2 session_replication_setting_rejections=6 large_object_compatibility_setting_rejections=2\n',
+      `S1.2-03A_RUNTIME_BOUNDARY_PASS databases=2 idempotent=true prisma_select=true denials=24 successful_provisioning_runs=104 unsafe_state_rejections=${validationCounters.unsafeStateRejections} grant_option_repairs=8 large_object_catalog_acl_rejections=${validationCounters.catalogAclRejections} catalog_raw_acls_verified=${validationCounters.catalogRawAclsApplied} catalog_effective_grants_verified=${validationCounters.catalogGrantsApplied} catalog_non_effective_acls_verified=${validationCounters.catalogNonEffectiveGrantsApplied} catalog_redundant_metadata_acls_verified=${validationCounters.catalogRedundantGrantsApplied} masked_global_setting_rejections=8 large_object_default_repairs=2 third_party_large_object_routine_acl_preservations=2 session_replication_setting_rejections=10 large_object_compatibility_setting_rejections=6\n`,
     );
   } catch (error) {
     validationError = error;

@@ -58,7 +58,12 @@ par défaut hors profil — y compris celle d’un propriétaire tiers dans `pub
 provoque un refus non nul avec un diagnostic borné sans secret. Les large
 objects, qui sont hors schéma, sont inspectés directement dans
 `pg_largeobject_metadata`; les ACL des routines `pg_catalog` correspondantes
-sont inspectées séparément. Le script ne réattribue pas la propriété et ne
+ainsi que les ACL relationnelles et de colonnes de `pg_largeobject` et
+`pg_largeobject_metadata` sont inspectées séparément. Le runtime ne peut avoir
+aucun droit sur `pg_largeobject`. Sur `pg_largeobject_metadata`, seul le
+`SELECT` système standard de `PUBLIC`, sans redélégation, est admis ; tout droit
+d’écriture, de colonne, de redélégation, direct ou hérité par rôle est refusé
+avant mutation. Le script ne réattribue pas la propriété et ne
 réécrit pas les ACL tierces de ces objets ou routines : leur correction exige
 une décision explicite du propriétaire de la base. Toutes les mutations du rôle, du
 credential et des ACL sont dans la même transaction : un refus restaure l’état
@@ -77,7 +82,12 @@ portées base, rôle et rôle/base qui imposent
 `session_replication_role!=origin` sont refusés avant mutation et ne sont jamais
 corrigés silencieusement. La même inspection couvre
 `lo_compat_privileges!=off`, y compris sa valeur effective sur la connexion du
-provisionneur ; ce mode dangereux est refusé plutôt que normalisé.
+provisionneur ; ce mode dangereux est refusé plutôt que normalisé. Tout
+override propriétaire/migrateur de l’un de ces deux paramètres est refusé,
+même s’il affiche une valeur sûre : sur cette connexion, il pourrait masquer un
+défaut cluster dangereux hérité par le runtime. Le provisionneur ne tente pas
+de supprimer cet override ; la remédiation explicite doit établir le défaut
+global sûr puis retirer la portée masquante.
 
 Ces identifiants sont exclusivement locaux. Ils ne doivent jamais être copiés
 dans un fichier versionné ou un environnement partagé.

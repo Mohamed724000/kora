@@ -1,9 +1,9 @@
 # KORA+ Final — Source de vérité
 
-Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A EN DRAFT PR #45 — R6 PUBLIÉ ET CI VERTE — INSTANTANÉ PRÉPUBLICATION R7 VALIDÉ LOCALEMENT — NON FUSIONNÉ**
+Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A EN DRAFT PR #45 — R7 PUBLIÉ ET CI VERTE — INSTANTANÉ PRÉPUBLICATION R8 VALIDÉ LOCALEMENT — NON FUSIONNÉ**
 
 Date d’effet : 2026-07-28
-Dernère réconciliation documentaire : 2026-09-25
+Dernère réconciliation documentaire : 2026-09-26
 
 ## Hiérarchie normative
 
@@ -272,3 +272,40 @@ de réglages persistants de réplication, un refus de
 propriétaire restent validés. À la date de cet instantané, R7 demeure local,
 non commité et non publié ; aucun SHA ou Run ID R7 futur n’est affirmé, la PR
 #45 reste Draft et S1.2-03B reste **Not started**.
+
+R7 a ensuite été publié au commit
+`3b4e9e2fdf6d2fd53c08ad48edc20e8328e2411e`, parent direct
+`80e8a397b19a98bd85f5ef6fcd2afe8ef4407ab0`, arbre
+`50d8cdea797ff50b6fb1cb784c6cefa8904a18d2`, avec 13 fichiers et
+`+1158/-88`. Infrastructure `36167761862`, Launcher Windows `36167761974`,
+Security `36167761909` et Quality Linux `36167761881` ont tous conclu
+`pull_request/completed/success` sur ce head exact. La Draft PR #45 compte
+alors 8 commits, 31 fichiers et `+5770/-201` ; elle reste ouverte, Draft,
+`CLEAN/MERGEABLE` et non fusionnée.
+
+L’instantané historique local prépublication R8 du 2026-09-26 ferme deux
+angles morts supplémentaires sans modifier manifeste, lockfile, workflow,
+schéma Prisma, migration, OpenAPI, contrat ou client. L’attestation et le
+provisionneur contrôlent désormais les ACL relationnelles et de colonnes de
+`pg_catalog.pg_largeobject` et `pg_largeobject_metadata`, directement, via
+`PUBLIC` et via un rôle effectivement hérité, avec leurs grant options. Le
+`SELECT` système standard non redélégable de `PUBLIC` sur
+`pg_largeobject_metadata` reste admis ; tout autre droit sur ces catalogues est
+refusé selon la matrice explicite testée.
+
+Le provisionneur refuse aussi, avant toute mutation, tout override
+propriétaire/migrateur de `session_replication_role` ou
+`lo_compat_privileges`, même sûr, lorsqu’il peut masquer un défaut cluster
+inconnu à cette connexion. Cette limite est volontairement conservative : la
+remédiation doit établir un défaut global sûr et retirer l’override, jamais
+normaliser silencieusement l’état masquant. Deux bases PostgreSQL 18.4
+indépendantes valident au total 104 provisionnements réussis, 86 refus à
+signature inchangée et 24 ACL de catalogue brutes refusées par l’API et le
+provisionneur : 14 grants effectifs, quatre ACL non effectives mais persistées
+et six ACL `SELECT` de métadonnées redondantes avec la visibilité standard de
+`PUBLIC`. Huit défauts globaux masqués sont refusés et 24 opérations rendent
+`42501`. Prisma
+7.9.1, `SELECT 1`, la lecture `Customer`, le démarrage runtime et le refus du
+propriétaire restent validés. À la date de cet instantané, R8 est local, non
+indexé, non commité et non publié ; aucun SHA ou Run ID R8 futur n’est affirmé,
+la PR #45 reste Draft et S1.2-03B reste **Not started**.

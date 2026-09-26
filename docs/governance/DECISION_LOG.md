@@ -500,6 +500,27 @@ Draft et non fusionnée.
 Ces décisions décrivent l’instantané historique local prépublication R7 du
 2026-09-25. Aucun SHA ou Run ID R7 futur n’y est affirmé.
 
+R7 a ensuite été publié au commit
+`3b4e9e2fdf6d2fd53c08ad48edc20e8328e2411e`, parent
+`80e8a397b19a98bd85f5ef6fcd2afe8ef4407ab0`, arbre
+`50d8cdea797ff50b6fb1cb784c6cefa8904a18d2`, avec 13 fichiers et
+`+1158/-88`. Infrastructure `36167761862`, Launcher Windows `36167761974`,
+Security `36167761909` et Quality Linux `36167761881` sont tous
+`pull_request/completed/success` sur ce head exact. La PR #45 reste ouverte,
+Draft, `CLEAN/MERGEABLE` et non fusionnée.
+
+## 2026-09-26 — S1.2-03A-R8 Catalog ACL and masked cluster defaults
+
+| ID              | Nature          | Décision                                                                                                                                                                                                                                                                                                                                                                          | Autorité                         | Statut                                        |
+| --------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- | --------------------------------------------- |
+| DEC-S1.2-03A-27 | Catalogues LO   | Le runtime ne reçoit aucun droit relationnel ou de colonne sur `pg_largeobject`. Sur `pg_largeobject_metadata`, seul le `SELECT` système standard non redélégable de `PUBLIC` est admis ; droits directs, `PUBLIC`, hérités et grant options sont contrôlés. Chaque refus prouve d’abord l’ACL brute persistée, puis classe séparément son effet réel.                            | Verdict CTO BLOCK post-R7        | Accepted — local prepublication evidence      |
+| DEC-S1.2-03A-28 | Défauts masqués | Tout override propriétaire/migrateur de `session_replication_role` ou `lo_compat_privileges` est refusé avant mutation, même s’il est sûr, car il peut masquer un défaut cluster dangereux hérité par une nouvelle connexion runtime. La remédiation explicite doit établir le défaut global sûr puis retirer l’override.                                                         | Verdict CTO BLOCK post-R7        | Accepted — local prepublication evidence      |
+| DEC-S1.2-03A-29 | Validation      | Deux bases PostgreSQL 18.4 valident 104 provisionnements réussis, 86 refus à signature inchangée et 24 ACL de catalogue brutes refusées par l’API et le provisionneur : 14 grants effectifs, 4 ACL non effectives persistées et 6 `SELECT` de métadonnées redondants. Huit défauts globaux masqués sont refusés, avec Prisma, `SELECT 1`, lecture `Customer` et 24 refus `42501`. | Preuves locales R8 du 2026-09-26 | Executed — reproducible and cleaned           |
+| DEC-S1.2-03A-30 | Périmètre local | L’instantané R8 modifie exactement les artefacts techniques, README et documents S1.2-03A autorisés, sans nouveau fichier ni changement de manifeste, lockfile, workflow, schéma Prisma, migration, OpenAPI, contrat ou client. R8 reste local, non indexé, non commité et non publié ; S1.2-03B n’est pas démarré.                                                               | Autorisation Product Owner R8    | Accepted — historical prepublication snapshot |
+
+Ces décisions décrivent l’instantané historique local prépublication R8 du
+2026-09-26. Aucun SHA ou Run ID R8 futur n’y est affirmé.
+
 ## Catégories d’autorité
 
 - **Produit** : vision, économie, marque, contrats et périmètre irréversible ;
