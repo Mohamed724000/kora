@@ -1,59 +1,14 @@
-import { Inject, Injectable, type OnApplicationShutdown } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { Pool, type PoolConfig } from 'pg';
-import type { RuntimeConfig } from '../config/runtime-config';
+import { Inject, Injectable } from '@nestjs/common';
+import { PrismaService } from '../database/prisma.service';
 import type { ReadinessCheck } from './readiness-check';
 
 @Injectable()
-export class PostgresqlReadinessCheck implements ReadinessCheck, OnApplicationShutdown {
+export class PostgresqlReadinessCheck implements ReadinessCheck {
   readonly name = 'postgresql' as const;
 
-  private readonly handleIdleClientError = (): void => undefined;
-
-  private pool?: Pool;
-
-  constructor(
-    @Inject(ConfigService)
-    private readonly config: ConfigService<RuntimeConfig, true>,
-  ) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async check(): Promise<void> {
-    await this.getPool().query('SELECT 1');
-  }
-
-  async onApplicationShutdown(): Promise<void> {
-    if (this.pool !== undefined) {
-      await this.pool.end();
-    }
-  }
-
-  private getPool(): Pool {
-    if (this.pool !== undefined) {
-      return this.pool;
-    }
-
-    const postgresql = this.config.get('postgresql', { infer: true });
-    const readiness = this.config.get('readiness', { infer: true });
-    const options: PoolConfig = {
-      application_name: 'kora-plus-api-readiness',
-      connectionTimeoutMillis: readiness.timeoutMs,
-      database: postgresql.database,
-      host: postgresql.host,
-      max: 1,
-      password: postgresql.password,
-      port: postgresql.port,
-      query_timeout: readiness.timeoutMs,
-      statement_timeout: readiness.timeoutMs,
-      user: postgresql.user,
-    };
-
-    if (postgresql.ssl) {
-      options.ssl = { rejectUnauthorized: true };
-    }
-
-    const pool = new Pool(options);
-    pool.on('error', this.handleIdleClientError);
-    this.pool = pool;
-    return pool;
+    await this.prisma.selectOne();
   }
 }

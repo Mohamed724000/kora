@@ -28,11 +28,21 @@ export const localDirectory = resolve(infrastructureDirectory, ".local");
 export const secretsDirectory = resolve(localDirectory, "secrets");
 export const environmentFile = resolve(localDirectory, "compose.env");
 export const composeFile = resolve(infrastructureDirectory, "compose.yaml");
+export const postgresProvisionScript = resolve(
+  infrastructureDirectory,
+  "postgres",
+  "provision-runtime.sh",
+);
 
-const SECRET_NAMES = ["postgres_password", "redis_password"];
+const SECRET_NAMES = [
+  "postgres_password",
+  "postgres_runtime_password",
+  "redis_password",
+];
 const REQUIRED_ENVIRONMENT = [
   "KORA_POSTGRES_DB",
   "KORA_POSTGRES_USER",
+  "KORA_POSTGRES_RUNTIME_USER",
   "KORA_POSTGRES_PORT",
   "KORA_REDIS_PORT",
   "KORA_API_PORT",
@@ -103,6 +113,7 @@ export function prepareLocalFiles() {
   mkdirSync(secretsDirectory, { recursive: true, mode: 0o700 });
   const created = [];
   const preserved = [];
+  const upgraded = [];
 
   for (const name of SECRET_NAMES) {
     const path = resolve(secretsDirectory, name);
@@ -117,6 +128,22 @@ export function prepareLocalFiles() {
   }
 
   if (existsSync(environmentFile)) {
+    const existingEnvironment = readFileSync(environmentFile, "utf8");
+    const hasRuntimeUser = existingEnvironment
+      .split(/\r?\n/u)
+      .some((line) => line.trim().startsWith("KORA_POSTGRES_RUNTIME_USER="));
+    if (!hasRuntimeUser) {
+      const separator =
+        existingEnvironment.length === 0 || existingEnvironment.endsWith("\n")
+          ? ""
+          : "\n";
+      writeFileSync(
+        environmentFile,
+        `${separator}KORA_POSTGRES_RUNTIME_USER=kora_runtime\n`,
+        { encoding: "utf8", flag: "a" },
+      );
+      upgraded.push(environmentFile);
+    }
     preserved.push(environmentFile);
   } else {
     writeNewPrivateFile(
@@ -124,6 +151,7 @@ export function prepareLocalFiles() {
       [
         "KORA_POSTGRES_DB=kora_local",
         "KORA_POSTGRES_USER=kora_local",
+        "KORA_POSTGRES_RUNTIME_USER=kora_runtime",
         "KORA_POSTGRES_PORT=15432",
         "KORA_REDIS_PORT=16379",
         "KORA_API_PORT=3102",
@@ -135,6 +163,7 @@ export function prepareLocalFiles() {
 
   readLocalConfiguration();
   readSecret("postgres_password");
+  readSecret("postgres_runtime_password");
   readSecret("redis_password");
 
   console.log(
@@ -142,6 +171,9 @@ export function prepareLocalFiles() {
   );
   console.log(
     `Existing local infrastructure files preserved: ${preserved.length}.`,
+  );
+  console.log(
+    `Existing local infrastructure files upgraded in place: ${upgraded.length}.`,
   );
 }
 
@@ -193,6 +225,18 @@ export function readLocalConfiguration() {
 
   if (!/^[A-Za-z_][A-Za-z0-9_-]*$/u.test(configuration.KORA_POSTGRES_USER)) {
     throw new Error("KORA_POSTGRES_USER has an invalid local identifier.");
+  }
+
+  if (
+    !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(
+      configuration.KORA_POSTGRES_RUNTIME_USER,
+    ) ||
+    configuration.KORA_POSTGRES_RUNTIME_USER ===
+      configuration.KORA_POSTGRES_USER
+  ) {
+    throw new Error(
+      "KORA_POSTGRES_RUNTIME_USER must be a distinct valid PostgreSQL role.",
+    );
   }
 
   for (const key of [
@@ -263,6 +307,35 @@ export function validateCompose() {
     );
   }
 
+  const postgresService = configuration.services.postgres;
+  if (
+    postgresService.environment?.KORA_POSTGRES_RUNTIME_USER !==
+    local.KORA_POSTGRES_RUNTIME_USER
+  ) {
+    throw new Error("PostgreSQL runtime role is not rendered exactly.");
+  }
+  const postgresSecrets = (postgresService.secrets ?? [])
+    .map((secret) => secret.source)
+    .sort();
+  if (
+    postgresSecrets.join(",") !== "postgres_password,postgres_runtime_password"
+  ) {
+    throw new Error("PostgreSQL owner and runtime secrets are not separated.");
+  }
+  const provisionMount = (postgresService.volumes ?? []).find(
+    (volume) =>
+      volume.target === "/usr/local/bin/kora-provision-postgresql-runtime.sh",
+  );
+  if (
+    provisionMount?.type !== "bind" ||
+    provisionMount.source !== postgresProvisionScript ||
+    provisionMount.read_only !== true
+  ) {
+    throw new Error(
+      "PostgreSQL runtime provisioner must be an exact read-only bind mount.",
+    );
+  }
+
   assertPortBinding(
     configuration.services.postgres,
     5432,
@@ -288,6 +361,7 @@ export function validateCompose() {
   const renderedText = rendered;
   for (const secret of [
     readSecret("postgres_password"),
+    readSecret("postgres_runtime_password"),
     readSecret("redis_password"),
   ]) {
     if (renderedText.includes(secret)) {
@@ -298,6 +372,33 @@ export function validateCompose() {
   }
 
   console.log("Compose configuration and security invariants are valid.");
+}
+
+export function provisionPostgresqlRuntime() {
+  const local = readLocalConfiguration();
+  runCompose([
+    "exec",
+    "-T",
+    "postgres",
+    "sh",
+    "/usr/local/bin/kora-provision-postgresql-runtime.sh",
+  ]);
+
+  const result = runCompose(
+    [
+      "exec",
+      "-T",
+      "postgres",
+      "sh",
+      "-ec",
+      'PGPASSWORD="$(cat /run/secrets/postgres_runtime_password)" psql --host=127.0.0.1 --port=5432 --username="$KORA_POSTGRES_RUNTIME_USER" --dbname="$POSTGRES_DB" --no-psqlrc --tuples-only --no-align --set=ON_ERROR_STOP=1 --command="SELECT 1;"',
+    ],
+    { capture: true },
+  ).stdout.trim();
+
+  if (result !== "1" || local.KORA_POSTGRES_RUNTIME_USER.length === 0) {
+    throw new Error("PostgreSQL runtime smoke query did not return 1.");
+  }
 }
 
 export function pullImages() {
@@ -361,6 +462,7 @@ export function upProject() {
   runCompose(["up", "--detach", "--wait", "--wait-timeout", "120"]);
   waitForServiceHealthy("postgres");
   waitForServiceHealthy("redis");
+  provisionPostgresqlRuntime();
   console.log("PostgreSQL and Redis are healthy.");
 }
 
@@ -452,6 +554,8 @@ export function checkInfrastructure() {
   if (postgresResult !== "1") {
     throw new Error("PostgreSQL smoke query did not return 1.");
   }
+
+  provisionPostgresqlRuntime();
 
   const redisResult = runCompose(
     [

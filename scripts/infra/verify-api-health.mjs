@@ -1,10 +1,12 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   PROJECT_NAME,
   checkInfrastructure,
+  provisionPostgresqlRuntime,
   readLocalConfiguration,
   readSecret,
   repositoryRoot,
@@ -12,6 +14,11 @@ import {
   runCompose,
   waitForServiceHealthy,
 } from "./lib.mjs";
+import {
+  assertNoSensitiveValue,
+  assertOwnerRoleRejected,
+  capturedOutputSummary,
+} from "./verify-api-health-assertions.mjs";
 
 const applicationPath = resolve(
   repositoryRoot,
@@ -21,14 +28,82 @@ const applicationPath = resolve(
   "src",
   "main.js",
 );
+const applicationFactoryPath = resolve(
+  repositoryRoot,
+  "apps",
+  "api",
+  "dist",
+  "src",
+  "app.factory.js",
+);
+const apiDirectory = resolve(repositoryRoot, "apps", "api");
+const prismaEntryPath = resolve(
+  repositoryRoot,
+  "node_modules",
+  "prisma",
+  "build",
+  "index.js",
+);
 
 function delay(milliseconds) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
 }
 
-async function waitForResponse(url, timeoutMs) {
+function apiEnvironment({ local, password, redisPassword, user }) {
+  return {
+    ...process.env,
+    API_HOST: "127.0.0.1",
+    API_PORT: local.KORA_API_PORT,
+    DATABASE_HOST: "127.0.0.1",
+    DATABASE_NAME: local.KORA_POSTGRES_DB,
+    DATABASE_PASSWORD: password,
+    DATABASE_PORT: local.KORA_POSTGRES_PORT,
+    DATABASE_SSL: "false",
+    DATABASE_USER: user,
+    LOG_LEVEL: "info",
+    NODE_ENV: "development",
+    READINESS_TIMEOUT_MS: "1000",
+    REDIS_HOST: "127.0.0.1",
+    REDIS_PASSWORD: redisPassword,
+    REDIS_PORT: local.KORA_REDIS_PORT,
+    REDIS_TLS: "false",
+  };
+}
+
+function deployMigrationsAsOwner(environment, secrets) {
+  const result = spawnSync(
+    process.execPath,
+    [prismaEntryPath, "migrate", "deploy", "--config", "prisma.config.ts"],
+    {
+      cwd: apiDirectory,
+      encoding: "utf8",
+      env: environment,
+      shell: false,
+      windowsHide: true,
+    },
+  );
+  if (result.error !== undefined) {
+    throw result.error;
+  }
+
+  const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+  if (result.status !== 0) {
+    throw new Error(
+      `Prisma migration deploy failed as owner/migrator (exit=${result.status ?? "unknown"}): ${capturedOutputSummary(output, secrets)}.`,
+    );
+  }
+  assertNoSensitiveValue(output, secrets);
+  console.log("Prisma migrations applied under the owner/migrator identity.");
+}
+
+async function waitForResponse(url, timeoutMs, api, readLogs, secrets) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    if (api.exitCode !== null || api.signalCode !== null) {
+      throw new Error(
+        `API exited before responding (exit=${api.exitCode ?? "none"}, signal=${api.signalCode ?? "none"}); fatal=${capturedOutputSummary(readLogs(), secrets)}.`,
+      );
+    }
     try {
       const response = await fetch(url);
       if (response.status < 500) {
@@ -105,19 +180,6 @@ function assertReadiness(body, expectedStatus, downDependency) {
     if (expectedDependencyStatus === "down" && check.reason !== "unavailable") {
       throw new Error(`${dependency} readiness failure is not generic.`);
     }
-  }
-}
-
-function assertNoSensitiveValue(serialized, secrets) {
-  for (const secret of secrets) {
-    if (serialized.includes(secret)) {
-      throw new Error("A local credential appeared in an API response or log.");
-    }
-  }
-  if (/postgres(?:ql)?:\/\/|redis:\/\//iu.test(serialized)) {
-    throw new Error(
-      "A raw database or Redis URL appeared in an API response or log.",
-    );
   }
 }
 
@@ -237,6 +299,7 @@ async function stopChild(child) {
 
 let api;
 let logs = "";
+let sensitiveValues = [];
 const evidenceBodies = [];
 
 try {
@@ -249,30 +312,44 @@ try {
   checkInfrastructure();
   const local = readLocalConfiguration();
   const postgresPassword = readSecret("postgres_password");
+  const postgresRuntimePassword = readSecret("postgres_runtime_password");
   const redisPassword = readSecret("redis_password");
-  const sensitiveValues = [postgresPassword, redisPassword];
+  sensitiveValues = [postgresPassword, postgresRuntimePassword, redisPassword];
   const baseUrl = `http://127.0.0.1:${local.KORA_API_PORT}`;
+
+  deployMigrationsAsOwner(
+    apiEnvironment({
+      local,
+      password: postgresPassword,
+      redisPassword,
+      user: local.KORA_POSTGRES_USER,
+    }),
+    sensitiveValues,
+  );
+  provisionPostgresqlRuntime();
+
+  const { createApplication } = await import(
+    pathToFileURL(applicationFactoryPath).href
+  );
+  await assertOwnerRoleRejected({
+    createApplication,
+    environment: apiEnvironment({
+      local,
+      password: postgresPassword,
+      redisPassword,
+      user: local.KORA_POSTGRES_USER,
+    }),
+    secrets: sensitiveValues,
+  });
 
   api = spawn(process.execPath, [applicationPath], {
     cwd: repositoryRoot,
-    env: {
-      ...process.env,
-      API_HOST: "127.0.0.1",
-      API_PORT: local.KORA_API_PORT,
-      DATABASE_HOST: "127.0.0.1",
-      DATABASE_NAME: local.KORA_POSTGRES_DB,
-      DATABASE_PASSWORD: postgresPassword,
-      DATABASE_PORT: local.KORA_POSTGRES_PORT,
-      DATABASE_SSL: "false",
-      DATABASE_USER: local.KORA_POSTGRES_USER,
-      LOG_LEVEL: "info",
-      NODE_ENV: "development",
-      READINESS_TIMEOUT_MS: "1000",
-      REDIS_HOST: "127.0.0.1",
-      REDIS_PASSWORD: redisPassword,
-      REDIS_PORT: local.KORA_REDIS_PORT,
-      REDIS_TLS: "false",
-    },
+    env: apiEnvironment({
+      local,
+      password: postgresRuntimePassword,
+      redisPassword,
+      user: local.KORA_POSTGRES_RUNTIME_USER,
+    }),
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   });
@@ -288,7 +365,13 @@ try {
     throw new Error("API process did not expose a PID.");
   }
 
-  await waitForResponse(`${baseUrl}/health/live`, 30_000);
+  await waitForResponse(
+    `${baseUrl}/health/live`,
+    30_000,
+    api,
+    () => logs,
+    sensitiveValues,
+  );
   assertApiProcess(api, expectedPid, "initial startup");
   const liveHealthy = await readHealth(baseUrl, "/health/live", 200);
   const readyHealthy = await readHealth(baseUrl, "/health/ready", 200);
@@ -369,9 +452,11 @@ try {
     api === undefined
       ? "not_started"
       : `pid=${api.pid ?? "unknown"},exit=${api.exitCode ?? "running"},signal=${api.signalCode ?? "none"}`;
-  console.error(
-    `API infrastructure verification failed (${apiState}): ${error.message}`,
+  const detail = capturedOutputSummary(
+    `API infrastructure verification failed (${apiState}): ${error.message}\n${logs}`,
+    sensitiveValues,
   );
+  console.error(detail);
   process.exitCode = 1;
 } finally {
   for (const serviceName of ["postgres", "redis"]) {
