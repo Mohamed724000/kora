@@ -1,6 +1,6 @@
 # KORA+ Final — Source de vérité
 
-Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A EN DRAFT PR #45 — R7 PUBLIÉ ET CI VERTE — INSTANTANÉ PRÉPUBLICATION R8 VALIDÉ LOCALEMENT — NON FUSIONNÉ**
+Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A EN DRAFT PR #45 — BASELINE TECHNIQUE R8 PUBLIÉE ET CI VERTE — NON FUSIONNÉ**
 
 Date d’effet : 2026-07-28
 Dernère réconciliation documentaire : 2026-09-26
@@ -309,3 +309,24 @@ et six ACL `SELECT` de métadonnées redondantes avec la visibilité standard de
 propriétaire restent validés. À la date de cet instantané, R8 est local, non
 indexé, non commité et non publié ; aucun SHA ou Run ID R8 futur n’est affirmé,
 la PR #45 reste Draft et S1.2-03B reste **Not started**.
+
+R8 a ensuite été publié au commit
+`82d1655f3f6700f4bbfac76413e2b0de0757b7a9`, parent direct
+`3b4e9e2fdf6d2fd53c08ad48edc20e8328e2411e`, arbre
+`8e1e648feb20e092ba50c2783611232a96407051`, message
+`fix(security): attest PostgreSQL catalog ACLs and masked settings`, avec 13
+fichiers et `+1374/-68`. Infrastructure `36260566060`, Launcher Windows
+`36260566119`, Security `36260566203` et Quality Linux `36260566159` ont tous
+conclu `pull_request/completed/success` sur ce head exact. Le cumul observé
+après R8 est de 9 commits, 31 fichiers et `+7076/-201` ; la PR #45 reste
+ouverte, Draft, `CLEAN/MERGEABLE` et non fusionnée.
+
+La revue CTO finale post-R8 conclut **GO** sur les axes architecture/données et
+sécurité/intégrité PostgreSQL. Le workflow Security R8 a exécuté les audits npm
+complet et production à zéro vulnérabilité ainsi que l’inventaire de licences :
+1 141 paquets installés, aucun non déclaré et aucun non approuvé.
+
+La baseline technique S1.2-03A publiée est R8. Les éventuels commits
+documentaires ultérieurs ne modifient pas cette baseline technique ; le head
+courant de la PR reste vérifiable dans GitHub. La PR demeure Draft et non
+fusionnée ; S1.2-03B reste **Not started**.

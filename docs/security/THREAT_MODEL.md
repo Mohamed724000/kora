@@ -2,7 +2,8 @@
 
 Périmètre durable couvert : **BASELINE + S0.4/S0.5/M0.1/M0.2/S0.6 ET M0.3
 FUSIONNÉS ET CLÔTURÉS + S1.1 FERMÉ + CONTRACT & DATA READINESS S1.2-01 +
-S1.2-02 CLÔTURÉ ET FUSIONNÉ**.
+S1.2-02 CLÔTURÉ ET FUSIONNÉ + BASELINE TECHNIQUE S1.2-03A-R8 PUBLIÉE DANS LA
+DRAFT PR #45**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
 commit, push ou changement GitHub S1.1 n’avait encore été effectué : il s’agit
@@ -656,6 +657,24 @@ et les scénarios R7 restent validés. Les ressources d’essai et secrets sont
 supprimés de façon ciblée. R8 reste local, non indexé, non commité et non
 publié dans cet instantané daté ; aucun SHA ou Run ID R8 futur n’est affirmé,
 la PR reste Draft et S1.2-03B reste `Not started`.
+
+R8 est ensuite publié au commit
+`82d1655f3f6700f4bbfac76413e2b0de0757b7a9`, parent
+`3b4e9e2fdf6d2fd53c08ad48edc20e8328e2411e`, arbre
+`8e1e648feb20e092ba50c2783611232a96407051`, message
+`fix(security): attest PostgreSQL catalog ACLs and masked settings`, avec 13
+fichiers et `+1374/-68`. Infrastructure `36260566060`, Launcher Windows
+`36260566119`, Security `36260566203` et Quality Linux `36260566159` sont tous
+`pull_request/completed/success` sur ce head exact. Security a exécuté les
+audits npm complet et production à zéro vulnérabilité et l’inventaire de 1 141
+paquets, avec zéro non déclaré et zéro non approuvé.
+
+Le cumul observé après R8 est de 9 commits, 31 fichiers et `+7076/-201`. Les
+axes CTO architecture/données et sécurité/intégrité PostgreSQL concluent GO.
+La baseline technique S1.2-03A publiée reste R8 ; les éventuels commits
+documentaires ultérieurs ne la modifient pas et le head courant reste
+vérifiable dans GitHub. La PR #45 demeure ouverte, Draft, `CLEAN/MERGEABLE` et
+non fusionnée ; S1.2-03B reste `Not started`.
 
 Le pool `pg` est détenu par le client Prisma 7.9.1 via
 `@prisma/adapter-pg` 7.9.1 ; la readiness réutilise ce même chemin. Les erreurs

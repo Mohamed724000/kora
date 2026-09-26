@@ -2,7 +2,7 @@
 
 Date initiale : 2026-09-16
 Dernère réconciliation : 2026-09-26
-État : **DRAFT PR #45 OUVERTE — R7 PUBLIÉ — QUATRE WORKFLOWS R7 RÉUSSIS — INSTANTANÉ PRÉPUBLICATION R8 VALIDÉ LOCALEMENT — NON FUSIONNÉ**
+État : **DRAFT PR #45 OUVERTE — BASELINE TECHNIQUE R8 PUBLIÉE — QUATRE WORKFLOWS R8 RÉUSSIS — CLEAN/MERGEABLE — NON FUSIONNÉ**
 
 ## Baseline et autorisation
 
@@ -729,3 +729,29 @@ date de cet instantané historique prépublication, R8 reste local, non indexé,
 non commité et non publié. Aucun SHA ou Run ID R8 futur n’est affirmé ; aucune
 nouvelle mutation GitHub, aucun push, rerun, Ready ou merge n’est effectué. La
 PR #45 reste Draft et S1.2-03B reste `Not started`.
+
+## Publication R8 et baseline technique durable
+
+R8 est ensuite publié au commit
+`82d1655f3f6700f4bbfac76413e2b0de0757b7a9`, parent direct
+`3b4e9e2fdf6d2fd53c08ad48edc20e8328e2411e`, arbre
+`8e1e648feb20e092ba50c2783611232a96407051`, message
+`fix(security): attest PostgreSQL catalog ACLs and masked settings`, avec 13
+fichiers et `+1374/-68`.
+
+Les quatre workflows `pull_request` ciblent ce head exact et concluent
+`completed/success` : Infrastructure `36260566060`, Launcher Windows
+`36260566119`, Security `36260566203` et Quality Linux `36260566159`. Le
+workflow Security a réellement exécuté les audits npm complet et production,
+tous deux à zéro vulnérabilité, puis l’inventaire de licences de 1 141 paquets,
+avec zéro non déclaré et zéro non approuvé. Ces preuves CI sont distinctes des
+audits et licences non rejoués localement pendant la validation R8.
+
+Le cumul GitHub observé après R8 est de 9 commits, 31 fichiers et
+`+7076/-201`. La revue CTO finale post-R8 conclut **GO** sur les axes
+architecture/données et sécurité/intégrité PostgreSQL. La PR #45 demeure
+ouverte, Draft, `CLEAN/MERGEABLE` et non fusionnée.
+
+La baseline technique S1.2-03A publiée est R8. Les éventuels commits
+documentaires ultérieurs ne modifient pas cette baseline technique ; le head
+courant de la PR reste vérifiable dans GitHub. S1.2-03B reste `Not started`.

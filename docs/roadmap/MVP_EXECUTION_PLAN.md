@@ -10,26 +10,26 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 
 ## État des gates et lots
 
-| Gate ou lot         | Objectif                                      | Statut                                                              |
-| ------------------- | --------------------------------------------- | ------------------------------------------------------------------- |
-| Gate 0              | Sources approuvées et readiness clean room    | Completed                                                           |
-| Lot 00              | Preflight read-only                           | Completed                                                           |
-| Lot 00B             | Remédiation documentaire                      | Completed                                                           |
-| Lot 00C             | Canonicalisation AdminLTE                     | Completed                                                           |
-| S0.1                | Gouvernance et Git                            | Completed                                                           |
-| S0.2                | Contrat monorepo et versions                  | Completed                                                           |
-| S0.3                | Fondations applicatives                       | Closed and merged                                                   |
-| S0.4                | Infrastructure locale                         | Closed and merged                                                   |
-| S0.5                | CI, sécurité et observabilité                 | Closed and merged                                                   |
-| M0.1                | Dependency Governance                         | Closed and merged                                                   |
-| M0.2                | Supply-chain Security Hotfix                  | Closed and merged                                                   |
-| S0.6                | Foundation Gate                               | Closed and merged                                                   |
-| Slice 1 / S1.1      | Contrats, données cibles et expérience audio  | Closed and merged                                                   |
-| Slice 1 / S1.2-01   | Contract & Data Readiness Gate                | Contract and data gate complete                                     |
-| Slice 1 / S1.2-02   | Baseline PostgreSQL et contraintes SQL        | Closed and merged — PR #43                                          |
-| Slice 1 / S1.2-03A  | Frontière PostgreSQL runtime en lecture seule | Draft #45 — R7 publié, preuve historique prépublication R8 validée. |
-| Slice 1 / S1.2-03B+ | Fonctionnalités runtime métier du pilote      | Not started                                                         |
-| Slices suivantes    | Fonctionnalités produit ultérieures           | Not started                                                         |
+| Gate ou lot         | Objectif                                      | Statut                                                             |
+| ------------------- | --------------------------------------------- | ------------------------------------------------------------------ |
+| Gate 0              | Sources approuvées et readiness clean room    | Completed                                                          |
+| Lot 00              | Preflight read-only                           | Completed                                                          |
+| Lot 00B             | Remédiation documentaire                      | Completed                                                          |
+| Lot 00C             | Canonicalisation AdminLTE                     | Completed                                                          |
+| S0.1                | Gouvernance et Git                            | Completed                                                          |
+| S0.2                | Contrat monorepo et versions                  | Completed                                                          |
+| S0.3                | Fondations applicatives                       | Closed and merged                                                  |
+| S0.4                | Infrastructure locale                         | Closed and merged                                                  |
+| S0.5                | CI, sécurité et observabilité                 | Closed and merged                                                  |
+| M0.1                | Dependency Governance                         | Closed and merged                                                  |
+| M0.2                | Supply-chain Security Hotfix                  | Closed and merged                                                  |
+| S0.6                | Foundation Gate                               | Closed and merged                                                  |
+| Slice 1 / S1.1      | Contrats, données cibles et expérience audio  | Closed and merged                                                  |
+| Slice 1 / S1.2-01   | Contract & Data Readiness Gate                | Contract and data gate complete                                    |
+| Slice 1 / S1.2-02   | Baseline PostgreSQL et contraintes SQL        | Closed and merged — PR #43                                         |
+| Slice 1 / S1.2-03A  | Frontière PostgreSQL runtime en lecture seule | Draft #45 — baseline technique R8 publiée, quatre workflows verts. |
+| Slice 1 / S1.2-03B+ | Fonctionnalités runtime métier du pilote      | Not started                                                        |
+| Slices suivantes    | Fonctionnalités produit ultérieures           | Not started                                                        |
 
 ## Sprint 0 — Clean-room foundation
 
@@ -136,7 +136,7 @@ démarrait ni Slice 1 ni aucune exigence produit.
 
 ## Slice 1 — Audio purchase pilot
 
-Statut : **In progress — S1.2-02 closed — S1.2-03A Draft PR #45, R7 published and CI green, historical R8 prepublication evidence dated 2026-09-26 validated — business runtime not started**
+Statut : **In progress — S1.2-02 closed — S1.2-03A Draft PR #45, technical baseline R8 published and CI green, not merged — business runtime not started**
 
 Parcours cible :
 
@@ -242,7 +242,7 @@ fusion de la PR #44 et les quatre workflows `push/main` réussis.
 
 ### S1.2-03A — PostgreSQL Least-Privilege Runtime Boundary & Prisma Adapter
 
-Statut : **Draft PR #45 open — R7 published — four R7 workflows green — historical R8 prepublication evidence validated — not merged**
+Statut : **Draft PR #45 open — technical baseline R8 published — four R8 workflows green — not merged**
 
 L’instantané local prépublication du 2026-09-16 a été validé avant indexation,
 commit, push ou création de PR. Ces absences décrivent uniquement cet instantané
@@ -371,6 +371,24 @@ défauts globaux masqués sont refusés et 24 opérations interdites rendent
 `42501`. R8 reste local, non indexé, non commité et non
 publié dans cet instantané daté ; aucun SHA ou Run ID R8 futur n’est affirmé,
 aucun Ready ou merge n’est effectué et S1.2-03B reste `Not started`.
+
+R8 est ensuite publié au commit
+`82d1655f3f6700f4bbfac76413e2b0de0757b7a9`, parent
+`3b4e9e2fdf6d2fd53c08ad48edc20e8328e2411e`, arbre
+`8e1e648feb20e092ba50c2783611232a96407051`, message
+`fix(security): attest PostgreSQL catalog ACLs and masked settings`, avec 13
+fichiers et `+1374/-68`. Infrastructure `36260566060`, Launcher Windows
+`36260566119`, Security `36260566203` et Quality Linux `36260566159` sont tous
+`pull_request/completed/success` sur ce head exact. Le workflow Security a
+exécuté les audits npm complet et production à zéro vulnérabilité et le
+contrôle de licences sur 1 141 paquets, sans paquet non déclaré ou non approuvé.
+
+Le cumul observé après R8 est de 9 commits, 31 fichiers et `+7076/-201`. Les
+axes CTO architecture/données et sécurité/intégrité PostgreSQL concluent GO.
+La baseline technique S1.2-03A publiée reste R8 ; les éventuels commits
+documentaires ultérieurs ne la modifient pas et le head courant reste
+vérifiable dans GitHub. La PR #45 demeure ouverte, Draft, `CLEAN/MERGEABLE` et
+non fusionnée ; S1.2-03B reste `Not started`.
 
 Périmètre validé dans cet instantané historique :
 
