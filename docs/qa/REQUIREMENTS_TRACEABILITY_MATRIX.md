@@ -161,6 +161,10 @@ merge `main` `95bdfcf30a14e05ae90b09150cf289e1e0343c0d`.
 
 ## Contrôles S1.2-03A — PostgreSQL Least-Privilege Runtime Boundary
 
+Dans la chronologie R0 à R9 de cette section, les mentions `Draft`, ouverte ou
+non fusionnée sont des preuves historiques rattachées au head cité ; elles ne
+décrivent pas l’état courant après la clôture post-fusion.
+
 | ID              | Contrôle                                  | État                  | Preuve attendue                                                                                                                                           |
 | --------------- | ----------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | GOV-S1.2-03A-01 | Séparation propriétaire/runtime           | Vérifié localement R8 | identifiants et secrets distincts ; rôle runtime non propriétaire, `NOINHERIT`, sans attribut administratif ni membership                                 |
@@ -169,7 +173,7 @@ merge `main` `95bdfcf30a14e05ae90b09150cf289e1e0343c0d`.
 | GOV-S1.2-03A-04 | Refus des mutations et élévations         | Vérifié localement R8 | SQLSTATE `42501` pour DDL, `TRUNCATE`, trigger, `SET ROLE`, réplication, écritures métier et quatre routines large-object, sur deux bases                 |
 | GOV-S1.2-03A-05 | Idempotence et nettoyage ciblé            | Vérifié localement R8 | par base : 52 provisionnements réussis, 43 refus déterministes à signature inchangée, 4 grant options et 1 default ACL `L` réparées ; nettoyage ciblé     |
 | GOV-S1.2-03A-06 | Dépendance, licence et audit              | CI R8 verte           | graphe inchangé ; Security R8 : audits npm complet/production à 0 vulnérabilité, 1 141 paquets, 0 non déclaré et 0 non approuvé                           |
-| GOV-S1.2-03A-07 | Périmètre et publication contrôlée        | R8 publié, Draft      | baseline technique R8 `82d1655f…`, quatre workflows R8 réussis ; PR #45 ouverte, Draft, `CLEAN/MERGEABLE`, non fusionnée                                  |
+| GOV-S1.2-03A-07 | Périmètre et publication contrôlée        | Clôturé et fusionné   | baseline technique R8 `82d1655f…` préservée ; R9 documentaire `fc3c3e75…` ; PR #45 fusionnée et fermée au merge `8e2e9252…`                               |
 | GOV-S1.2-03A-08 | Reproductibilité du client Prisma en CI   | R1 publié             | clone neuf après `npm ci` : client absent, puis génération automatique et succès indépendants de typecheck, build et 26 tests API                         |
 | GOV-S1.2-03A-09 | Identité du smoke Infrastructure          | R2 publié et vert     | migrations propriétaire ; refus propriétaire explicite ; API runtime saine ; fatal fail-fast neutralisé ; quatre workflows R2 réussis                     |
 | GOV-S1.2-03A-10 | Schémas non système                       | R4 vérifié localement | propriété exhaustive, `PUBLIC CREATE`, privilèges objets/colonnes/séquences/routines/types et default ACL tiers isolément refusés sur deux bases          |
@@ -180,6 +184,8 @@ merge `main` `95bdfcf30a14e05ae90b09150cf289e1e0343c0d`.
 | GOV-S1.2-03A-15 | Rôle de réplication effectif              | Vérifié localement R8 | `origin` exigé sur la connexion Prisma ; réglages base, rôle et rôle/base hérités par une nouvelle connexion isolément refusés sans mutation              |
 | GOV-S1.2-03A-16 | ACL des catalogues large-object           | Vérifié localement R8 | droits relation/colonne directs, `PUBLIC`, hérités et redélégables refusés ; visibilité standard des métadonnées admise, chunks non lisibles              |
 | GOV-S1.2-03A-17 | Défauts cluster masqués                   | Vérifié localement R8 | overrides propriétaire rôle et rôle/base refusés pour les deux paramètres ; valeur dangereuse prouvée sur une nouvelle connexion runtime, sans mutation   |
+| GOV-S1.2-03A-18 | Workflows post-fusion                     | Vérifié post-fusion   | `push/main`, tous `completed/success` : Infrastructure `36278873811`, Launcher Windows `36278873882`, Security `36278873863`, Quality Linux `36278873968` |
+| GOV-S1.2-03A-19 | Distribution et lot suivant               | Vérifié post-fusion   | aucun tag, release ou déploiement ; branche et worktree S1.2-03A préservés ; S1.2-03B `Not started`, soumis à une autorisation CTO séparée                |
 
 Le [rapport S1.2-03A](SLICE_1_2_03A_POSTGRESQL_RUNTIME_BOUNDARY_REPORT.md)
 porte le détail reproductible. Les fonctionnalités métier S1.2-03B+ restent
@@ -298,10 +304,30 @@ fichiers et `+1374/-68`. Infrastructure `36260566060`, Launcher Windows
 est de 9 commits, 31 fichiers et `+7076/-201`.
 
 La revue CTO finale post-R8 conclut GO pour architecture/données et pour
-sécurité/intégrité PostgreSQL. La baseline technique S1.2-03A publiée reste R8 ;
-les éventuels commits documentaires ultérieurs ne la modifient pas et le head
-courant de la PR reste vérifiable dans GitHub. La PR #45 demeure ouverte,
-Draft, `CLEAN/MERGEABLE` et non fusionnée ; S1.2-03B reste `Not started`.
+sécurité/intégrité PostgreSQL. Dans cet état historique, la PR #45 demeurait
+ouverte, Draft, `CLEAN/MERGEABLE` et non fusionnée. La baseline technique
+S1.2-03A publiée reste R8.
+
+R9 a ensuite publié les six documents réconciliés au commit
+`fc3c3e75f4b7eed3f879bd47fc7fdd2765eb1e66`, parent direct de R8. Les workflows
+`pull_request` R9 Infrastructure `36277785889`, Launcher Windows `36277785803`,
+Security `36277785832` et Quality Linux `36277785782` ont tous conclu
+`completed/success`.
+
+La PR #45, totalisant 10 commits et 31 fichiers, est désormais fusionnée et
+fermée dans `main` au merge `8e2e9252a0ac6faa1a7aa44e08e82e07317f4d86`,
+arbre `d1ccbc5587f136baf2247a4055544477ec344555`, avec les parents ordonnés
+`95bdfcf30a14e05ae90b09150cf289e1e0343c0d` puis
+`fc3c3e75f4b7eed3f879bd47fc7fdd2765eb1e66`. Les quatre workflows post-fusion
+`push/main` Infrastructure `36278873811`, Launcher Windows `36278873882`,
+Security `36278873863` et Quality Linux `36278873968` ont tous conclu
+`completed/success` sur ce merge. Aucun tag, release ou déploiement n’a été
+créé ; la branche et le worktree S1.2-03A sont préservés.
+
+S1.2-03A est entièrement clôturé sans nouvelle promesse runtime. La présente
+réconciliation documentaire consigne les preuves post-fusion ; son état de
+publication est vérifiable dans GitHub et ne modifie pas la baseline technique
+S1.2-03A. S1.2-03B reste `Not started` et exige une autorisation CTO séparée.
 
 ## Contrôles de gouvernance de Sprint 0.1
 

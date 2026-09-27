@@ -1,8 +1,8 @@
 # S1.2-03A — PostgreSQL Least-Privilege Runtime Boundary & Prisma Adapter
 
 Date initiale : 2026-09-16
-Dernère réconciliation : 2026-09-26
-État : **DRAFT PR #45 OUVERTE — BASELINE TECHNIQUE R8 PUBLIÉE — QUATRE WORKFLOWS R8 RÉUSSIS — CLEAN/MERGEABLE — NON FUSIONNÉ**
+Dernière réconciliation : 2026-09-27
+État : **S1.2-03A CLÔTURÉ ET FUSIONNÉ — PR #45 MERGED/CLOSED — BASELINE TECHNIQUE R8 PRÉSERVÉE — WORKFLOWS POST-FUSION RÉUSSIS**
 
 ## Baseline et autorisation
 
@@ -20,6 +20,10 @@ tous `completed/success` : Infrastructure `35082285457`, Launcher Windows
 Le travail local est isolé sur la branche
 `feat/s1-2-03a-postgresql-runtime-boundary` et un worktree dédié. Les anciens
 worktrees ne sont ni réutilisés ni modifiés.
+
+Dans la chronologie R0 à R9 ci-dessous, les mentions `Draft`, ouverte ou non
+fusionnée sont des instantanés historiques rattachés au head cité ; elles ne
+décrivent pas l’état courant après la clôture post-fusion.
 
 ## Publication Draft, échecs R0/R1 historiques et R2 publié
 
@@ -747,11 +751,39 @@ tous deux à zéro vulnérabilité, puis l’inventaire de licences de 1 141 paq
 avec zéro non déclaré et zéro non approuvé. Ces preuves CI sont distinctes des
 audits et licences non rejoués localement pendant la validation R8.
 
-Le cumul GitHub observé après R8 est de 9 commits, 31 fichiers et
-`+7076/-201`. La revue CTO finale post-R8 conclut **GO** sur les axes
-architecture/données et sécurité/intégrité PostgreSQL. La PR #45 demeure
-ouverte, Draft, `CLEAN/MERGEABLE` et non fusionnée.
+Le cumul GitHub observé après R8 était de 9 commits, 31 fichiers et
+`+7076/-201`. La revue CTO finale post-R8 a conclu **GO** sur les axes
+architecture/données et sécurité/intégrité PostgreSQL. Dans cet état
+historique, la PR #45 demeurait ouverte, Draft, `CLEAN/MERGEABLE` et non
+fusionnée. La baseline technique S1.2-03A publiée reste R8.
 
-La baseline technique S1.2-03A publiée est R8. Les éventuels commits
-documentaires ultérieurs ne modifient pas cette baseline technique ; le head
-courant de la PR reste vérifiable dans GitHub. S1.2-03B reste `Not started`.
+## Publication R9 et clôture post-fusion
+
+R9 a ensuite publié la réconciliation documentaire au commit
+`fc3c3e75f4b7eed3f879bd47fc7fdd2765eb1e66`, parent direct de R8, arbre
+`d1ccbc5587f136baf2247a4055544477ec344555`, message
+`docs(governance): reconcile S1.2-03A R8 publication evidence`, avec six
+documents et `+161/-53`. Les workflows `pull_request` Infrastructure
+`36277785889`, Launcher Windows `36277785803`, Security `36277785832` et
+Quality Linux `36277785782` ont tous conclu `completed/success` sur ce head
+exact.
+
+La PR #45, totalisant 10 commits, 31 fichiers et `+7185/-202`, est fusionnée et
+fermée dans `main` au merge `8e2e9252a0ac6faa1a7aa44e08e82e07317f4d86`.
+Son arbre est `d1ccbc5587f136baf2247a4055544477ec344555` et ses parents ordonnés sont :
+
+1. `95bdfcf30a14e05ae90b09150cf289e1e0343c0d` ;
+2. `fc3c3e75f4b7eed3f879bd47fc7fdd2765eb1e66`.
+
+Les workflows post-fusion `push/main` Infrastructure `36278873811`, Launcher
+Windows `36278873882`, Security `36278873863` et Quality Linux `36278873968`
+ont tous conclu `completed/success` sur ce merge exact. Aucun tag, release ou
+déploiement n’a été créé. La branche et le worktree S1.2-03A restent préservés.
+
+S1.2-03A est entièrement clôturé. Cette clôture documentaire ne modifie ni la
+baseline technique R8 ni la frontière PostgreSQL validée et n’ajoute aucun
+endpoint, service métier, worker, seed, interface, média ou paiement.
+S1.2-03B reste `Not started` et son démarrage exige une autorisation CTO
+séparée. La présente réconciliation documentaire consigne les preuves
+post-fusion. Son état de publication est vérifiable dans GitHub et ne modifie
+pas la baseline technique S1.2-03A.

@@ -10,26 +10,26 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 
 ## État des gates et lots
 
-| Gate ou lot         | Objectif                                      | Statut                                                             |
-| ------------------- | --------------------------------------------- | ------------------------------------------------------------------ |
-| Gate 0              | Sources approuvées et readiness clean room    | Completed                                                          |
-| Lot 00              | Preflight read-only                           | Completed                                                          |
-| Lot 00B             | Remédiation documentaire                      | Completed                                                          |
-| Lot 00C             | Canonicalisation AdminLTE                     | Completed                                                          |
-| S0.1                | Gouvernance et Git                            | Completed                                                          |
-| S0.2                | Contrat monorepo et versions                  | Completed                                                          |
-| S0.3                | Fondations applicatives                       | Closed and merged                                                  |
-| S0.4                | Infrastructure locale                         | Closed and merged                                                  |
-| S0.5                | CI, sécurité et observabilité                 | Closed and merged                                                  |
-| M0.1                | Dependency Governance                         | Closed and merged                                                  |
-| M0.2                | Supply-chain Security Hotfix                  | Closed and merged                                                  |
-| S0.6                | Foundation Gate                               | Closed and merged                                                  |
-| Slice 1 / S1.1      | Contrats, données cibles et expérience audio  | Closed and merged                                                  |
-| Slice 1 / S1.2-01   | Contract & Data Readiness Gate                | Contract and data gate complete                                    |
-| Slice 1 / S1.2-02   | Baseline PostgreSQL et contraintes SQL        | Closed and merged — PR #43                                         |
-| Slice 1 / S1.2-03A  | Frontière PostgreSQL runtime en lecture seule | Draft #45 — baseline technique R8 publiée, quatre workflows verts. |
-| Slice 1 / S1.2-03B+ | Fonctionnalités runtime métier du pilote      | Not started                                                        |
-| Slices suivantes    | Fonctionnalités produit ultérieures           | Not started                                                        |
+| Gate ou lot         | Objectif                                      | Statut                     |
+| ------------------- | --------------------------------------------- | -------------------------- |
+| Gate 0              | Sources approuvées et readiness clean room    | Completed                  |
+| Lot 00              | Preflight read-only                           | Completed                  |
+| Lot 00B             | Remédiation documentaire                      | Completed                  |
+| Lot 00C             | Canonicalisation AdminLTE                     | Completed                  |
+| S0.1                | Gouvernance et Git                            | Completed                  |
+| S0.2                | Contrat monorepo et versions                  | Completed                  |
+| S0.3                | Fondations applicatives                       | Closed and merged          |
+| S0.4                | Infrastructure locale                         | Closed and merged          |
+| S0.5                | CI, sécurité et observabilité                 | Closed and merged          |
+| M0.1                | Dependency Governance                         | Closed and merged          |
+| M0.2                | Supply-chain Security Hotfix                  | Closed and merged          |
+| S0.6                | Foundation Gate                               | Closed and merged          |
+| Slice 1 / S1.1      | Contrats, données cibles et expérience audio  | Closed and merged          |
+| Slice 1 / S1.2-01   | Contract & Data Readiness Gate                | Closed and merged          |
+| Slice 1 / S1.2-02   | Baseline PostgreSQL et contraintes SQL        | Closed and merged — PR #43 |
+| Slice 1 / S1.2-03A  | Frontière PostgreSQL runtime en lecture seule | Closed and merged — PR #45 |
+| Slice 1 / S1.2-03B+ | Fonctionnalités runtime métier du pilote      | Not started                |
+| Slices suivantes    | Fonctionnalités produit ultérieures           | Not started                |
 
 ## Sprint 0 — Clean-room foundation
 
@@ -136,7 +136,7 @@ démarrait ni Slice 1 ni aucune exigence produit.
 
 ## Slice 1 — Audio purchase pilot
 
-Statut : **In progress — S1.2-02 closed — S1.2-03A Draft PR #45, technical baseline R8 published and CI green, not merged — business runtime not started**
+Statut : **In progress — S1.2-02 closed — S1.2-03A closed and merged — S1.2-03B business runtime not started**
 
 Parcours cible :
 
@@ -242,7 +242,11 @@ fusion de la PR #44 et les quatre workflows `push/main` réussis.
 
 ### S1.2-03A — PostgreSQL Least-Privilege Runtime Boundary & Prisma Adapter
 
-Statut : **Draft PR #45 open — technical baseline R8 published — four R8 workflows green — not merged**
+Statut : **Closed and merged — PR #45 — technical baseline R8 preserved — post-merge workflows green**
+
+Dans la chronologie R0 à R9 ci-dessous, les mentions `Draft`, ouverte ou non
+fusionnée sont des instantanés historiques rattachés au head cité ; elles ne
+décrivent pas l’état courant après la clôture post-fusion.
 
 L’instantané local prépublication du 2026-09-16 a été validé avant indexation,
 commit, push ou création de PR. Ces absences décrivent uniquement cet instantané
@@ -383,12 +387,33 @@ fichiers et `+1374/-68`. Infrastructure `36260566060`, Launcher Windows
 exécuté les audits npm complet et production à zéro vulnérabilité et le
 contrôle de licences sur 1 141 paquets, sans paquet non déclaré ou non approuvé.
 
-Le cumul observé après R8 est de 9 commits, 31 fichiers et `+7076/-201`. Les
-axes CTO architecture/données et sécurité/intégrité PostgreSQL concluent GO.
-La baseline technique S1.2-03A publiée reste R8 ; les éventuels commits
-documentaires ultérieurs ne la modifient pas et le head courant reste
-vérifiable dans GitHub. La PR #45 demeure ouverte, Draft, `CLEAN/MERGEABLE` et
-non fusionnée ; S1.2-03B reste `Not started`.
+Dans l’état historique observé après R8, le cumul était de 9 commits, 31
+fichiers et `+7076/-201`, et la PR #45 demeurait ouverte, Draft,
+`CLEAN/MERGEABLE` et non fusionnée. Les axes CTO architecture/données et
+sécurité/intégrité PostgreSQL concluaient GO. La baseline technique publiée
+reste R8.
+
+R9 a ensuite publié la réconciliation documentaire au commit
+`fc3c3e75f4b7eed3f879bd47fc7fdd2765eb1e66`, parent direct de R8. Ses workflows
+`pull_request` Infrastructure `36277785889`, Launcher Windows `36277785803`,
+Security `36277785832` et Quality Linux `36277785782` ont tous conclu
+`completed/success` sur ce head exact.
+
+La PR #45 est désormais fusionnée et fermée dans `main` au merge
+`8e2e9252a0ac6faa1a7aa44e08e82e07317f4d86`, arbre
+`d1ccbc5587f136baf2247a4055544477ec344555`, avec les parents ordonnés
+`95bdfcf30a14e05ae90b09150cf289e1e0343c0d` puis
+`fc3c3e75f4b7eed3f879bd47fc7fdd2765eb1e66`. Les 10 commits et 31 fichiers de
+la PR sont préservés. Les workflows post-fusion `push/main` Infrastructure
+`36278873811`, Launcher Windows `36278873882`, Security `36278873863` et
+Quality Linux `36278873968` ont tous conclu `completed/success` sur ce merge.
+Aucun tag, release ou déploiement n’a été créé ; la branche et le worktree
+S1.2-03A sont préservés.
+
+S1.2-03A est entièrement clôturé. La présente réconciliation documentaire
+consigne les preuves post-fusion ; son état de publication est vérifiable dans
+GitHub et ne modifie pas la baseline technique S1.2-03A. S1.2-03B reste
+`Not started` et exige une autorisation CTO séparée.
 
 Périmètre validé dans cet instantané historique :
 
