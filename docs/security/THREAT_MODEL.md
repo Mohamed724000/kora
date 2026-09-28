@@ -2,8 +2,8 @@
 
 Périmètre durable couvert : **BASELINE + S0.4/S0.5/M0.1/M0.2/S0.6 ET M0.3
 FUSIONNÉS ET CLÔTURÉS + S1.1 FERMÉ + CONTRACT & DATA READINESS S1.2-01 +
-S1.2-02 CLÔTURÉ ET FUSIONNÉ + BASELINE TECHNIQUE S1.2-03A-R8 PUBLIÉE DANS LA
-DRAFT PR #45**.
+S1.2-02 CLÔTURÉ ET FUSIONNÉ + S1.2-03A CLÔTURÉ ET FUSIONNÉ, BASELINE
+TECHNIQUE R8 PRÉSERVÉE**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
 commit, push ou changement GitHub S1.1 n’avait encore été effectué : il s’agit
@@ -502,6 +502,10 @@ S1.2-03A depuis `main` au merge
 
 ## Frontière PostgreSQL runtime S1.2-03A
 
+Dans la chronologie R0 à R9 de cette section, les mentions `Draft`, ouverte ou
+non fusionnée sont des instantanés historiques rattachés au head cité ; elles
+ne décrivent pas l’état courant après la clôture post-fusion.
+
 S1.2-03A réduit l’impact d’une compromission de l’API en séparant le compte
 propriétaire/migrateur du rôle utilisé par le processus NestJS. Le rôle runtime
 est exclusivement lecteur : `CONNECT` sur la base, `USAGE` sur `public` et
@@ -669,12 +673,36 @@ fichiers et `+1374/-68`. Infrastructure `36260566060`, Launcher Windows
 audits npm complet et production à zéro vulnérabilité et l’inventaire de 1 141
 paquets, avec zéro non déclaré et zéro non approuvé.
 
-Le cumul observé après R8 est de 9 commits, 31 fichiers et `+7076/-201`. Les
-axes CTO architecture/données et sécurité/intégrité PostgreSQL concluent GO.
-La baseline technique S1.2-03A publiée reste R8 ; les éventuels commits
-documentaires ultérieurs ne la modifient pas et le head courant reste
-vérifiable dans GitHub. La PR #45 demeure ouverte, Draft, `CLEAN/MERGEABLE` et
-non fusionnée ; S1.2-03B reste `Not started`.
+Le cumul observé après R8 était de 9 commits, 31 fichiers et `+7076/-201`. Les
+axes CTO architecture/données et sécurité/intégrité PostgreSQL concluaient GO.
+Dans cet état historique, la PR #45 demeurait ouverte, Draft,
+`CLEAN/MERGEABLE` et non fusionnée. La baseline technique S1.2-03A publiée
+reste R8.
+
+### Clôture post-fusion S1.2-03A
+
+Le commit documentaire R9 `fc3c3e75f4b7eed3f879bd47fc7fdd2765eb1e66`,
+parent direct de R8, a réconcilié les preuves sans modifier la frontière
+technique. Ses workflows `pull_request` Infrastructure `36277785889`, Launcher
+Windows `36277785803`, Security `36277785832` et Quality Linux `36277785782`
+ont tous conclu `completed/success`.
+
+La PR #45 est fusionnée et fermée dans `main` au merge
+`8e2e9252a0ac6faa1a7aa44e08e82e07317f4d86`, arbre
+`d1ccbc5587f136baf2247a4055544477ec344555`, parents ordonnés
+`95bdfcf30a14e05ae90b09150cf289e1e0343c0d` puis
+`fc3c3e75f4b7eed3f879bd47fc7fdd2765eb1e66`. Les 10 commits et 31 fichiers de
+la PR sont préservés. Les workflows post-fusion `push/main` Infrastructure
+`36278873811`, Launcher Windows `36278873882`, Security `36278873863` et
+Quality Linux `36278873968` ont tous conclu `completed/success` sur ce merge.
+Aucun tag, release ou déploiement n’a été créé ; la branche et le worktree
+S1.2-03A sont préservés.
+
+S1.2-03A est entièrement clôturé, sans élargissement de la frontière de lecture
+ni nouvelle promesse runtime. S1.2-03B reste `Not started` et exige une
+autorisation CTO séparée. La présente réconciliation documentaire consigne les
+preuves post-fusion. Son état de publication est vérifiable dans GitHub et ne
+modifie pas la baseline technique S1.2-03A.
 
 Le pool `pg` est détenu par le client Prisma 7.9.1 via
 `@prisma/adapter-pg` 7.9.1 ; la readiness réutilise ce même chemin. Les erreurs

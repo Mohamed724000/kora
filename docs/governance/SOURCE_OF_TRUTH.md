@@ -1,9 +1,9 @@
 # KORA+ Final — Source de vérité
 
-Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A EN DRAFT PR #45 — BASELINE TECHNIQUE R8 PUBLIÉE ET CI VERTE — NON FUSIONNÉ**
+Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A CLÔTURÉ ET FUSIONNÉ — S1.2-03B NOT STARTED**
 
 Date d’effet : 2026-07-28
-Dernère réconciliation documentaire : 2026-09-26
+Dernière réconciliation documentaire : 2026-09-27
 
 ## Hiérarchie normative
 
@@ -117,6 +117,11 @@ depuis ce merge dans une branche et un worktree dédiés. L’état observé dan
 l’instantané prépublication R5 du 2026-09-18 est **Draft PR #45 ouverte ; R4
 publié ; Infrastructure R4 en échec ; trois autres workflows R4 réussis ;
 correctif R5 validé localement ; non fusionné**.
+
+Dans toute la chronologie R0 à R9 ci-dessous, les mentions `Draft`, ouverte ou
+non fusionnée décrivent exclusivement l’instantané historique du head nommé ;
+elles ne décrivent pas l’état courant après la clôture post-fusion.
+
 L’instantané local prépublication du 2026-09-16 a été établi alors que les 26
 fichiers étaient non indexés, non commités et non publiés ; cette formulation
 reste une preuve historique datée. Le lot sépare le compte
@@ -326,7 +331,28 @@ sécurité/intégrité PostgreSQL. Le workflow Security R8 a exécuté les audit
 complet et production à zéro vulnérabilité ainsi que l’inventaire de licences :
 1 141 paquets installés, aucun non déclaré et aucun non approuvé.
 
-La baseline technique S1.2-03A publiée est R8. Les éventuels commits
-documentaires ultérieurs ne modifient pas cette baseline technique ; le head
-courant de la PR reste vérifiable dans GitHub. La PR demeure Draft et non
-fusionnée ; S1.2-03B reste **Not started**.
+Au head R8, la baseline technique S1.2-03A publiée était R8 et la PR demeurait
+Draft et non fusionnée. Le commit documentaire R9
+`fc3c3e75f4b7eed3f879bd47fc7fdd2765eb1e66`, parent direct de R8, a ensuite
+réconcilié les preuves de publication sans modifier cette baseline technique.
+Les workflows `pull_request` R9 Infrastructure `36277785889`, Launcher Windows
+`36277785803`, Security `36277785832` et Quality Linux `36277785782` ont tous
+conclu `completed/success` sur ce head exact.
+
+La PR #45 est désormais fusionnée et fermée dans `main` au merge
+`8e2e9252a0ac6faa1a7aa44e08e82e07317f4d86`, arbre
+`d1ccbc5587f136baf2247a4055544477ec344555`, avec les parents ordonnés
+`95bdfcf30a14e05ae90b09150cf289e1e0343c0d` puis
+`fc3c3e75f4b7eed3f879bd47fc7fdd2765eb1e66`. Ses 10 commits et 31 fichiers
+sont préservés. Les workflows post-fusion `push/main` Infrastructure
+`36278873811`, Launcher Windows `36278873882`, Security `36278873863` et
+Quality Linux `36278873968` ont tous conclu `completed/success` sur ce merge
+exact. Aucun tag, release ou déploiement n’accompagne cette clôture ; la branche
+et le worktree S1.2-03A sont préservés.
+
+S1.2-03A est entièrement clôturé. Cette clôture n’ajoute aucun endpoint,
+service métier, worker, seed, interface, média ou paiement et n’élargit pas le
+rôle runtime de lecture. S1.2-03B reste **Not started** et requiert une
+autorisation CTO séparée. La présente réconciliation documentaire consigne les
+preuves post-fusion. Son état de publication est vérifiable dans GitHub et ne
+modifie pas la baseline technique S1.2-03A.
