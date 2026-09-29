@@ -24,6 +24,35 @@ function schemaType(schema) {
   if (schema?.$ref) {
     return schema.$ref.split("/").at(-1);
   }
+  if (Array.isArray(schema?.oneOf)) {
+    const { oneOf, ...baseSchema } = schema;
+    const hasBaseShape =
+      baseSchema.type !== undefined ||
+      baseSchema.properties !== undefined ||
+      baseSchema.allOf !== undefined;
+    const inheritedRequired = new Set(baseSchema.required ?? []);
+    return oneOf
+      .map((branch) => {
+        const branchRequired = new Set(branch.required ?? []);
+        const branchPropertyNames = new Set([
+          ...Object.keys(branch.properties ?? {}),
+          ...(branch.oneOf ?? []).flatMap((nestedBranch) =>
+            Object.keys(nestedBranch.properties ?? {}),
+          ),
+        ]);
+        for (const property of branchPropertyNames) {
+          if (inheritedRequired.has(property)) branchRequired.add(property);
+        }
+        const normalizedBranch =
+          branchRequired.size > 0
+            ? { ...branch, required: [...branchRequired] }
+            : branch;
+        return hasBaseShape
+          ? `(${schemaType(baseSchema)} & (${schemaType(normalizedBranch)}))`
+          : schemaType(normalizedBranch);
+      })
+      .join(" | ");
+  }
   if (schema?.const !== undefined) {
     return JSON.stringify(schema.const);
   }
@@ -65,21 +94,166 @@ function schemaType(schema) {
   if (schema?.type === "string") {
     return "string";
   }
+  if (schema?.type === "null") {
+    return "null";
+  }
   return "unknown";
+}
+
+const HTTP_METHODS = new Set([
+  "delete",
+  "get",
+  "head",
+  "options",
+  "patch",
+  "post",
+  "put",
+  "trace",
+]);
+
+function resolveLocalReference(document, value) {
+  if (typeof value?.$ref !== "string") return value;
+  return value.$ref
+    .slice(2)
+    .split("/")
+    .reduce(
+      (current, segment) =>
+        current?.[segment.replaceAll("~1", "/").replaceAll("~0", "~")],
+      document,
+    );
+}
+
+function referencedSchemaName(schema) {
+  return typeof schema?.$ref === "string"
+    ? schema.$ref.split("/").at(-1)
+    : null;
+}
+
+export function buildAdminSecurityOperations(document) {
+  const operations = [];
+  for (const [path, pathItem] of Object.entries(document.paths ?? {})) {
+    for (const [method, operation] of Object.entries(pathItem)) {
+      if (
+        !HTTP_METHODS.has(method) ||
+        operation?.["x-kora-clients"]?.includes("admin-security") !== true
+      ) {
+        continue;
+      }
+      const successEntries = Object.entries(operation.responses ?? {}).filter(
+        ([status]) => /^2\d\d$/.test(status),
+      );
+      const [successStatus, successValue] = successEntries[0] ?? [null, null];
+      const success = resolveLocalReference(document, successValue);
+      const successMediaTypes = Object.keys(success?.content ?? {});
+      const successMediaType = successMediaTypes[0] ?? null;
+      const successSchema = successMediaType
+        ? success.content[successMediaType]?.schema
+        : null;
+      const requestMediaTypes = Object.keys(
+        operation.requestBody?.content ?? {},
+      );
+      const requestMediaType = requestMediaTypes[0] ?? null;
+      const requestSchema = requestMediaType
+        ? operation.requestBody.content[requestMediaType]?.schema
+        : null;
+      const securityRequirement = operation.security?.[0] ?? {};
+      const securityHeaders = Object.keys(securityRequirement).map(
+        (schemeName) => {
+          const scheme =
+            document.components?.securitySchemes?.[schemeName] ?? {};
+          return {
+            scheme: schemeName,
+            in: scheme.type === "http" ? "header" : (scheme.in ?? null),
+            name:
+              scheme.type === "http" ? "Authorization" : (scheme.name ?? null),
+            required: true,
+          };
+        },
+      );
+      const resolvedParameters = (operation.parameters ?? []).map((entry) =>
+        resolveLocalReference(document, entry),
+      );
+      const parameterHeaders = resolvedParameters
+        .filter((entry) => entry?.in === "header")
+        .map((entry) => ({
+          scheme: null,
+          in: "header",
+          name: entry.name,
+          required: entry.required === true,
+        }));
+      const queryParameters = resolvedParameters
+        .filter((entry) => entry?.in === "query")
+        .map((entry) => ({
+          name: entry.name,
+          required: entry.required === true,
+          schema:
+            referencedSchemaName(entry.schema) ?? entry.schema?.type ?? null,
+          format: entry.schema?.format ?? null,
+        }));
+      operations.push({
+        path,
+        method: method.toUpperCase(),
+        operationId: operation.operationId,
+        deliverySlice: operation["x-kora-delivery-slice"],
+        authorizationClass: operation["x-kora-auth-class"],
+        securityRequirement: Object.keys(securityRequirement),
+        roles: operation["x-kora-roles"] ?? [],
+        stepUpRequired: operation["x-kora-step-up-required"] === true,
+        auditSink: operation["x-kora-audit-sink"],
+        failureAuditSink:
+          document["x-kora-admin-failure-audit-sinks"]?.[
+            operation.operationId
+          ] ?? null,
+        rateLimitProfile: operation["x-kora-rate-limit-profile"] ?? null,
+        fetchMetadataPolicy: operation["x-kora-fetch-metadata-policy"] ?? null,
+        publicFailureTiming:
+          document["x-kora-admin-public-failure-timing"]?.[
+            operation.operationId
+          ] ?? null,
+        signedManifest: operation["x-kora-signed-manifest"] ?? null,
+        idempotency: {
+          required: operation["x-kora-idempotent"] === true,
+          replay: operation["x-kora-idempotent-replay"] ?? null,
+        },
+        request: requestMediaType
+          ? {
+              mediaType: requestMediaType,
+              schema: referencedSchemaName(requestSchema),
+            }
+          : null,
+        requestHeaders: [...securityHeaders, ...parameterHeaders],
+        queryParameters,
+        response: {
+          status: successStatus,
+          mediaType: successMediaType,
+          schema:
+            referencedSchemaName(successSchema) ??
+            (successSchema?.format === "binary" ? "binary" : null),
+          headers: Object.keys(success?.headers ?? {}),
+        },
+      });
+    }
+  }
+  return operations;
 }
 
 export function buildContractTypes(document) {
   const paths = Object.keys(document.paths);
   const schemas = Object.entries(document.components?.schemas ?? {});
+  const adminSecurityOperations = buildAdminSecurityOperations(document);
   const lines = [
     "// Generated from docs/api/openapi.yaml by scripts/openapi/generate-contract-types.mjs.",
-    "// Do not edit by hand. Runtime clients are intentionally outside S1.2-01.",
+    "// Do not edit by hand. Runtime clients are intentionally outside S1.2-03B.",
     "",
     "export const audioPilotPaths = [",
     ...paths.map((path) => `  ${JSON.stringify(path)},`),
     "] as const;",
     "",
     "export type AudioPilotPath = (typeof audioPilotPaths)[number];",
+    "",
+    `export const adminSecurityOperations = ${JSON.stringify(adminSecurityOperations, null, 2)} as const;`,
+    "",
+    "export type AdminSecurityOperation = (typeof adminSecurityOperations)[number];",
     "",
   ];
 
@@ -155,7 +329,7 @@ export function normalizeContractSyntax(source) {
 }
 
 export async function loadExactPrettier({
-  importPrettier = () => import("prettier"),
+  importPrettier = () => Promise.resolve(require("prettier")),
   readPackageJson = () =>
     JSON.parse(readFileSync(require.resolve("prettier/package.json"), "utf8")),
 } = {}) {

@@ -560,3 +560,37 @@ technique S1.2-03A. Aucun SHA, Run ID ou numéro de PR futur n’est anticipé.
   produit les preuves.
 - **Réservée PO** : aucune valeur ou identité n’est inventée pour contourner
   l’absence d’une décision.
+
+## 2026-09-28 — S1.2-03B Admin Security Contract Gate
+
+Qualification : **instantané historique prépublication du 2026-09-29**.
+
+- Autorité : mandat Product Owner/CTO explicite de la session.
+- Décision : accepter ADR-025 et verrouiller 60 chemins / 67 opérations, dont
+  12 opérations C1 et 15 opérations C2.
+- Portée : OpenAPI, génération TypeScript, validateur/tests et documents vivants.
+- Correction historique autorisée : retirer `SUPPORT` de cinq lectures
+  Artist/Audio/Media ; aucune autre opération antérieure n'est modifiée.
+- Réconciliation ADR-004/019/025 : filtres administrateur/action/entité/date,
+  preuve entité/avant-après masqués/corrélation, XOR d'acteur strict et sink
+  explicite de succès et d'échec par opération. Les événements sans contexte
+  prouvé utilisent `AdminSecurityEvent`; aucun faux `AuditLog` n'est créé. Un
+  `SYSTEM` autonome n'invente ni causalité ni délégant ; les deux sont requis
+  ensemble pour un traitement délégué.
+- Export : le ZIP masque les PII et contient un manifeste RFC 8785 JCS signé
+  par JWS détaché Ed25519. Il couvre bijectivement les seules entrées payload à
+  chemins sûrs, exclut manifeste/signature de leur propre couverture et refuse
+  manque, surplus ou doublon ; la clé vient du trust bundle avec rotation
+  chevauchante. Le transport reste bearer + step-up, sans URL signée.
+- Recovery : l'annulation sans 28e opération est une transition serveur
+  auditée lors d'un remplacement ou d'une inéligibilité ; reset et invitation
+  imposent aussi le timing public comparable.
+- Sécurité : `X-Kora-CSRF`, Fetch Metadata au login, réponses sensibles
+  `no-store`, profils de rate limit distincts et paramètres TOTP/chiffrement
+  déterministes sont verrouillés.
+- Séquencement : les deltas Prisma/SQL sont des prérequis des runtimes C1/C2 ;
+  C3 est l'interface d'authentification Admin. Le bootstrap CLI one-shot reste
+  hors OpenAPI et différé à C2.
+- Hors portée : runtime, contrôleur, service, worker, Prisma, migration, seed,
+  interface, dépendance, commit, push, PR, merge, tag, release et déploiement.
+- Suite : décision CTO distincte avant toute publication Git ou S1.2-03C.

@@ -1,9 +1,9 @@
 # KORA+ Final — Source de vérité
 
-Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A CLÔTURÉ ET FUSIONNÉ — S1.2-03B NOT STARTED**
+Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A CLÔTURÉ ET FUSIONNÉ — S1.2-03B : INSTANTANÉ HISTORIQUE PRÉPUBLICATION DU 2026-09-29, VALIDÉ LOCALEMENT**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-09-27
+Dernière réconciliation documentaire : 2026-09-28
 
 ## Hiérarchie normative
 
@@ -45,11 +45,19 @@ non autorisé est historique, même s’il contient des impératifs.
 - **Benchmark** : informe l’ergonomie, sans droit de copie.
 - **Archive historique** : conservée pour traçabilité, non exécutable.
 
-Les 24 ADR actifs se trouvent actuellement dans le Resolution Pack immuable.
-Aucun ADR-025 n’est créé par S1.2-01 ou S1.2-02. Le contrat
-[OpenAPI](../api/openapi.yaml) et le modèle cible
-[Prisma](../../apps/api/prisma/schema.prisma), introduits par S1.1 puis
-renforcés par le gate S1.2-01, sont les contrats techniques canoniques présents.
+Les ADR-001 à ADR-024 actifs restent dans le Resolution Pack immuable sous
+`docs/source-material/originals/` et ne sont jamais recopiés ni modifiés. Les
+décisions postérieures au pack sont créées sous [`docs/adr/`](../adr/), à
+commencer par
+[ADR-025](../adr/ADR-025-admin-auth-session-audit-contexts.md). Cette séparation
+préserve l'immuabilité des sources tout en autorisant des décisions nouvelles,
+datées et traçables.
+
+Le contrat [OpenAPI](../api/openapi.yaml), le modèle cible
+[Prisma](../../apps/api/prisma/schema.prisma) et les types générés sont les
+contrats techniques canoniques présents. S1.2-03B étend uniquement OpenAPI et
+les types ; Prisma et les migrations restent inchangés jusqu'à une autorisation
+runtime distincte.
 S1.2-02 matérialise le schéma Prisma par des migrations PostgreSQL versionnées et
 des contraintes SQL ; il ne constitue toujours pas un runtime métier.
 
@@ -352,7 +360,23 @@ et le worktree S1.2-03A sont préservés.
 
 S1.2-03A est entièrement clôturé. Cette clôture n’ajoute aucun endpoint,
 service métier, worker, seed, interface, média ou paiement et n’élargit pas le
-rôle runtime de lecture. S1.2-03B reste **Not started** et requiert une
-autorisation CTO séparée. La présente réconciliation documentaire consigne les
+rôle runtime de lecture. À cette clôture historique, S1.2-03B restait **Not
+started** et requérait une autorisation CTO séparée. La présente réconciliation documentaire consigne les
 preuves post-fusion. Son état de publication est vérifiable dans GitHub et ne
 modifie pas la baseline technique S1.2-03A.
+
+## État contractuel S1.2-03B
+
+Dans l’instantané historique prépublication du 2026-09-29, S1.2-03B est une
+décision contractuelle locale : 60 chemins et 67 opérations
+OpenAPI sont verrouillés, dont 27 opérations Admin Security réparties entre
+S1.2-03C1 et S1.2-03C2. ADR-025 et le rapport de gate en sont les preuves
+vivantes. Aucun runtime, schéma Prisma, migration ou interface n'est déclaré
+commencé. À la date de cet instantané, toute publication Git et toute ouverture
+de S1.2-03C exigeaient une décision CTO distincte.
+
+Le contrat rétablit les filtres et la preuve ADR-004/019, distingue
+`AdminSecurityEvent` avant contexte prouvé de l'`AuditLog` transactionnel, et
+génère l'XOR strict `ADMIN_SESSION | ADMIN_RECOVERY | SYSTEM`. Les migrations et
+contraintes nécessaires sont des prérequis des runtimes C1/C2 ; C3 reste
+exclusivement l'interface d'authentification Admin et demeure `Not started`.

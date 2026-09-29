@@ -2,10 +2,10 @@
   "openapi": "3.1.0",
   "info": {
     "title": "KORA+ Audio Pilot API",
-    "version": "1.2.0",
-    "description": "S1.2-01 contract and data readiness target for the global MVP audio catalog. No runtime implementation, migration, provider call, seed media or private media location is supplied by this contract."
+    "version": "1.2.1",
+    "description": "S1.2-03B contract-only Admin Security gate layered on the immutable S1.2-01 surface. No runtime implementation, migration, provider call, seed media or private media location is supplied by this contract."
   },
-  "x-kora-scope": "S1.2_01_AUDIO_CATALOG_CONTRACT_DATA_READINESS_GATE",
+  "x-kora-scope": "S1.2_03B_ADMIN_SECURITY_CONTRACT_GATE",
   "x-kora-authentication-policy": {
     "primaryFlow": "PHONE_PASSWORD_THEN_OTP",
     "registrationOperation": "registerCustomer",
@@ -20,21 +20,182 @@
   },
   "x-kora-admin-auth-data-policy": {
     "totpStandard": "RFC6238",
+    "totpAlgorithm": "HMAC-SHA-256",
+    "totpDigits": 6,
+    "totpPeriodSeconds": 30,
+    "totpAcceptedPastSteps": 1,
+    "totpAcceptedFutureSteps": 1,
+    "totpReplayWithinAcceptedWindow": "REJECT",
+    "totpSecretEntropyBits": 256,
     "totpSecretAtRest": "ENCRYPTED",
+    "totpSecretEncryption": "AES-256-GCM_ENVELOPE_ENCRYPTION_EXTERNAL_KEY_MANAGER",
+    "totpSecretEncryptionAad": "ADMIN_USER_ID_AND_TOTP_PURPOSE",
+    "totpSecretKeyRotation": "VERSIONED_KEY_DECRYPT_OLD_REENCRYPT_ON_USE_INTERNAL_KID_ONLY",
     "totpRequiredEveryLogin": true,
     "totpEnrollmentRequiredBeforeProtectedAccess": true,
     "recoveryCodeCount": 10,
     "recoveryCodeStorage": "ARGON2ID_HASH_SINGLE_USE",
     "recoveryAndResetAudited": true,
     "accessTokenLifetimeMinutes": 15,
+    "accessTokenAlgorithm": "RS256",
+    "accessTokenPublicHeaderFields": ["alg", "kid", "typ"],
     "refreshTokenUse": "SINGLE_USE_ROTATING",
     "refreshReplayResponse": "REVOKE_SESSION_FAMILY",
+    "refreshTokenEntropyBits": 256,
     "refreshCookieHttpOnly": true,
     "refreshCookieSecure": true,
-    "refreshCookieSameSiteRequired": true,
+    "refreshCookieSameSite": "Strict",
+    "refreshCookieHostOnly": true,
     "localStorageForbidden": true,
+    "preAuthenticationLifetimeMinutes": 10,
+    "totpEnrollmentLifetimeMinutes": 10,
+    "mfaRecoveryContextLifetimeMinutes": 10,
+    "passwordResetLifetimeMinutes": 15,
+    "invitationLifetimeHours": 24,
     "inactivityWindowHours": 8,
-    "sensitiveActionTotpFreshnessMinutes": 5
+    "absoluteWindowHours": 12,
+    "sensitiveActionTotpFreshnessMinutes": 5,
+    "maximumActiveSessionFamilies": 3,
+    "recoveryCodeSelector": "PUBLIC_RANDOM_SELECTOR",
+    "recoveryCodeVerifierEntropyBits": 128,
+    "recoveryCodeAlphabet": "NON_AMBIGUOUS",
+    "recoveryCodeArgon2id": {
+      "memoryKiB": 65536,
+      "iterations": 3,
+      "parallelism": 1
+    },
+    "adminPasswordStorage": "ARGON2ID_64MIB_T3_P1_UNIQUE_SALT_VERSIONED",
+    "adminPasswordNormalization": "EXACT_UTF8_NO_UNICODE_NORMALIZATION",
+    "adminPasswordCompromiseCheck": "REQUIRED_BEFORE_ACCEPTANCE",
+    "totpEncryptionKeyIdPubliclyExposed": false
+  },
+  "x-kora-admin-security-policy": {
+    "authorization": "DENY_BY_DEFAULT_SERVER_SIDE_ROLE_AND_AUTHORIZATION_VERSION",
+    "bootstrap": "ADMIN_BOOTSTRAP_CLI_ONE_SHOT_AUDITED_OUTSIDE_OPENAPI_DEFERRED_TO_C2_C1_TEST_FIXTURES_ONLY",
+    "csrfHeaderName": "X-Kora-CSRF",
+    "loginBrowserPolicy": "EXACT_ORIGIN_AND_FETCH_METADATA_REJECT_CROSS_SITE",
+    "loginFailurePolicy": "UNIFORM_401_AUTH_INVALID_CREDENTIALS_COMPARABLE_TIMING",
+    "auditContexts": ["ADMIN_SESSION", "ADMIN_RECOVERY", "SYSTEM"],
+    "auditEventClasses": ["LOGIN", "SESSION", "EXPORT", "BUSINESS"],
+    "auditContextCardinality": "EXACTLY_ONE",
+    "auditActorSubjectSeparation": true,
+    "preAuthenticationSink": "AdminSecurityEvent_FOR_SUCCESS_AND_FAILURE_WITHOUT_PROVEN_AUDIT_CONTEXT",
+    "authenticatedOrProvenMutationSink": "AuditLog_IN_SAME_TRANSACTION",
+    "failureAuditRouting": "EACH_OPERATION_ROUTES_UNPROVEN_CONTEXT_TO_ADMIN_SECURITY_EVENT_AND_PROVEN_CONTEXT_BY_EXACT_FAILURE_SINK_MAP",
+    "failureAuditWrite": "DURABLE_BEFORE_ERROR_RESPONSE_AND_ATOMIC_WITH_ANY_SECURITY_STATE_CHANGE",
+    "adminSecurityEventContract": "NO_ACTOR_IMPERSONATION_REQUEST_ID_EVENT_CLASS_OUTCOME_REASON_CODE_REDACTED_SUBJECT_DIGEST_NO_SECRET",
+    "auditRetention": "APPEND_ONLY_NO_DELETION_UNTIL_PRODUCT_LEGAL_RETENTION_DECISION",
+    "auditEvidence": "ENTITY_MASKED_BEFORE_AFTER_REQUEST_CORRELATION_CAUSATION_AND_OPTIONAL_DELEGATION",
+    "systemAuditCausality": "AUTONOMOUS_HAS_NULL_CAUSATION_AND_DELEGATOR_DELEGATED_REQUIRES_BOTH",
+    "operatorReason": { "field": "operatorReason", "errorReason": "REQUIRED" },
+    "passwordReset": "OPAQUE_CSPRNG_128_BIT_MANUAL_ENTRY_NO_URL_NO_ORACLE_REVOKE_SESSIONS_PRESERVE_TOTP_AND_RECOVERY_CODES",
+    "recoveryCodeVerification": "CONSUME_CODE_CREATE_BOUNDED_MFA_RECOVERY_CONTEXT_REVOKE_OLD_SESSIONS_NO_SESSION",
+    "assistedRecovery": "CREATOR_APPROVER_SUBJECT_DISTINCT_APPROVER_SUPER_ADMIN_STEP_UP_24H_ONE_SHOT_CANCELLABLE_ATOMIC_RESET_TO_PENDING_MFA",
+    "assistedRecoveryCancellation": "SERVER_ATOMIC_PENDING_TO_CANCELLED_WITH_AUDIT_LOG_WHEN_SUPERSEDED_OR_CREATOR_OR_SUBJECT_BECOMES_INELIGIBLE_NO_STANDALONE_ENDPOINT_IN_EXACT_27",
+    "refreshRotation": "ONE_SHOT_REPLAY_OR_RACE_LOSER_REVOKES_FAMILY_PUBLIC_AUTH_REFRESH_INVALID",
+    "bearerValidation": "ACTIVE_SESSION_ACTIVE_ACCOUNT_NOT_REVOKED_AUTHORIZATION_VERSION_CURRENT_ROLE_RELOADED",
+    "totpQrDelivery": "UNIQUE_NO_STORE_NOSNIFF_NON_LOGGABLE_NON_AUDIT_PAYLOAD_RETRY_409",
+    "invitations": "OPAQUE_SINGLE_USE_24H_EXPIRY_NO_ACCOUNT_ORACLE_PENDING_MFA_NO_SESSION_BEFORE_TOTP",
+    "publicSecretFailureTiming": "LOGIN_RESET_REQUEST_RESET_COMPLETION_AND_INVITATION_UNKNOWN_EXPIRED_CONSUMED_REVOKED_OR_ACCOUNT_STATE_USE_COMPARABLE_TIMING",
+    "auditExport": "ASYNC_STATE_MACHINE_PII_REDACTED_ZIP_WITH_SIGNED_MANIFEST_AUTHENTICATED_BINARY_CONTENT_NO_SIGNED_URL",
+    "auditExportManifest": {
+      "manifestPath": "manifest.json",
+      "signaturePath": "manifest.sig",
+      "canonicalization": "RFC8785_JCS_UTF8",
+      "digestAlgorithm": "SHA-256",
+      "signatureFormat": "JWS_COMPACT_DETACHED",
+      "signatureAlgorithm": "EdDSA",
+      "signatureCurve": "Ed25519",
+      "protectedHeader": "alg_EdDSA_kid_SIGNATURE_KEY_ID",
+      "signatureInput": "RFC8785_CANONICAL_UTF8_BYTES_OF_MANIFEST_JSON",
+      "payloadEntrySet": "EXACTLY_ALL_ZIP_ENTRIES_EXCEPT_MANIFEST_JSON_AND_MANIFEST_SIG",
+      "payloadPathPolicy": "RELATIVE_FORWARD_SLASH_NFC_NO_DOT_SEGMENTS_NO_DOT_DOT_NO_ABSOLUTE_NO_BACKSLASH_UNIQUE_CASE_SENSITIVE",
+      "coverage": "CANONICAL_MANIFEST_BINDS_EXPORT_ID_CREATED_AT_EXPIRES_AT_AND_SORTED_UNIQUE_PAYLOAD_PATH_SIZE_SHA256",
+      "rejectUnlistedEntries": true,
+      "rejectMissingEntries": true,
+      "rejectDuplicateEntries": true,
+      "verificationKeyDistribution": "ADMIN_DEPLOYMENT_TRUST_BUNDLE_BY_SIGNATURE_KEY_ID",
+      "keyRotation": "OVERLAPPING_VERIFY_OLD_KEYS_UNTIL_ALL_REFERENCED_EXPORTS_EXPIRE"
+    },
+    "rateLimitProfiles": {
+      "PASSWORD": {
+        "limit": 5,
+        "windowSeconds": 900,
+        "partition": "IP_AND_NORMALIZED_IDENTIFIER_DIGEST",
+        "backoff": "EXPONENTIAL",
+        "retryAfter": true
+      },
+      "TOTP": {
+        "limit": 5,
+        "windowSeconds": 300,
+        "partition": "IP_AND_PREAUTH_OR_SESSION_ID",
+        "backoff": "EXPONENTIAL",
+        "retryAfter": true
+      },
+      "REFRESH": {
+        "limit": 10,
+        "windowSeconds": 60,
+        "partition": "IP_AND_REFRESH_SELECTOR_DIGEST",
+        "backoff": "FIXED_WINDOW",
+        "retryAfter": true
+      },
+      "RECOVERY": {
+        "limit": 5,
+        "windowSeconds": 3600,
+        "partition": "IP_AND_RECOVERY_SELECTOR_OR_FLOW_ID",
+        "backoff": "EXPONENTIAL",
+        "retryAfter": true
+      }
+    },
+    "deliverySlices": ["S1.2-03C1", "S1.2-03C2"]
+  },
+  "x-kora-admin-failure-audit-sinks": {
+    "loginAdmin": "ADMIN_SECURITY_EVENT",
+    "createAdminTotpEnrollment": "ADMIN_SECURITY_EVENT",
+    "deliverAdminTotpEnrollmentQr": "ADMIN_SECURITY_EVENT",
+    "confirmAdminTotpEnrollment": "AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
+    "verifyAdminTotp": "AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
+    "verifyAdminRecoveryCode": "AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
+    "rotateAdminRecoveryCodes": "AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
+    "stepUpAdminSession": "AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
+    "refreshAdminSession": "AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
+    "revokeCurrentAdminSession": "AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
+    "listAdminSessions": "NONE_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
+    "revokeAdminSession": "AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
+    "requestAdminPasswordReset": "ADMIN_SECURITY_EVENT",
+    "resetAdminPassword": "AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
+    "createAdminRecoveryCase": "AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
+    "listAdminRecoveryCases": "NONE_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
+    "getAdminRecoveryCase": "NONE_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
+    "approveAdminRecoveryCase": "AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
+    "listAdminAuditLogs": "AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
+    "createAdminAuditLogExport": "AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
+    "getAdminAuditLogExport": "AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
+    "downloadAdminAuditLogExport": "AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
+    "createAdminInvitation": "AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
+    "acceptAdminInvitation": "ADMIN_SECURITY_EVENT",
+    "listAdminUsers": "NONE_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
+    "changeAdminUserRole": "AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
+    "changeAdminUserStatus": "AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT"
+  },
+  "x-kora-admin-public-failure-timing": {
+    "loginAdmin": "ACCOUNT_UNKNOWN_BAD_PASSWORD_DISABLED_OR_LOCKED_COMPARABLE",
+    "requestAdminPasswordReset": "ACCOUNT_UNKNOWN_OR_KNOWN_COMPARABLE",
+    "resetAdminPassword": "UNKNOWN_EXPIRED_CONSUMED_REVOKED_OR_ACCOUNT_STATE_COMPARABLE",
+    "acceptAdminInvitation": "UNKNOWN_EXPIRED_CONSUMED_REVOKED_OR_ACCOUNT_STATE_COMPARABLE"
+  },
+  "x-kora-admin-recovery-case-state-machine": {
+    "states": ["PENDING", "APPROVED", "CANCELLED", "EXPIRED"],
+    "transitions": {
+      "createAdminRecoveryCase": "NONE_TO_PENDING_AND_ATOMICALLY_CANCEL_OLDER_PENDING_FOR_SUBJECT",
+      "approveAdminRecoveryCase": "PENDING_TO_APPROVED_ONE_SHOT",
+      "serverPolicySuperseded": "PENDING_TO_CANCELLED",
+      "serverPolicyIneligible": "PENDING_TO_CANCELLED",
+      "serverClock": "PENDING_TO_EXPIRED"
+    },
+    "cancellationAuthority": "SERVER_POLICY_ONLY",
+    "cancellationAudit": "AUDIT_LOG_WITH_SERVER_REASON_AND_CAUSATION",
+    "standaloneCancellationOperation": false
   },
   "x-kora-invariants": [
     "ORDER_PRECEDES_PAYMENT_ATTEMPT",
@@ -180,6 +341,7 @@
     "AUTH_REQUIRED": 401,
     "AUTH_SESSION_REVOKED": 401,
     "AUTH_REFRESH_REUSED": 401,
+    "AUTH_REFRESH_INVALID": 401,
     "AUTH_INVALID_CREDENTIALS": 401,
     "OTP_INVALID": 400,
     "OTP_EXPIRED": 410,
@@ -208,7 +370,20 @@
     "INVALID_STATE_TRANSITION": 409,
     "MEDIA_ASSET_NOT_FOUND": 404,
     "ARTIST_NOT_FOUND": 404,
-    "ARTIST_CONFLICT": 409
+    "ARTIST_CONFLICT": 409,
+    "SENSITIVE_RESPONSE_ALREADY_DELIVERED": 409,
+    "ADMIN_RECOVERY_CODE_INVALID": 400,
+    "ADMIN_RECOVERY_INVALID": 400,
+    "ADMIN_SESSION_NOT_FOUND": 404,
+    "ADMIN_USER_NOT_FOUND": 404,
+    "RECOVERY_CASE_NOT_FOUND": 404,
+    "RECOVERY_CASE_EXPIRED": 410,
+    "RECOVERY_CASE_CONFLICT": 409,
+    "LAST_SUPER_ADMIN_PROTECTED": 409,
+    "AUDIT_EXPORT_NOT_FOUND": 404,
+    "AUDIT_EXPORT_NOT_READY": 409,
+    "AUDIT_EXPORT_EXPIRED": 410,
+    "ADMIN_INVITATION_INVALID": 400
   },
   "x-kora-operation-errors": {
     "listPublicAudioCatalog": ["VALIDATION_ERROR"],
@@ -372,6 +547,137 @@
       "MEDIA_ASSET_NOT_FOUND",
       "IDEMPOTENCY_CONFLICT",
       "INVALID_STATE_TRANSITION"
+    ],
+    "loginAdmin": [
+      "VALIDATION_ERROR",
+      "AUTH_INVALID_CREDENTIALS",
+      "RATE_LIMITED"
+    ],
+    "createAdminTotpEnrollment": [
+      "VALIDATION_ERROR",
+      "AUTH_REQUIRED",
+      "FORBIDDEN",
+      "IDEMPOTENCY_CONFLICT"
+    ],
+    "deliverAdminTotpEnrollmentQr": [
+      "AUTH_REQUIRED",
+      "FORBIDDEN",
+      "SENSITIVE_RESPONSE_ALREADY_DELIVERED"
+    ],
+    "confirmAdminTotpEnrollment": [
+      "OTP_INVALID",
+      "AUTH_REQUIRED",
+      "FORBIDDEN",
+      "IDEMPOTENCY_CONFLICT",
+      "OTP_EXPIRED",
+      "RATE_LIMITED"
+    ],
+    "verifyAdminTotp": [
+      "OTP_INVALID",
+      "AUTH_REQUIRED",
+      "OTP_EXPIRED",
+      "RATE_LIMITED"
+    ],
+    "verifyAdminRecoveryCode": [
+      "ADMIN_RECOVERY_CODE_INVALID",
+      "AUTH_REQUIRED",
+      "RATE_LIMITED"
+    ],
+    "rotateAdminRecoveryCodes": [
+      "OTP_INVALID",
+      "AUTH_REQUIRED",
+      "FORBIDDEN",
+      "IDEMPOTENCY_CONFLICT",
+      "RATE_LIMITED"
+    ],
+    "stepUpAdminSession": [
+      "OTP_INVALID",
+      "AUTH_REQUIRED",
+      "FORBIDDEN",
+      "RATE_LIMITED"
+    ],
+    "refreshAdminSession": ["AUTH_REFRESH_INVALID", "RATE_LIMITED"],
+    "revokeCurrentAdminSession": ["AUTH_REQUIRED"],
+    "listAdminSessions": ["AUTH_REQUIRED"],
+    "revokeAdminSession": [
+      "VALIDATION_ERROR",
+      "AUTH_REQUIRED",
+      "FORBIDDEN",
+      "ADMIN_SESSION_NOT_FOUND"
+    ],
+    "requestAdminPasswordReset": ["VALIDATION_ERROR", "RATE_LIMITED"],
+    "resetAdminPassword": ["ADMIN_RECOVERY_INVALID", "RATE_LIMITED"],
+    "createAdminRecoveryCase": [
+      "VALIDATION_ERROR",
+      "AUTH_REQUIRED",
+      "FORBIDDEN",
+      "IDEMPOTENCY_CONFLICT"
+    ],
+    "listAdminRecoveryCases": [
+      "VALIDATION_ERROR",
+      "AUTH_REQUIRED",
+      "FORBIDDEN"
+    ],
+    "getAdminRecoveryCase": [
+      "AUTH_REQUIRED",
+      "FORBIDDEN",
+      "RECOVERY_CASE_NOT_FOUND"
+    ],
+    "approveAdminRecoveryCase": [
+      "VALIDATION_ERROR",
+      "AUTH_REQUIRED",
+      "FORBIDDEN",
+      "RECOVERY_CASE_NOT_FOUND",
+      "RECOVERY_CASE_CONFLICT",
+      "IDEMPOTENCY_CONFLICT",
+      "RECOVERY_CASE_EXPIRED"
+    ],
+    "listAdminAuditLogs": ["VALIDATION_ERROR", "AUTH_REQUIRED", "FORBIDDEN"],
+    "createAdminAuditLogExport": [
+      "VALIDATION_ERROR",
+      "AUTH_REQUIRED",
+      "FORBIDDEN",
+      "IDEMPOTENCY_CONFLICT"
+    ],
+    "getAdminAuditLogExport": [
+      "AUTH_REQUIRED",
+      "FORBIDDEN",
+      "AUDIT_EXPORT_NOT_FOUND"
+    ],
+    "downloadAdminAuditLogExport": [
+      "AUTH_REQUIRED",
+      "FORBIDDEN",
+      "AUDIT_EXPORT_NOT_FOUND",
+      "AUDIT_EXPORT_NOT_READY",
+      "AUDIT_EXPORT_EXPIRED"
+    ],
+    "createAdminInvitation": [
+      "VALIDATION_ERROR",
+      "AUTH_REQUIRED",
+      "FORBIDDEN",
+      "IDEMPOTENCY_CONFLICT"
+    ],
+    "acceptAdminInvitation": [
+      "VALIDATION_ERROR",
+      "ADMIN_INVITATION_INVALID",
+      "RATE_LIMITED"
+    ],
+    "listAdminUsers": ["VALIDATION_ERROR", "AUTH_REQUIRED", "FORBIDDEN"],
+    "changeAdminUserRole": [
+      "VALIDATION_ERROR",
+      "AUTH_REQUIRED",
+      "FORBIDDEN",
+      "ADMIN_USER_NOT_FOUND",
+      "IDEMPOTENCY_CONFLICT",
+      "LAST_SUPER_ADMIN_PROTECTED"
+    ],
+    "changeAdminUserStatus": [
+      "VALIDATION_ERROR",
+      "AUTH_REQUIRED",
+      "FORBIDDEN",
+      "ADMIN_USER_NOT_FOUND",
+      "IDEMPOTENCY_CONFLICT",
+      "LAST_SUPER_ADMIN_PROTECTED"
     ]
   },
   "servers": [{ "url": "/", "description": "Relative contract root only" }],
@@ -1118,7 +1424,7 @@
         "operationId": "listAdminArtists",
         "summary": "Lists artists available for content assignment.",
         "x-kora-clients": ["admin"],
-        "x-kora-roles": ["SUPER_ADMIN", "CONTENT_EDITOR", "SUPPORT"],
+        "x-kora-roles": ["SUPER_ADMIN", "CONTENT_EDITOR"],
         "x-kora-pagination": "cursor",
         "security": [{ "adminSession": [] }],
         "parameters": [
@@ -1184,7 +1490,7 @@
         "operationId": "getAdminArtist",
         "summary": "Gets an artist identity for content administration.",
         "x-kora-clients": ["admin"],
-        "x-kora-roles": ["SUPER_ADMIN", "CONTENT_EDITOR", "SUPPORT"],
+        "x-kora-roles": ["SUPER_ADMIN", "CONTENT_EDITOR"],
         "security": [{ "adminSession": [] }],
         "parameters": [{ "$ref": "#/components/parameters/ArtistId" }],
         "responses": {
@@ -1250,7 +1556,7 @@
         "operationId": "listAdminAudioContent",
         "summary": "Lists draft, published and archived audio for authorized administrators.",
         "x-kora-clients": ["admin"],
-        "x-kora-roles": ["SUPER_ADMIN", "CONTENT_EDITOR", "SUPPORT"],
+        "x-kora-roles": ["SUPER_ADMIN", "CONTENT_EDITOR"],
         "x-kora-pagination": "cursor",
         "security": [{ "adminSession": [] }],
         "parameters": [
@@ -1317,7 +1623,7 @@
         "operationId": "getAdminAudioContent",
         "summary": "Gets editorial and media-processing states separately.",
         "x-kora-clients": ["admin"],
-        "x-kora-roles": ["SUPER_ADMIN", "CONTENT_EDITOR", "SUPPORT"],
+        "x-kora-roles": ["SUPER_ADMIN", "CONTENT_EDITOR"],
         "security": [{ "adminSession": [] }],
         "parameters": [{ "$ref": "#/components/parameters/ContentId" }],
         "responses": {
@@ -1507,7 +1813,7 @@
         "operationId": "getPrivateMediaAssetStatus",
         "summary": "Gets safe processing status for a private media asset.",
         "x-kora-clients": ["admin"],
-        "x-kora-roles": ["SUPER_ADMIN", "CONTENT_EDITOR", "SUPPORT"],
+        "x-kora-roles": ["SUPER_ADMIN", "CONTENT_EDITOR"],
         "security": [{ "adminSession": [] }],
         "parameters": [{ "$ref": "#/components/parameters/MediaAssetId" }],
         "responses": {
@@ -1571,6 +1877,1241 @@
           "409": { "$ref": "#/components/responses/ClientError" }
         }
       }
+    },
+    "/api/v1/admin/auth/login": {
+      "post": {
+        "operationId": "loginAdmin",
+        "summary": "Verifies admin credentials without disclosing account state.",
+        "x-kora-clients": ["admin-security"],
+        "x-kora-delivery-slice": "S1.2-03C1",
+        "x-kora-auth-class": "PUBLIC",
+        "x-kora-roles": [],
+        "x-kora-step-up-required": false,
+        "x-kora-audit-sink": "ADMIN_SECURITY_EVENT",
+        "x-kora-rate-limit-profile": "PASSWORD",
+        "x-kora-fetch-metadata-policy": "REJECT_CROSS_SITE_REQUIRE_SAME_ORIGIN",
+        "x-kora-origin-policy": "EXACT_ALLOWLIST",
+        "x-kora-security-record-atomic": true,
+        "x-kora-json-body-policy": "APPLICATION_JSON_ONLY",
+        "security": [],
+        "parameters": [{ "$ref": "#/components/parameters/AdminOrigin" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminLoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Generic credential result and bounded pre-authentication context.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPreAuthEnvelope"
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "$ref": "#/components/headers/AdminPreAuthSetCookie"
+              },
+              "Cache-Control": { "$ref": "#/components/headers/NoStore" },
+              "X-Content-Type-Options": {
+                "$ref": "#/components/headers/NoSniff"
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "429": { "$ref": "#/components/responses/RateLimitedError" }
+        }
+      }
+    },
+    "/api/v1/admin/auth/totp/enrollments": {
+      "post": {
+        "operationId": "createAdminTotpEnrollment",
+        "summary": "Creates a bounded TOTP enrollment without exposing its seed.",
+        "x-kora-clients": ["admin-security"],
+        "x-kora-delivery-slice": "S1.2-03C1",
+        "x-kora-auth-class": "PREAUTH",
+        "x-kora-roles": [],
+        "x-kora-step-up-required": false,
+        "x-kora-audit-sink": "ADMIN_SECURITY_EVENT",
+        "x-kora-origin-policy": "EXACT_ALLOWLIST",
+        "x-kora-security-record-atomic": true,
+        "x-kora-idempotent": true,
+        "x-kora-idempotent-replay": "REPLAY_SAME_RESPONSE_FOR_SAME_PAYLOAD_DIFFERENT_PAYLOAD_409",
+        "security": [
+          {
+            "adminPreAuthCookie": [],
+            "adminCsrfCookie": [],
+            "adminCsrfHeader": []
+          }
+        ],
+        "parameters": [
+          { "$ref": "#/components/parameters/AdminOrigin" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "responses": {
+          "201": {
+            "description": "Enrollment metadata created; the seed remains server-side.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminTotpEnrollmentEnvelope"
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": { "$ref": "#/components/headers/NoStore" },
+              "X-Content-Type-Options": {
+                "$ref": "#/components/headers/NoSniff"
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "409": { "$ref": "#/components/responses/ClientError" }
+        }
+      }
+    },
+    "/api/v1/admin/auth/totp/enrollments/{enrollmentId}/qr": {
+      "post": {
+        "operationId": "deliverAdminTotpEnrollmentQr",
+        "summary": "Delivers TOTP enrollment QR bytes exactly once.",
+        "x-kora-clients": ["admin-security"],
+        "x-kora-delivery-slice": "S1.2-03C1",
+        "x-kora-auth-class": "PREAUTH",
+        "x-kora-roles": [],
+        "x-kora-step-up-required": false,
+        "x-kora-audit-sink": "ADMIN_SECURITY_EVENT",
+        "x-kora-origin-policy": "EXACT_ALLOWLIST",
+        "x-kora-security-record-atomic": true,
+        "x-kora-idempotent": true,
+        "x-kora-idempotent-replay": "SECRET_RESPONSE_RETRY_409",
+        "x-kora-non-persistable-response": true,
+        "x-kora-non-loggable-response": true,
+        "security": [
+          {
+            "adminPreAuthCookie": [],
+            "adminCsrfCookie": [],
+            "adminCsrfHeader": []
+          }
+        ],
+        "parameters": [
+          { "$ref": "#/components/parameters/EnrollmentId" },
+          { "$ref": "#/components/parameters/AdminOrigin" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Single-delivery QR image; seed and provisioning URI never enter JSON, logs or audit payloads.",
+            "headers": {
+              "Cache-Control": { "$ref": "#/components/headers/NoStore" },
+              "X-Content-Type-Options": {
+                "$ref": "#/components/headers/NoSniff"
+              }
+            },
+            "content": {
+              "image/png": {
+                "schema": { "type": "string", "format": "binary" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "409": { "$ref": "#/components/responses/ClientError" }
+        }
+      }
+    },
+    "/api/v1/admin/auth/totp/enrollments/{enrollmentId}/confirm": {
+      "post": {
+        "operationId": "confirmAdminTotpEnrollment",
+        "summary": "Confirms TOTP and creates a session plus exactly ten recovery codes.",
+        "x-kora-clients": ["admin-security"],
+        "x-kora-delivery-slice": "S1.2-03C1",
+        "x-kora-auth-class": "PREAUTH",
+        "x-kora-roles": [],
+        "x-kora-step-up-required": false,
+        "x-kora-audit-sink": "AUDIT_LOG",
+        "x-kora-rate-limit-profile": "TOTP",
+        "x-kora-origin-policy": "EXACT_ALLOWLIST",
+        "x-kora-transactional-audit": true,
+        "x-kora-json-body-policy": "APPLICATION_JSON_ONLY",
+        "x-kora-idempotent": true,
+        "x-kora-idempotent-replay": "SECRET_RESPONSE_RETRY_409",
+        "x-kora-non-persistable-response": true,
+        "x-kora-non-loggable-response": true,
+        "security": [
+          {
+            "adminPreAuthCookie": [],
+            "adminCsrfCookie": [],
+            "adminCsrfHeader": []
+          }
+        ],
+        "parameters": [
+          { "$ref": "#/components/parameters/EnrollmentId" },
+          { "$ref": "#/components/parameters/AdminOrigin" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminTotpVerificationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "TOTP confirmed atomically with session and ten one-time codes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminEnrollmentConfirmationEnvelope"
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "$ref": "#/components/headers/AdminRefreshSetCookie"
+              },
+              "Cache-Control": { "$ref": "#/components/headers/NoStore" },
+              "X-Content-Type-Options": {
+                "$ref": "#/components/headers/NoSniff"
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "409": { "$ref": "#/components/responses/ClientError" },
+          "410": { "$ref": "#/components/responses/ClientError" },
+          "429": { "$ref": "#/components/responses/RateLimitedError" }
+        }
+      }
+    },
+    "/api/v1/admin/auth/totp/verify": {
+      "post": {
+        "operationId": "verifyAdminTotp",
+        "summary": "Completes every admin login with RFC 6238 verification.",
+        "x-kora-clients": ["admin-security"],
+        "x-kora-delivery-slice": "S1.2-03C1",
+        "x-kora-auth-class": "PREAUTH",
+        "x-kora-roles": [],
+        "x-kora-step-up-required": false,
+        "x-kora-audit-sink": "AUDIT_LOG",
+        "x-kora-rate-limit-profile": "TOTP",
+        "x-kora-origin-policy": "EXACT_ALLOWLIST",
+        "x-kora-transactional-audit": true,
+        "x-kora-json-body-policy": "APPLICATION_JSON_ONLY",
+        "security": [
+          {
+            "adminPreAuthCookie": [],
+            "adminCsrfCookie": [],
+            "adminCsrfHeader": []
+          }
+        ],
+        "parameters": [{ "$ref": "#/components/parameters/AdminOrigin" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminTotpVerificationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Admin session established.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSessionEnvelope"
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "$ref": "#/components/headers/AdminRefreshSetCookie"
+              },
+              "Cache-Control": { "$ref": "#/components/headers/NoStore" },
+              "X-Content-Type-Options": {
+                "$ref": "#/components/headers/NoSniff"
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "410": { "$ref": "#/components/responses/ClientError" },
+          "429": { "$ref": "#/components/responses/RateLimitedError" }
+        }
+      }
+    },
+    "/api/v1/admin/auth/recovery-codes/verify": {
+      "post": {
+        "operationId": "verifyAdminRecoveryCode",
+        "summary": "Consumes a recovery code and creates only a bounded MFA recovery context.",
+        "x-kora-clients": ["admin-security"],
+        "x-kora-delivery-slice": "S1.2-03C1",
+        "x-kora-auth-class": "PREAUTH",
+        "x-kora-roles": [],
+        "x-kora-step-up-required": false,
+        "x-kora-audit-sink": "AUDIT_LOG",
+        "x-kora-rate-limit-profile": "RECOVERY",
+        "x-kora-origin-policy": "EXACT_ALLOWLIST",
+        "x-kora-transactional-audit": true,
+        "x-kora-json-body-policy": "APPLICATION_JSON_ONLY",
+        "security": [
+          {
+            "adminPreAuthCookie": [],
+            "adminCsrfCookie": [],
+            "adminCsrfHeader": []
+          }
+        ],
+        "parameters": [{ "$ref": "#/components/parameters/AdminOrigin" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminRecoveryCodeVerificationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recovery code consumed, old sessions revoked, no session created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRecoveryContextEnvelope"
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "$ref": "#/components/headers/AdminPreAuthSetCookie"
+              },
+              "Cache-Control": { "$ref": "#/components/headers/NoStore" },
+              "X-Content-Type-Options": {
+                "$ref": "#/components/headers/NoSniff"
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "429": { "$ref": "#/components/responses/RateLimitedError" }
+        }
+      }
+    },
+    "/api/v1/admin/auth/recovery-codes/rotate": {
+      "post": {
+        "operationId": "rotateAdminRecoveryCodes",
+        "summary": "Atomically replaces recovery codes and reveals exactly ten once.",
+        "x-kora-clients": ["admin-security"],
+        "x-kora-delivery-slice": "S1.2-03C1",
+        "x-kora-auth-class": "ADMIN_SESSION",
+        "x-kora-roles": [
+          "SUPER_ADMIN",
+          "CONTENT_EDITOR",
+          "FINANCE_MANAGER",
+          "SUPPORT"
+        ],
+        "x-kora-step-up-required": true,
+        "x-kora-audit-sink": "AUDIT_LOG",
+        "x-kora-rate-limit-profile": "TOTP",
+        "x-kora-origin-policy": "EXACT_ALLOWLIST",
+        "x-kora-transactional-audit": true,
+        "x-kora-json-body-policy": "APPLICATION_JSON_ONLY",
+        "x-kora-idempotent": true,
+        "x-kora-idempotent-replay": "SECRET_RESPONSE_RETRY_409",
+        "x-kora-non-persistable-response": true,
+        "x-kora-non-loggable-response": true,
+        "security": [{ "adminSession": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/AdminOrigin" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminTotpVerificationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exactly ten new single-use recovery codes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRecoveryCodesEnvelope"
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": { "$ref": "#/components/headers/NoStore" },
+              "X-Content-Type-Options": {
+                "$ref": "#/components/headers/NoSniff"
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "409": { "$ref": "#/components/responses/ClientError" },
+          "429": { "$ref": "#/components/responses/RateLimitedError" }
+        }
+      }
+    },
+    "/api/v1/admin/auth/step-up": {
+      "post": {
+        "operationId": "stepUpAdminSession",
+        "summary": "Refreshes sensitive-action proof for five minutes.",
+        "x-kora-clients": ["admin-security"],
+        "x-kora-delivery-slice": "S1.2-03C1",
+        "x-kora-auth-class": "ADMIN_SESSION",
+        "x-kora-roles": [
+          "SUPER_ADMIN",
+          "CONTENT_EDITOR",
+          "FINANCE_MANAGER",
+          "SUPPORT"
+        ],
+        "x-kora-step-up-required": false,
+        "x-kora-audit-sink": "AUDIT_LOG",
+        "x-kora-rate-limit-profile": "TOTP",
+        "x-kora-origin-policy": "EXACT_ALLOWLIST",
+        "x-kora-transactional-audit": true,
+        "x-kora-json-body-policy": "APPLICATION_JSON_ONLY",
+        "security": [{ "adminSession": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/AdminOrigin" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminStepUpRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Step-up proof established for five minutes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminStepUpEnvelope"
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": { "$ref": "#/components/headers/NoStore" },
+              "X-Content-Type-Options": {
+                "$ref": "#/components/headers/NoSniff"
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "429": { "$ref": "#/components/responses/RateLimitedError" }
+        }
+      }
+    },
+    "/api/v1/admin/auth/sessions/refresh": {
+      "post": {
+        "operationId": "refreshAdminSession",
+        "summary": "Rotates the opaque refresh cookie once and rejects replay generically.",
+        "x-kora-clients": ["admin-security"],
+        "x-kora-delivery-slice": "S1.2-03C1",
+        "x-kora-auth-class": "REFRESH",
+        "x-kora-roles": [],
+        "x-kora-step-up-required": false,
+        "x-kora-audit-sink": "AUDIT_LOG",
+        "x-kora-rate-limit-profile": "REFRESH",
+        "x-kora-origin-policy": "EXACT_ALLOWLIST",
+        "x-kora-transactional-audit": true,
+        "security": [
+          {
+            "adminRefreshCookie": [],
+            "adminCsrfCookie": [],
+            "adminCsrfHeader": []
+          }
+        ],
+        "parameters": [{ "$ref": "#/components/parameters/AdminOrigin" }],
+        "responses": {
+          "200": {
+            "description": "Refresh cookie rotated; a new short-lived access token is returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSessionEnvelope"
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "$ref": "#/components/headers/AdminRefreshSetCookie"
+              },
+              "Cache-Control": { "$ref": "#/components/headers/NoStore" },
+              "X-Content-Type-Options": {
+                "$ref": "#/components/headers/NoSniff"
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "429": { "$ref": "#/components/responses/RateLimitedError" }
+        }
+      }
+    },
+    "/api/v1/admin/auth/sessions/current": {
+      "delete": {
+        "operationId": "revokeCurrentAdminSession",
+        "summary": "Revokes the current admin session family.",
+        "x-kora-clients": ["admin-security"],
+        "x-kora-delivery-slice": "S1.2-03C1",
+        "x-kora-auth-class": "ADMIN_SESSION",
+        "x-kora-roles": [
+          "SUPER_ADMIN",
+          "CONTENT_EDITOR",
+          "FINANCE_MANAGER",
+          "SUPPORT"
+        ],
+        "x-kora-step-up-required": false,
+        "x-kora-audit-sink": "AUDIT_LOG",
+        "x-kora-origin-policy": "EXACT_ALLOWLIST",
+        "x-kora-transactional-audit": true,
+        "security": [{ "adminSession": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/AdminOrigin" }],
+        "responses": {
+          "204": { "description": "Current session revoked." },
+          "401": { "$ref": "#/components/responses/ClientError" }
+        }
+      }
+    },
+    "/api/v1/admin/auth/sessions": {
+      "get": {
+        "operationId": "listAdminSessions",
+        "summary": "Lists bounded safe metadata for the current admin's sessions.",
+        "x-kora-clients": ["admin-security"],
+        "x-kora-delivery-slice": "S1.2-03C1",
+        "x-kora-auth-class": "ADMIN_SESSION",
+        "x-kora-roles": [
+          "SUPER_ADMIN",
+          "CONTENT_EDITOR",
+          "FINANCE_MANAGER",
+          "SUPPORT"
+        ],
+        "x-kora-step-up-required": false,
+        "x-kora-audit-sink": "NONE",
+        "security": [{ "adminSession": [] }],
+        "responses": {
+          "200": {
+            "description": "Bounded session list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSessionPage"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/ClientError" }
+        }
+      }
+    },
+    "/api/v1/admin/auth/sessions/{sessionId}/revocations": {
+      "post": {
+        "operationId": "revokeAdminSession",
+        "summary": "Revokes another admin session with super-admin step-up and reason.",
+        "x-kora-clients": ["admin-security"],
+        "x-kora-delivery-slice": "S1.2-03C1",
+        "x-kora-auth-class": "ADMIN_SESSION",
+        "x-kora-roles": ["SUPER_ADMIN"],
+        "x-kora-step-up-required": true,
+        "x-kora-audit-sink": "AUDIT_LOG",
+        "x-kora-origin-policy": "EXACT_ALLOWLIST",
+        "x-kora-transactional-audit": true,
+        "x-kora-json-body-policy": "APPLICATION_JSON_ONLY",
+        "x-kora-reason-required": true,
+        "security": [{ "adminSession": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/SessionId" },
+          { "$ref": "#/components/parameters/AdminOrigin" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminReasonRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": { "description": "Session revoked." },
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "404": { "$ref": "#/components/responses/ClientError" }
+        }
+      }
+    },
+    "/api/v1/admin/auth/password/reset-requests": {
+      "post": {
+        "operationId": "requestAdminPasswordReset",
+        "summary": "Returns an indistinguishable reset-request outcome.",
+        "x-kora-clients": ["admin-security"],
+        "x-kora-delivery-slice": "S1.2-03C2",
+        "x-kora-auth-class": "PUBLIC",
+        "x-kora-roles": [],
+        "x-kora-step-up-required": false,
+        "x-kora-audit-sink": "ADMIN_SECURITY_EVENT",
+        "x-kora-rate-limit-profile": "RECOVERY",
+        "x-kora-origin-policy": "EXACT_ALLOWLIST",
+        "x-kora-security-record-atomic": true,
+        "x-kora-json-body-policy": "APPLICATION_JSON_ONLY",
+        "security": [],
+        "parameters": [{ "$ref": "#/components/parameters/AdminOrigin" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminPasswordResetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Indistinguishable accepted outcome.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAcceptedEnvelope"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "429": { "$ref": "#/components/responses/RateLimitedError" }
+        }
+      }
+    },
+    "/api/v1/admin/auth/password/reset": {
+      "post": {
+        "operationId": "resetAdminPassword",
+        "summary": "Consumes a manually entered reset code and revokes sessions.",
+        "x-kora-clients": ["admin-security"],
+        "x-kora-delivery-slice": "S1.2-03C2",
+        "x-kora-auth-class": "PUBLIC",
+        "x-kora-roles": [],
+        "x-kora-step-up-required": false,
+        "x-kora-audit-sink": "AUDIT_LOG",
+        "x-kora-rate-limit-profile": "RECOVERY",
+        "x-kora-origin-policy": "EXACT_ALLOWLIST",
+        "x-kora-transactional-audit": true,
+        "x-kora-json-body-policy": "APPLICATION_JSON_ONLY",
+        "security": [],
+        "parameters": [{ "$ref": "#/components/parameters/AdminOrigin" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminPasswordResetCompletionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Reset context consumed; password changed and sessions revoked."
+          },
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "429": { "$ref": "#/components/responses/RateLimitedError" }
+        }
+      }
+    },
+    "/api/v1/admin/recovery-cases": {
+      "post": {
+        "operationId": "createAdminRecoveryCase",
+        "summary": "Creates a 24-hour assisted-recovery case for a distinct target.",
+        "x-kora-clients": ["admin-security"],
+        "x-kora-delivery-slice": "S1.2-03C2",
+        "x-kora-auth-class": "ADMIN_SESSION",
+        "x-kora-roles": ["SUPER_ADMIN", "SUPPORT"],
+        "x-kora-step-up-required": false,
+        "x-kora-audit-sink": "AUDIT_LOG",
+        "x-kora-origin-policy": "EXACT_ALLOWLIST",
+        "x-kora-transactional-audit": true,
+        "x-kora-json-body-policy": "APPLICATION_JSON_ONLY",
+        "x-kora-idempotent": true,
+        "x-kora-idempotent-replay": "REPLAY_SAME_RESPONSE_FOR_SAME_PAYLOAD_DIFFERENT_PAYLOAD_409",
+        "x-kora-reason-required": true,
+        "security": [{ "adminSession": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/AdminOrigin" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminRecoveryCaseCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Recovery case created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRecoveryCaseEnvelope"
+                }
+              }
+            },
+            "headers": {
+              "Location": { "$ref": "#/components/headers/ResourceLocation" }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "409": { "$ref": "#/components/responses/ClientError" }
+        }
+      },
+      "get": {
+        "operationId": "listAdminRecoveryCases",
+        "summary": "Lists bounded recovery cases.",
+        "x-kora-clients": ["admin-security"],
+        "x-kora-delivery-slice": "S1.2-03C2",
+        "x-kora-auth-class": "ADMIN_SESSION",
+        "x-kora-roles": ["SUPER_ADMIN", "SUPPORT"],
+        "x-kora-step-up-required": false,
+        "x-kora-audit-sink": "NONE",
+        "x-kora-pagination": "cursor",
+        "security": [{ "adminSession": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/Cursor" },
+          { "$ref": "#/components/parameters/Limit" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded recovery-case page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRecoveryCasePage"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" }
+        }
+      }
+    },
+    "/api/v1/admin/recovery-cases/{caseId}": {
+      "get": {
+        "operationId": "getAdminRecoveryCase",
+        "summary": "Gets safe assisted-recovery case metadata.",
+        "x-kora-clients": ["admin-security"],
+        "x-kora-delivery-slice": "S1.2-03C2",
+        "x-kora-auth-class": "ADMIN_SESSION",
+        "x-kora-roles": ["SUPER_ADMIN", "SUPPORT"],
+        "x-kora-step-up-required": false,
+        "x-kora-audit-sink": "NONE",
+        "security": [{ "adminSession": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/CaseId" }],
+        "responses": {
+          "200": {
+            "description": "Recovery-case detail.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRecoveryCaseEnvelope"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "404": { "$ref": "#/components/responses/ClientError" }
+        }
+      }
+    },
+    "/api/v1/admin/recovery-cases/{caseId}/approve": {
+      "post": {
+        "operationId": "approveAdminRecoveryCase",
+        "summary": "Approves a distinct-party recovery case atomically.",
+        "x-kora-clients": ["admin-security"],
+        "x-kora-delivery-slice": "S1.2-03C2",
+        "x-kora-auth-class": "ADMIN_SESSION",
+        "x-kora-roles": ["SUPER_ADMIN"],
+        "x-kora-step-up-required": true,
+        "x-kora-audit-sink": "AUDIT_LOG",
+        "x-kora-origin-policy": "EXACT_ALLOWLIST",
+        "x-kora-transactional-audit": true,
+        "x-kora-json-body-policy": "APPLICATION_JSON_ONLY",
+        "x-kora-idempotent": true,
+        "x-kora-idempotent-replay": "REPLAY_SAME_RESPONSE_FOR_SAME_PAYLOAD_DIFFERENT_PAYLOAD_409",
+        "x-kora-reason-required": true,
+        "security": [{ "adminSession": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/CaseId" },
+          { "$ref": "#/components/parameters/AdminOrigin" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminReasonRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Case consumed; sessions and MFA material invalidated; target is pending MFA."
+          },
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "404": { "$ref": "#/components/responses/ClientError" },
+          "409": { "$ref": "#/components/responses/ClientError" },
+          "410": { "$ref": "#/components/responses/ClientError" }
+        }
+      }
+    },
+    "/api/v1/admin/audit-logs": {
+      "get": {
+        "operationId": "listAdminAuditLogs",
+        "summary": "Lists immutable audit events using exactly one execution context.",
+        "x-kora-clients": ["admin-security"],
+        "x-kora-delivery-slice": "S1.2-03C2",
+        "x-kora-auth-class": "ADMIN_SESSION",
+        "x-kora-roles": ["SUPER_ADMIN"],
+        "x-kora-step-up-required": false,
+        "x-kora-audit-sink": "AUDIT_LOG",
+        "x-kora-pagination": "cursor",
+        "x-kora-filter-semantics": "ALL_SUPPLIED_FILTERS_ARE_COMBINED_WITH_AND",
+        "security": [{ "adminSession": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/Cursor" },
+          { "$ref": "#/components/parameters/Limit" },
+          { "$ref": "#/components/parameters/AuditActorAdminUserId" },
+          { "$ref": "#/components/parameters/AuditAction" },
+          { "$ref": "#/components/parameters/AuditEntityType" },
+          { "$ref": "#/components/parameters/AuditEntityId" },
+          { "$ref": "#/components/parameters/AuditCreatedFrom" },
+          { "$ref": "#/components/parameters/AuditCreatedTo" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded audit-log page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAuditLogPage"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" }
+        }
+      }
+    },
+    "/api/v1/admin/audit-log-exports": {
+      "post": {
+        "operationId": "createAdminAuditLogExport",
+        "summary": "Creates an asynchronous audit export.",
+        "x-kora-clients": ["admin-security"],
+        "x-kora-delivery-slice": "S1.2-03C2",
+        "x-kora-auth-class": "ADMIN_SESSION",
+        "x-kora-roles": ["SUPER_ADMIN"],
+        "x-kora-step-up-required": true,
+        "x-kora-audit-sink": "AUDIT_LOG",
+        "x-kora-origin-policy": "EXACT_ALLOWLIST",
+        "x-kora-transactional-audit": true,
+        "x-kora-pii-redacted": true,
+        "x-kora-json-body-policy": "APPLICATION_JSON_ONLY",
+        "x-kora-idempotent": true,
+        "x-kora-idempotent-replay": "REPLAY_SAME_RESPONSE_FOR_SAME_PAYLOAD_DIFFERENT_PAYLOAD_409",
+        "x-kora-reason-required": true,
+        "security": [{ "adminSession": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/AdminOrigin" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminAuditExportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Audit export accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAuditExportEnvelope"
+                }
+              }
+            },
+            "headers": {
+              "Location": { "$ref": "#/components/headers/ResourceLocation" }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "409": { "$ref": "#/components/responses/ClientError" }
+        }
+      }
+    },
+    "/api/v1/admin/audit-log-exports/{exportId}": {
+      "get": {
+        "operationId": "getAdminAuditLogExport",
+        "summary": "Gets safe audit-export state.",
+        "x-kora-clients": ["admin-security"],
+        "x-kora-delivery-slice": "S1.2-03C2",
+        "x-kora-auth-class": "ADMIN_SESSION",
+        "x-kora-roles": ["SUPER_ADMIN"],
+        "x-kora-step-up-required": false,
+        "x-kora-audit-sink": "AUDIT_LOG",
+        "security": [{ "adminSession": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ExportId" }],
+        "responses": {
+          "200": {
+            "description": "Audit-export state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAuditExportEnvelope"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "404": { "$ref": "#/components/responses/ClientError" }
+        }
+      }
+    },
+    "/api/v1/admin/audit-log-exports/{exportId}/content": {
+      "get": {
+        "operationId": "downloadAdminAuditLogExport",
+        "summary": "Downloads authenticated export bytes without a signed URL.",
+        "x-kora-clients": ["admin-security"],
+        "x-kora-delivery-slice": "S1.2-03C2",
+        "x-kora-auth-class": "ADMIN_SESSION",
+        "x-kora-roles": ["SUPER_ADMIN"],
+        "x-kora-step-up-required": true,
+        "x-kora-audit-sink": "AUDIT_LOG",
+        "x-kora-pii-redacted": true,
+        "x-kora-signed-manifest": {
+          "manifestPath": "manifest.json",
+          "signaturePath": "manifest.sig",
+          "canonicalization": "RFC8785_JCS_UTF8",
+          "digestAlgorithm": "SHA-256",
+          "signatureFormat": "JWS_COMPACT_DETACHED",
+          "signatureAlgorithm": "EdDSA",
+          "signatureCurve": "Ed25519",
+          "protectedHeader": "alg_EdDSA_kid_SIGNATURE_KEY_ID",
+          "signatureInput": "RFC8785_CANONICAL_UTF8_BYTES_OF_MANIFEST_JSON",
+          "payloadEntrySet": "EXACTLY_ALL_ZIP_ENTRIES_EXCEPT_MANIFEST_JSON_AND_MANIFEST_SIG",
+          "payloadPathPolicy": "RELATIVE_FORWARD_SLASH_NFC_NO_DOT_SEGMENTS_NO_DOT_DOT_NO_ABSOLUTE_NO_BACKSLASH_UNIQUE_CASE_SENSITIVE",
+          "coverage": "CANONICAL_MANIFEST_BINDS_EXPORT_ID_CREATED_AT_EXPIRES_AT_AND_SORTED_UNIQUE_PAYLOAD_PATH_SIZE_SHA256",
+          "rejectUnlistedEntries": true,
+          "rejectMissingEntries": true,
+          "rejectDuplicateEntries": true,
+          "verificationKeyDistribution": "ADMIN_DEPLOYMENT_TRUST_BUNDLE_BY_SIGNATURE_KEY_ID",
+          "keyRotation": "OVERLAPPING_VERIFY_OLD_KEYS_UNTIL_ALL_REFERENCED_EXPORTS_EXPIRE"
+        },
+        "security": [{ "adminSession": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ExportId" }],
+        "responses": {
+          "200": {
+            "description": "Private audit export attachment.",
+            "headers": {
+              "Cache-Control": { "$ref": "#/components/headers/NoStore" },
+              "X-Content-Type-Options": {
+                "$ref": "#/components/headers/NoSniff"
+              },
+              "Content-Disposition": {
+                "$ref": "#/components/headers/AttachmentDisposition"
+              }
+            },
+            "content": {
+              "application/zip": {
+                "schema": { "type": "string", "format": "binary" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "404": { "$ref": "#/components/responses/ClientError" },
+          "409": { "$ref": "#/components/responses/ClientError" },
+          "410": { "$ref": "#/components/responses/ClientError" }
+        }
+      }
+    },
+    "/api/v1/admin/invitations": {
+      "post": {
+        "operationId": "createAdminInvitation",
+        "summary": "Creates a bounded single-use admin invitation.",
+        "x-kora-clients": ["admin-security"],
+        "x-kora-delivery-slice": "S1.2-03C2",
+        "x-kora-auth-class": "ADMIN_SESSION",
+        "x-kora-roles": ["SUPER_ADMIN"],
+        "x-kora-step-up-required": true,
+        "x-kora-audit-sink": "AUDIT_LOG",
+        "x-kora-origin-policy": "EXACT_ALLOWLIST",
+        "x-kora-transactional-audit": true,
+        "x-kora-json-body-policy": "APPLICATION_JSON_ONLY",
+        "x-kora-idempotent": true,
+        "x-kora-idempotent-replay": "REPLAY_SAME_RESPONSE_FOR_SAME_PAYLOAD_DIFFERENT_PAYLOAD_409",
+        "x-kora-reason-required": true,
+        "security": [{ "adminSession": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/AdminOrigin" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminInvitationCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Invitation created without returning its secret.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminInvitationEnvelope"
+                }
+              }
+            },
+            "headers": {
+              "Location": { "$ref": "#/components/headers/ResourceLocation" }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "409": { "$ref": "#/components/responses/ClientError" }
+        }
+      }
+    },
+    "/api/v1/admin/auth/invitations/accept": {
+      "post": {
+        "operationId": "acceptAdminInvitation",
+        "summary": "Consumes a single-use invitation without revealing account state.",
+        "x-kora-clients": ["admin-security"],
+        "x-kora-delivery-slice": "S1.2-03C2",
+        "x-kora-auth-class": "PUBLIC",
+        "x-kora-roles": [],
+        "x-kora-step-up-required": false,
+        "x-kora-audit-sink": "ADMIN_SECURITY_EVENT",
+        "x-kora-rate-limit-profile": "RECOVERY",
+        "x-kora-origin-policy": "EXACT_ALLOWLIST",
+        "x-kora-security-record-atomic": true,
+        "x-kora-json-body-policy": "APPLICATION_JSON_ONLY",
+        "security": [],
+        "parameters": [{ "$ref": "#/components/parameters/AdminOrigin" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminInvitationAcceptRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Invitation accepted into first TOTP enrollment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPreAuthEnvelope"
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "$ref": "#/components/headers/AdminPreAuthSetCookie"
+              },
+              "Cache-Control": { "$ref": "#/components/headers/NoStore" },
+              "X-Content-Type-Options": {
+                "$ref": "#/components/headers/NoSniff"
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "429": { "$ref": "#/components/responses/RateLimitedError" }
+        }
+      }
+    },
+    "/api/v1/admin/users": {
+      "get": {
+        "operationId": "listAdminUsers",
+        "summary": "Lists bounded safe administrator metadata.",
+        "x-kora-clients": ["admin-security"],
+        "x-kora-delivery-slice": "S1.2-03C2",
+        "x-kora-auth-class": "ADMIN_SESSION",
+        "x-kora-roles": ["SUPER_ADMIN"],
+        "x-kora-step-up-required": false,
+        "x-kora-audit-sink": "NONE",
+        "x-kora-pagination": "cursor",
+        "security": [{ "adminSession": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/Cursor" },
+          { "$ref": "#/components/parameters/Limit" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded administrator page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserPage"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" }
+        }
+      }
+    },
+    "/api/v1/admin/users/{adminUserId}/role-changes": {
+      "post": {
+        "operationId": "changeAdminUserRole",
+        "summary": "Changes another administrator role while protecting the last active super-admin.",
+        "x-kora-clients": ["admin-security"],
+        "x-kora-delivery-slice": "S1.2-03C2",
+        "x-kora-auth-class": "ADMIN_SESSION",
+        "x-kora-roles": ["SUPER_ADMIN"],
+        "x-kora-step-up-required": true,
+        "x-kora-audit-sink": "AUDIT_LOG",
+        "x-kora-origin-policy": "EXACT_ALLOWLIST",
+        "x-kora-transactional-audit": true,
+        "x-kora-json-body-policy": "APPLICATION_JSON_ONLY",
+        "x-kora-idempotent": true,
+        "x-kora-idempotent-replay": "REPLAY_SAME_RESPONSE_FOR_SAME_PAYLOAD_DIFFERENT_PAYLOAD_409",
+        "x-kora-reason-required": true,
+        "x-kora-self-change-forbidden": true,
+        "security": [{ "adminSession": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/AdminUserId" },
+          { "$ref": "#/components/parameters/AdminOrigin" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminRoleChangeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Role changed and authorization version advanced."
+          },
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "404": { "$ref": "#/components/responses/ClientError" },
+          "409": { "$ref": "#/components/responses/ClientError" }
+        }
+      }
+    },
+    "/api/v1/admin/users/{adminUserId}/status-changes": {
+      "post": {
+        "operationId": "changeAdminUserStatus",
+        "summary": "Changes another administrator status while protecting the last active super-admin.",
+        "x-kora-clients": ["admin-security"],
+        "x-kora-delivery-slice": "S1.2-03C2",
+        "x-kora-auth-class": "ADMIN_SESSION",
+        "x-kora-roles": ["SUPER_ADMIN"],
+        "x-kora-step-up-required": true,
+        "x-kora-audit-sink": "AUDIT_LOG",
+        "x-kora-origin-policy": "EXACT_ALLOWLIST",
+        "x-kora-transactional-audit": true,
+        "x-kora-json-body-policy": "APPLICATION_JSON_ONLY",
+        "x-kora-idempotent": true,
+        "x-kora-idempotent-replay": "REPLAY_SAME_RESPONSE_FOR_SAME_PAYLOAD_DIFFERENT_PAYLOAD_409",
+        "x-kora-reason-required": true,
+        "x-kora-self-change-forbidden": true,
+        "security": [{ "adminSession": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/AdminUserId" },
+          { "$ref": "#/components/parameters/AdminOrigin" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminStatusChangeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Status changed, authorization version advanced and affected sessions revoked."
+          },
+          "400": { "$ref": "#/components/responses/ClientError" },
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "404": { "$ref": "#/components/responses/ClientError" },
+          "409": { "$ref": "#/components/responses/ClientError" }
+        }
+      }
     }
   },
   "components": {
@@ -1583,8 +3124,32 @@
       "adminSession": {
         "type": "http",
         "scheme": "bearer",
-        "bearerFormat": "short-lived admin access token",
-        "description": "Short-lived admin access credential. A refresh cookie never authenticates business mutations directly."
+        "bearerFormat": "RS256 JWT; 15 minute maximum",
+        "description": "Short-lived admin access credential. Runtime authorization must reload active session, account status and authorizationVersion; JWT role claims are never sole authority."
+      },
+      "adminPreAuthCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "__Host-kora_admin_preauth",
+        "description": "HttpOnly Secure SameSite=Strict host-only bounded pre-authentication context; never an admin session."
+      },
+      "adminRefreshCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "__Host-kora_admin_refresh",
+        "description": "HttpOnly Secure SameSite=Strict host-only opaque 256-bit one-shot refresh token."
+      },
+      "adminCsrfCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "__Host-kora_admin_csrf",
+        "description": "Secure SameSite=Strict host-only CSRF token cookie."
+      },
+      "adminCsrfHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Kora-CSRF",
+        "description": "Exact double-submit value matching adminCsrfCookie."
       },
       "providerSignature": {
         "type": "apiKey",
@@ -1615,6 +3180,42 @@
           "maximum": 50,
           "default": 20
         }
+      },
+      "AuditActorAdminUserId": {
+        "name": "actorAdminUserId",
+        "in": "query",
+        "required": false,
+        "schema": { "$ref": "#/components/schemas/Identifier" }
+      },
+      "AuditAction": {
+        "name": "action",
+        "in": "query",
+        "required": false,
+        "schema": { "type": "string", "minLength": 1, "maxLength": 120 }
+      },
+      "AuditEntityType": {
+        "name": "entityType",
+        "in": "query",
+        "required": false,
+        "schema": { "type": "string", "minLength": 1, "maxLength": 120 }
+      },
+      "AuditEntityId": {
+        "name": "entityId",
+        "in": "query",
+        "required": false,
+        "schema": { "$ref": "#/components/schemas/Identifier" }
+      },
+      "AuditCreatedFrom": {
+        "name": "createdFrom",
+        "in": "query",
+        "required": false,
+        "schema": { "$ref": "#/components/schemas/Timestamp" }
+      },
+      "AuditCreatedTo": {
+        "name": "createdTo",
+        "in": "query",
+        "required": false,
+        "schema": { "$ref": "#/components/schemas/Timestamp" }
       },
       "IdempotencyKey": {
         "name": "Idempotency-Key",
@@ -1670,11 +3271,86 @@
         "required": true,
         "schema": { "$ref": "#/components/schemas/Identifier" }
       },
+      "EnrollmentId": {
+        "name": "enrollmentId",
+        "in": "path",
+        "required": true,
+        "schema": { "$ref": "#/components/schemas/Identifier" }
+      },
+      "SessionId": {
+        "name": "sessionId",
+        "in": "path",
+        "required": true,
+        "schema": { "$ref": "#/components/schemas/Identifier" }
+      },
+      "CaseId": {
+        "name": "caseId",
+        "in": "path",
+        "required": true,
+        "schema": { "$ref": "#/components/schemas/Identifier" }
+      },
+      "ExportId": {
+        "name": "exportId",
+        "in": "path",
+        "required": true,
+        "schema": { "$ref": "#/components/schemas/Identifier" }
+      },
+      "AdminUserId": {
+        "name": "adminUserId",
+        "in": "path",
+        "required": true,
+        "schema": { "$ref": "#/components/schemas/Identifier" }
+      },
+      "AdminOrigin": {
+        "name": "Origin",
+        "in": "header",
+        "required": true,
+        "description": "Must exactly match one configured admin origin; wildcard, suffix and null-origin matches are forbidden.",
+        "schema": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 255,
+          "pattern": "^https://[^/]+$"
+        }
+      },
       "Provider": {
         "name": "provider",
         "in": "path",
         "required": true,
         "schema": { "$ref": "#/components/schemas/PaymentProvider" }
+      }
+    },
+    "headers": {
+      "AdminPreAuthSetCookie": {
+        "description": "__Host-kora_admin_preauth and __Host-kora_admin_csrf cookies; Path=/, Secure, SameSite=Strict; pre-auth cookie is HttpOnly; no Domain.",
+        "schema": { "type": "string" }
+      },
+      "AdminRefreshSetCookie": {
+        "description": "__Host-kora_admin_refresh and __Host-kora_admin_csrf cookies; Path=/, Secure, SameSite=Strict; refresh cookie is HttpOnly; no Domain.",
+        "schema": { "type": "string" }
+      },
+      "ResourceLocation": {
+        "description": "Relative API location only; never a secret-bearing or externally signed URL.",
+        "schema": { "type": "string", "pattern": "^/api/v1/admin/" }
+      },
+      "NoStore": {
+        "description": "Sensitive response cache policy.",
+        "schema": { "type": "string", "const": "no-store" }
+      },
+      "NoSniff": {
+        "description": "MIME sniffing is forbidden.",
+        "schema": { "type": "string", "const": "nosniff" }
+      },
+      "RetryAfter": {
+        "description": "Whole seconds until the active rate-limit window permits a retry.",
+        "schema": { "type": "integer", "minimum": 1 }
+      },
+      "AttachmentDisposition": {
+        "description": "Private download attachment.",
+        "schema": {
+          "type": "string",
+          "pattern": "^attachment; filename=\"[A-Za-z0-9._-]+\"$"
+        }
       }
     },
     "responses": {
@@ -1696,6 +3372,17 @@
       },
       "ClientError": {
         "description": "Stable safe client-facing error.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+          }
+        }
+      },
+      "RateLimitedError": {
+        "description": "Stable safe rate-limit response with an exact retry delay.",
+        "headers": {
+          "Retry-After": { "$ref": "#/components/headers/RetryAfter" }
+        },
         "content": {
           "application/json": {
             "schema": { "$ref": "#/components/schemas/ErrorResponse" }
@@ -1874,6 +3561,7 @@
           "AUTH_REQUIRED",
           "AUTH_SESSION_REVOKED",
           "AUTH_REFRESH_REUSED",
+          "AUTH_REFRESH_INVALID",
           "AUTH_INVALID_CREDENTIALS",
           "OTP_INVALID",
           "OTP_EXPIRED",
@@ -1902,7 +3590,20 @@
           "INVALID_STATE_TRANSITION",
           "MEDIA_ASSET_NOT_FOUND",
           "ARTIST_NOT_FOUND",
-          "ARTIST_CONFLICT"
+          "ARTIST_CONFLICT",
+          "SENSITIVE_RESPONSE_ALREADY_DELIVERED",
+          "ADMIN_RECOVERY_CODE_INVALID",
+          "ADMIN_RECOVERY_INVALID",
+          "ADMIN_SESSION_NOT_FOUND",
+          "ADMIN_USER_NOT_FOUND",
+          "RECOVERY_CASE_NOT_FOUND",
+          "RECOVERY_CASE_EXPIRED",
+          "RECOVERY_CASE_CONFLICT",
+          "LAST_SUPER_ADMIN_PROTECTED",
+          "AUDIT_EXPORT_NOT_FOUND",
+          "AUDIT_EXPORT_NOT_READY",
+          "AUDIT_EXPORT_EXPIRED",
+          "ADMIN_INVITATION_INVALID"
         ]
       },
       "ErrorDetails": {
@@ -1926,6 +3627,11 @@
               "RATE_LIMITED",
               "REQUIRED"
             ]
+          },
+          "operatorReason": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 500
           },
           "retryAfterSeconds": {
             "type": "integer",
@@ -3029,6 +4735,790 @@
         "properties": {
           "data": { "$ref": "#/components/schemas/MediaPreparation" },
           "meta": { "$ref": "#/components/schemas/ResponseMeta" }
+        }
+      },
+      "AdminRole": {
+        "type": "string",
+        "enum": ["SUPER_ADMIN", "CONTENT_EDITOR", "FINANCE_MANAGER", "SUPPORT"]
+      },
+      "AdminStatus": {
+        "type": "string",
+        "enum": ["INVITED", "PENDING_MFA", "ACTIVE", "SUSPENDED", "DISABLED"]
+      },
+      "AdminPassword": {
+        "type": "string",
+        "minLength": 12,
+        "maxLength": 128,
+        "writeOnly": true
+      },
+      "AdminLoginRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["email", "password"],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "minLength": 3,
+            "maxLength": 254
+          },
+          "password": { "$ref": "#/components/schemas/AdminPassword" }
+        }
+      },
+      "AdminPreAuth": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["challengeId", "expiresAt", "nextStep"],
+        "properties": {
+          "challengeId": { "$ref": "#/components/schemas/Identifier" },
+          "expiresAt": { "$ref": "#/components/schemas/Timestamp" },
+          "nextStep": {
+            "type": "string",
+            "enum": [
+              "TOTP_VERIFY",
+              "FIRST_TOTP_ENROLLMENT",
+              "MFA_RECOVERY_TOTP_ENROLLMENT"
+            ]
+          }
+        }
+      },
+      "AdminPreAuthEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data", "meta"],
+        "properties": {
+          "data": { "$ref": "#/components/schemas/AdminPreAuth" },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
+        }
+      },
+      "AdminTotpEnrollment": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["enrollmentId", "expiresAt"],
+        "properties": {
+          "enrollmentId": { "$ref": "#/components/schemas/Identifier" },
+          "expiresAt": { "$ref": "#/components/schemas/Timestamp" }
+        }
+      },
+      "AdminTotpEnrollmentEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data", "meta"],
+        "properties": {
+          "data": { "$ref": "#/components/schemas/AdminTotpEnrollment" },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
+        }
+      },
+      "AdminTotpVerificationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code"],
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^[0-9]{6}$",
+            "writeOnly": true
+          }
+        }
+      },
+      "AdminAccessSession": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "absoluteExpiresAt",
+          "accessExpiresAt",
+          "accessToken",
+          "authorizationVersion",
+          "idleExpiresAt",
+          "role",
+          "sessionId"
+        ],
+        "properties": {
+          "sessionId": { "$ref": "#/components/schemas/Identifier" },
+          "accessToken": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 4096,
+            "readOnly": true
+          },
+          "accessExpiresAt": { "$ref": "#/components/schemas/Timestamp" },
+          "idleExpiresAt": { "$ref": "#/components/schemas/Timestamp" },
+          "absoluteExpiresAt": { "$ref": "#/components/schemas/Timestamp" },
+          "authorizationVersion": { "type": "integer", "minimum": 1 },
+          "role": { "$ref": "#/components/schemas/AdminRole" }
+        }
+      },
+      "AdminSessionEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data", "meta"],
+        "properties": {
+          "data": { "$ref": "#/components/schemas/AdminAccessSession" },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
+        }
+      },
+      "AdminRecoveryCode": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["selector", "verifier"],
+        "properties": {
+          "selector": {
+            "type": "string",
+            "pattern": "^[A-HJ-NP-Z2-9]{8,16}$",
+            "readOnly": true
+          },
+          "verifier": {
+            "type": "string",
+            "pattern": "^[A-HJ-NP-Z2-9]{26,32}$",
+            "readOnly": true
+          }
+        },
+        "x-kora-non-loggable": true,
+        "x-kora-single-display": true
+      },
+      "AdminRecoveryCodes": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["codes"],
+        "properties": {
+          "codes": {
+            "type": "array",
+            "minItems": 10,
+            "maxItems": 10,
+            "uniqueItems": true,
+            "items": { "$ref": "#/components/schemas/AdminRecoveryCode" }
+          }
+        },
+        "x-kora-non-loggable": true,
+        "x-kora-single-display": true
+      },
+      "AdminRecoveryCodesEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data", "meta"],
+        "properties": {
+          "data": { "$ref": "#/components/schemas/AdminRecoveryCodes" },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
+        }
+      },
+      "AdminEnrollmentConfirmation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["recoveryCodes", "session"],
+        "properties": {
+          "session": { "$ref": "#/components/schemas/AdminAccessSession" },
+          "recoveryCodes": { "$ref": "#/components/schemas/AdminRecoveryCodes" }
+        },
+        "x-kora-non-loggable": true,
+        "x-kora-single-display": true
+      },
+      "AdminEnrollmentConfirmationEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data", "meta"],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AdminEnrollmentConfirmation"
+          },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
+        }
+      },
+      "AdminRecoveryCodeVerificationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["selector", "verifier"],
+        "properties": {
+          "selector": { "type": "string", "pattern": "^[A-HJ-NP-Z2-9]{8,16}$" },
+          "verifier": {
+            "type": "string",
+            "pattern": "^[A-HJ-NP-Z2-9]{26,32}$",
+            "writeOnly": true
+          }
+        }
+      },
+      "AdminRecoveryContext": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["expiresAt", "nextStep", "recoveryContextId"],
+        "properties": {
+          "recoveryContextId": { "$ref": "#/components/schemas/Identifier" },
+          "expiresAt": { "$ref": "#/components/schemas/Timestamp" },
+          "nextStep": { "type": "string", "const": "ENROLL_TOTP" }
+        }
+      },
+      "AdminRecoveryContextEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data", "meta"],
+        "properties": {
+          "data": { "$ref": "#/components/schemas/AdminRecoveryContext" },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
+        }
+      },
+      "AdminStepUpRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["purpose", "totpCode"],
+        "properties": {
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "SESSION_REVOCATION",
+              "RECOVERY_APPROVAL",
+              "AUDIT_EXPORT",
+              "INVITATION",
+              "ROLE_CHANGE",
+              "STATUS_CHANGE",
+              "RECOVERY_CODE_ROTATION"
+            ]
+          },
+          "totpCode": {
+            "type": "string",
+            "pattern": "^[0-9]{6}$",
+            "writeOnly": true
+          }
+        }
+      },
+      "AdminStepUp": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["expiresAt", "verifiedAt"],
+        "properties": {
+          "verifiedAt": { "$ref": "#/components/schemas/Timestamp" },
+          "expiresAt": { "$ref": "#/components/schemas/Timestamp" }
+        }
+      },
+      "AdminStepUpEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data", "meta"],
+        "properties": {
+          "data": { "$ref": "#/components/schemas/AdminStepUp" },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
+        }
+      },
+      "AdminSessionSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "absoluteExpiresAt",
+          "createdAt",
+          "current",
+          "idleExpiresAt",
+          "lastSeenAt",
+          "sessionId"
+        ],
+        "properties": {
+          "sessionId": { "$ref": "#/components/schemas/Identifier" },
+          "createdAt": { "$ref": "#/components/schemas/Timestamp" },
+          "lastSeenAt": { "$ref": "#/components/schemas/Timestamp" },
+          "idleExpiresAt": { "$ref": "#/components/schemas/Timestamp" },
+          "absoluteExpiresAt": { "$ref": "#/components/schemas/Timestamp" },
+          "current": { "type": "boolean" }
+        }
+      },
+      "AdminSessionPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data", "meta"],
+        "properties": {
+          "data": {
+            "type": "array",
+            "maxItems": 50,
+            "items": { "$ref": "#/components/schemas/AdminSessionSummary" }
+          },
+          "meta": { "$ref": "#/components/schemas/CursorMeta" }
+        }
+      },
+      "AdminReasonCode": {
+        "type": "string",
+        "enum": [
+          "SECURITY_RESPONSE",
+          "ACCOUNT_RECOVERY",
+          "ROLE_ADMINISTRATION",
+          "STATUS_ADMINISTRATION",
+          "AUDIT_EXPORT",
+          "INVITATION_ADMINISTRATION"
+        ]
+      },
+      "AdminReasonRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["operatorReason", "reasonCode"],
+        "properties": {
+          "reasonCode": { "$ref": "#/components/schemas/AdminReasonCode" },
+          "operatorReason": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 500
+          }
+        }
+      },
+      "AdminPasswordResetRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["email"],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "minLength": 3,
+            "maxLength": 254
+          }
+        }
+      },
+      "AdminPasswordResetCompletionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["newPassword", "resetCode"],
+        "properties": {
+          "resetCode": {
+            "type": "string",
+            "pattern": "^[A-HJ-NP-Z2-9]{26,32}$",
+            "writeOnly": true
+          },
+          "newPassword": { "$ref": "#/components/schemas/AdminPassword" }
+        }
+      },
+      "AdminAccepted": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["accepted"],
+        "properties": { "accepted": { "type": "boolean", "const": true } }
+      },
+      "AdminAcceptedEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data", "meta"],
+        "properties": {
+          "data": { "$ref": "#/components/schemas/AdminAccepted" },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
+        }
+      },
+      "AdminRecoveryCaseCreateRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["operatorReason", "reasonCode", "subjectAdminUserId"],
+        "properties": {
+          "subjectAdminUserId": { "$ref": "#/components/schemas/Identifier" },
+          "reasonCode": { "$ref": "#/components/schemas/AdminReasonCode" },
+          "operatorReason": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 500
+          }
+        }
+      },
+      "AdminRecoveryCaseState": {
+        "type": "string",
+        "enum": ["PENDING", "APPROVED", "CANCELLED", "EXPIRED"]
+      },
+      "AdminRecoveryCase": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "approverAdminUserId",
+          "caseId",
+          "createdAt",
+          "creatorAdminUserId",
+          "expiresAt",
+          "state",
+          "subjectAdminUserId"
+        ],
+        "properties": {
+          "caseId": { "$ref": "#/components/schemas/Identifier" },
+          "creatorAdminUserId": { "$ref": "#/components/schemas/Identifier" },
+          "subjectAdminUserId": { "$ref": "#/components/schemas/Identifier" },
+          "state": { "$ref": "#/components/schemas/AdminRecoveryCaseState" },
+          "createdAt": { "$ref": "#/components/schemas/Timestamp" },
+          "expiresAt": { "$ref": "#/components/schemas/Timestamp" },
+          "approverAdminUserId": {
+            "type": ["string", "null"],
+            "format": "uuid"
+          }
+        },
+        "oneOf": [
+          {
+            "required": ["approverAdminUserId"],
+            "properties": {
+              "state": { "const": "APPROVED" },
+              "approverAdminUserId": { "type": "string", "format": "uuid" }
+            }
+          },
+          {
+            "properties": {
+              "state": { "enum": ["PENDING", "CANCELLED", "EXPIRED"] },
+              "approverAdminUserId": { "type": "null" }
+            }
+          }
+        ]
+      },
+      "AdminRecoveryCaseEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data", "meta"],
+        "properties": {
+          "data": { "$ref": "#/components/schemas/AdminRecoveryCase" },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
+        }
+      },
+      "AdminRecoveryCasePage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data", "meta"],
+        "properties": {
+          "data": {
+            "type": "array",
+            "maxItems": 50,
+            "items": { "$ref": "#/components/schemas/AdminRecoveryCase" }
+          },
+          "meta": { "$ref": "#/components/schemas/CursorMeta" }
+        }
+      },
+      "AdminAuditContext": {
+        "type": "string",
+        "enum": ["ADMIN_SESSION", "ADMIN_RECOVERY", "SYSTEM"]
+      },
+      "AdminAuditLogEntry": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "action",
+          "actorAdminUserId",
+          "adminRecoveryContextId",
+          "adminSessionId",
+          "causationEventId",
+          "context",
+          "createdAt",
+          "delegatedByAdminUserId",
+          "entityId",
+          "entityType",
+          "eventClass",
+          "eventId",
+          "maskedAfter",
+          "maskedBefore",
+          "operatorReason",
+          "reasonCode",
+          "requestId",
+          "subjectAdminUserId",
+          "systemExecutionRefHash"
+        ],
+        "properties": {
+          "eventId": { "$ref": "#/components/schemas/Identifier" },
+          "action": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "eventClass": {
+            "type": "string",
+            "enum": ["LOGIN", "SESSION", "EXPORT", "BUSINESS"]
+          },
+          "context": { "$ref": "#/components/schemas/AdminAuditContext" },
+          "actorAdminUserId": { "type": ["string", "null"], "format": "uuid" },
+          "subjectAdminUserId": {
+            "type": ["string", "null"],
+            "format": "uuid"
+          },
+          "delegatedByAdminUserId": {
+            "type": ["string", "null"],
+            "format": "uuid"
+          },
+          "adminSessionId": { "type": ["string", "null"], "format": "uuid" },
+          "adminRecoveryContextId": {
+            "type": ["string", "null"],
+            "format": "uuid"
+          },
+          "systemExecutionRefHash": {
+            "type": ["string", "null"],
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "entityType": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "entityId": { "$ref": "#/components/schemas/Identifier" },
+          "maskedBefore": {
+            "type": ["object", "null"],
+            "maxProperties": 50,
+            "additionalProperties": {
+              "type": ["string", "number", "boolean", "null"]
+            },
+            "x-kora-pii-redacted": true
+          },
+          "maskedAfter": {
+            "type": ["object", "null"],
+            "maxProperties": 50,
+            "additionalProperties": {
+              "type": ["string", "number", "boolean", "null"]
+            },
+            "x-kora-pii-redacted": true
+          },
+          "reasonCode": { "$ref": "#/components/schemas/AdminReasonCode" },
+          "operatorReason": {
+            "type": ["string", "null"],
+            "minLength": 3,
+            "maxLength": 500
+          },
+          "requestId": { "type": "string", "minLength": 8, "maxLength": 128 },
+          "causationEventId": { "type": ["string", "null"], "format": "uuid" },
+          "createdAt": { "$ref": "#/components/schemas/Timestamp" }
+        },
+        "oneOf": [
+          {
+            "properties": {
+              "context": { "const": "ADMIN_SESSION" },
+              "actorAdminUserId": { "type": "string", "format": "uuid" },
+              "adminSessionId": { "type": "string", "format": "uuid" },
+              "adminRecoveryContextId": { "type": "null" },
+              "systemExecutionRefHash": { "type": "null" },
+              "delegatedByAdminUserId": { "type": "null" }
+            }
+          },
+          {
+            "properties": {
+              "context": { "const": "ADMIN_RECOVERY" },
+              "actorAdminUserId": { "type": "string", "format": "uuid" },
+              "adminSessionId": { "type": "null" },
+              "adminRecoveryContextId": { "type": "string", "format": "uuid" },
+              "systemExecutionRefHash": { "type": "null" },
+              "delegatedByAdminUserId": { "type": "null" }
+            }
+          },
+          {
+            "properties": {
+              "context": { "const": "SYSTEM" },
+              "actorAdminUserId": { "type": "null" },
+              "adminSessionId": { "type": "null" },
+              "adminRecoveryContextId": { "type": "null" },
+              "systemExecutionRefHash": { "type": "string" }
+            },
+            "oneOf": [
+              {
+                "properties": {
+                  "causationEventId": { "type": "null" },
+                  "delegatedByAdminUserId": { "type": "null" }
+                }
+              },
+              {
+                "properties": {
+                  "causationEventId": { "type": "string", "format": "uuid" },
+                  "delegatedByAdminUserId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "AdminAuditLogPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data", "meta"],
+        "properties": {
+          "data": {
+            "type": "array",
+            "maxItems": 50,
+            "items": { "$ref": "#/components/schemas/AdminAuditLogEntry" }
+          },
+          "meta": { "$ref": "#/components/schemas/CursorMeta" }
+        }
+      },
+      "AdminAuditExportRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "x-kora-filter-semantics": "ALL_SUPPLIED_FILTERS_ARE_COMBINED_WITH_AND",
+        "required": ["from", "operatorReason", "reasonCode", "to"],
+        "properties": {
+          "from": { "$ref": "#/components/schemas/Timestamp" },
+          "to": { "$ref": "#/components/schemas/Timestamp" },
+          "actorAdminUserId": { "$ref": "#/components/schemas/Identifier" },
+          "action": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "entityType": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "entityId": { "$ref": "#/components/schemas/Identifier" },
+          "reasonCode": { "$ref": "#/components/schemas/AdminReasonCode" },
+          "operatorReason": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 500
+          }
+        }
+      },
+      "AdminAuditExportState": {
+        "type": "string",
+        "enum": ["PENDING", "PROCESSING", "READY", "EXPIRED", "FAILED"]
+      },
+      "AdminAuditExport": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contentSha256",
+          "createdAt",
+          "expiresAt",
+          "exportId",
+          "signatureKeyId",
+          "state"
+        ],
+        "properties": {
+          "exportId": { "$ref": "#/components/schemas/Identifier" },
+          "state": { "$ref": "#/components/schemas/AdminAuditExportState" },
+          "createdAt": { "$ref": "#/components/schemas/Timestamp" },
+          "expiresAt": { "type": ["string", "null"], "format": "date-time" },
+          "contentSha256": {
+            "type": ["string", "null"],
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "signatureKeyId": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 120,
+            "description": "Public identifier for the signed manifest verification key; never a download capability."
+          }
+        },
+        "oneOf": [
+          {
+            "properties": {
+              "state": { "enum": ["READY", "EXPIRED"] },
+              "expiresAt": { "type": "string", "format": "date-time" },
+              "contentSha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "signatureKeyId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              }
+            }
+          },
+          {
+            "properties": {
+              "state": { "enum": ["PENDING", "PROCESSING", "FAILED"] },
+              "expiresAt": { "type": "null" },
+              "contentSha256": { "type": "null" },
+              "signatureKeyId": { "type": "null" }
+            }
+          }
+        ]
+      },
+      "AdminAuditExportEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data", "meta"],
+        "properties": {
+          "data": { "$ref": "#/components/schemas/AdminAuditExport" },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
+        }
+      },
+      "AdminInvitationCreateRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["email", "operatorReason", "reasonCode", "role"],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "minLength": 3,
+            "maxLength": 254
+          },
+          "role": { "$ref": "#/components/schemas/AdminRole" },
+          "reasonCode": { "$ref": "#/components/schemas/AdminReasonCode" },
+          "operatorReason": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 500
+          }
+        }
+      },
+      "AdminInvitationAcceptRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["invitationCode", "password"],
+        "properties": {
+          "invitationCode": {
+            "type": "string",
+            "pattern": "^[A-HJ-NP-Z2-9]{26,64}$",
+            "writeOnly": true
+          },
+          "password": { "$ref": "#/components/schemas/AdminPassword" }
+        }
+      },
+      "AdminInvitation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["email", "expiresAt", "invitationId", "role", "status"],
+        "properties": {
+          "invitationId": { "$ref": "#/components/schemas/Identifier" },
+          "email": { "type": "string", "format": "email" },
+          "role": { "$ref": "#/components/schemas/AdminRole" },
+          "status": { "type": "string", "const": "PENDING" },
+          "expiresAt": { "$ref": "#/components/schemas/Timestamp" }
+        }
+      },
+      "AdminInvitationEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data", "meta"],
+        "properties": {
+          "data": { "$ref": "#/components/schemas/AdminInvitation" },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
+        }
+      },
+      "AdminUser": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "adminUserId",
+          "authorizationVersion",
+          "email",
+          "role",
+          "status"
+        ],
+        "properties": {
+          "adminUserId": { "$ref": "#/components/schemas/Identifier" },
+          "email": { "type": "string", "format": "email" },
+          "role": { "$ref": "#/components/schemas/AdminRole" },
+          "status": { "$ref": "#/components/schemas/AdminStatus" },
+          "authorizationVersion": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "AdminUserPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data", "meta"],
+        "properties": {
+          "data": {
+            "type": "array",
+            "maxItems": 50,
+            "items": { "$ref": "#/components/schemas/AdminUser" }
+          },
+          "meta": { "$ref": "#/components/schemas/CursorMeta" }
+        }
+      },
+      "AdminRoleChangeRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["operatorReason", "reasonCode", "role"],
+        "properties": {
+          "role": { "$ref": "#/components/schemas/AdminRole" },
+          "reasonCode": { "$ref": "#/components/schemas/AdminReasonCode" },
+          "operatorReason": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 500
+          }
+        }
+      },
+      "AdminStatusChangeRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["operatorReason", "reasonCode", "status"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["ACTIVE", "SUSPENDED", "DISABLED"]
+          },
+          "reasonCode": { "$ref": "#/components/schemas/AdminReasonCode" },
+          "operatorReason": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 500
+          }
         }
       }
     }

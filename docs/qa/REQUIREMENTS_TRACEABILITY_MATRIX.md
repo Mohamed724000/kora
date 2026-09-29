@@ -327,7 +327,8 @@ créé ; la branche et le worktree S1.2-03A sont préservés.
 S1.2-03A est entièrement clôturé sans nouvelle promesse runtime. La présente
 réconciliation documentaire consigne les preuves post-fusion ; son état de
 publication est vérifiable dans GitHub et ne modifie pas la baseline technique
-S1.2-03A. S1.2-03B reste `Not started` et exige une autorisation CTO séparée.
+S1.2-03A. À cette clôture historique, S1.2-03B restait `Not started` et exigeait
+une autorisation CTO séparée.
 
 ## Contrôles de gouvernance de Sprint 0.1
 
@@ -369,3 +370,27 @@ S1.2-03A. S1.2-03B reste `Not started` et exige une autorisation CTO séparée.
 - Une évolution contradictoire avec une source immuable exige une décision
   explicite du Product Owner et, lorsque nécessaire, un nouvel ADR.
 - Les identifiants sources ne sont ni renommés ni réutilisés.
+
+## Traçabilité S1.2-03B — Admin Security Contract Gate
+
+Qualification : **instantané historique prépublication du 2026-09-29**.
+
+| Exigence                                                | Contrat / décision                 | Preuve locale                                            | État              |
+| ------------------------------------------------------- | ---------------------------------- | -------------------------------------------------------- | ----------------- |
+| SEC-ADM-01 Surface exacte 60/67 et slices 12/15         | `docs/api/openapi.yaml`            | validateur + tests d'inventaire                          | Contract verified |
+| SEC-ADM-02 Login/TOTP/CSRF/Origin sans oracle           | OpenAPI + ADR-025                  | `X-Kora-CSRF`, AND/OR, Origin, Fetch et timings publics  | Contract verified |
+| SEC-ADM-03 QR TOTP à livraison unique                   | `deliverAdminTotpEnrollmentQr`     | media/header/secret/idempotency mutations                | Contract verified |
+| SEC-ADM-04 Codes sélecteur+vérificateur, exactement dix | schémas `AdminRecoveryCode*`       | tests de bornes et surface générée                       | Contract verified |
+| SEC-ADM-05 Refresh RS256/rotation/replay/familles       | politique admin + ADR-025          | `AUTH_REFRESH_INVALID`, cookies et limites verrouillés   | Contract verified |
+| SEC-ADM-06 Récupération assistée à trois parties        | routes recovery-cases + ADR-025    | approbateur + annulation serveur auditée sans 28e route  | Contract verified |
+| SEC-ADM-07 Audit XOR, preuve et acteur/sujet            | `AdminAuditLogEntry` + ADR-025     | union + SYSTEM autonome/délégué + preuve/causalité       | Contract verified |
+| SEC-ADM-08 Exports audit privés                         | routes audit-log-exports           | PII, JCS/JWS Ed25519, payload bijectif, chemins ZIP sûrs | Contract verified |
+| SEC-ADM-09 Invitations et administration RBAC           | invitations/users                  | deny-by-default, no self-change, dernier super-admin     | Contract verified |
+| SEC-ADM-10 Moindre privilège historique                 | cinq opérations Artist/Audio/Media | test de réintroduction `SUPPORT`                         | Contract verified |
+| SEC-ADM-11 Aucun runtime ni migration                   | allowlist S1.2-03B                 | preuve Git et scan domaines interdits                    | Verified locally  |
+| SEC-ADM-12 Lecture audit conforme ADR-004               | filtres admin/action/entité/date   | mutations filtre + paramètres générés                    | Contract verified |
+| SEC-ADM-13 Sinks succès/échec par opération             | `AdminSecurityEvent` / `AuditLog`  | mutation routage échec sans contexte + atomicité         | Contract verified |
+| SEC-ADM-14 Rate limit et réponses sensibles             | quatre profils + headers           | profil/429/Retry-After/no-store + timing anti-oracle     | Contract verified |
+
+Les états ci-dessus attestent uniquement le contrat. Les garanties runtime, SQL
+et interface restent `Not started` jusqu'aux autorisations S1.2-03C1/C2/C3.

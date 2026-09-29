@@ -2,8 +2,9 @@
 
 Périmètre durable couvert : **BASELINE + S0.4/S0.5/M0.1/M0.2/S0.6 ET M0.3
 FUSIONNÉS ET CLÔTURÉS + S1.1 FERMÉ + CONTRACT & DATA READINESS S1.2-01 +
-S1.2-02 CLÔTURÉ ET FUSIONNÉ + S1.2-03A CLÔTURÉ ET FUSIONNÉ, BASELINE
-TECHNIQUE R8 PRÉSERVÉE**.
+S1.2-02 CLÔTURÉ ET FUSIONNÉ + S1.2-03A CLÔTURÉ ET FUSIONNÉ + S1.2-03B,
+INSTANTANÉ HISTORIQUE PRÉPUBLICATION DU 2026-09-29 : ADMIN SECURITY CONTRACT
+GATE VALIDÉ LOCALEMENT, BASELINE TECHNIQUE PRÉSERVÉE**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
 commit, push ou changement GitHub S1.1 n’avait encore été effectué : il s’agit
@@ -699,10 +700,12 @@ Aucun tag, release ou déploiement n’a été créé ; la branche et le worktre
 S1.2-03A sont préservés.
 
 S1.2-03A est entièrement clôturé, sans élargissement de la frontière de lecture
-ni nouvelle promesse runtime. S1.2-03B reste `Not started` et exige une
-autorisation CTO séparée. La présente réconciliation documentaire consigne les
-preuves post-fusion. Son état de publication est vérifiable dans GitHub et ne
-modifie pas la baseline technique S1.2-03A.
+ni nouvelle promesse runtime. À cette clôture, S1.2-03B restait `Not started`.
+Dans l’instantané historique prépublication du 2026-09-29, il était validé
+localement comme gate contractuel non publié. Les
+runtimes C1/C2 et l'interface C3 restent `Not started` et exigent chacun une
+autorisation CTO séparée. Cette réconciliation ne modifie pas la baseline
+technique S1.2-03A.
 
 Le pool `pg` est détenu par le client Prisma 7.9.1 via
 `@prisma/adapter-pg` 7.9.1 ; la readiness réutilise ce même chemin. Les erreurs
@@ -724,3 +727,26 @@ Chaque lot affectant une frontière :
 4. crée des tests négatifs et preuves ;
 5. obtient la revue sécurité prévue ;
 6. n’affirme jamais qu’un contrôle non développé est opérationnel.
+
+## Frontière contractuelle S1.2-03B — Admin Security
+
+| Menace                                     | Contrôle contractuel                                                                                                          | Risque résiduel / lot runtime                     |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| Oracle de compte au login/reset/invitation | statuts/erreurs génériques et table de timing comparable pour inconnu/expiré/consommé/révoqué/état compte                     | tests statistiques et budgets en C1/C2            |
+| CSRF ou Origin contourné                   | exigences OpenAPI AND cookie pré-auth/refresh + cookie CSRF + `X-Kora-CSRF`, Origin exact et Fetch Metadata au login          | middleware et tests navigateur en C1              |
+| Fuite/rejeu du seed TOTP                   | QR POST binaire unique, `no-store`, `nosniff`, HMAC-SHA-256/30 s/±1/replay refusé, secret 256 bits sous AES-256-GCM enveloppe | KMS et redaction runtime en C1                    |
+| Vol ou replay refresh                      | 256 bits, cookie host-only protégé, rotation one-shot, famille révoquée au replay/course, profil 10/min                       | transaction et concurrence en C1                  |
+| Bruteforce codes de secours                | sélecteur public + vérificateur 128 bits, Argon2id 64 MiB/t=3/p=1, usage atomique unique, profil 5/h                          | contrainte SQL en C1                              |
+| Création de session pendant récupération   | contexte `MFA_RECOVERY` borné, seule l'inscription TOTP est autorisée                                                         | machine d'état en C1                              |
+| Collusion/récupération support             | trois parties distinctes ; annulation serveur auditée sur remplacement/inéligibilité ; approbateur super-admin step-up        | transaction et alerting en C2/C3                  |
+| Audit attribué au mauvais acteur           | sinks succès/échec par opération, contexte non prouvé vers événement ; SYSTEM autonome/délégué, XOR et union discriminée      | migration, XOR SQL et trigger avant runtime C1/C2 |
+| Escalade RBAC                              | deny by default, rôle rechargé, `authorizationVersion`, no self-change, dernier super-admin protégé                           | middleware et verrouillage transactionnel en C2   |
+| Exfiltration d'export                      | bearer+step-up ; PII ; JCS/JWS Ed25519 ; payload bijectif et chemins ZIP sûrs ; trust bundle ; aucune URL signée              | stockage/chiffrement/expiry en C2                 |
+
+Les contrôles ci-dessus sont des obligations de contrat et des tests de dérive ;
+ils ne sont pas déclarés opérationnels. Tout événement futur sans contexte
+prouvé va dans `AdminSecurityEvent`, même si le succès de la même opération
+produit un `AuditLog`; les mutations sous session ou récupération prouvée et
+leur `AuditLog` doivent être atomiques. Jusqu'à arbitrage légal, la
+rétention est fail-safe sans suppression. ADR-025 reste l'autorité de conception
+pour les contextes d'audit.
