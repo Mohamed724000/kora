@@ -750,3 +750,33 @@ produit un `AuditLog`; les mutations sous session ou récupération prouvée et
 leur `AuditLog` doivent être atomiques. Jusqu'à arbitrage légal, la
 rétention est fail-safe sans suppression. ADR-025 reste l'autorité de conception
 pour les contextes d'audit.
+
+## Remédiation supply-chain S1.2-03B-R1
+
+Le workflow Security R0 `36572630278` a exposé quatre avis sur deux dépendances
+transitives : `GHSA-qw65-cvwx-89v3`, `GHSA-58mr-gqgx-xq4g` et
+`GHSA-hrr3-gc8f-f4qj` pour `fast-uri`, puis `GHSA-3pph-fpjx-jg34` pour
+Multer. Les succès R0 Infrastructure `36572630270`, Launcher Windows
+`36572630257` et Quality Linux `36572630225` ne neutralisent pas ce constat.
+
+R1 conserve les parents `ajv@8.18.0` et
+`@nestjs/platform-express@11.1.28`, mais impose leurs résolutions exactes sûres
+`fast-uri@3.1.8` et `multer@2.4.0`. Le scanner refuse `fast-uri` 3.x
+`>=3.0.0 <3.1.8`, dont 3.1.6 et 3.1.7, et Multer 2.x
+`>=2.2.0 <2.4.0`, dont 2.3.0. Le retrait de `concat-stream` et `typedarray`
+est causal au changement Multer. Audits complet/production, signatures,
+provenance, licences et absence de copie vulnérable sont vérifiés localement.
+
+Sept nœuds optionnels WASM/plateforme déjà présents dans le lockfile R0 sont
+signalés textuellement `extraneous` après deux installations reproductibles.
+Ils proviennent uniquement de branches `wasm32`, `freebsd-wasm32` ou
+`webcontainers`, sont identiques avant/après, ne figurent pas au diff R1 et ne
+sont ni les paquets remédiés ni leurs parents. `npm ls` retourne 0 sans paquet
+`invalid` ni peer cassée. Le risque résiduel est une représentation npm
+imparfaite de ces branches optionnelles installées, non un drift R1 ; toute
+apparition d’un huitième nœud ou toute variation rendrait ce classement caduc.
+
+La surface 60/67/137, les contrats et la capacité produit restent inchangés.
+Aucun endpoint multipart, runtime, schéma, migration, workflow ou interface
+n’est ajouté. R1 demeure local, non indexé, non commité et non publié ; la PR
+#48 reste ouverte, Draft, non fusionnée et décrite « CI en attente ».

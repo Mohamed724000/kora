@@ -30,7 +30,7 @@ const MYSQL_DECLARED_VERSION = "3.15.3";
 const MYSQL_SAFE_VERSION = "3.23.1";
 const FAST_URI_PACKAGE = "fast-uri";
 const FAST_URI_ROOT_PATH = `node_modules/${FAST_URI_PACKAGE}`;
-const FAST_URI_SAFE_VERSION = "3.1.6";
+const FAST_URI_SAFE_VERSION = "3.1.8";
 const FAST_URI_PARENT = {
   declaredVersion: "^3.0.1",
   packageName: "ajv",
@@ -108,7 +108,7 @@ const SHARP_PARENT_PATH = "node_modules/next";
 const SHARP_DECLARED_VERSION = "^0.35.4";
 const MULTER_PACKAGE = "multer";
 const MULTER_ROOT_PATH = `node_modules/${MULTER_PACKAGE}`;
-const MULTER_SAFE_VERSION = "2.3.0";
+const MULTER_SAFE_VERSION = "2.4.0";
 const NEST_PLATFORM_EXPRESS_VERSION = "11.1.28";
 const NEST_PLATFORM_EXPRESS_PATH = "node_modules/@nestjs/platform-express";
 const NEST_PLATFORM_EXPRESS_OVERRIDE = `@nestjs/platform-express@${NEST_PLATFORM_EXPRESS_VERSION}`;
@@ -785,7 +785,7 @@ function isVulnerableFastUriVersion(version) {
   const major = Number(match[1]);
   const minor = Number(match[2]);
   const patch = Number(match[3]);
-  return major === 3 && (minor < 1 || (minor === 1 && patch < 6));
+  return major === 3 && (minor < 1 || (minor === 1 && patch < 8));
 }
 
 export function validateAjvFastUriOverride(manifests, lockfile) {
@@ -806,7 +806,9 @@ export function validateAjvFastUriOverride(manifests, lockfile) {
     targetedOverride[FAST_URI_PACKAGE] !== FAST_URI_SAFE_VERSION ||
     Object.keys(targetedOverride).length !== 1
   ) {
-    errors.push("ajv@8.18.0 must override fast-uri to exact version 3.1.6");
+    errors.push(
+      `${FAST_URI_PARENT.selector} must override ${FAST_URI_PACKAGE} to exact version ${FAST_URI_SAFE_VERSION}`,
+    );
   }
 
   const packages = lockfile.packages ?? {};
@@ -1205,6 +1207,31 @@ export function validateNestMulterOverride(manifests, lockfile) {
     [NEST_PLATFORM_EXPRESS_PATH],
   )) {
     errors.push(`multer has an unapproved lock parent: ${parentPath}`);
+  }
+  const multerInstallations = Object.entries(lockfile.packages ?? {}).filter(
+    ([packagePath]) =>
+      packagePath === MULTER_ROOT_PATH ||
+      packagePath.endsWith(`/${MULTER_ROOT_PATH}`),
+  );
+  const vulnerableMulterInstallations = multerInstallations.filter(
+    ([, metadata]) => {
+      const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+][A-Za-z0-9.-]+)?$/u.exec(
+        metadata.version ?? "",
+      );
+      if (match === null) {
+        return false;
+      }
+      const major = Number(match[1]);
+      const minor = Number(match[2]);
+      return major === 2 && minor >= 2 && minor < 4;
+    },
+  );
+  if (vulnerableMulterInstallations.length > 0) {
+    errors.push(
+      `vulnerable multer installation(s): ${vulnerableMulterInstallations
+        .map(([packagePath, metadata]) => `${packagePath}@${metadata.version}`)
+        .join(", ")}`,
+    );
   }
   errors.push(
     ...validatePhysicalSingleton(lockfile, MULTER_PACKAGE, MULTER_SAFE_VERSION),

@@ -519,3 +519,26 @@ opérations. Les opérations futures portent explicitement `S1.2-03C1` ou
 d'authentification Admin. Cette validation locale n'autorisait ni runtime, ni
 migration, ni interface et ne change pas le statut `Not started` des trois lots
 C, ni des lots D à K ou du lot seed/licences distinct.
+
+### Remédiation locale S1.2-03B-R1
+
+R0 est publié au commit
+`a1002b37b26feb456e2b11df87c20e671c4c20ae`. La PR #48 reste ouverte, Draft,
+non fusionnée et décrite « CI en attente ». Après les succès R0 Infrastructure
+`36572630270`, Launcher Windows `36572630257` et Quality Linux `36572630225`,
+Security `36572630278` a échoué sur quatre avis concernant `fast-uri@3.1.6` et
+`multer@2.3.0`.
+
+R1 remplace localement ces résolutions par `fast-uri@3.1.8` et
+`multer@2.4.0`, renforce la borne du scanner à `<3.1.8` et retire
+causalement `concat-stream`/`typedarray`. Audits, signatures, licences,
+scanner, tests, builds et smokes applicables passent. Les sept nœuds WASM
+signalés textuellement `extraneous` restent les mêmes après deux installations :
+ce sont des branches optionnelles de plateforme déjà verrouillées dans R0,
+non modifiées par R1, avec `npm ls` au code 0 et sans paquet invalide.
+
+La surface contractuelle reste byte-identique à 60 chemins, 67 opérations et
+137 schémas. Aucun endpoint, runtime, modèle, migration, workflow, interface ou
+capacité produit n’est ajouté. R1 reste local, non indexé, non commité et non
+publié ; les lots S1.2-03C1/C2/C3 demeurent `Not started` et toute publication
+requiert une décision CTO distincte.

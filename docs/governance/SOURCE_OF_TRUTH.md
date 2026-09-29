@@ -380,3 +380,32 @@ Le contrat rétablit les filtres et la preuve ADR-004/019, distingue
 génère l'XOR strict `ADMIN_SESSION | ADMIN_RECOVERY | SYSTEM`. Les migrations et
 contraintes nécessaires sont des prérequis des runtimes C1/C2 ; C3 reste
 exclusivement l'interface d'authentification Admin et demeure `Not started`.
+
+## État local S1.2-03B-R1
+
+R0 est publié au commit
+`a1002b37b26feb456e2b11df87c20e671c4c20ae`. La PR #48 demeure ouverte,
+Draft, non fusionnée et sa description reste « CI en attente ». Les workflows
+R0 Infrastructure `36572630270`, Launcher Windows `36572630257` et Quality
+Linux `36572630225` ont réussi ; Security `36572630278` a échoué sur les avis
+`GHSA-qw65-cvwx-89v3`, `GHSA-58mr-gqgx-xq4g`,
+`GHSA-hrr3-gc8f-f4qj` et `GHSA-3pph-fpjx-jg34`.
+
+R1 remédie localement ces quatre avis par les overrides parentés exacts
+`ajv@8.18.0 > fast-uri@3.1.8` et
+`@nestjs/platform-express@11.1.28 > multer@2.4.0`. Le scanner refuse
+explicitement `fast-uri` 3.x `>=3.0.0 <3.1.8` et Multer 2.x
+`>=2.2.0 <2.4.0`. Le retrait de `concat-stream` et `typedarray` est la
+conséquence du remplacement de l’ancien chemin Multer.
+
+Deux installations reproductibles conservent le même lockfile et le même
+graphe. Les sept artefacts signalés textuellement `extraneous` sont des nœuds
+optionnels de branches WASM/plateforme déjà verrouillées dans R0 ; ils ne sont
+ni nouveaux ni modifiés par R1, `npm ls` retourne 0 et ne signale aucun paquet
+`invalid` ni peer cassée. Audits, signatures et licences restent conformes.
+
+Le contrat reste strictement identique à R0 : 60 chemins, 67 opérations et
+137 schémas. Aucun endpoint multipart, runtime Admin, schéma Prisma,
+migration, workflow, interface ou capacité produit n’est ajouté. R1 demeure
+local, non indexé, non commité et non publié, sans SHA, arbre ou Run ID futur.
+Toute publication exige une décision CTO distincte.

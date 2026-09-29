@@ -868,7 +868,7 @@ test("rejects an additional mysql2 lock parent", () => {
 const validAjvFastUriManifests = {
   "": {
     overrides: {
-      "ajv@8.18.0": { "fast-uri": "3.1.6" },
+      "ajv@8.18.0": { "fast-uri": "3.1.8" },
     },
   },
 };
@@ -879,7 +879,7 @@ const validAjvFastUriLock = {
       dependencies: { "fast-uri": "^3.0.1" },
       version: "8.18.0",
     },
-    "node_modules/fast-uri": { version: "3.1.6" },
+    "node_modules/fast-uri": { version: "3.1.8" },
   },
 };
 
@@ -890,23 +890,36 @@ test("accepts the exact targeted ajv fast-uri security override", () => {
   );
 });
 
-test("rejects vulnerable and different fast-uri resolutions", () => {
+test("rejects fast-uri 3.1.6 and the 3.1.7 vulnerable boundary", () => {
   const vulnerableLock = structuredClone(validAjvFastUriLock);
-  vulnerableLock.packages["node_modules/fast-uri"].version = "3.1.5";
+  vulnerableLock.packages["node_modules/fast-uri"].version = "3.1.6";
   assert.deepEqual(
     validateAjvFastUriOverride(validAjvFastUriManifests, vulnerableLock),
     [
-      "vulnerable fast-uri installation(s): node_modules/fast-uri@3.1.5",
-      "fast-uri must have one physical installation at node_modules/fast-uri@3.1.6; found node_modules/fast-uri@3.1.5",
+      "vulnerable fast-uri installation(s): node_modules/fast-uri@3.1.6",
+      "fast-uri must have one physical installation at node_modules/fast-uri@3.1.8; found node_modules/fast-uri@3.1.6",
     ],
   );
 
-  const differentLock = structuredClone(validAjvFastUriLock);
-  differentLock.packages["node_modules/fast-uri"].version = "3.1.7";
+  const boundaryLock = structuredClone(validAjvFastUriLock);
+  boundaryLock.packages["node_modules/fast-uri"].version = "3.1.7";
   assert.deepEqual(
-    validateAjvFastUriOverride(validAjvFastUriManifests, differentLock),
+    validateAjvFastUriOverride(validAjvFastUriManifests, boundaryLock),
     [
-      "fast-uri must have one physical installation at node_modules/fast-uri@3.1.6; found node_modules/fast-uri@3.1.7",
+      "vulnerable fast-uri installation(s): node_modules/fast-uri@3.1.7",
+      "fast-uri must have one physical installation at node_modules/fast-uri@3.1.8; found node_modules/fast-uri@3.1.7",
+    ],
+  );
+});
+
+test("rejects a different non-vulnerable fast-uri resolution", () => {
+  const lockfile = structuredClone(validAjvFastUriLock);
+  lockfile.packages["node_modules/fast-uri"].version = "3.1.9";
+
+  assert.deepEqual(
+    validateAjvFastUriOverride(validAjvFastUriManifests, lockfile),
+    [
+      "fast-uri must have one physical installation at node_modules/fast-uri@3.1.8; found node_modules/fast-uri@3.1.9",
     ],
   );
 });
@@ -917,37 +930,37 @@ test("rejects missing, duplicate and misplaced fast-uri installations", () => {
   assert.deepEqual(
     validateAjvFastUriOverride(validAjvFastUriManifests, missingLock),
     [
-      "fast-uri must have one physical installation at node_modules/fast-uri@3.1.6; found NONE",
+      "fast-uri must have one physical installation at node_modules/fast-uri@3.1.8; found NONE",
     ],
   );
 
   const duplicateLock = structuredClone(validAjvFastUriLock);
   duplicateLock.packages["node_modules/example/node_modules/fast-uri"] = {
-    version: "3.1.6",
+    version: "3.1.8",
   };
   assert.deepEqual(
     validateAjvFastUriOverride(validAjvFastUriManifests, duplicateLock),
     [
-      "fast-uri must have one physical installation at node_modules/fast-uri@3.1.6; found node_modules/fast-uri@3.1.6, node_modules/example/node_modules/fast-uri@3.1.6",
+      "fast-uri must have one physical installation at node_modules/fast-uri@3.1.8; found node_modules/fast-uri@3.1.8, node_modules/example/node_modules/fast-uri@3.1.8",
     ],
   );
 
   const misplacedLock = structuredClone(validAjvFastUriLock);
   delete misplacedLock.packages["node_modules/fast-uri"];
   misplacedLock.packages["node_modules/example/node_modules/fast-uri"] = {
-    version: "3.1.6",
+    version: "3.1.8",
   };
   assert.deepEqual(
     validateAjvFastUriOverride(validAjvFastUriManifests, misplacedLock),
     [
-      "fast-uri must have one physical installation at node_modules/fast-uri@3.1.6; found node_modules/example/node_modules/fast-uri@3.1.6",
+      "fast-uri must have one physical installation at node_modules/fast-uri@3.1.8; found node_modules/example/node_modules/fast-uri@3.1.8",
     ],
   );
 });
 
 test("rejects widened, malformed and parallel fast-uri overrides", () => {
   for (const specification of [
-    "^3.1.6",
+    "^3.1.8",
     "*",
     "latest",
     "github:fastify/fast-uri",
@@ -956,22 +969,31 @@ test("rejects widened, malformed and parallel fast-uri overrides", () => {
     manifests[""].overrides["ajv@8.18.0"]["fast-uri"] = specification;
     assert.deepEqual(
       validateAjvFastUriOverride(manifests, validAjvFastUriLock),
-      ["ajv@8.18.0 must override fast-uri to exact version 3.1.6"],
+      ["ajv@8.18.0 must override fast-uri to exact version 3.1.8"],
       specification,
     );
   }
 
   const global = structuredClone(validAjvFastUriManifests);
-  global[""].overrides["fast-uri"] = "3.1.6";
+  global[""].overrides["fast-uri"] = "3.1.8";
   assert.deepEqual(validateAjvFastUriOverride(global, validAjvFastUriLock), [
     "fast-uri security override is forbidden at path: fast-uri",
   ]);
 
   const parallel = structuredClone(validAjvFastUriManifests);
-  parallel[""].overrides["ajv@^8.18.0"] = { "fast-uri": "3.1.6" };
+  parallel[""].overrides["ajv@^8.18.0"] = { "fast-uri": "3.1.8" };
   assert.deepEqual(validateAjvFastUriOverride(parallel, validAjvFastUriLock), [
     "fast-uri security override is forbidden at path: ajv@^8.18.0",
     "fast-uri security override is forbidden at path: ajv@^8.18.0 > fast-uri",
+  ]);
+});
+
+test("rejects the formerly pinned fast-uri 3.1.6 override exactly", () => {
+  const manifests = structuredClone(validAjvFastUriManifests);
+  manifests[""].overrides["ajv@8.18.0"]["fast-uri"] = "3.1.6";
+
+  assert.deepEqual(validateAjvFastUriOverride(manifests, validAjvFastUriLock), [
+    "ajv@8.18.0 must override fast-uri to exact version 3.1.8",
   ]);
 });
 
@@ -985,7 +1007,7 @@ test("rejects a broadened fast-uri parent and an unapproved lock parent", () => 
   };
 
   assert.deepEqual(validateAjvFastUriOverride(manifests, lockfile), [
-    "ajv@8.18.0 must override fast-uri to exact version 3.1.6",
+    "ajv@8.18.0 must override fast-uri to exact version 3.1.8",
     "fast-uri has an unapproved lock parent: node_modules/example",
   ]);
 });
@@ -1116,7 +1138,7 @@ test("rejects changed qs parent metadata and an unapproved lock parent", () => {
 const validR2Manifests = {
   "": {
     overrides: {
-      "@nestjs/platform-express@11.1.28": { multer: "2.3.0" },
+      "@nestjs/platform-express@11.1.28": { multer: "2.4.0" },
       "js-yaml@3.15.0": "3.15.2",
       "js-yaml@4.3.0": "4.3.2",
       sharp: "0.35.4",
@@ -1171,7 +1193,7 @@ const validR2Lock = {
     },
     "node_modules/eslint-config-next": { version: "16.3.4" },
     "node_modules/js-yaml": { version: "4.3.2" },
-    "node_modules/multer": { version: "2.3.0" },
+    "node_modules/multer": { version: "2.4.0" },
     "node_modules/next": {
       optionalDependencies: { sharp: "^0.35.4" },
       version: "16.3.4",
@@ -1360,30 +1382,84 @@ test("rejects Sharp override, parent and physical installation drift", () => {
 });
 
 test("rejects global, broadened, tagged and referenced Multer overrides", () => {
-  for (const mutation of [
-    (overrides) => {
-      overrides.multer = "2.3.0";
-    },
-    (overrides) => {
-      overrides["@nestjs/platform-express"] = { multer: "2.3.0" };
-    },
-    (overrides) => {
-      overrides["@nestjs/platform-express@^11.1.28"] = { multer: "2.3.0" };
-    },
-    (overrides) => {
-      overrides["@nestjs/platform-express@11.1.28"].multer = "^2.3.0";
-    },
-    (overrides) => {
-      overrides["@nestjs/platform-express@11.1.28"].multer = "latest";
-    },
-    (overrides) => {
-      overrides["@nestjs/platform-express@11.1.28"].multer = "$multer";
-    },
+  for (const [mutation, expected] of [
+    [
+      (overrides) => {
+        overrides.multer = "2.4.0";
+      },
+      ["multer security override is forbidden at path: multer"],
+    ],
+    [
+      (overrides) => {
+        overrides["@nestjs/platform-express"] = { multer: "2.4.0" };
+      },
+      [
+        "multer security override is forbidden at path: @nestjs/platform-express",
+        "multer security override is forbidden at path: @nestjs/platform-express > multer",
+      ],
+    ],
+    [
+      (overrides) => {
+        overrides["@nestjs/platform-express@^11.1.28"] = {
+          multer: "2.4.0",
+        };
+      },
+      [
+        "multer security override is forbidden at path: @nestjs/platform-express@^11.1.28",
+        "multer security override is forbidden at path: @nestjs/platform-express@^11.1.28 > multer",
+      ],
+    ],
+    [
+      (overrides) => {
+        overrides["@nestjs/platform-express@11.1.28"].multer = "^2.4.0";
+      },
+      [
+        "@nestjs/platform-express@11.1.28 must override multer to exact version 2.4.0",
+      ],
+    ],
+    [
+      (overrides) => {
+        overrides["@nestjs/platform-express@11.1.28"].multer = "latest";
+      },
+      [
+        "@nestjs/platform-express@11.1.28 must override multer to exact version 2.4.0",
+      ],
+    ],
+    [
+      (overrides) => {
+        overrides["@nestjs/platform-express@11.1.28"].multer = "$multer";
+      },
+      [
+        "@nestjs/platform-express@11.1.28 must override multer to exact version 2.4.0",
+      ],
+    ],
   ]) {
     const manifests = structuredClone(validR2Manifests);
     mutation(manifests[""].overrides);
-    assert.ok(validateNestMulterOverride(manifests, validR2Lock).length > 0);
+    assert.deepEqual(
+      validateNestMulterOverride(manifests, validR2Lock),
+      expected,
+    );
   }
+});
+
+test("rejects the formerly pinned Multer 2.3.0 override exactly", () => {
+  const manifests = structuredClone(validR2Manifests);
+  manifests[""].overrides["@nestjs/platform-express@11.1.28"].multer = "2.3.0";
+
+  assert.deepEqual(validateNestMulterOverride(manifests, validR2Lock), [
+    "@nestjs/platform-express@11.1.28 must override multer to exact version 2.4.0",
+  ]);
+});
+
+test("rejects a vulnerable Multer 2.3.0 lock resolution exactly", () => {
+  const lockfile = structuredClone(validR2Lock);
+  lockfile.packages["node_modules/multer"].version = "2.3.0";
+
+  assert.deepEqual(validateNestMulterOverride(validR2Manifests, lockfile), [
+    "vulnerable multer installation(s): node_modules/multer@2.3.0",
+    "multer must have one physical installation at node_modules/multer@2.4.0; found node_modules/multer@2.3.0",
+  ]);
 });
 
 test("rejects an additional Multer parent in every dependency section", () => {
@@ -1395,7 +1471,7 @@ test("rejects an additional Multer parent in every dependency section", () => {
   ]) {
     const lockfile = structuredClone(validR2Lock);
     lockfile.packages["node_modules/example"] = {
-      [section]: { multer: "2.3.0" },
+      [section]: { multer: "2.4.0" },
       version: "1.0.0",
     };
     assert.ok(
@@ -1428,9 +1504,14 @@ test("rejects NestJS parent drift and every vulnerable Multer installation", () 
     ),
   );
   assert.ok(
+    errors.includes(
+      "vulnerable multer installation(s): node_modules/example/node_modules/multer@2.2.0",
+    ),
+  );
+  assert.ok(
     errors.some((error) =>
       error.startsWith(
-        "multer must have one physical installation at node_modules/multer@2.3.0",
+        "multer must have one physical installation at node_modules/multer@2.4.0",
       ),
     ),
   );

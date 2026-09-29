@@ -394,3 +394,20 @@ Qualification : **instantané historique prépublication du 2026-09-29**.
 
 Les états ci-dessus attestent uniquement le contrat. Les garanties runtime, SQL
 et interface restent `Not started` jusqu'aux autorisations S1.2-03C1/C2/C3.
+
+## Traçabilité S1.2-03B-R1 — Supply-chain remediation
+
+| Exigence                                                 | Preuve locale                                                                                                                | État                 |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| SEC-SC-R1-01 Fermer les quatre avis R0                   | `fast-uri@3.1.8`, `multer@2.4.0`, audits complet et production à zéro vulnérabilité                                          | Verified locally     |
+| SEC-SC-R1-02 Refuser les versions causales vulnérables   | scanner `<3.1.8`, rejets 3.1.6/3.1.7 et Multer 2.3.0, tests ciblés 79/79                                                     | Verified locally     |
+| SEC-SC-R1-03 Préserver les overrides parentés            | `ajv@8.18.0 > fast-uri` déclaré `^3.0.1` ; `@nestjs/platform-express@11.1.28 > multer` déclaré `2.2.0`                       | Verified locally     |
+| SEC-SC-R1-04 Lockfile causal et reproductible            | deux `npm ci --ignore-scripts`, SHA-256 stable, retrait causal de `concat-stream`/`typedarray`, aucun drift de version       | Verified locally     |
+| SEC-SC-R1-05 Signatures, provenance et licences          | 1 130 paquets audités avec signature de registre, 198 attestations vérifiées ; 1 132 paquets, 0 licence non déclarée/refusée | Verified locally     |
+| SEC-SC-R1-06 Qualifier les sept artefacts WASM           | mêmes sept nœuds optionnels de branches plateforme après deux installations ; entrées R0 inchangées ; `npm ls` code 0        | Verified nonblocking |
+| SEC-SC-R1-07 Compatibilité API/NestJS                    | aucun usage Multer direct ; format, lint, typecheck, 27 tests API, build et smoke infrastructure/health réussis              | Verified locally     |
+| SEC-SC-R1-08 Préserver le contrat et la capacité produit | validation 60 chemins/67 opérations/137 schémas, 263 tests OpenAPI, génération et octets contractuels inchangés              | Verified locally     |
+| SEC-SC-R1-09 Respecter la frontière de publication       | dix fichiers maximum, index vide, R1 local/non commité/non publié, PR #48 Draft et description « CI en attente » inchangées  | Verified locally     |
+
+Cette traçabilité complète l’instantané contractuel R0 sans le réécrire.
+S1.2-03C1, S1.2-03C2 et S1.2-03C3 restent `Not started`.
