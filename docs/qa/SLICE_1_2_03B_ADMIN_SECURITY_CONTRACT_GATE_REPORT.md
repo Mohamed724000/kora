@@ -2,13 +2,17 @@
 
 Date : 2026-09-28
 
+Dernière réconciliation documentaire : 2026-09-29
+
 Branche : `feat/s1-2-03b-admin-security-contract-gate`
 
 Baseline : `09e64c889231cfa57cf68cb44cdf05ae47ad356d`
 
 Arbre baseline : `94cb165f651c1ccc2f06297e7c8024e3570a2ce8`
 
-Statut : **INSTANTANÉ HISTORIQUE PRÉPUBLICATION DU 2026-09-29 — VALIDÉ LOCALEMENT — TROIS CONTRE-REVUES PASS — AUCUNE PUBLICATION GIT À CET INSTANT**
+Statut : **R1 PUBLIÉ — QUATRE WORKFLOWS VERTS — R2 RÉCONCILIATION DOCUMENTAIRE — PR #48 DRAFT NON FUSIONNÉE**
+
+## Instantané historique R0 prépublication — 2026-09-29
 
 ## Résultat
 
@@ -23,7 +27,7 @@ interface, dépendance, manifeste, lockfile ou workflow n'a été ajouté ou
 modifié. Aucun `git add`, commit, push, PR, merge, tag, release ou déploiement
 n'a été exécuté.
 
-## Diff exact — 16 fichiers
+## Diff exact historique R0 — 16 fichiers
 
 L'inventaire final comprend 13 fichiers suivis modifiés et 3 nouveaux fichiers
 non suivis, tous dans l'allowlist S1.2-03B.
@@ -163,7 +167,7 @@ Dans cet instantané historique prépublication du 2026-09-29, les trois verdict
 indépendants sont `PASS`, la décision de commit restait explicitement réservée
 au CTO et ce rapport n'autorisait encore aucune publication Git.
 
-## Remédiation locale S1.2-03B-R1 — 2026-09-29
+## Instantané historique local prépublication S1.2-03B-R1 — 2026-09-29
 
 ### Baseline et cause
 
@@ -174,9 +178,11 @@ R0 est publié au commit
 `+7933/-1142`. La PR #48 est toujours ouverte, Draft, non fusionnée et sa
 description indique « CI en attente ». Infrastructure `36572630270`, Launcher
 Windows `36572630257` et Quality Linux `36572630225` ont réussi. Security
-`36572630278` a échoué sur quatre avis : `GHSA-qw65-cvwx-89v3`,
-`GHSA-58mr-gqgx-xq4g`, `GHSA-hrr3-gc8f-f4qj` et
-`GHSA-3pph-fpjx-jg34`.
+`36572630278` a explicitement imprimé trois avis :
+`GHSA-qw65-cvwx-89v3`, `GHSA-58mr-gqgx-xq4g` et
+`GHSA-3pph-fpjx-jg34`. Le diagnostic R1 du graphe R0 a aussi confirmé
+`GHSA-hrr3-gc8f-f4qj` ; cet avis ne doit pas être attribué au texte du log
+Security R0.
 
 R1 fait passer la résolution physique `fast-uri` sous `ajv@8.18.0` de 3.1.6
 à 3.1.8, tout en conservant la déclaration parente `^3.0.1`. La résolution
@@ -211,7 +217,7 @@ entrées n’apparaît dans le diff R1. Cette sortie textuelle n’est donc pas
 présentée comme vide : elle est qualifiée non bloquante, non causée par R1,
 sous réserve des contre-revues finales.
 
-### Validations exécutées
+### Preuves locales R1 exécutées
 
 - audits npm complet et production : 0 vulnérabilité ;
 - `npm audit signatures` : code 0, 1 130 paquets avec signature de registre et
@@ -237,3 +243,55 @@ migration, workflow ou interface. La capacité produit reste celle de R0 et
 S1.2-03C1/C2/C3 demeurent `Not started`. R1 est local, non indexé, non commité
 et non publié. Aucun SHA, arbre ou Run ID R1 futur n’est affirmé ; une décision
 CTO distincte reste requise avant tout commit ou changement de la PR #48.
+
+## Réconciliation postpublication S1.2-03B-R2 — 2026-09-29
+
+### Publication R1 vérifiée
+
+R1 est publié au commit
+`3c1e0a067c1c977dcc7a85e4baa892ebdcc0b82e`, parent direct
+`a1002b37b26feb456e2b11df87c20e671c4c20ae`, arbre
+`c87ca8400af2e421931533e2e6b6853680360800`, avec le message
+`fix(security): remediate S1.2-03B supply-chain findings`. Son diff porte sur
+10 fichiers et `+358/-78`. L'empreinte agrégée de la publication R1 est
+`8298eb4de428fa578ed34af3f5ce0f5d80979ea02f124f78a3f8a603d3bbf659`.
+
+La chronologie des avis est conservée sans réécriture : Security R0
+`36572630278` a explicitement imprimé `GHSA-qw65-cvwx-89v3`,
+`GHSA-58mr-gqgx-xq4g` et `GHSA-3pph-fpjx-jg34`. Le diagnostic R1 a confirmé
+que le graphe R0 était également affecté par `GHSA-hrr3-gc8f-f4qj`. Les
+résolutions R1 `fast-uri@3.1.8` et `multer@2.4.0` ferment les quatre avis.
+
+### Provenance des preuves
+
+Les preuves locales R1 sont les deux installations reproductibles, les 1 130
+signatures de registre et 198 attestations vérifiées sans élément invalide,
+l'inventaire local de licences 1 132/0/0, la qualification des sept artefacts
+WASM optionnels ainsi que les validations API, Flutter et Infrastructure déjà
+détaillées dans l'instantané historique ci-dessus.
+
+Les preuves issues des workflows R1 publiés sont distinctes : audits npm
+complet et production à zéro vulnérabilité, inventaire CI de licences
+1 139/0/0, scanner officiel sur 358 fichiers avec historique actif et 52
+sources immuables, et lockfile déterministe. `npm audit signatures` n'est pas
+attribué à la CI.
+
+| Workflow         | Run ID        | Événement / état                    |
+| ---------------- | ------------- | ----------------------------------- |
+| Security         | `36642550938` | `pull_request/completed/success` R1 |
+| Infrastructure   | `36642550943` | `pull_request/completed/success` R1 |
+| Launcher Windows | `36642550958` | `pull_request/completed/success` R1 |
+| Quality Linux    | `36642551010` | `pull_request/completed/success` R1 |
+
+### État courant et frontière R2
+
+La PR #48 reste ouverte, Draft, `MERGEABLE` et non fusionnée sur le head R1.
+Son cumul vérifié est de 2 commits, 20 fichiers et `+8291/-1220`. Le contrat
+publié reste inchangé à 60 chemins, 67 opérations et 137 schémas. Il ne livre
+aucun runtime, modèle, migration ou interface ; S1.2-03C1, S1.2-03C2 et
+S1.2-03C3 restent `Not started`.
+
+R2 réconcilie uniquement les six documents autorisés et ne modifie aucun octet
+technique. Son état de publication fait foi dans Git et GitHub ; aucun SHA ni
+Run ID R2 futur n'est anticipé dans ce rapport. Aucun passage Ready, merge,
+tag, release, déploiement ou démarrage S1.2-03C n'est autorisé par R2.

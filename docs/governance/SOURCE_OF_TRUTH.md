@@ -1,9 +1,9 @@
 # KORA+ Final — Source de vérité
 
-Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A CLÔTURÉ ET FUSIONNÉ — S1.2-03B : INSTANTANÉ HISTORIQUE PRÉPUBLICATION DU 2026-09-29, VALIDÉ LOCALEMENT**
+Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A CLÔTURÉ ET FUSIONNÉ — S1.2-03B-R1 PUBLIÉ — R2 RÉCONCILIATION DOCUMENTAIRE — PR #48 DRAFT NON FUSIONNÉE**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-09-28
+Dernière réconciliation documentaire : 2026-09-29
 
 ## Hiérarchie normative
 
@@ -381,15 +381,18 @@ génère l'XOR strict `ADMIN_SESSION | ADMIN_RECOVERY | SYSTEM`. Les migrations 
 contraintes nécessaires sont des prérequis des runtimes C1/C2 ; C3 reste
 exclusivement l'interface d'authentification Admin et demeure `Not started`.
 
-## État local S1.2-03B-R1
+## Instantané historique local prépublication S1.2-03B-R1
+
+Qualification : état observé le 2026-09-29 avant le commit et le push R1.
 
 R0 est publié au commit
 `a1002b37b26feb456e2b11df87c20e671c4c20ae`. La PR #48 demeure ouverte,
 Draft, non fusionnée et sa description reste « CI en attente ». Les workflows
 R0 Infrastructure `36572630270`, Launcher Windows `36572630257` et Quality
-Linux `36572630225` ont réussi ; Security `36572630278` a échoué sur les avis
-`GHSA-qw65-cvwx-89v3`, `GHSA-58mr-gqgx-xq4g`,
-`GHSA-hrr3-gc8f-f4qj` et `GHSA-3pph-fpjx-jg34`.
+Linux `36572630225` ont réussi. Security R0 `36572630278` a explicitement
+signalé `GHSA-qw65-cvwx-89v3`, `GHSA-58mr-gqgx-xq4g` et
+`GHSA-3pph-fpjx-jg34`. Le diagnostic R1 a ensuite confirmé que le graphe R0
+était également affecté par `GHSA-hrr3-gc8f-f4qj`.
 
 R1 remédie localement ces quatre avis par les overrides parentés exacts
 `ajv@8.18.0 > fast-uri@3.1.8` et
@@ -409,3 +412,36 @@ Le contrat reste strictement identique à R0 : 60 chemins, 67 opérations et
 migration, workflow, interface ou capacité produit n’est ajouté. R1 demeure
 local, non indexé, non commité et non publié, sans SHA, arbre ou Run ID futur.
 Toute publication exige une décision CTO distincte.
+
+## État courant postpublication R1 et réconciliation documentaire R2
+
+R1 est publié au commit
+`3c1e0a067c1c977dcc7a85e4baa892ebdcc0b82e`, parent
+`a1002b37b26feb456e2b11df87c20e671c4c20ae`, arbre
+`c87ca8400af2e421931533e2e6b6853680360800`, message
+`fix(security): remediate S1.2-03B supply-chain findings`. Le commit porte
+exactement 10 fichiers et `+358/-78`; son empreinte agrégée est
+`8298eb4de428fa578ed34af3f5ce0f5d80979ea02f124f78a3f8a603d3bbf659`.
+
+Infrastructure `36642550943`, Launcher Windows `36642550958`, Security
+`36642550938` et Quality Linux `36642551010` sont tous
+`pull_request/completed/success` sur ce head exact. Les preuves CI R1 sont les
+audits complet/production à zéro vulnérabilité, les licences 1 139/0/0, le
+scanner sur 358 fichiers avec historique actif et 52 sources immuables, le
+lockfile déterministe et les quatre workflows verts. `npm audit signatures`
+n’est pas déclaré exécuté dans GitHub Actions.
+
+Les preuves locales R1 restent séparées : 1 130 signatures de registre, 198
+attestations sans invalide, licences 1 132/0/0, deux installations
+reproductibles, sept artefacts WASM optionnels qualifiés et validations locales
+API, Flutter et Infrastructure.
+
+La PR #48 demeure `OPEN`, Draft, mergeable et non fusionnée, avec 2 commits,
+20 fichiers et `+8291/-1220`. Le contrat S1.2-03B est publié mais pas fusionné;
+sa surface reste de 60 chemins, 67 opérations et 137 schémas. Aucun runtime,
+schéma Prisma, migration ou interface n’est commencé, et S1.2-03C1/C2/C3
+restent `Not started`.
+
+R2 modifie uniquement les six documents autorisés et aucun octet technique.
+Son état de publication fait foi dans Git et GitHub ; aucun SHA ni Run ID R2
+futur n’est anticipé dans ce document.

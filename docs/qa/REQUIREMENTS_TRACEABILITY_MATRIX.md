@@ -397,17 +397,39 @@ et interface restent `Not started` jusqu'aux autorisations S1.2-03C1/C2/C3.
 
 ## Traçabilité S1.2-03B-R1 — Supply-chain remediation
 
-| Exigence                                                 | Preuve locale                                                                                                                | État                 |
-| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| SEC-SC-R1-01 Fermer les quatre avis R0                   | `fast-uri@3.1.8`, `multer@2.4.0`, audits complet et production à zéro vulnérabilité                                          | Verified locally     |
-| SEC-SC-R1-02 Refuser les versions causales vulnérables   | scanner `<3.1.8`, rejets 3.1.6/3.1.7 et Multer 2.3.0, tests ciblés 79/79                                                     | Verified locally     |
-| SEC-SC-R1-03 Préserver les overrides parentés            | `ajv@8.18.0 > fast-uri` déclaré `^3.0.1` ; `@nestjs/platform-express@11.1.28 > multer` déclaré `2.2.0`                       | Verified locally     |
-| SEC-SC-R1-04 Lockfile causal et reproductible            | deux `npm ci --ignore-scripts`, SHA-256 stable, retrait causal de `concat-stream`/`typedarray`, aucun drift de version       | Verified locally     |
-| SEC-SC-R1-05 Signatures, provenance et licences          | 1 130 paquets audités avec signature de registre, 198 attestations vérifiées ; 1 132 paquets, 0 licence non déclarée/refusée | Verified locally     |
-| SEC-SC-R1-06 Qualifier les sept artefacts WASM           | mêmes sept nœuds optionnels de branches plateforme après deux installations ; entrées R0 inchangées ; `npm ls` code 0        | Verified nonblocking |
-| SEC-SC-R1-07 Compatibilité API/NestJS                    | aucun usage Multer direct ; format, lint, typecheck, 27 tests API, build et smoke infrastructure/health réussis              | Verified locally     |
-| SEC-SC-R1-08 Préserver le contrat et la capacité produit | validation 60 chemins/67 opérations/137 schémas, 263 tests OpenAPI, génération et octets contractuels inchangés              | Verified locally     |
-| SEC-SC-R1-09 Respecter la frontière de publication       | dix fichiers maximum, index vide, R1 local/non commité/non publié, PR #48 Draft et description « CI en attente » inchangées  | Verified locally     |
+Qualification : **instantané historique local prépublication du 2026-09-29**.
+Les statuts de publication de cette table décrivent l'état au moment de la
+validation locale R1, avant le commit et les workflows R1 publiés.
+
+| Exigence                                                 | Preuve locale                                                                                                                                                                                               | État                 |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| SEC-SC-R1-01 Fermer les quatre avis affectant R0         | trois avis explicitement imprimés par Security R0 `36572630278` ; `GHSA-hrr3-gc8f-f4qj` confirmé par le diagnostic R1 ; `fast-uri@3.1.8`, `multer@2.4.0`, audits complet et production à zéro vulnérabilité | Verified locally     |
+| SEC-SC-R1-02 Refuser les versions causales vulnérables   | scanner `<3.1.8`, rejets 3.1.6/3.1.7 et Multer 2.3.0, tests ciblés 79/79                                                                                                                                    | Verified locally     |
+| SEC-SC-R1-03 Préserver les overrides parentés            | `ajv@8.18.0 > fast-uri` déclaré `^3.0.1` ; `@nestjs/platform-express@11.1.28 > multer` déclaré `2.2.0`                                                                                                      | Verified locally     |
+| SEC-SC-R1-04 Lockfile causal et reproductible            | deux `npm ci --ignore-scripts`, SHA-256 stable, retrait causal de `concat-stream`/`typedarray`, aucun drift de version                                                                                      | Verified locally     |
+| SEC-SC-R1-05 Signatures, provenance et licences          | 1 130 paquets audités avec signature de registre, 198 attestations vérifiées ; 1 132 paquets, 0 licence non déclarée/refusée                                                                                | Verified locally     |
+| SEC-SC-R1-06 Qualifier les sept artefacts WASM           | mêmes sept nœuds optionnels de branches plateforme après deux installations ; entrées R0 inchangées ; `npm ls` code 0                                                                                       | Verified nonblocking |
+| SEC-SC-R1-07 Compatibilité API/NestJS                    | aucun usage Multer direct ; format, lint, typecheck, 27 tests API, build et smoke infrastructure/health réussis                                                                                             | Verified locally     |
+| SEC-SC-R1-08 Préserver le contrat et la capacité produit | validation 60 chemins/67 opérations/137 schémas, 263 tests OpenAPI, génération et octets contractuels inchangés                                                                                             | Verified locally     |
+| SEC-SC-R1-09 Respecter la frontière de publication       | dix fichiers maximum, index vide, R1 local/non commité/non publié, PR #48 Draft et description « CI en attente » inchangées                                                                                 | Verified locally     |
 
 Cette traçabilité complète l’instantané contractuel R0 sans le réécrire.
 S1.2-03C1, S1.2-03C2 et S1.2-03C3 restent `Not started`.
+
+## Traçabilité S1.2-03B-R2 — Réconciliation postpublication R1
+
+| Exigence                                              | Preuve                                                                                                                                                                                                                                                 | État               |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------ |
+| SEC-SC-R2-01 Identifier la publication R1             | commit `3c1e0a067c1c977dcc7a85e4baa892ebdcc0b82e`, parent `a1002b37b26feb456e2b11df87c20e671c4c20ae`, arbre `c87ca8400af2e421931533e2e6b6853680360800`, message `fix(security): remediate S1.2-03B supply-chain findings`, diff 10 fichiers `+358/-78` | Published          |
+| SEC-SC-R2-02 Verrouiller l’empreinte agrégée R1       | `8298eb4de428fa578ed34af3f5ce0f5d80979ea02f124f78a3f8a603d3bbf659`                                                                                                                                                                                     | Reconciled         |
+| SEC-SC-R2-03 Préserver la chronologie exacte des avis | Security R0 `36572630278` imprime `GHSA-qw65-cvwx-89v3`, `GHSA-58mr-gqgx-xq4g`, `GHSA-3pph-fpjx-jg34` ; R1 diagnostique aussi `GHSA-hrr3-gc8f-f4qj` et ferme les quatre                                                                                | Reconciled         |
+| SEC-SC-R2-04 Distinguer preuves locales et preuves CI | local : 1 130 signatures, 198 attestations sans invalide, licences 1 132/0/0, deux installations, sept WASM et validations API/Flutter/Infrastructure ; CI : audits complet/production à zéro, licences 1 139/0/0, scanner 358/52 et lock déterministe | Reconciled         |
+| SEC-SC-R2-05 Attester les quatre workflows R1         | Security `36642550938`, Infrastructure `36642550943`, Launcher Windows `36642550958`, Quality Linux `36642551010`, tous `pull_request/completed/success` sur le head R1                                                                                | Verified on GitHub |
+| SEC-SC-R2-06 Refléter l’état courant de la PR         | PR #48 ouverte, Draft, non fusionnée et `MERGEABLE` ; 2 commits, 20 fichiers, `+8291/-1220`                                                                                                                                                            | Reconciled         |
+| SEC-SC-R2-07 Préserver la capacité contractuelle      | 60 chemins, 67 opérations et 137 schémas ; aucun runtime, migration ou interface                                                                                                                                                                       | Contract unchanged |
+| SEC-SC-R2-08 Respecter la frontière documentaire R2   | exactement six documents modifiés, aucun fichier technique ; aucun rerun, Ready, merge, tag, release, déploiement ou démarrage S1.2-03C                                                                                                                | Scope verified     |
+
+R1 est publié et ses quatre workflows sont verts, mais la PR #48 demeure Draft
+et non fusionnée. R2 reste limité aux six documents de réconciliation et son
+état de publication fait foi dans Git et GitHub. Les lots S1.2-03C1,
+S1.2-03C2 et S1.2-03C3 restent `Not started`.

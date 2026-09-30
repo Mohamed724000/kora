@@ -2,9 +2,9 @@
 
 Périmètre durable couvert : **BASELINE + S0.4/S0.5/M0.1/M0.2/S0.6 ET M0.3
 FUSIONNÉS ET CLÔTURÉS + S1.1 FERMÉ + CONTRACT & DATA READINESS S1.2-01 +
-S1.2-02 CLÔTURÉ ET FUSIONNÉ + S1.2-03A CLÔTURÉ ET FUSIONNÉ + S1.2-03B,
-INSTANTANÉ HISTORIQUE PRÉPUBLICATION DU 2026-09-29 : ADMIN SECURITY CONTRACT
-GATE VALIDÉ LOCALEMENT, BASELINE TECHNIQUE PRÉSERVÉE**.
+S1.2-02 CLÔTURÉ ET FUSIONNÉ + S1.2-03A CLÔTURÉ ET FUSIONNÉ + S1.2-03B-R1
+PUBLIÉ + R2 RÉCONCILIATION DOCUMENTAIRE, PR #48 DRAFT NON FUSIONNÉE, BASELINE
+TECHNIQUE PRÉSERVÉE**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
 commit, push ou changement GitHub S1.1 n’avait encore été effectué : il s’agit
@@ -751,13 +751,15 @@ leur `AuditLog` doivent être atomiques. Jusqu'à arbitrage légal, la
 rétention est fail-safe sans suppression. ADR-025 reste l'autorité de conception
 pour les contextes d'audit.
 
-## Remédiation supply-chain S1.2-03B-R1
+## Instantané historique local prépublication S1.2-03B-R1
 
-Le workflow Security R0 `36572630278` a exposé quatre avis sur deux dépendances
-transitives : `GHSA-qw65-cvwx-89v3`, `GHSA-58mr-gqgx-xq4g` et
-`GHSA-hrr3-gc8f-f4qj` pour `fast-uri`, puis `GHSA-3pph-fpjx-jg34` pour
-Multer. Les succès R0 Infrastructure `36572630270`, Launcher Windows
-`36572630257` et Quality Linux `36572630225` ne neutralisent pas ce constat.
+Le workflow Security R0 `36572630278` a explicitement imprimé trois avis sur
+deux dépendances transitives : `GHSA-qw65-cvwx-89v3` et
+`GHSA-58mr-gqgx-xq4g` pour `fast-uri`, puis `GHSA-3pph-fpjx-jg34` pour Multer.
+Le diagnostic R1 du graphe R0 a aussi confirmé `GHSA-hrr3-gc8f-f4qj` pour
+`fast-uri` ; cet avis n'est pas attribué au texte du log Security R0. Les
+succès R0 Infrastructure `36572630270`, Launcher Windows `36572630257` et
+Quality Linux `36572630225` ne neutralisent pas ce constat.
 
 R1 conserve les parents `ajv@8.18.0` et
 `@nestjs/platform-express@11.1.28`, mais impose leurs résolutions exactes sûres
@@ -780,3 +782,35 @@ La surface 60/67/137, les contrats et la capacité produit restent inchangés.
 Aucun endpoint multipart, runtime, schéma, migration, workflow ou interface
 n’est ajouté. R1 demeure local, non indexé, non commité et non publié ; la PR
 #48 reste ouverte, Draft, non fusionnée et décrite « CI en attente ».
+
+## État postpublication R1 et réconciliation documentaire R2
+
+R1 ferme les quatre avis avec `fast-uri@3.1.8` et `multer@2.4.0`. Il est publié
+au commit `3c1e0a067c1c977dcc7a85e4baa892ebdcc0b82e`, parent
+`a1002b37b26feb456e2b11df87c20e671c4c20ae`, arbre
+`c87ca8400af2e421931533e2e6b6853680360800`, message
+`fix(security): remediate S1.2-03B supply-chain findings`, avec 10 fichiers,
+`+358/-78` et l'empreinte agrégée
+`8298eb4de428fa578ed34af3f5ce0f5d80979ea02f124f78a3f8a603d3bbf659`.
+
+Les preuves locales R1 comprennent 1 130 signatures de registre, 198
+attestations vérifiées sans élément invalide, les licences 1 132/0/0, deux
+installations reproductibles et la qualification des sept artefacts WASM. Les
+preuves CI sont les audits complet et production à zéro vulnérabilité, les
+licences 1 139/0/0, le scanner sur 358 fichiers avec historique actif et 52
+sources immuables, ainsi que le lockfile déterministe. Aucune exécution CI de
+`npm audit signatures` n'est affirmée.
+
+Security `36642550938`, Infrastructure `36642550943`, Launcher Windows
+`36642550958` et Quality Linux `36642551010` ont tous conclu
+`pull_request/completed/success` sur le head R1. La PR #48 demeure ouverte,
+Draft, `MERGEABLE` et non fusionnée, avec un cumul de 2 commits, 20 fichiers et
+`+8291/-1220`.
+
+La surface contractuelle publiée reste 60 chemins, 67 opérations et 137
+schémas. Les obligations décrites dans ce modèle ne sont toujours pas des
+garanties runtime : aucun modèle, migration ou écran n'est livré, et
+S1.2-03C1/C2/C3 restent `Not started`. R2 modifie seulement six documents et
+aucun octet technique ; son état de publication fait foi dans Git et GitHub.
+Il n'autorise aucun rerun, Ready, merge, tag, release, déploiement ou démarrage
+S1.2-03C.
