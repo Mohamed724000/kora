@@ -433,3 +433,25 @@ R1 est publié et ses quatre workflows sont verts, mais la PR #48 demeure Draft
 et non fusionnée. R2 reste limité aux six documents de réconciliation et son
 état de publication fait foi dans Git et GitHub. Les lots S1.2-03C1,
 S1.2-03C2 et S1.2-03C3 restent `Not started`.
+
+## Traçabilité S1.2-03B-R3 — Instantané local prépublication du 2026-10-01
+
+| Exigence                                                   | Preuve                                                                                                                                                                                                  | État                    |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| SEC-SC-R3-01 Préserver l'historique publié R2              | commit `6bc344c4eca7065089a6f6af6a9d47a98bf76b0f`, parent `3c1e0a067c1c977dcc7a85e4baa892ebdcc0b82e`, arbre `55a00c1c03d5e5142f81c0f99398d0686ec1a04b`, 6 documents `+271/-74`, agrégat `43110016…3e87` | Published               |
+| SEC-SC-R3-02 Diagnostiquer la cause Security R2            | run `36707322818`, `Audit dependency trees`, code 1 ; `minimatch@10.2.6 > brace-expansion@5.0.9` ; trois avis, sans échec de signature ou licence                                                       | Cause verified          |
+| SEC-SC-R3-03 Fermer tous les intervalles brace vulnérables | override exact `brace-expansion@5.0.12` ; scanner couvrant les branches 0/1/2/3/4/5 et leurs bornes ; 88/88 tests ciblés                                                                                | Verified locally        |
+| SEC-SC-R3-04 Qualifier l'alerte Next distincte             | `next`/`eslint-config-next@16.3.8`, `@next/env`, plugin ESLint et huit SWC alignés ; builds Web/Admin, SWC Windows et Sharp en mémoire réussis                                                          | Verified locally        |
+| SEC-SC-R3-05 Préserver R1 et le graphe causal              | `fast-uri@3.1.8`, `multer@2.4.0` conservés ; aucun nœud ajouté/supprimé ; exactement 13 versions causales modifiées                                                                                     | Verified locally        |
+| SEC-SC-R3-06 Reproductibilité et intégrité                 | deux `npm ci --ignore-scripts` ; lock SHA-256 `3bbb2e4b476decf50a7165143c985719d234e9511deebf757a6c9527eb68c03a` stable ; 1 130 signatures et 198 attestations                                          | Verified locally        |
+| SEC-SC-R3-07 Audits, licences et graphe                    | audits complet/production : 0 ; licences 1 132/0/0 ; `npm ls --all` code 0 ; sept artefacts WASM historiques qualifiés                                                                                  | Verified locally        |
+| SEC-SC-R3-08 Régressions des consommateurs                 | format, lint, typecheck, suites npm, Flutter 22/22, builds Web/Admin/API/packages et APK debug réussis ; iOS non exécuté sur Windows                                                                    | Verified locally        |
+| SEC-SC-R3-09 Préserver le contrat                          | OpenAPI 60/67/137 ; génération courante ; OpenAPI, contrat et `next-env.d.ts` byte-identiques au head R2                                                                                                | Contract unchanged      |
+| SEC-SC-R3-10 Respecter la frontière de publication         | instantané du 2026-10-01 : au plus 13 fichiers existants, aucun nouveau fichier ; R3 local/non indexé/non commité/non publié ; PR #48 Draft ; aucun rerun, Ready, merge, tag, release ou déploiement    | Prepublication verified |
+
+Les essais de lockfile refusés et les deux incidents réseau de validation des
+signatures ne sont pas comptés comme succès. Le troisième audit de signatures
+a terminé au code 0. S1.2-03C1, S1.2-03C2 et S1.2-03C3 restent `Not started`.
+
+Après cet instantané, l'état de publication R3 fait foi dans Git et GitHub ;
+aucun SHA, arbre ou Run ID futur n'est anticipé dans cette matrice.

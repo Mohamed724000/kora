@@ -2,9 +2,9 @@
 
 Périmètre durable couvert : **BASELINE + S0.4/S0.5/M0.1/M0.2/S0.6 ET M0.3
 FUSIONNÉS ET CLÔTURÉS + S1.1 FERMÉ + CONTRACT & DATA READINESS S1.2-01 +
-S1.2-02 CLÔTURÉ ET FUSIONNÉ + S1.2-03A CLÔTURÉ ET FUSIONNÉ + S1.2-03B-R1
-PUBLIÉ + R2 RÉCONCILIATION DOCUMENTAIRE, PR #48 DRAFT NON FUSIONNÉE, BASELINE
-TECHNIQUE PRÉSERVÉE**.
+S1.2-02 CLÔTURÉ ET FUSIONNÉ + S1.2-03A CLÔTURÉ ET FUSIONNÉ + S1.2-03B-R2
+PUBLIÉ + R3 VALIDÉ ET AUTORISÉ POUR PUBLICATION, PR #48 DRAFT NON FUSIONNÉE,
+BASELINE TECHNIQUE PRÉSERVÉE**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
 commit, push ou changement GitHub S1.1 n’avait encore été effectué : il s’agit
@@ -814,3 +814,41 @@ S1.2-03C1/C2/C3 restent `Not started`. R2 modifie seulement six documents et
 aucun octet technique ; son état de publication fait foi dans Git et GitHub.
 Il n'autorise aucun rerun, Ready, merge, tag, release, déploiement ou démarrage
 S1.2-03C.
+
+## Instantané historique local prépublication S1.2-03B-R3 — 2026-10-01
+
+Le commit documentaire R2
+`6bc344c4eca7065089a6f6af6a9d47a98bf76b0f` ne change aucun octet technique.
+Trois de ses workflows réussissent, mais Security `36707322818` échoue à
+`Audit dependency trees` sur le chemin de développement
+`minimatch@10.2.6 > brace-expansion@5.0.9`. Les avis sont
+`GHSA-q2hr-2g5m-vwhr` (CPU DoS, medium), `GHSA-qhr7-859c-m2p7` et
+`GHSA-6j4f-fj2g-mc7p` (épuisement de pile, high). Ce changement de réponse
+d'audit entre R1 et R2 est externe aux six documents R2 ; aucune dérive du
+lockfile, signature ou licence n'est en cause.
+
+R3 impose `brace-expansion@5.0.12` sous le seul parent
+`minimatch@10.2.6`. Le scanner borne toutes les branches majeures affectées,
+les préversions et les variantes d'override ou de parent. L'alerte Next.js,
+qualifiée séparément après R2, est traitée par `next@16.3.8` et
+`eslint-config-next@16.3.8`, avec `@next/env`, le plugin ESLint et les huit SWC
+alignés. Ce saut ferme le critique `GHSA-vcvr-r3jv-pc5j`, l'avis SSRF high
+`GHSA-cjq9-62q9-8jv4`, cinq avis medium et un avis low publiés avec 16.3.8.
+
+Le lockfile final ne gagne ni ne perd de nœud et change exactement 13 versions
+causales. Son SHA-256
+`3bbb2e4b476decf50a7165143c985719d234e9511deebf757a6c9527eb68c03a`
+reste stable après deux installations propres. Les audits complet et
+production sont à zéro ; 1 130 signatures et 198 attestations sont vérifiées ;
+les licences sont 1 132/0/0. Les sept artefacts WASM optionnels historiques
+restent inchangés et `npm ls --all` retourne 0. Les remédiations R1
+`fast-uri@3.1.8` et `multer@2.4.0` restent imposées.
+
+Les builds Web/Admin sous Next 16.3.8, le chargement SWC Windows et le traitement
+Sharp en mémoire passent, comme les autres validations applicables. La surface
+OpenAPI/contrat reste byte-identique à 60 chemins, 67 opérations et 137
+schémas. R3 n'ajoutait aucun runtime, modèle Prisma, migration, workflow ou
+écran. À la date de cet instantané, il était local, non indexé, non commité et
+non publié ; la PR #48 restait Draft et S1.2-03C1/C2/C3 restaient
+`Not started`. Après cet instantané, l'état de publication et de CI fait foi
+dans Git et GitHub.

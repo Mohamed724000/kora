@@ -1,9 +1,9 @@
 # KORA+ Final — Source de vérité
 
-Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A CLÔTURÉ ET FUSIONNÉ — S1.2-03B-R1 PUBLIÉ — R2 RÉCONCILIATION DOCUMENTAIRE — PR #48 DRAFT NON FUSIONNÉE**
+Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A CLÔTURÉ ET FUSIONNÉ — S1.2-03B-R2 PUBLIÉ — R3 VALIDÉ ET AUTORISÉ POUR PUBLICATION — PR #48 DRAFT NON FUSIONNÉE**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-09-29
+Dernière réconciliation documentaire : 2026-10-01
 
 ## Hiérarchie normative
 
@@ -445,3 +445,40 @@ restent `Not started`.
 R2 modifie uniquement les six documents autorisés et aucun octet technique.
 Son état de publication fait foi dans Git et GitHub ; aucun SHA ni Run ID R2
 futur n’est anticipé dans ce document.
+
+## Instantané historique local prépublication S1.2-03B-R3 — 2026-10-01
+
+R2 est désormais publié au commit documentaire
+`6bc344c4eca7065089a6f6af6a9d47a98bf76b0f`, parent R1
+`3c1e0a067c1c977dcc7a85e4baa892ebdcc0b82e`, arbre
+`55a00c1c03d5e5142f81c0f99398d0686ec1a04b`. Son diff contient exactement
+six documents, `+271/-74`, avec l'empreinte agrégée
+`431100164b601a9b5b95586160c6e42591ce353b9d9d1d641145e1a987bc3e87`.
+La PR #48 reste `OPEN`, Draft et non fusionnée, avec 3 commits, 20 fichiers et
+`+8488/-1220`.
+
+Les workflows R2 Infrastructure `36707322816`, Quality Linux `36707322868` et
+Launcher Windows `36707322988` ont réussi. Security `36707322818` a échoué au
+code 1 à `Audit dependency trees` sur
+`minimatch@10.2.6 > brace-expansion@5.0.9`. La cause est l'apparition dans la
+réponse d'audit des avis `GHSA-q2hr-2g5m-vwhr`,
+`GHSA-qhr7-859c-m2p7` et `GHSA-6j4f-fj2g-mc7p`, non les six octets
+documentaires R2. Les étapes ultérieures du workflow n'ont pas été exécutées.
+
+R3 impose localement `brace-expansion@5.0.12`, `next@16.3.8` et
+`eslint-config-next@16.3.8`. La mise à niveau Next est une qualification
+distincte apparue après R2 : elle couvre `GHSA-vcvr-r3jv-pc5j` ainsi que les
+sept avis publiés avec la release 16.3.8. Le lockfile npm ne gagne ni ne perd de
+nœud, modifie exactement 13 versions causales et reste byte-identique après
+deux installations propres. Audits complet et production, signatures,
+attestations, licences, scanner, outillage, format, lint, typecheck, tests et
+builds applicables sont conformes localement.
+
+La source contractuelle reste byte-identique : OpenAPI 60 chemins, 67
+opérations et 137 schémas ; génération TypeScript SHA-256
+`ef40a5ec43aa3deb63a64ca980436f2a9cb40e2cd108106a9ca5f2f21f92bac0`.
+R3 ne modifiait aucun runtime, schéma Prisma, migration, workflow, contrat ou
+interface. À la date de cet instantané, il était local, non indexé, non commité
+et non publié. La PR #48 restait Draft et S1.2-03C1/C2/C3 restaient
+`Not started`. Après cet instantané, l'état de publication fait foi dans Git et
+GitHub sans qu'aucun SHA ou Run ID futur soit anticipé ici.

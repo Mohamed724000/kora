@@ -2,7 +2,7 @@
 
 Date : 2026-09-28
 
-Dernière réconciliation documentaire : 2026-09-29
+Dernière réconciliation documentaire : 2026-10-01
 
 Branche : `feat/s1-2-03b-admin-security-contract-gate`
 
@@ -10,7 +10,7 @@ Baseline : `09e64c889231cfa57cf68cb44cdf05ae47ad356d`
 
 Arbre baseline : `94cb165f651c1ccc2f06297e7c8024e3570a2ce8`
 
-Statut : **R1 PUBLIÉ — QUATRE WORKFLOWS VERTS — R2 RÉCONCILIATION DOCUMENTAIRE — PR #48 DRAFT NON FUSIONNÉE**
+Statut : **R2 PUBLIÉ — ÉCHEC SECURITY R2 HISTORIQUE — REMÉDIATION R3 VALIDÉE ET AUTORISÉE POUR PUBLICATION — PR #48 DRAFT NON FUSIONNÉE**
 
 ## Instantané historique R0 prépublication — 2026-09-29
 
@@ -295,3 +295,112 @@ R2 réconcilie uniquement les six documents autorisés et ne modifie aucun octet
 technique. Son état de publication fait foi dans Git et GitHub ; aucun SHA ni
 Run ID R2 futur n'est anticipé dans ce rapport. Aucun passage Ready, merge,
 tag, release, déploiement ou démarrage S1.2-03C n'est autorisé par R2.
+
+## S1.2-03B-R3 — Instantané historique local prépublication — 2026-10-01
+
+### État publié R2 et cause exacte
+
+R2 est publié au commit documentaire
+`6bc344c4eca7065089a6f6af6a9d47a98bf76b0f`, parent
+`3c1e0a067c1c977dcc7a85e4baa892ebdcc0b82e`, arbre
+`55a00c1c03d5e5142f81c0f99398d0686ec1a04b`. Il porte exactement six
+documents, `+271/-74`, avec l'empreinte agrégée
+`431100164b601a9b5b95586160c6e42591ce353b9d9d1d641145e1a987bc3e87`.
+Le cumul publié de la PR #48 est de 3 commits, 20 fichiers et `+8488/-1220`.
+
+| Workflow         | Run ID        | État R2                          |
+| ---------------- | ------------- | -------------------------------- |
+| Infrastructure   | `36707322816` | `pull_request/completed/success` |
+| Security         | `36707322818` | `pull_request/completed/failure` |
+| Quality Linux    | `36707322868` | `pull_request/completed/success` |
+| Launcher Windows | `36707322988` | `pull_request/completed/success` |
+
+Security a terminé l'installation puis a échoué à `Audit dependency trees`,
+code 1. Le graphe complet de développement contenait
+`minimatch@10.2.6 > brace-expansion@5.0.9`. L'audit a remonté les trois avis
+suivants :
+
+- `GHSA-q2hr-2g5m-vwhr` / `CVE-2026-102277`, medium, correctif 5.0.12 ;
+- `GHSA-qhr7-859c-m2p7` / `CVE-2026-102278`, high, correctif 5.0.11 ;
+- `GHSA-6j4f-fj2g-mc7p` / `CVE-2026-102276`, high, correctif 5.0.10.
+
+Les six documents R2 n'ont modifié ni manifeste ni lockfile. La comparaison
+avec Security R1 vert `36642550938` prouve une évolution de l'information
+d'audit fournie par le registre/advisory database, pas un effet des octets R2,
+une dérive de résolution ou un échec de signature/licence. Les étapes scanner,
+OpenAPI et déterminisme du lockfile n'ont pas été exécutées après l'échec R2.
+
+### Correctif R3 et alerte Next distincte
+
+R3 remplace l'override exact `brace-expansion@5.0.9` par 5.0.12. Le seul parent
+physique reste `minimatch@10.2.6`, avec la déclaration `^5.0.8` inchangée. Le
+scanner refuse les intervalles vulnérables complets des branches 0/1, 2, 3, 4
+et 5.0, y compris leurs bornes et préversions.
+
+La qualification effectuée après R2 a aussi identifié une alerte Next.js
+distincte. `next@16.3.4` est remplacé par 16.3.8 dans Admin et Web, et
+`eslint-config-next@16.3.4` par 16.3.8 dans Admin, Web et UI. Next 16.3.8 ferme
+le critique `GHSA-vcvr-r3jv-pc5j` et les sept avis publiés avec cette release :
+`GHSA-cjq9-62q9-8jv4`, `GHSA-f87g-xv8r-7p7x`,
+`GHSA-4jqv-mc3x-m676`, `GHSA-mcj8-r9mp-w47p`,
+`GHSA-3w37-wq28-93x7`, `GHSA-h694-7cp9-m8p3` et
+`GHSA-39w2-rjm5-chcv`. `@next/env`, `@next/eslint-plugin-next` et les huit
+paquets `@next/swc-*` sont tous alignés sur 16.3.8.
+
+| Candidate                   | Licence | Engines                   | Intégrité npm                                                                                     | Provenance vérifiée                          |
+| --------------------------- | ------- | ------------------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `brace-expansion@5.0.12`    | MIT     | `20 \|\| >=22`            | `sha512-YovQ3rzhaLMIrDjNDMkNS01tea93qhEhG5xy8f6+R0l+dw3Ki+5sCoIoI942iuLZTHWogWktgwVDhU09iNEimQ==` | registre npm, 2 signatures                   |
+| `next@16.3.8`               | MIT     | Node `>=20.9.0`           | `sha512-U7QEZaTini6wKrb8A8hqLLqYQyCetegKjCpJOyxk642vWoMoU1x5PyZCJFvgYgiptA8xc5j/9xYlZFO7w9Sjmw==` | registre npm, 2 signatures, attestation SLSA |
+| `eslint-config-next@16.3.8` | MIT     | non déclaré par le paquet | `sha512-81vovwMe6NGnoFsl0KUJWzlS+y239i3fdsxs49gSEX3pDQW2cuKy+fxUPXNkQqqx6OCPheYPtBlSufc9aZ0k+w==` | registre npm, 2 signatures, attestation SLSA |
+
+Les remédiations R1 `ajv@8.18.0 > fast-uri@3.1.8` et
+`@nestjs/platform-express@11.1.28 > multer@2.4.0` sont conservées.
+
+### Lockfile causal et reproductible
+
+Le lockfile final est généré exclusivement par npm 10.9.3 sous Node 22.18.0.
+Des essais intermédiaires ont été rejetés parce qu'ils conservaient des copies
+imbriquées des candidates ou introduisaient des deltas transitifs non causaux.
+La génération retenue a été reproduite dans un staging non-Git isolé puis
+adoptée sans édition manuelle.
+
+Le diff ne contient aucun ajout ni retrait de nœud. Il change exactement 13
+versions physiques : `brace-expansion`, `next`, `eslint-config-next`,
+`@next/env`, `@next/eslint-plugin-next` et huit paquets `@next/swc-*`. Les
+métadonnées de workspaces Admin, Web et UI sont alignées. Deux
+`npm ci --ignore-scripts` ajoutent 1 138 paquets, en auditent 1 145 et
+conservent le SHA-256 du lockfile :
+`3bbb2e4b476decf50a7165143c985719d234e9511deebf757a6c9527eb68c03a`.
+
+`npm ls --all` retourne 0. Ses sept entrées textuelles restent exactement les
+artefacts WASM optionnels historiques déjà qualifiés en R1 ; leurs nœuds et
+parents sont inchangés par rapport à HEAD R2. Elles ne sont ni supprimées ni
+utilisées pour masquer un échec.
+
+### Validations locales effectives
+
+| Contrôle                                   | Résultat R3                                                                                                                     |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| audits npm complet et production           | code 0, zéro vulnérabilité                                                                                                      |
+| `npm audit signatures`                     | code 0 au troisième essai, 1 130 signatures et 198 attestations ; les essais `ECONNRESET`/`EIDLETIMEOUT` restent non conclusifs |
+| licences                                   | 1 132 paquets installés, 0 licence non déclarée, 0 non approuvée                                                                |
+| scanner ciblé / tooling / scanner officiel | 88/88 ; 362/362 ; 358 fichiers, historique actif, 52 sources immuables et 5 scripts d'installation qualifiés                    |
+| format / lint / typecheck                  | racine au code 0 ; Flutter inclus                                                                                               |
+| tests npm                                  | Web 10/10, Admin 13/13, API 27/27, Contracts 6/6, Config 1/1, UI 11/11                                                          |
+| tests Flutter                              | l'orchestrateur racine a rencontré un refus d'accès au lock du cache SDK après les suites npm ; relance ciblée code 0, 22/22    |
+| builds                                     | Web/Admin Next 16.3.8, API, Contracts, Config, UI et APK debug au code 0 ; iOS non exécuté sur Windows                          |
+| natifs Next                                | SWC Windows 16.3.8 chargé ; Sharp 0.35.4 exécuté en mémoire                                                                     |
+| Flutter deps                               | graphe lisible au code 0 ; aucun manifeste ni lock Flutter modifié                                                              |
+| OpenAPI et contrat                         | 60 chemins, 67 opérations, 137 schémas ; génération courante ; OpenAPI/contrat/`next-env.d.ts` byte-identiques à HEAD R2        |
+
+Le SHA-256 du contrat généré avant et après génération reste
+`ef40a5ec43aa3deb63a64ca980436f2a9cb40e2cd108106a9ca5f2f21f92bac0`.
+Aucun runtime, modèle Prisma, migration, workflow, OpenAPI, contrat généré ou
+interface n'est modifié par R3.
+
+À la date de cet instantané, R3 était local, non indexé, non commité et non
+publié. Aucun SHA ni Run ID R3 futur n'était affirmé. La PR #48 était `OPEN`,
+Draft et non fusionnée ; aucun rerun, changement de PR, Ready, merge, tag,
+release ou déploiement n'avait été effectué. S1.2-03C1, S1.2-03C2 et
+S1.2-03C3 restaient `Not started`. Après cet instantané, l'état de publication
+et de CI fait foi dans Git et GitHub.
