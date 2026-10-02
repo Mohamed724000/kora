@@ -17,7 +17,7 @@
   ],
   "overrides": {
     "@nestjs/platform-express@11.1.28": {
-      "multer": "2.3.0"
+      "multer": "2.4.0"
     },
     "@prisma/config@7.9.1": {
       "deepmerge-ts": "8.0.1"
@@ -26,12 +26,12 @@
       "mysql2": "3.23.1"
     },
     "ajv@8.18.0": {
-      "fast-uri": "3.1.6"
+      "fast-uri": "3.1.8"
     },
     "body-parser@2.3.0": {
       "qs": "6.16.0"
     },
-    "brace-expansion": "5.0.9",
+    "brace-expansion": "5.0.12",
     "express@5.2.1": {
       "qs": "6.16.0"
     },

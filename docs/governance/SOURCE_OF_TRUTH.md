@@ -1,9 +1,11 @@
 # KORA+ Final — Source de vérité
 
-Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A CLÔTURÉ ET FUSIONNÉ — S1.2-03B NOT STARTED**
+Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A CLÔTURÉ
+ET FUSIONNÉ — S1.2-03B-R4 VALIDÉ LOCALEMENT LE 2026-10-01 — ÉTAT DE
+PUBLICATION COURANT DANS GIT/GITHUB — PR #48 DRAFT NON FUSIONNÉE**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-09-27
+Dernière réconciliation documentaire : 2026-10-01
 
 ## Hiérarchie normative
 
@@ -45,11 +47,19 @@ non autorisé est historique, même s’il contient des impératifs.
 - **Benchmark** : informe l’ergonomie, sans droit de copie.
 - **Archive historique** : conservée pour traçabilité, non exécutable.
 
-Les 24 ADR actifs se trouvent actuellement dans le Resolution Pack immuable.
-Aucun ADR-025 n’est créé par S1.2-01 ou S1.2-02. Le contrat
-[OpenAPI](../api/openapi.yaml) et le modèle cible
-[Prisma](../../apps/api/prisma/schema.prisma), introduits par S1.1 puis
-renforcés par le gate S1.2-01, sont les contrats techniques canoniques présents.
+Les ADR-001 à ADR-024 actifs restent dans le Resolution Pack immuable sous
+`docs/source-material/originals/` et ne sont jamais recopiés ni modifiés. Les
+décisions postérieures au pack sont créées sous [`docs/adr/`](../adr/), à
+commencer par
+[ADR-025](../adr/ADR-025-admin-auth-session-audit-contexts.md). Cette séparation
+préserve l'immuabilité des sources tout en autorisant des décisions nouvelles,
+datées et traçables.
+
+Le contrat [OpenAPI](../api/openapi.yaml), le modèle cible
+[Prisma](../../apps/api/prisma/schema.prisma) et les types générés sont les
+contrats techniques canoniques présents. S1.2-03B étend uniquement OpenAPI et
+les types ; Prisma et les migrations restent inchangés jusqu'à une autorisation
+runtime distincte.
 S1.2-02 matérialise le schéma Prisma par des migrations PostgreSQL versionnées et
 des contraintes SQL ; il ne constitue toujours pas un runtime métier.
 
@@ -352,7 +362,170 @@ et le worktree S1.2-03A sont préservés.
 
 S1.2-03A est entièrement clôturé. Cette clôture n’ajoute aucun endpoint,
 service métier, worker, seed, interface, média ou paiement et n’élargit pas le
-rôle runtime de lecture. S1.2-03B reste **Not started** et requiert une
-autorisation CTO séparée. La présente réconciliation documentaire consigne les
+rôle runtime de lecture. À cette clôture historique, S1.2-03B restait **Not
+started** et requérait une autorisation CTO séparée. La présente réconciliation documentaire consigne les
 preuves post-fusion. Son état de publication est vérifiable dans GitHub et ne
 modifie pas la baseline technique S1.2-03A.
+
+## État contractuel S1.2-03B
+
+Dans l’instantané historique prépublication du 2026-09-29, S1.2-03B est une
+décision contractuelle locale : 60 chemins et 67 opérations
+OpenAPI sont verrouillés, dont 27 opérations Admin Security réparties entre
+S1.2-03C1 et S1.2-03C2. ADR-025 et le rapport de gate en sont les preuves
+vivantes. Aucun runtime, schéma Prisma, migration ou interface n'est déclaré
+commencé. À la date de cet instantané, toute publication Git et toute ouverture
+de S1.2-03C exigeaient une décision CTO distincte.
+
+Le contrat rétablit les filtres et la preuve ADR-004/019, distingue
+`AdminSecurityEvent` avant contexte prouvé de l'`AuditLog` transactionnel, et
+génère l'XOR strict `ADMIN_SESSION | ADMIN_RECOVERY | SYSTEM`. Les migrations et
+contraintes nécessaires sont des prérequis des runtimes C1/C2 ; C3 reste
+exclusivement l'interface d'authentification Admin et demeure `Not started`.
+
+## Instantané historique local prépublication S1.2-03B-R1
+
+Qualification : état observé le 2026-09-29 avant le commit et le push R1.
+
+R0 est publié au commit
+`a1002b37b26feb456e2b11df87c20e671c4c20ae`. La PR #48 demeure ouverte,
+Draft, non fusionnée et sa description reste « CI en attente ». Les workflows
+R0 Infrastructure `36572630270`, Launcher Windows `36572630257` et Quality
+Linux `36572630225` ont réussi. Security R0 `36572630278` a explicitement
+signalé `GHSA-qw65-cvwx-89v3`, `GHSA-58mr-gqgx-xq4g` et
+`GHSA-3pph-fpjx-jg34`. Le diagnostic R1 a ensuite confirmé que le graphe R0
+était également affecté par `GHSA-hrr3-gc8f-f4qj`.
+
+R1 remédie localement ces quatre avis par les overrides parentés exacts
+`ajv@8.18.0 > fast-uri@3.1.8` et
+`@nestjs/platform-express@11.1.28 > multer@2.4.0`. Le scanner refuse
+explicitement `fast-uri` 3.x `>=3.0.0 <3.1.8` et Multer 2.x
+`>=2.2.0 <2.4.0`. Le retrait de `concat-stream` et `typedarray` est la
+conséquence du remplacement de l’ancien chemin Multer.
+
+Deux installations reproductibles conservent le même lockfile et le même
+graphe. Les sept artefacts signalés textuellement `extraneous` sont des nœuds
+optionnels de branches WASM/plateforme déjà verrouillées dans R0 ; ils ne sont
+ni nouveaux ni modifiés par R1, `npm ls` retourne 0 et ne signale aucun paquet
+`invalid` ni peer cassée. Audits, signatures et licences restent conformes.
+
+Le contrat reste strictement identique à R0 : 60 chemins, 67 opérations et
+137 schémas. Aucun endpoint multipart, runtime Admin, schéma Prisma,
+migration, workflow, interface ou capacité produit n’est ajouté. R1 demeure
+local, non indexé, non commité et non publié, sans SHA, arbre ou Run ID futur.
+Toute publication exige une décision CTO distincte.
+
+## État historique postpublication R1 et réconciliation documentaire R2
+
+R1 est publié au commit
+`3c1e0a067c1c977dcc7a85e4baa892ebdcc0b82e`, parent
+`a1002b37b26feb456e2b11df87c20e671c4c20ae`, arbre
+`c87ca8400af2e421931533e2e6b6853680360800`, message
+`fix(security): remediate S1.2-03B supply-chain findings`. Le commit porte
+exactement 10 fichiers et `+358/-78`; son empreinte agrégée est
+`8298eb4de428fa578ed34af3f5ce0f5d80979ea02f124f78a3f8a603d3bbf659`.
+
+Infrastructure `36642550943`, Launcher Windows `36642550958`, Security
+`36642550938` et Quality Linux `36642551010` sont tous
+`pull_request/completed/success` sur ce head exact. Les preuves CI R1 sont les
+audits complet/production à zéro vulnérabilité, les licences 1 139/0/0, le
+scanner sur 358 fichiers avec historique actif et 52 sources immuables, le
+lockfile déterministe et les quatre workflows verts. `npm audit signatures`
+n’est pas déclaré exécuté dans GitHub Actions.
+
+Les preuves locales R1 restent séparées : 1 130 signatures de registre, 198
+attestations sans invalide, licences 1 132/0/0, deux installations
+reproductibles, sept artefacts WASM optionnels qualifiés et validations locales
+API, Flutter et Infrastructure.
+
+Au head R1, la PR #48 demeurait `OPEN`, Draft, mergeable et non fusionnée, avec
+2 commits, 20 fichiers et `+8291/-1220`. Le contrat S1.2-03B était publié mais
+pas fusionné ; sa surface restait de 60 chemins, 67 opérations et 137 schémas.
+Aucun runtime, schéma Prisma, migration ou interface n’était commencé, et
+S1.2-03C1/C2/C3 restaient `Not started`.
+
+R2 modifie uniquement les six documents autorisés et aucun octet technique.
+Son état de publication fait foi dans Git et GitHub ; aucun SHA ni Run ID R2
+futur n’est anticipé dans ce document.
+
+## Instantané historique local prépublication S1.2-03B-R3 — 2026-10-01
+
+R2 est désormais publié au commit documentaire
+`6bc344c4eca7065089a6f6af6a9d47a98bf76b0f`, parent R1
+`3c1e0a067c1c977dcc7a85e4baa892ebdcc0b82e`, arbre
+`55a00c1c03d5e5142f81c0f99398d0686ec1a04b`. Son diff contient exactement
+six documents, `+271/-74`, avec l'empreinte agrégée
+`431100164b601a9b5b95586160c6e42591ce353b9d9d1d641145e1a987bc3e87`.
+La PR #48 reste `OPEN`, Draft et non fusionnée, avec 3 commits, 20 fichiers et
+`+8488/-1220`.
+
+Les workflows R2 Infrastructure `36707322816`, Quality Linux `36707322868` et
+Launcher Windows `36707322988` ont réussi. Security `36707322818` a échoué au
+code 1 à `Audit dependency trees` sur
+`minimatch@10.2.6 > brace-expansion@5.0.9`. La cause est l'apparition dans la
+réponse d'audit des avis `GHSA-q2hr-2g5m-vwhr`,
+`GHSA-qhr7-859c-m2p7` et `GHSA-6j4f-fj2g-mc7p`, non les six octets
+documentaires R2. Les étapes ultérieures du workflow n'ont pas été exécutées.
+
+R3 impose localement `brace-expansion@5.0.12`, `next@16.3.8` et
+`eslint-config-next@16.3.8`. La mise à niveau Next est une qualification
+distincte apparue après R2 : elle couvre `GHSA-vcvr-r3jv-pc5j` ainsi que les
+sept avis publiés avec la release 16.3.8. Le lockfile npm ne gagne ni ne perd de
+nœud, modifie exactement 13 versions causales et reste byte-identique après
+deux installations propres. Audits complet et production, signatures,
+attestations, licences, scanner, outillage, format, lint, typecheck, tests et
+builds applicables sont conformes localement.
+
+La source contractuelle reste byte-identique : OpenAPI 60 chemins, 67
+opérations et 137 schémas ; génération TypeScript SHA-256
+`ef40a5ec43aa3deb63a64ca980436f2a9cb40e2cd108106a9ca5f2f21f92bac0`.
+R3 ne modifiait aucun runtime, schéma Prisma, migration, workflow, contrat ou
+interface. À la date de cet instantané, il était local, non indexé, non commité
+et non publié. La PR #48 restait Draft et S1.2-03C1/C2/C3 restaient
+`Not started`. Après cet instantané, l'état de publication fait foi dans Git et
+GitHub sans qu'aucun SHA ou Run ID futur soit anticipé ici.
+
+## Baseline publiée S1.2-03B-R3 et instantané historique local prépublication R4 — 2026-10-01
+
+R3 est publié au commit
+`1a6c4efeb169e89ccf989004559f4e0c1af80af3`, parent direct R2
+`6bc344c4eca7065089a6f6af6a9d47a98bf76b0f`, arbre
+`031101296c44d18d7f1a2ab1f917ac1432023f6d`, avec 13 fichiers et
+`+893/-117`. Infrastructure `36894241121`, Launcher Windows `36894240862`,
+Security `36894240870` et Quality Linux `36894241013`, tentative 1, sont tous
+`pull_request/completed/success` sur ce head exact.
+
+Avant la publication R4, la PR #48 était `OPEN`, Draft, `CLEAN` et non
+fusionnée. Son cumul publié était de 4 commits, 23 fichiers et `+9342/-1298` ;
+le SHA-256 de son corps était
+`b103546d26756e2a61378a6738a50ef3e23a562a23eac303b910966271fcb97b`.
+Les preuves locales R3 historiques restent distinctes de ces preuves CI : elles
+conservent notamment les deux essais réseau de signatures `NON CONCLUSIVE`, le
+troisième essai réussi, l'interruption initiale liée au lock du cache Flutter
+puis la relance 22/22, et la limite iOS non exécutée sous Windows.
+
+La revue CTO post-R3 a retenu deux findings : le champ `signatureInput` décrivait
+seulement le payload canonique et non le signing input RFC 7515, tandis que des
+blocs R1/R2 historiques restaient libellés comme courants. Dans l'instantané
+prépublication, R4 corrigeait le contrat en distinguant le payload JCS UTF-8, l'ASCII de
+`BASE64URL(protected).BASE64URL(payload)` sans padding et la sérialisation
+détachée `protected..signature`; le profil `b64=false` est interdit. Les blocs
+R1/R2 conservent tous leurs chiffres mais sont désormais qualifiés
+d'historiques.
+
+R4 constitue ici un instantané local prépublication daté du 2026-10-01. Il ne
+modifiait aucun manifeste, lockfile, dépendance, workflow, runtime, schéma
+Prisma, migration, provisioning ou interface ; aucun SHA, arbre, Run ID ou
+succès CI R4 futur n'y était affirmé. La PR #48 était Draft et S1.2-03C1/C2/C3
+restaient `Not started`. Après cet instantané, l'état de publication et de CI
+fait foi dans Git et GitHub.
+
+La validation locale ciblée conserve la surface 60/67/137, produit le contrat
+généré byte-identique d'empreinte SHA-256
+`b3a62e0522d9ca0b8df582f0b9c23e712f0af4953941eadbd500f477f4396c3a`,
+et conclut avec 274/274 tests OpenAPI+Contracts et 367/367 tests tooling. Les
+contrôles Contracts, Prettier ciblé, références, chronologie, encodage, scanner
+officiel avec historique, allowlist et `git diff --check` passent. Les audits
+npm complet et production frais terminent au code 0 avec zéro vulnérabilité.
+Les signatures, licences, builds applicatifs, Flutter et PostgreSQL ne sont pas
+rejoués, leurs fichiers techniques étant inchangés par R4.

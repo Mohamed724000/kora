@@ -2,8 +2,9 @@
 
 Périmètre durable couvert : **BASELINE + S0.4/S0.5/M0.1/M0.2/S0.6 ET M0.3
 FUSIONNÉS ET CLÔTURÉS + S1.1 FERMÉ + CONTRACT & DATA READINESS S1.2-01 +
-S1.2-02 CLÔTURÉ ET FUSIONNÉ + S1.2-03A CLÔTURÉ ET FUSIONNÉ, BASELINE
-TECHNIQUE R8 PRÉSERVÉE**.
+S1.2-02 CLÔTURÉ ET FUSIONNÉ + S1.2-03A CLÔTURÉ ET FUSIONNÉ + S1.2-03B-R4
+VALIDÉ LOCALEMENT LE 2026-10-01, ÉTAT DE PUBLICATION COURANT DANS GIT/GITHUB,
+PR #48 DRAFT NON FUSIONNÉE, BASELINE TECHNIQUE PRÉSERVÉE**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
 commit, push ou changement GitHub S1.1 n’avait encore été effectué : il s’agit
@@ -699,10 +700,12 @@ Aucun tag, release ou déploiement n’a été créé ; la branche et le worktre
 S1.2-03A sont préservés.
 
 S1.2-03A est entièrement clôturé, sans élargissement de la frontière de lecture
-ni nouvelle promesse runtime. S1.2-03B reste `Not started` et exige une
-autorisation CTO séparée. La présente réconciliation documentaire consigne les
-preuves post-fusion. Son état de publication est vérifiable dans GitHub et ne
-modifie pas la baseline technique S1.2-03A.
+ni nouvelle promesse runtime. À cette clôture, S1.2-03B restait `Not started`.
+Dans l’instantané historique prépublication du 2026-09-29, il était validé
+localement comme gate contractuel non publié. Les
+runtimes C1/C2 et l'interface C3 restent `Not started` et exigent chacun une
+autorisation CTO séparée. Cette réconciliation ne modifie pas la baseline
+technique S1.2-03A.
 
 Le pool `pg` est détenu par le client Prisma 7.9.1 via
 `@prisma/adapter-pg` 7.9.1 ; la readiness réutilise ce même chemin. Les erreurs
@@ -724,3 +727,164 @@ Chaque lot affectant une frontière :
 4. crée des tests négatifs et preuves ;
 5. obtient la revue sécurité prévue ;
 6. n’affirme jamais qu’un contrôle non développé est opérationnel.
+
+## Frontière contractuelle S1.2-03B — Admin Security
+
+| Menace                                     | Contrôle contractuel                                                                                                                                                | Risque résiduel / lot runtime                     |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| Oracle de compte au login/reset/invitation | statuts/erreurs génériques et table de timing comparable pour inconnu/expiré/consommé/révoqué/état compte                                                           | tests statistiques et budgets en C1/C2            |
+| CSRF ou Origin contourné                   | exigences OpenAPI AND cookie pré-auth/refresh + cookie CSRF + `X-Kora-CSRF`, Origin exact et Fetch Metadata au login                                                | middleware et tests navigateur en C1              |
+| Fuite/rejeu du seed TOTP                   | QR POST binaire unique, `no-store`, `nosniff`, HMAC-SHA-256/30 s/±1/replay refusé, secret 256 bits sous AES-256-GCM enveloppe                                       | KMS et redaction runtime en C1                    |
+| Vol ou replay refresh                      | 256 bits, cookie host-only protégé, rotation one-shot, famille révoquée au replay/course, profil 10/min                                                             | transaction et concurrence en C1                  |
+| Bruteforce codes de secours                | sélecteur public + vérificateur 128 bits, Argon2id 64 MiB/t=3/p=1, usage atomique unique, profil 5/h                                                                | contrainte SQL en C1                              |
+| Création de session pendant récupération   | contexte `MFA_RECOVERY` borné, seule l'inscription TOTP est autorisée                                                                                               | machine d'état en C1                              |
+| Collusion/récupération support             | trois parties distinctes ; annulation serveur auditée sur remplacement/inéligibilité ; approbateur super-admin step-up                                              | transaction et alerting en C2/C3                  |
+| Audit attribué au mauvais acteur           | sinks succès/échec par opération, contexte non prouvé vers événement ; SYSTEM autonome/délégué, XOR et union discriminée                                            | migration, XOR SQL et trigger avant runtime C1/C2 |
+| Escalade RBAC                              | deny by default, rôle rechargé, `authorizationVersion`, no self-change, dernier super-admin protégé                                                                 | middleware et verrouillage transactionnel en C2   |
+| Exfiltration d'export                      | bearer+step-up ; PII ; payload JCS UTF-8 ; signing input RFC 7515 ; JWS Ed25519 détaché avec `b64=false` interdit ; ZIP bijectif ; trust bundle ; aucune URL signée | stockage/chiffrement/expiry en C2                 |
+
+Les contrôles ci-dessus sont des obligations de contrat et des tests de dérive ;
+ils ne sont pas déclarés opérationnels. Tout événement futur sans contexte
+prouvé va dans `AdminSecurityEvent`, même si le succès de la même opération
+produit un `AuditLog`; les mutations sous session ou récupération prouvée et
+leur `AuditLog` doivent être atomiques. Jusqu'à arbitrage légal, la
+rétention est fail-safe sans suppression. ADR-025 reste l'autorité de conception
+pour les contextes d'audit.
+
+## Instantané historique local prépublication S1.2-03B-R1
+
+Le workflow Security R0 `36572630278` a explicitement imprimé trois avis sur
+deux dépendances transitives : `GHSA-qw65-cvwx-89v3` et
+`GHSA-58mr-gqgx-xq4g` pour `fast-uri`, puis `GHSA-3pph-fpjx-jg34` pour Multer.
+Le diagnostic R1 du graphe R0 a aussi confirmé `GHSA-hrr3-gc8f-f4qj` pour
+`fast-uri` ; cet avis n'est pas attribué au texte du log Security R0. Les
+succès R0 Infrastructure `36572630270`, Launcher Windows `36572630257` et
+Quality Linux `36572630225` ne neutralisent pas ce constat.
+
+R1 conserve les parents `ajv@8.18.0` et
+`@nestjs/platform-express@11.1.28`, mais impose leurs résolutions exactes sûres
+`fast-uri@3.1.8` et `multer@2.4.0`. Le scanner refuse `fast-uri` 3.x
+`>=3.0.0 <3.1.8`, dont 3.1.6 et 3.1.7, et Multer 2.x
+`>=2.2.0 <2.4.0`, dont 2.3.0. Le retrait de `concat-stream` et `typedarray`
+est causal au changement Multer. Audits complet/production, signatures,
+provenance, licences et absence de copie vulnérable sont vérifiés localement.
+
+Sept nœuds optionnels WASM/plateforme déjà présents dans le lockfile R0 sont
+signalés textuellement `extraneous` après deux installations reproductibles.
+Ils proviennent uniquement de branches `wasm32`, `freebsd-wasm32` ou
+`webcontainers`, sont identiques avant/après, ne figurent pas au diff R1 et ne
+sont ni les paquets remédiés ni leurs parents. `npm ls` retourne 0 sans paquet
+`invalid` ni peer cassée. Le risque résiduel est une représentation npm
+imparfaite de ces branches optionnelles installées, non un drift R1 ; toute
+apparition d’un huitième nœud ou toute variation rendrait ce classement caduc.
+
+La surface 60/67/137, les contrats et la capacité produit restent inchangés.
+Aucun endpoint multipart, runtime, schéma, migration, workflow ou interface
+n’est ajouté. R1 demeure local, non indexé, non commité et non publié ; la PR
+#48 reste ouverte, Draft, non fusionnée et décrite « CI en attente ».
+
+## État historique postpublication R1 et réconciliation documentaire R2
+
+R1 ferme les quatre avis avec `fast-uri@3.1.8` et `multer@2.4.0`. Il est publié
+au commit `3c1e0a067c1c977dcc7a85e4baa892ebdcc0b82e`, parent
+`a1002b37b26feb456e2b11df87c20e671c4c20ae`, arbre
+`c87ca8400af2e421931533e2e6b6853680360800`, message
+`fix(security): remediate S1.2-03B supply-chain findings`, avec 10 fichiers,
+`+358/-78` et l'empreinte agrégée
+`8298eb4de428fa578ed34af3f5ce0f5d80979ea02f124f78a3f8a603d3bbf659`.
+
+Les preuves locales R1 comprennent 1 130 signatures de registre, 198
+attestations vérifiées sans élément invalide, les licences 1 132/0/0, deux
+installations reproductibles et la qualification des sept artefacts WASM. Les
+preuves CI sont les audits complet et production à zéro vulnérabilité, les
+licences 1 139/0/0, le scanner sur 358 fichiers avec historique actif et 52
+sources immuables, ainsi que le lockfile déterministe. Aucune exécution CI de
+`npm audit signatures` n'est affirmée.
+
+Security `36642550938`, Infrastructure `36642550943`, Launcher Windows
+`36642550958` et Quality Linux `36642551010` ont tous conclu
+`pull_request/completed/success` sur le head R1. La PR #48 demeure ouverte,
+Draft, `MERGEABLE` et non fusionnée, avec un cumul de 2 commits, 20 fichiers et
+`+8291/-1220`.
+
+La surface contractuelle publiée reste 60 chemins, 67 opérations et 137
+schémas. Les obligations décrites dans ce modèle ne sont toujours pas des
+garanties runtime : aucun modèle, migration ou écran n'est livré, et
+S1.2-03C1/C2/C3 restent `Not started`. R2 modifie seulement six documents et
+aucun octet technique ; son état de publication fait foi dans Git et GitHub.
+Il n'autorise aucun rerun, Ready, merge, tag, release, déploiement ou démarrage
+S1.2-03C.
+
+## Instantané historique local prépublication S1.2-03B-R3 — 2026-10-01
+
+Le commit documentaire R2
+`6bc344c4eca7065089a6f6af6a9d47a98bf76b0f` ne change aucun octet technique.
+Trois de ses workflows réussissent, mais Security `36707322818` échoue à
+`Audit dependency trees` sur le chemin de développement
+`minimatch@10.2.6 > brace-expansion@5.0.9`. Les avis sont
+`GHSA-q2hr-2g5m-vwhr` (CPU DoS, medium), `GHSA-qhr7-859c-m2p7` et
+`GHSA-6j4f-fj2g-mc7p` (épuisement de pile, high). Ce changement de réponse
+d'audit entre R1 et R2 est externe aux six documents R2 ; aucune dérive du
+lockfile, signature ou licence n'est en cause.
+
+R3 impose `brace-expansion@5.0.12` sous le seul parent
+`minimatch@10.2.6`. Le scanner borne toutes les branches majeures affectées,
+les préversions et les variantes d'override ou de parent. L'alerte Next.js,
+qualifiée séparément après R2, est traitée par `next@16.3.8` et
+`eslint-config-next@16.3.8`, avec `@next/env`, le plugin ESLint et les huit SWC
+alignés. Ce saut ferme le critique `GHSA-vcvr-r3jv-pc5j`, l'avis SSRF high
+`GHSA-cjq9-62q9-8jv4`, cinq avis medium et un avis low publiés avec 16.3.8.
+
+Le lockfile final ne gagne ni ne perd de nœud et change exactement 13 versions
+causales. Son SHA-256
+`3bbb2e4b476decf50a7165143c985719d234e9511deebf757a6c9527eb68c03a`
+reste stable après deux installations propres. Les audits complet et
+production sont à zéro ; 1 130 signatures et 198 attestations sont vérifiées ;
+les licences sont 1 132/0/0. Les sept artefacts WASM optionnels historiques
+restent inchangés et `npm ls --all` retourne 0. Les remédiations R1
+`fast-uri@3.1.8` et `multer@2.4.0` restent imposées.
+
+Les builds Web/Admin sous Next 16.3.8, le chargement SWC Windows et le traitement
+Sharp en mémoire passent, comme les autres validations applicables. La surface
+OpenAPI/contrat reste byte-identique à 60 chemins, 67 opérations et 137
+schémas. R3 n'ajoutait aucun runtime, modèle Prisma, migration, workflow ou
+écran. À la date de cet instantané, il était local, non indexé, non commité et
+non publié ; la PR #48 restait Draft et S1.2-03C1/C2/C3 restaient
+`Not started`. Après cet instantané, l'état de publication et de CI fait foi
+dans Git et GitHub.
+
+## Baseline publiée S1.2-03B-R3 et instantané historique local prépublication R4 — 2026-10-01
+
+R3 est publié au commit
+`1a6c4efeb169e89ccf989004559f4e0c1af80af3`, parent R2
+`6bc344c4eca7065089a6f6af6a9d47a98bf76b0f`, arbre
+`031101296c44d18d7f1a2ab1f917ac1432023f6d`. Ses quatre workflows
+Infrastructure `36894241121`, Launcher Windows `36894240862`, Security
+`36894240870` et Quality Linux `36894241013` réussissent en tentative 1. Avant
+la publication R4, la PR #48 était `OPEN`, Draft, `CLEAN` et non fusionnée ;
+son cumul était de 4 commits, 23 fichiers et `+9342/-1298`.
+
+Le finding cryptographique post-R3 est fondé : signer uniquement les octets du
+manifeste ne produit pas une signature JWS valide. R4 impose le payload JCS
+UTF-8, l'en-tête protégé exact `alg=EdDSA`/`kid=signatureKeyId`, l'encodage
+base64url sans padding, le signing input ASCII
+`BASE64URL(protected).BASE64URL(payload)` et la forme transmise
+`protected..signature`. Le profil RFC 7797 non encodé `b64=false` est interdit.
+Les altérations de l'en-tête ou du payload et l'ancienne signature payload-only
+sont couvertes par une preuve Ed25519 indépendante.
+
+Le finding de gouvernance est réconcilié en qualifiant les états R1/R2
+d'historiques sans modifier leurs chiffres. Les preuves locales historiques R3
+restent séparées des succès CI R3, y compris les essais réseau de signatures
+non conclusifs, la reprise après le refus du lock Flutter et la limite iOS sous
+Windows. Dans cet instantané, R4 était local et n'ajoutait aucun contrôle
+runtime ; S1.2-03C1/C2/C3 restaient `Not started`. Après cet instantané, l'état
+de publication et de CI fait foi dans Git et GitHub.
+
+La preuve locale R4 couvre 274 tests OpenAPI+Contracts, dont les cas
+cryptographiques Ed25519, et 367 tests tooling. Le scanner officiel passe sur
+358 fichiers avec historique actif et 52 sources immuables. Les audits npm
+complet et production frais terminent au code 0 avec zéro vulnérabilité. Aucun
+audit de signature de registre, licence, build applicatif, Flutter ou test
+PostgreSQL n'est rejoué pour les surfaces inchangées ; cette non-répétition ne
+transforme aucune preuve historique en preuve R4.

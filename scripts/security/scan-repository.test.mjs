@@ -6,6 +6,7 @@ import { deepmerge } from "deepmerge-ts";
 
 import {
   findSecretTypes,
+  validateBraceExpansionOverride,
   validateDependabotPolicy,
   validateManifestLockConsistency,
   validateManifestVersions,
@@ -868,7 +869,7 @@ test("rejects an additional mysql2 lock parent", () => {
 const validAjvFastUriManifests = {
   "": {
     overrides: {
-      "ajv@8.18.0": { "fast-uri": "3.1.6" },
+      "ajv@8.18.0": { "fast-uri": "3.1.8" },
     },
   },
 };
@@ -879,7 +880,7 @@ const validAjvFastUriLock = {
       dependencies: { "fast-uri": "^3.0.1" },
       version: "8.18.0",
     },
-    "node_modules/fast-uri": { version: "3.1.6" },
+    "node_modules/fast-uri": { version: "3.1.8" },
   },
 };
 
@@ -890,23 +891,36 @@ test("accepts the exact targeted ajv fast-uri security override", () => {
   );
 });
 
-test("rejects vulnerable and different fast-uri resolutions", () => {
+test("rejects fast-uri 3.1.6 and the 3.1.7 vulnerable boundary", () => {
   const vulnerableLock = structuredClone(validAjvFastUriLock);
-  vulnerableLock.packages["node_modules/fast-uri"].version = "3.1.5";
+  vulnerableLock.packages["node_modules/fast-uri"].version = "3.1.6";
   assert.deepEqual(
     validateAjvFastUriOverride(validAjvFastUriManifests, vulnerableLock),
     [
-      "vulnerable fast-uri installation(s): node_modules/fast-uri@3.1.5",
-      "fast-uri must have one physical installation at node_modules/fast-uri@3.1.6; found node_modules/fast-uri@3.1.5",
+      "vulnerable fast-uri installation(s): node_modules/fast-uri@3.1.6",
+      "fast-uri must have one physical installation at node_modules/fast-uri@3.1.8; found node_modules/fast-uri@3.1.6",
     ],
   );
 
-  const differentLock = structuredClone(validAjvFastUriLock);
-  differentLock.packages["node_modules/fast-uri"].version = "3.1.7";
+  const boundaryLock = structuredClone(validAjvFastUriLock);
+  boundaryLock.packages["node_modules/fast-uri"].version = "3.1.7";
   assert.deepEqual(
-    validateAjvFastUriOverride(validAjvFastUriManifests, differentLock),
+    validateAjvFastUriOverride(validAjvFastUriManifests, boundaryLock),
     [
-      "fast-uri must have one physical installation at node_modules/fast-uri@3.1.6; found node_modules/fast-uri@3.1.7",
+      "vulnerable fast-uri installation(s): node_modules/fast-uri@3.1.7",
+      "fast-uri must have one physical installation at node_modules/fast-uri@3.1.8; found node_modules/fast-uri@3.1.7",
+    ],
+  );
+});
+
+test("rejects a different non-vulnerable fast-uri resolution", () => {
+  const lockfile = structuredClone(validAjvFastUriLock);
+  lockfile.packages["node_modules/fast-uri"].version = "3.1.9";
+
+  assert.deepEqual(
+    validateAjvFastUriOverride(validAjvFastUriManifests, lockfile),
+    [
+      "fast-uri must have one physical installation at node_modules/fast-uri@3.1.8; found node_modules/fast-uri@3.1.9",
     ],
   );
 });
@@ -917,37 +931,37 @@ test("rejects missing, duplicate and misplaced fast-uri installations", () => {
   assert.deepEqual(
     validateAjvFastUriOverride(validAjvFastUriManifests, missingLock),
     [
-      "fast-uri must have one physical installation at node_modules/fast-uri@3.1.6; found NONE",
+      "fast-uri must have one physical installation at node_modules/fast-uri@3.1.8; found NONE",
     ],
   );
 
   const duplicateLock = structuredClone(validAjvFastUriLock);
   duplicateLock.packages["node_modules/example/node_modules/fast-uri"] = {
-    version: "3.1.6",
+    version: "3.1.8",
   };
   assert.deepEqual(
     validateAjvFastUriOverride(validAjvFastUriManifests, duplicateLock),
     [
-      "fast-uri must have one physical installation at node_modules/fast-uri@3.1.6; found node_modules/fast-uri@3.1.6, node_modules/example/node_modules/fast-uri@3.1.6",
+      "fast-uri must have one physical installation at node_modules/fast-uri@3.1.8; found node_modules/fast-uri@3.1.8, node_modules/example/node_modules/fast-uri@3.1.8",
     ],
   );
 
   const misplacedLock = structuredClone(validAjvFastUriLock);
   delete misplacedLock.packages["node_modules/fast-uri"];
   misplacedLock.packages["node_modules/example/node_modules/fast-uri"] = {
-    version: "3.1.6",
+    version: "3.1.8",
   };
   assert.deepEqual(
     validateAjvFastUriOverride(validAjvFastUriManifests, misplacedLock),
     [
-      "fast-uri must have one physical installation at node_modules/fast-uri@3.1.6; found node_modules/example/node_modules/fast-uri@3.1.6",
+      "fast-uri must have one physical installation at node_modules/fast-uri@3.1.8; found node_modules/example/node_modules/fast-uri@3.1.8",
     ],
   );
 });
 
 test("rejects widened, malformed and parallel fast-uri overrides", () => {
   for (const specification of [
-    "^3.1.6",
+    "^3.1.8",
     "*",
     "latest",
     "github:fastify/fast-uri",
@@ -956,22 +970,31 @@ test("rejects widened, malformed and parallel fast-uri overrides", () => {
     manifests[""].overrides["ajv@8.18.0"]["fast-uri"] = specification;
     assert.deepEqual(
       validateAjvFastUriOverride(manifests, validAjvFastUriLock),
-      ["ajv@8.18.0 must override fast-uri to exact version 3.1.6"],
+      ["ajv@8.18.0 must override fast-uri to exact version 3.1.8"],
       specification,
     );
   }
 
   const global = structuredClone(validAjvFastUriManifests);
-  global[""].overrides["fast-uri"] = "3.1.6";
+  global[""].overrides["fast-uri"] = "3.1.8";
   assert.deepEqual(validateAjvFastUriOverride(global, validAjvFastUriLock), [
     "fast-uri security override is forbidden at path: fast-uri",
   ]);
 
   const parallel = structuredClone(validAjvFastUriManifests);
-  parallel[""].overrides["ajv@^8.18.0"] = { "fast-uri": "3.1.6" };
+  parallel[""].overrides["ajv@^8.18.0"] = { "fast-uri": "3.1.8" };
   assert.deepEqual(validateAjvFastUriOverride(parallel, validAjvFastUriLock), [
     "fast-uri security override is forbidden at path: ajv@^8.18.0",
     "fast-uri security override is forbidden at path: ajv@^8.18.0 > fast-uri",
+  ]);
+});
+
+test("rejects the formerly pinned fast-uri 3.1.6 override exactly", () => {
+  const manifests = structuredClone(validAjvFastUriManifests);
+  manifests[""].overrides["ajv@8.18.0"]["fast-uri"] = "3.1.6";
+
+  assert.deepEqual(validateAjvFastUriOverride(manifests, validAjvFastUriLock), [
+    "ajv@8.18.0 must override fast-uri to exact version 3.1.8",
   ]);
 });
 
@@ -985,7 +1008,7 @@ test("rejects a broadened fast-uri parent and an unapproved lock parent", () => 
   };
 
   assert.deepEqual(validateAjvFastUriOverride(manifests, lockfile), [
-    "ajv@8.18.0 must override fast-uri to exact version 3.1.6",
+    "ajv@8.18.0 must override fast-uri to exact version 3.1.8",
     "fast-uri has an unapproved lock parent: node_modules/example",
   ]);
 });
@@ -1113,19 +1136,227 @@ test("rejects changed qs parent metadata and an unapproved lock parent", () => {
   ]);
 });
 
+const validBraceExpansionManifests = {
+  "": {
+    overrides: {
+      "brace-expansion": "5.0.12",
+      minimatch: "10.2.6",
+    },
+  },
+};
+
+const validBraceExpansionLock = {
+  packages: {
+    "node_modules/brace-expansion": { version: "5.0.12" },
+    "node_modules/minimatch": {
+      dependencies: { "brace-expansion": "^5.0.8" },
+      version: "10.2.6",
+    },
+  },
+};
+
+test("accepts the exact minimatch brace-expansion security override", () => {
+  assert.deepEqual(
+    validateBraceExpansionOverride(
+      validBraceExpansionManifests,
+      validBraceExpansionLock,
+    ),
+    [],
+  );
+});
+
+test("rejects the R2 brace-expansion resolution and vulnerable boundary", () => {
+  for (const version of [
+    "0.1.0",
+    "1.1.18",
+    "1.1.20",
+    "2.1.4",
+    "2.1.6",
+    "3.0.6",
+    "3.0.8",
+    "4.0.0",
+    "4.2.1",
+    "5.0.9",
+    "5.0.10",
+    "5.0.11",
+    "5.0.12-beta.1",
+  ]) {
+    const lockfile = structuredClone(validBraceExpansionLock);
+    lockfile.packages["node_modules/brace-expansion"].version = version;
+    assert.deepEqual(
+      validateBraceExpansionOverride(validBraceExpansionManifests, lockfile),
+      [
+        `vulnerable brace-expansion installation(s): node_modules/brace-expansion@${version}`,
+        `brace-expansion must have one physical installation at node_modules/brace-expansion@5.0.12; found node_modules/brace-expansion@${version}`,
+      ],
+      version,
+    );
+  }
+});
+
+test("does not mislabel patched or malformed brace-expansion versions", () => {
+  for (const version of [
+    "1.1.21",
+    "2.1.7",
+    "3.0.9",
+    "3.1.0",
+    "5.0.12",
+    "5.0.13",
+    "not-semver",
+  ]) {
+    const lockfile = structuredClone(validBraceExpansionLock);
+    lockfile.packages["node_modules/brace-expansion"].version = version;
+    const errors = validateBraceExpansionOverride(
+      validBraceExpansionManifests,
+      lockfile,
+    );
+    assert.equal(
+      errors.some((error) =>
+        error.startsWith("vulnerable brace-expansion installation(s):"),
+      ),
+      false,
+      version,
+    );
+  }
+});
+
+test("rejects a different non-vulnerable brace-expansion resolution", () => {
+  const lockfile = structuredClone(validBraceExpansionLock);
+  lockfile.packages["node_modules/brace-expansion"].version = "5.0.13";
+  assert.deepEqual(
+    validateBraceExpansionOverride(validBraceExpansionManifests, lockfile),
+    [
+      "brace-expansion must have one physical installation at node_modules/brace-expansion@5.0.12; found node_modules/brace-expansion@5.0.13",
+    ],
+  );
+});
+
+test("rejects missing, duplicate and misplaced brace-expansion installations", () => {
+  const missingLock = structuredClone(validBraceExpansionLock);
+  delete missingLock.packages["node_modules/brace-expansion"];
+  assert.deepEqual(
+    validateBraceExpansionOverride(validBraceExpansionManifests, missingLock),
+    [
+      "brace-expansion must have one physical installation at node_modules/brace-expansion@5.0.12; found NONE",
+    ],
+  );
+
+  const duplicateLock = structuredClone(validBraceExpansionLock);
+  duplicateLock.packages["node_modules/example/node_modules/brace-expansion"] =
+    { version: "5.0.12" };
+  assert.deepEqual(
+    validateBraceExpansionOverride(validBraceExpansionManifests, duplicateLock),
+    [
+      "brace-expansion must have one physical installation at node_modules/brace-expansion@5.0.12; found node_modules/brace-expansion@5.0.12, node_modules/example/node_modules/brace-expansion@5.0.12",
+    ],
+  );
+
+  const misplacedLock = structuredClone(validBraceExpansionLock);
+  delete misplacedLock.packages["node_modules/brace-expansion"];
+  misplacedLock.packages["node_modules/example/node_modules/brace-expansion"] =
+    { version: "5.0.12" };
+  assert.deepEqual(
+    validateBraceExpansionOverride(validBraceExpansionManifests, misplacedLock),
+    [
+      "brace-expansion must have one physical installation at node_modules/brace-expansion@5.0.12; found node_modules/example/node_modules/brace-expansion@5.0.12",
+    ],
+  );
+});
+
+test("rejects widened, stale and parallel brace-expansion overrides", () => {
+  for (const specification of [
+    "5.0.9",
+    "^5.0.12",
+    "*",
+    "latest",
+    "github:juliangruber/brace-expansion",
+  ]) {
+    const manifests = structuredClone(validBraceExpansionManifests);
+    manifests[""].overrides["brace-expansion"] = specification;
+    assert.deepEqual(
+      validateBraceExpansionOverride(manifests, validBraceExpansionLock),
+      ["brace-expansion must be overridden to exact version 5.0.12"],
+      specification,
+    );
+  }
+
+  const parallel = structuredClone(validBraceExpansionManifests);
+  parallel[""].overrides["example@1.0.0"] = {
+    "brace-expansion": "5.0.12",
+  };
+  assert.deepEqual(
+    validateBraceExpansionOverride(parallel, validBraceExpansionLock),
+    [
+      "brace-expansion security override is forbidden at path: example@1.0.0 > brace-expansion",
+    ],
+  );
+
+  const selected = structuredClone(validBraceExpansionManifests);
+  selected[""].overrides["brace-expansion@5.0.9"] = "5.0.12";
+  assert.deepEqual(
+    validateBraceExpansionOverride(selected, validBraceExpansionLock),
+    [
+      "brace-expansion security override is forbidden at path: brace-expansion@5.0.9",
+    ],
+  );
+});
+
+test("rejects minimatch override and parent graph drift", () => {
+  const ranged = structuredClone(validBraceExpansionManifests);
+  ranged[""].overrides.minimatch = "^10.2.6";
+  assert.deepEqual(
+    validateBraceExpansionOverride(ranged, validBraceExpansionLock),
+    ["minimatch must remain overridden to exact version 10.2.6"],
+  );
+
+  const nested = structuredClone(validBraceExpansionManifests);
+  nested[""].overrides["example@1.0.0"] = { minimatch: "10.2.6" };
+  assert.deepEqual(
+    validateBraceExpansionOverride(nested, validBraceExpansionLock),
+    [
+      "minimatch parent override is forbidden at path: example@1.0.0 > minimatch",
+    ],
+  );
+
+  const metadata = structuredClone(validBraceExpansionLock);
+  metadata.packages["node_modules/minimatch"].dependencies["brace-expansion"] =
+    "5.0.12";
+  metadata.packages["node_modules/example"] = {
+    dependencies: { "brace-expansion": "5.0.12" },
+    version: "1.0.0",
+  };
+  assert.deepEqual(
+    validateBraceExpansionOverride(validBraceExpansionManifests, metadata),
+    [
+      "minimatch@10.2.6 lock metadata must retain its audited brace-expansion ^5.0.8 dependency",
+      "brace-expansion has an unapproved lock parent: node_modules/example",
+    ],
+  );
+
+  const version = structuredClone(validBraceExpansionLock);
+  version.packages["node_modules/minimatch"].version = "10.2.5";
+  assert.deepEqual(
+    validateBraceExpansionOverride(validBraceExpansionManifests, version),
+    [
+      "minimatch@10.2.6 lock metadata must retain its audited brace-expansion ^5.0.8 dependency",
+      "minimatch must have one physical installation at node_modules/minimatch@10.2.6; found node_modules/minimatch@10.2.5",
+    ],
+  );
+});
+
 const validR2Manifests = {
   "": {
     overrides: {
-      "@nestjs/platform-express@11.1.28": { multer: "2.3.0" },
+      "@nestjs/platform-express@11.1.28": { multer: "2.4.0" },
       "js-yaml@3.15.0": "3.15.2",
       "js-yaml@4.3.0": "4.3.2",
       sharp: "0.35.4",
     },
   },
   "apps/admin": {
-    dependencies: { next: "16.3.4" },
+    dependencies: { next: "16.3.8" },
     devDependencies: {
-      "eslint-config-next": "16.3.4",
+      "eslint-config-next": "16.3.8",
       vitest: "4.1.11",
     },
   },
@@ -1133,15 +1364,15 @@ const validR2Manifests = {
     dependencies: { "@nestjs/platform-express": "11.1.28" },
   },
   "apps/web": {
-    dependencies: { next: "16.3.4" },
+    dependencies: { next: "16.3.8" },
     devDependencies: {
-      "eslint-config-next": "16.3.4",
+      "eslint-config-next": "16.3.8",
       vitest: "4.1.11",
     },
   },
   "packages/ui": {
     devDependencies: {
-      "eslint-config-next": "16.3.4",
+      "eslint-config-next": "16.3.8",
       vitest: "4.1.11",
     },
   },
@@ -1164,17 +1395,41 @@ const validR2Lock = {
       dependencies: { multer: "2.2.0" },
       version: "11.1.28",
     },
+    "node_modules/@next/env": { version: "16.3.8" },
+    "node_modules/@next/eslint-plugin-next": { version: "16.3.8" },
+    "node_modules/@next/swc-darwin-arm64": { version: "16.3.8" },
+    "node_modules/@next/swc-darwin-x64": { version: "16.3.8" },
+    "node_modules/@next/swc-linux-arm64-gnu": { version: "16.3.8" },
+    "node_modules/@next/swc-linux-arm64-musl": { version: "16.3.8" },
+    "node_modules/@next/swc-linux-x64-gnu": { version: "16.3.8" },
+    "node_modules/@next/swc-linux-x64-musl": { version: "16.3.8" },
+    "node_modules/@next/swc-win32-arm64-msvc": { version: "16.3.8" },
+    "node_modules/@next/swc-win32-x64-msvc": { version: "16.3.8" },
     "node_modules/@vitest/mocker": { version: "4.1.11" },
     "node_modules/cosmiconfig": {
       dependencies: { "js-yaml": "^4.1.0" },
       version: "8.3.6",
     },
-    "node_modules/eslint-config-next": { version: "16.3.4" },
+    "node_modules/eslint-config-next": {
+      dependencies: { "@next/eslint-plugin-next": "16.3.8" },
+      version: "16.3.8",
+    },
     "node_modules/js-yaml": { version: "4.3.2" },
-    "node_modules/multer": { version: "2.3.0" },
+    "node_modules/multer": { version: "2.4.0" },
     "node_modules/next": {
-      optionalDependencies: { sharp: "^0.35.4" },
-      version: "16.3.4",
+      dependencies: { "@next/env": "16.3.8" },
+      optionalDependencies: {
+        "@next/swc-darwin-arm64": "16.3.8",
+        "@next/swc-darwin-x64": "16.3.8",
+        "@next/swc-linux-arm64-gnu": "16.3.8",
+        "@next/swc-linux-arm64-musl": "16.3.8",
+        "@next/swc-linux-x64-gnu": "16.3.8",
+        "@next/swc-linux-x64-musl": "16.3.8",
+        "@next/swc-win32-arm64-msvc": "16.3.8",
+        "@next/swc-win32-x64-msvc": "16.3.8",
+        sharp: "^0.35.4",
+      },
+      version: "16.3.8",
     },
     "node_modules/sharp": { version: "0.35.4" },
     "node_modules/vitest": {
@@ -1200,11 +1455,12 @@ test("accepts the exact S1.1-R2 supply-chain graph", () => {
 
 test("rejects Next and ESLint Config Next pin, placement and override drift", () => {
   const manifests = structuredClone(validR2Manifests);
-  manifests["apps/web"].dependencies.next = "16.3.3";
+  manifests["apps/web"].dependencies.next = "16.3.4";
+  manifests["apps/admin"].devDependencies["eslint-config-next"] = "16.3.4";
   manifests["apps/api"].devDependencies = { next: "16.3.4" };
   manifests[""].overrides.next = "16.3.4";
   const lockfile = structuredClone(validR2Lock);
-  lockfile.packages["apps/web/node_modules/next"] = { version: "16.3.4" };
+  lockfile.packages["apps/web/node_modules/next"] = { version: "16.3.8" };
   lockfile.packages["node_modules/example"] = {
     dependencies: { next: "16.3.4" },
     devDependencies: { "eslint-config-next": "16.3.4" },
@@ -1212,7 +1468,12 @@ test("rejects Next and ESLint Config Next pin, placement and override drift", ()
 
   const errors = validateNextToolchain(manifests, lockfile);
   assert.ok(
-    errors.includes("apps/web must pin next to exact 16.3.4 in dependencies"),
+    errors.includes("apps/web must pin next to exact 16.3.8 in dependencies"),
+  );
+  assert.ok(
+    errors.includes(
+      "apps/admin must pin eslint-config-next to exact 16.3.8 in devDependencies",
+    ),
   );
   assert.ok(
     errors.includes(
@@ -1231,10 +1492,105 @@ test("rejects Next and ESLint Config Next pin, placement and override drift", ()
   assert.ok(
     errors.some((error) =>
       error.startsWith(
-        "next must have one physical installation at node_modules/next@16.3.4",
+        "next must have one physical installation at node_modules/next@16.3.8",
       ),
     ),
   );
+});
+
+test("rejects Next environment, ESLint plugin and SWC graph drift", () => {
+  const lockfile = structuredClone(validR2Lock);
+  lockfile.packages["node_modules/next"].dependencies["@next/env"] = "16.3.4";
+  lockfile.packages["node_modules/@next/env"].version = "16.3.4";
+  lockfile.packages["node_modules/eslint-config-next"].dependencies[
+    "@next/eslint-plugin-next"
+  ] = "16.3.4";
+  lockfile.packages["node_modules/@next/eslint-plugin-next"].version = "16.3.4";
+  lockfile.packages["node_modules/next"].optionalDependencies[
+    "@next/swc-win32-x64-msvc"
+  ] = "16.3.4";
+  lockfile.packages["node_modules/@next/swc-win32-x64-msvc"].version = "16.3.4";
+
+  const errors = validateNextToolchain(validR2Manifests, lockfile);
+  assert.ok(
+    errors.some((error) =>
+      error.startsWith(
+        "@next/env must have one physical installation at node_modules/@next/env@16.3.8",
+      ),
+    ),
+  );
+  assert.ok(
+    errors.some((error) =>
+      error.startsWith(
+        "@next/eslint-plugin-next must have one physical installation at node_modules/@next/eslint-plugin-next@16.3.8",
+      ),
+    ),
+  );
+  assert.ok(
+    errors.some((error) =>
+      error.startsWith(
+        "@next/swc-win32-x64-msvc must have one physical installation at node_modules/@next/swc-win32-x64-msvc@16.3.8",
+      ),
+    ),
+  );
+  assert.ok(
+    errors.includes(
+      "next@16.3.8 lock metadata must depend on @next/env 16.3.8",
+    ),
+  );
+  assert.ok(
+    errors.includes(
+      "eslint-config-next@16.3.8 lock metadata must depend on @next/eslint-plugin-next 16.3.8",
+    ),
+  );
+  assert.ok(
+    errors.includes(
+      "next@16.3.8 lock metadata must retain optional @next/swc-win32-x64-msvc 16.3.8",
+    ),
+  );
+});
+
+test("rejects duplicate and unapproved Next support package parents", () => {
+  const lockfile = structuredClone(validR2Lock);
+  lockfile.packages["node_modules/example"] = {
+    dependencies: {
+      "@next/env": "16.3.8",
+      "@next/eslint-plugin-next": "16.3.8",
+      "@next/swc-linux-x64-gnu": "16.3.8",
+    },
+    version: "1.0.0",
+  };
+  for (const packageName of [
+    "@next/env",
+    "@next/eslint-plugin-next",
+    "@next/swc-linux-x64-gnu",
+  ]) {
+    lockfile.packages[`node_modules/example/node_modules/${packageName}`] = {
+      version: "16.3.8",
+    };
+  }
+
+  const errors = validateNextToolchain(validR2Manifests, lockfile);
+  for (const packageName of [
+    "@next/env",
+    "@next/eslint-plugin-next",
+    "@next/swc-linux-x64-gnu",
+  ]) {
+    assert.ok(
+      errors.some((error) =>
+        error.startsWith(
+          `${packageName} must have one physical installation at node_modules/${packageName}@16.3.8`,
+        ),
+      ),
+      packageName,
+    );
+    assert.ok(
+      errors.includes(
+        `${packageName} has an unapproved lock parent: node_modules/example`,
+      ),
+      packageName,
+    );
+  }
 });
 
 test("rejects every Vitest or @vitest/mocker bypass", () => {
@@ -1330,7 +1686,7 @@ test("rejects js-yaml unapproved parents and physical variants", () => {
 test("rejects Sharp override, parent and physical installation drift", () => {
   const manifests = structuredClone(validR2Manifests);
   manifests[""].overrides.sharp = "^0.35.4";
-  manifests[""].overrides["next@16.3.4"] = { sharp: "0.35.4" };
+  manifests[""].overrides["next@16.3.8"] = { sharp: "0.35.4" };
   const lockfile = structuredClone(validR2Lock);
   lockfile.packages["node_modules/next"].optionalDependencies.sharp = "^0.35.3";
   lockfile.packages["node_modules/example/node_modules/sharp"] = {
@@ -1342,12 +1698,12 @@ test("rejects Sharp override, parent and physical installation drift", () => {
   );
   assert.ok(
     errors.includes(
-      "sharp security override is forbidden at path: next@16.3.4 > sharp",
+      "sharp security override is forbidden at path: next@16.3.8 > sharp",
     ),
   );
   assert.ok(
     errors.includes(
-      "next@16.3.4 lock metadata must retain its audited sharp ^0.35.4 optional dependency",
+      "next@16.3.8 lock metadata must retain its audited sharp ^0.35.4 optional dependency",
     ),
   );
   assert.ok(
@@ -1360,30 +1716,84 @@ test("rejects Sharp override, parent and physical installation drift", () => {
 });
 
 test("rejects global, broadened, tagged and referenced Multer overrides", () => {
-  for (const mutation of [
-    (overrides) => {
-      overrides.multer = "2.3.0";
-    },
-    (overrides) => {
-      overrides["@nestjs/platform-express"] = { multer: "2.3.0" };
-    },
-    (overrides) => {
-      overrides["@nestjs/platform-express@^11.1.28"] = { multer: "2.3.0" };
-    },
-    (overrides) => {
-      overrides["@nestjs/platform-express@11.1.28"].multer = "^2.3.0";
-    },
-    (overrides) => {
-      overrides["@nestjs/platform-express@11.1.28"].multer = "latest";
-    },
-    (overrides) => {
-      overrides["@nestjs/platform-express@11.1.28"].multer = "$multer";
-    },
+  for (const [mutation, expected] of [
+    [
+      (overrides) => {
+        overrides.multer = "2.4.0";
+      },
+      ["multer security override is forbidden at path: multer"],
+    ],
+    [
+      (overrides) => {
+        overrides["@nestjs/platform-express"] = { multer: "2.4.0" };
+      },
+      [
+        "multer security override is forbidden at path: @nestjs/platform-express",
+        "multer security override is forbidden at path: @nestjs/platform-express > multer",
+      ],
+    ],
+    [
+      (overrides) => {
+        overrides["@nestjs/platform-express@^11.1.28"] = {
+          multer: "2.4.0",
+        };
+      },
+      [
+        "multer security override is forbidden at path: @nestjs/platform-express@^11.1.28",
+        "multer security override is forbidden at path: @nestjs/platform-express@^11.1.28 > multer",
+      ],
+    ],
+    [
+      (overrides) => {
+        overrides["@nestjs/platform-express@11.1.28"].multer = "^2.4.0";
+      },
+      [
+        "@nestjs/platform-express@11.1.28 must override multer to exact version 2.4.0",
+      ],
+    ],
+    [
+      (overrides) => {
+        overrides["@nestjs/platform-express@11.1.28"].multer = "latest";
+      },
+      [
+        "@nestjs/platform-express@11.1.28 must override multer to exact version 2.4.0",
+      ],
+    ],
+    [
+      (overrides) => {
+        overrides["@nestjs/platform-express@11.1.28"].multer = "$multer";
+      },
+      [
+        "@nestjs/platform-express@11.1.28 must override multer to exact version 2.4.0",
+      ],
+    ],
   ]) {
     const manifests = structuredClone(validR2Manifests);
     mutation(manifests[""].overrides);
-    assert.ok(validateNestMulterOverride(manifests, validR2Lock).length > 0);
+    assert.deepEqual(
+      validateNestMulterOverride(manifests, validR2Lock),
+      expected,
+    );
   }
+});
+
+test("rejects the formerly pinned Multer 2.3.0 override exactly", () => {
+  const manifests = structuredClone(validR2Manifests);
+  manifests[""].overrides["@nestjs/platform-express@11.1.28"].multer = "2.3.0";
+
+  assert.deepEqual(validateNestMulterOverride(manifests, validR2Lock), [
+    "@nestjs/platform-express@11.1.28 must override multer to exact version 2.4.0",
+  ]);
+});
+
+test("rejects a vulnerable Multer 2.3.0 lock resolution exactly", () => {
+  const lockfile = structuredClone(validR2Lock);
+  lockfile.packages["node_modules/multer"].version = "2.3.0";
+
+  assert.deepEqual(validateNestMulterOverride(validR2Manifests, lockfile), [
+    "vulnerable multer installation(s): node_modules/multer@2.3.0",
+    "multer must have one physical installation at node_modules/multer@2.4.0; found node_modules/multer@2.3.0",
+  ]);
 });
 
 test("rejects an additional Multer parent in every dependency section", () => {
@@ -1395,7 +1805,7 @@ test("rejects an additional Multer parent in every dependency section", () => {
   ]) {
     const lockfile = structuredClone(validR2Lock);
     lockfile.packages["node_modules/example"] = {
-      [section]: { multer: "2.3.0" },
+      [section]: { multer: "2.4.0" },
       version: "1.0.0",
     };
     assert.ok(
@@ -1428,9 +1838,14 @@ test("rejects NestJS parent drift and every vulnerable Multer installation", () 
     ),
   );
   assert.ok(
+    errors.includes(
+      "vulnerable multer installation(s): node_modules/example/node_modules/multer@2.2.0",
+    ),
+  );
+  assert.ok(
     errors.some((error) =>
       error.startsWith(
-        "multer must have one physical installation at node_modules/multer@2.3.0",
+        "multer must have one physical installation at node_modules/multer@2.4.0",
       ),
     ),
   );

@@ -30,7 +30,7 @@ const MYSQL_DECLARED_VERSION = "3.15.3";
 const MYSQL_SAFE_VERSION = "3.23.1";
 const FAST_URI_PACKAGE = "fast-uri";
 const FAST_URI_ROOT_PATH = `node_modules/${FAST_URI_PACKAGE}`;
-const FAST_URI_SAFE_VERSION = "3.1.6";
+const FAST_URI_SAFE_VERSION = "3.1.8";
 const FAST_URI_PARENT = {
   declaredVersion: "^3.0.1",
   packageName: "ajv",
@@ -64,11 +64,30 @@ const QS_PARENTS = [
     version: "10.3.0",
   },
 ];
+const BRACE_EXPANSION_PACKAGE = "brace-expansion";
+const BRACE_EXPANSION_ROOT_PATH = `node_modules/${BRACE_EXPANSION_PACKAGE}`;
+const BRACE_EXPANSION_SAFE_VERSION = "5.0.12";
+const MINIMATCH_PACKAGE = "minimatch";
+const MINIMATCH_ROOT_PATH = `node_modules/${MINIMATCH_PACKAGE}`;
+const MINIMATCH_SAFE_VERSION = "10.2.6";
+const MINIMATCH_BRACE_EXPANSION_RANGE = "^5.0.8";
 const NEXT_PACKAGE = "next";
-const NEXT_SAFE_VERSION = "16.3.4";
+const NEXT_SAFE_VERSION = "16.3.8";
 const NEXT_WORKSPACES = ["apps/admin", "apps/web"];
+const NEXT_ENV_PACKAGE = "@next/env";
+const NEXT_ESLINT_PLUGIN_PACKAGE = "@next/eslint-plugin-next";
+const NEXT_SWC_PACKAGES = [
+  "@next/swc-darwin-arm64",
+  "@next/swc-darwin-x64",
+  "@next/swc-linux-arm64-gnu",
+  "@next/swc-linux-arm64-musl",
+  "@next/swc-linux-x64-gnu",
+  "@next/swc-linux-x64-musl",
+  "@next/swc-win32-arm64-msvc",
+  "@next/swc-win32-x64-msvc",
+];
 const ESLINT_CONFIG_NEXT_PACKAGE = "eslint-config-next";
-const ESLINT_CONFIG_NEXT_SAFE_VERSION = "16.3.4";
+const ESLINT_CONFIG_NEXT_SAFE_VERSION = "16.3.8";
 const ESLINT_CONFIG_NEXT_WORKSPACES = ["apps/admin", "apps/web", "packages/ui"];
 const VITEST_PACKAGE = "vitest";
 const VITEST_SAFE_VERSION = "4.1.11";
@@ -108,7 +127,7 @@ const SHARP_PARENT_PATH = "node_modules/next";
 const SHARP_DECLARED_VERSION = "^0.35.4";
 const MULTER_PACKAGE = "multer";
 const MULTER_ROOT_PATH = `node_modules/${MULTER_PACKAGE}`;
-const MULTER_SAFE_VERSION = "2.3.0";
+const MULTER_SAFE_VERSION = "2.4.0";
 const NEST_PLATFORM_EXPRESS_VERSION = "11.1.28";
 const NEST_PLATFORM_EXPRESS_PATH = "node_modules/@nestjs/platform-express";
 const NEST_PLATFORM_EXPRESS_OVERRIDE = `@nestjs/platform-express@${NEST_PLATFORM_EXPRESS_VERSION}`;
@@ -785,7 +804,7 @@ function isVulnerableFastUriVersion(version) {
   const major = Number(match[1]);
   const minor = Number(match[2]);
   const patch = Number(match[3]);
-  return major === 3 && (minor < 1 || (minor === 1 && patch < 6));
+  return major === 3 && (minor < 1 || (minor === 1 && patch < 8));
 }
 
 export function validateAjvFastUriOverride(manifests, lockfile) {
@@ -806,7 +825,9 @@ export function validateAjvFastUriOverride(manifests, lockfile) {
     targetedOverride[FAST_URI_PACKAGE] !== FAST_URI_SAFE_VERSION ||
     Object.keys(targetedOverride).length !== 1
   ) {
-    errors.push("ajv@8.18.0 must override fast-uri to exact version 3.1.6");
+    errors.push(
+      `${FAST_URI_PARENT.selector} must override ${FAST_URI_PACKAGE} to exact version ${FAST_URI_SAFE_VERSION}`,
+    );
   }
 
   const packages = lockfile.packages ?? {};
@@ -954,6 +975,114 @@ export function validateQsOverrides(manifests, lockfile) {
   return errors;
 }
 
+function isVulnerableBraceExpansionVersion(version) {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+][A-Za-z0-9.-]+)?$/u.exec(
+    version ?? "",
+  );
+  if (match === null) {
+    return false;
+  }
+
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  const patch = Number(match[3]);
+  const isPrerelease = version.includes("-");
+  return (
+    major < 1 ||
+    (major === 1 &&
+      (minor < 1 ||
+        (minor === 1 && (patch < 21 || (patch === 21 && isPrerelease))))) ||
+    (major === 2 &&
+      (minor < 1 ||
+        (minor === 1 && (patch < 7 || (patch === 7 && isPrerelease))))) ||
+    (major === 3 &&
+      minor === 0 &&
+      (patch < 9 || (patch === 9 && isPrerelease))) ||
+    major === 4 ||
+    (major === 5 &&
+      minor === 0 &&
+      (patch < 12 || (patch === 12 && isPrerelease)))
+  );
+}
+
+export function validateBraceExpansionOverride(manifests, lockfile) {
+  const errors = [];
+  const overrides = manifests[""]?.overrides ?? {};
+
+  for (const overridePath of overridePathsTargetingPackage(
+    overrides,
+    BRACE_EXPANSION_PACKAGE,
+  )) {
+    if (overridePath !== BRACE_EXPANSION_PACKAGE) {
+      errors.push(
+        `brace-expansion security override is forbidden at path: ${overridePath}`,
+      );
+    }
+  }
+  if (overrides[BRACE_EXPANSION_PACKAGE] !== BRACE_EXPANSION_SAFE_VERSION) {
+    errors.push(
+      `brace-expansion must be overridden to exact version ${BRACE_EXPANSION_SAFE_VERSION}`,
+    );
+  }
+
+  for (const overridePath of overridePathsTargetingPackage(
+    overrides,
+    MINIMATCH_PACKAGE,
+  )) {
+    if (overridePath !== MINIMATCH_PACKAGE) {
+      errors.push(
+        `minimatch parent override is forbidden at path: ${overridePath}`,
+      );
+    }
+  }
+  if (overrides[MINIMATCH_PACKAGE] !== MINIMATCH_SAFE_VERSION) {
+    errors.push(
+      `minimatch must remain overridden to exact version ${MINIMATCH_SAFE_VERSION}`,
+    );
+  }
+
+  const parentMetadata = lockfile.packages?.[MINIMATCH_ROOT_PATH];
+  if (
+    parentMetadata?.version !== MINIMATCH_SAFE_VERSION ||
+    parentMetadata?.dependencies?.[BRACE_EXPANSION_PACKAGE] !==
+      MINIMATCH_BRACE_EXPANSION_RANGE
+  ) {
+    errors.push(
+      `minimatch@${MINIMATCH_SAFE_VERSION} lock metadata must retain its audited brace-expansion ${MINIMATCH_BRACE_EXPANSION_RANGE} dependency`,
+    );
+  }
+  for (const parentPath of unexpectedDependencyParentPaths(
+    lockfile,
+    BRACE_EXPANSION_PACKAGE,
+    [MINIMATCH_ROOT_PATH],
+  )) {
+    errors.push(`brace-expansion has an unapproved lock parent: ${parentPath}`);
+  }
+
+  const installations = packageInstallations(lockfile, BRACE_EXPANSION_PACKAGE);
+  const vulnerable = installations.filter(([, metadata]) =>
+    isVulnerableBraceExpansionVersion(metadata.version),
+  );
+  if (vulnerable.length > 0) {
+    errors.push(
+      `vulnerable brace-expansion installation(s): ${installationSummary(vulnerable)}`,
+    );
+  }
+  errors.push(
+    ...validatePhysicalSingleton(
+      lockfile,
+      BRACE_EXPANSION_PACKAGE,
+      BRACE_EXPANSION_SAFE_VERSION,
+    ),
+    ...validatePhysicalSingleton(
+      lockfile,
+      MINIMATCH_PACKAGE,
+      MINIMATCH_SAFE_VERSION,
+    ),
+  );
+  return errors;
+}
+
 export function validateNextToolchain(manifests, lockfile) {
   const errors = [
     ...validateWorkspacePins(manifests, {
@@ -974,9 +1103,24 @@ export function validateNextToolchain(manifests, lockfile) {
       ESLINT_CONFIG_NEXT_PACKAGE,
       ESLINT_CONFIG_NEXT_SAFE_VERSION,
     ),
+    ...validatePhysicalSingleton(lockfile, NEXT_ENV_PACKAGE, NEXT_SAFE_VERSION),
+    ...validatePhysicalSingleton(
+      lockfile,
+      NEXT_ESLINT_PLUGIN_PACKAGE,
+      ESLINT_CONFIG_NEXT_SAFE_VERSION,
+    ),
+    ...NEXT_SWC_PACKAGES.flatMap((packageName) =>
+      validatePhysicalSingleton(lockfile, packageName, NEXT_SAFE_VERSION),
+    ),
   ];
 
-  for (const packageName of [NEXT_PACKAGE, ESLINT_CONFIG_NEXT_PACKAGE]) {
+  for (const packageName of [
+    NEXT_PACKAGE,
+    NEXT_ENV_PACKAGE,
+    NEXT_ESLINT_PLUGIN_PACKAGE,
+    ...NEXT_SWC_PACKAGES,
+    ESLINT_CONFIG_NEXT_PACKAGE,
+  ]) {
     for (const overridePath of overridePathsTargetingPackage(
       manifests[""]?.overrides,
       packageName,
@@ -986,6 +1130,33 @@ export function validateNextToolchain(manifests, lockfile) {
       );
     }
   }
+
+  const nextMetadata = lockfile.packages?.[`node_modules/${NEXT_PACKAGE}`];
+  if (nextMetadata?.dependencies?.[NEXT_ENV_PACKAGE] !== NEXT_SAFE_VERSION) {
+    errors.push(
+      `next@${NEXT_SAFE_VERSION} lock metadata must depend on ${NEXT_ENV_PACKAGE} ${NEXT_SAFE_VERSION}`,
+    );
+  }
+  for (const packageName of NEXT_SWC_PACKAGES) {
+    if (
+      nextMetadata?.optionalDependencies?.[packageName] !== NEXT_SAFE_VERSION
+    ) {
+      errors.push(
+        `next@${NEXT_SAFE_VERSION} lock metadata must retain optional ${packageName} ${NEXT_SAFE_VERSION}`,
+      );
+    }
+  }
+  const eslintConfigMetadata =
+    lockfile.packages?.[`node_modules/${ESLINT_CONFIG_NEXT_PACKAGE}`];
+  if (
+    eslintConfigMetadata?.dependencies?.[NEXT_ESLINT_PLUGIN_PACKAGE] !==
+    ESLINT_CONFIG_NEXT_SAFE_VERSION
+  ) {
+    errors.push(
+      `eslint-config-next@${ESLINT_CONFIG_NEXT_SAFE_VERSION} lock metadata must depend on ${NEXT_ESLINT_PLUGIN_PACKAGE} ${ESLINT_CONFIG_NEXT_SAFE_VERSION}`,
+    );
+  }
+
   for (const parentPath of unexpectedDependencyParentPaths(
     lockfile,
     NEXT_PACKAGE,
@@ -1001,6 +1172,27 @@ export function validateNextToolchain(manifests, lockfile) {
     errors.push(
       `eslint-config-next has an unapproved lock parent: ${parentPath}`,
     );
+  }
+  for (const [packageName, approvedParents] of [
+    [NEXT_ENV_PACKAGE, [`node_modules/${NEXT_PACKAGE}`]],
+    [
+      NEXT_ESLINT_PLUGIN_PACKAGE,
+      [`node_modules/${ESLINT_CONFIG_NEXT_PACKAGE}`],
+    ],
+    ...NEXT_SWC_PACKAGES.map((packageName) => [
+      packageName,
+      [`node_modules/${NEXT_PACKAGE}`],
+    ]),
+  ]) {
+    for (const parentPath of unexpectedDependencyParentPaths(
+      lockfile,
+      packageName,
+      approvedParents,
+    )) {
+      errors.push(
+        `${packageName} has an unapproved lock parent: ${parentPath}`,
+      );
+    }
   }
   return errors;
 }
@@ -1205,6 +1397,31 @@ export function validateNestMulterOverride(manifests, lockfile) {
     [NEST_PLATFORM_EXPRESS_PATH],
   )) {
     errors.push(`multer has an unapproved lock parent: ${parentPath}`);
+  }
+  const multerInstallations = Object.entries(lockfile.packages ?? {}).filter(
+    ([packagePath]) =>
+      packagePath === MULTER_ROOT_PATH ||
+      packagePath.endsWith(`/${MULTER_ROOT_PATH}`),
+  );
+  const vulnerableMulterInstallations = multerInstallations.filter(
+    ([, metadata]) => {
+      const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+][A-Za-z0-9.-]+)?$/u.exec(
+        metadata.version ?? "",
+      );
+      if (match === null) {
+        return false;
+      }
+      const major = Number(match[1]);
+      const minor = Number(match[2]);
+      return major === 2 && minor >= 2 && minor < 4;
+    },
+  );
+  if (vulnerableMulterInstallations.length > 0) {
+    errors.push(
+      `vulnerable multer installation(s): ${vulnerableMulterInstallations
+        .map(([packagePath, metadata]) => `${packagePath}@${metadata.version}`)
+        .join(", ")}`,
+    );
   }
   errors.push(
     ...validatePhysicalSingleton(lockfile, MULTER_PACKAGE, MULTER_SAFE_VERSION),
@@ -1465,6 +1682,7 @@ export function scanRepository(repositoryRoot = process.cwd(), options = {}) {
   errors.push(...validatePrismaMysqlOverride(manifests, lockfile));
   errors.push(...validateAjvFastUriOverride(manifests, lockfile));
   errors.push(...validateQsOverrides(manifests, lockfile));
+  errors.push(...validateBraceExpansionOverride(manifests, lockfile));
   errors.push(...validateNextToolchain(manifests, lockfile));
   errors.push(...validateVitestSupplyChain(manifests, lockfile));
   errors.push(...validateJsYamlOverrides(manifests, lockfile));

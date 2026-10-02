@@ -1,10 +1,16 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import {
+  generateKeyPairSync,
+  sign as signBytes,
+  verify as verifyBytes,
+} from "node:crypto";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { test } from "node:test";
 
 import {
   EXACT_PRETTIER_VERSION,
+  buildAdminSecurityOperations,
   buildContractTypes,
   loadExactPrettier,
   normalizeContractSyntax,
@@ -16,6 +22,7 @@ import {
 } from "./artist-earning-allocation.mjs";
 
 import {
+  ADMIN_SECURITY_CONTRACTS,
   EXPECTED_PATHS,
   OPENAPI_PATH,
   PRISMA_PATH,
@@ -30,6 +37,66 @@ const prismaSource = readFileSync(PRISMA_PATH, "utf8");
 
 function documentFixture() {
   return structuredClone(sourceDocument);
+}
+
+function adminSecurityOperation(document, operationId) {
+  const contract = ADMIN_SECURITY_CONTRACTS.find(
+    (entry) => entry.operationId === operationId,
+  );
+  assert.ok(contract, `fixture must include ${operationId}`);
+  return document.paths[contract.path][contract.method];
+}
+
+function base64UrlNoPadding(value) {
+  return Buffer.from(value).toString("base64url");
+}
+
+function verifyDetachedAuditManifestJws({
+  compact,
+  expectedKid,
+  payload,
+  publicKey,
+}) {
+  const [protectedSegment, detachedPayloadSegment, signatureSegment, extra] =
+    compact.split(".");
+  if (
+    extra !== undefined ||
+    !protectedSegment ||
+    detachedPayloadSegment !== "" ||
+    !signatureSegment ||
+    protectedSegment.includes("=") ||
+    signatureSegment.includes("=")
+  ) {
+    return false;
+  }
+
+  let protectedHeader;
+  try {
+    protectedHeader = JSON.parse(
+      Buffer.from(protectedSegment, "base64url").toString("utf8"),
+    );
+  } catch {
+    return false;
+  }
+  if (
+    protectedHeader.alg !== "EdDSA" ||
+    protectedHeader.kid !== expectedKid ||
+    Object.keys(protectedHeader).sort().join(",") !== "alg,kid"
+  ) {
+    return false;
+  }
+
+  const encodedPayload = base64UrlNoPadding(payload);
+  const signingInput = Buffer.from(
+    `${protectedSegment}.${encodedPayload}`,
+    "ascii",
+  );
+  return verifyBytes(
+    null,
+    signingInput,
+    publicKey,
+    Buffer.from(signatureSegment, "base64url"),
+  );
 }
 
 function replaceWithinModel(source, modelName, original, replacement) {
@@ -116,16 +183,114 @@ function predecessorFrom(result, consumedByArtistSettlementId = null) {
   };
 }
 
-test("the S1.2-01 OpenAPI and Prisma target contracts are semantically valid", () => {
+test("the S1.2-03B OpenAPI and unchanged Prisma target contracts are semantically valid", () => {
   const result = readAndValidateOpenApi();
 
-  assert.equal(result.openapi.paths, 34);
+  assert.equal(result.openapi.paths, 60);
+  assert.equal(result.openapi.operations, 67);
   assert.equal(result.openapi.invariants, 18);
   assert.equal(result.openapi.references, "resolved");
-  assert.equal(result.openapi.schemas, 87);
+  assert.equal(result.openapi.schemas, 137);
   assert.equal(result.prisma.models, 33);
   assert.ok(result.prisma.integerFinancialFields >= 10);
-  assert.equal(EXPECTED_PATHS.length, 34);
+  assert.equal(EXPECTED_PATHS.length, 60);
+});
+
+test("proves the detached audit-manifest JWS signing input independently", () => {
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const expectedKid = "audit-export-signing-key-2026-10";
+  const protectedHeader = Buffer.from(
+    JSON.stringify({ alg: "EdDSA", kid: expectedKid }),
+    "utf8",
+  );
+  const payload = Buffer.from(
+    '{"createdAt":"2026-10-01T00:00:00Z","entries":[],"exportId":"export-1"}',
+    "utf8",
+  );
+  const protectedSegment = base64UrlNoPadding(protectedHeader);
+  const encodedPayload = base64UrlNoPadding(payload);
+  const signingInput = Buffer.from(
+    `${protectedSegment}.${encodedPayload}`,
+    "ascii",
+  );
+  const signature = signBytes(null, signingInput, privateKey);
+  const compact = `${protectedSegment}..${base64UrlNoPadding(signature)}`;
+
+  assert.equal(
+    signingInput.toString("ascii"),
+    `${protectedSegment}.${encodedPayload}`,
+  );
+  assert.equal(compact.split(".")[1], "");
+  assert.ok(
+    verifyDetachedAuditManifestJws({
+      compact,
+      expectedKid,
+      payload,
+      publicKey,
+    }),
+  );
+
+  const payloadOnlySignature = signBytes(null, payload, privateKey);
+  assert.equal(
+    verifyDetachedAuditManifestJws({
+      compact: `${protectedSegment}..${base64UrlNoPadding(payloadOnlySignature)}`,
+      expectedKid,
+      payload,
+      publicKey,
+    }),
+    false,
+  );
+
+  const alteredProtectedSegment = base64UrlNoPadding(
+    Buffer.from(
+      JSON.stringify({ alg: "EdDSA", kid: `${expectedKid}-altered` }),
+      "utf8",
+    ),
+  );
+  assert.equal(
+    verifyDetachedAuditManifestJws({
+      compact: `${alteredProtectedSegment}..${base64UrlNoPadding(signature)}`,
+      expectedKid: `${expectedKid}-altered`,
+      payload,
+      publicKey,
+    }),
+    false,
+  );
+  assert.equal(
+    verifyDetachedAuditManifestJws({
+      compact,
+      expectedKid,
+      payload: Buffer.from(`${payload.toString("utf8")} `, "utf8"),
+      publicKey,
+    }),
+    false,
+  );
+
+  const unencodedProtectedSegment = base64UrlNoPadding(
+    Buffer.from(
+      JSON.stringify({
+        alg: "EdDSA",
+        b64: false,
+        crit: ["b64"],
+        kid: expectedKid,
+      }),
+      "utf8",
+    ),
+  );
+  const unencodedSigningInput = Buffer.concat([
+    Buffer.from(`${unencodedProtectedSegment}.`, "ascii"),
+    payload,
+  ]);
+  const unencodedSignature = signBytes(null, unencodedSigningInput, privateKey);
+  assert.equal(
+    verifyDetachedAuditManifestJws({
+      compact: `${unencodedProtectedSegment}..${base64UrlNoPadding(unencodedSignature)}`,
+      expectedKid,
+      payload,
+      publicKey,
+    }),
+    false,
+  );
 });
 
 test("rejects an unapproved OpenAPI schema", () => {
@@ -134,7 +299,7 @@ test("rejects an unapproved OpenAPI schema", () => {
 
   assert.throws(
     () => validateOpenApiDocument(document),
-    /schemas must be exactly the 87 approved schemas/,
+    /schemas must be exactly the 137 approved schemas/,
   );
 });
 
@@ -698,18 +863,8 @@ test("the shared TypeScript boundary is generated from the current OpenAPI", asy
   );
   const generatedSyntax = buildContractTypes(sourceDocument);
 
-  assert.equal(
-    normalizeContractSyntax(current),
-    normalizeContractSyntax(generatedSyntax),
-  );
-  if (existsSync(resolve("node_modules", "prettier", "package.json"))) {
-    assert.equal(current, await readGeneratedContract());
-  } else {
-    await assert.rejects(
-      readGeneratedContract(),
-      new RegExp(`Prettier ${EXACT_PRETTIER_VERSION}.*unavailable`),
-    );
-  }
+  assert.match(generatedSyntax, /export const adminSecurityOperations/);
+  assert.equal(current, await readGeneratedContract());
 });
 
 test("the exact generator fails closed when Prettier is unavailable", async () => {
@@ -2635,3 +2790,432 @@ test("rejects unresolved local references", () => {
     /unresolved reference/,
   );
 });
+
+test("locks the generated admin-security inventory to 12 C1 and 15 C2 operations", () => {
+  const generated = buildAdminSecurityOperations(sourceDocument);
+
+  assert.equal(generated.length, 27);
+  assert.equal(
+    generated.filter(({ deliverySlice }) => deliverySlice === "S1.2-03C1")
+      .length,
+    12,
+  );
+  assert.equal(
+    generated.filter(({ deliverySlice }) => deliverySlice === "S1.2-03C2")
+      .length,
+    15,
+  );
+  assert.deepEqual(
+    generated.map(({ method, operationId, path }) => ({
+      method,
+      operationId,
+      path,
+    })),
+    ADMIN_SECURITY_CONTRACTS.map(({ method, operationId, path }) => ({
+      method: method.toUpperCase(),
+      operationId,
+      path,
+    })),
+  );
+});
+
+const adminSecurityMutations = [
+  [
+    "path substitution",
+    (document) => {
+      document.paths["/api/v1/admin/auth/login-substitute"] =
+        document.paths["/api/v1/admin/auth/login"];
+      delete document.paths["/api/v1/admin/auth/login"];
+    },
+  ],
+  [
+    "method substitution",
+    (document) => {
+      const path = document.paths["/api/v1/admin/auth/totp/verify"];
+      path.put = path.post;
+      delete path.post;
+    },
+  ],
+  [
+    "operationId substitution",
+    (document) => {
+      adminSecurityOperation(document, "loginAdmin").operationId =
+        "loginAdminSubstitute";
+    },
+  ],
+  [
+    "delivery slice substitution",
+    (document) => {
+      adminSecurityOperation(document, "verifyAdminTotp")[
+        "x-kora-delivery-slice"
+      ] = "S1.2-03C2";
+    },
+  ],
+  [
+    "pre-auth security changed from AND to OR",
+    (document) => {
+      adminSecurityOperation(document, "verifyAdminTotp").security = [
+        { adminPreAuthCookie: [] },
+        { adminCsrfCookie: [] },
+        { adminCsrfHeader: [] },
+      ];
+    },
+  ],
+  [
+    "missing CSRF header",
+    (document) => {
+      delete adminSecurityOperation(document, "verifyAdminTotp").security[0]
+        .adminCsrfHeader;
+    },
+  ],
+  [
+    "public login protected by an implicit bearer",
+    (document) => {
+      adminSecurityOperation(document, "loginAdmin").security = [
+        { adminSession: [] },
+      ];
+    },
+  ],
+  [
+    "admin role widening",
+    (document) => {
+      adminSecurityOperation(document, "listAdminAuditLogs")[
+        "x-kora-roles"
+      ].push("SUPPORT");
+    },
+  ],
+  [
+    "step-up removal",
+    (document) => {
+      adminSecurityOperation(document, "downloadAdminAuditLogExport")[
+        "x-kora-step-up-required"
+      ] = false;
+    },
+  ],
+  [
+    "idempotency removal",
+    (document) => {
+      delete adminSecurityOperation(document, "createAdminInvitation")[
+        "x-kora-idempotent"
+      ];
+    },
+  ],
+  [
+    "success status substitution",
+    (document) => {
+      const responses = adminSecurityOperation(
+        document,
+        "createAdminAuditLogExport",
+      ).responses;
+      responses["201"] = responses["202"];
+      delete responses["202"];
+    },
+  ],
+  [
+    "generic 2XX success",
+    (document) => {
+      const responses = adminSecurityOperation(
+        document,
+        "loginAdmin",
+      ).responses;
+      responses["2XX"] = responses["200"];
+      delete responses["200"];
+    },
+  ],
+  [
+    "multiple success responses",
+    (document) => {
+      adminSecurityOperation(document, "loginAdmin").responses["201"] =
+        structuredClone(
+          adminSecurityOperation(document, "loginAdmin").responses["200"],
+        );
+    },
+  ],
+  [
+    "QR media substitution",
+    (document) => {
+      const response = adminSecurityOperation(
+        document,
+        "deliverAdminTotpEnrollmentQr",
+      ).responses["200"];
+      response.content["image/svg+xml"] = response.content["image/png"];
+      delete response.content["image/png"];
+    },
+  ],
+  [
+    "open success envelope",
+    (document) => {
+      document.components.schemas.AdminSessionEnvelope.additionalProperties = true;
+    },
+  ],
+  [
+    "missing no-store response header",
+    (document) => {
+      delete adminSecurityOperation(document, "deliverAdminTotpEnrollmentQr")
+        .responses["200"].headers["Cache-Control"];
+    },
+  ],
+  [
+    "missing exact Origin",
+    (document) => {
+      const operation = adminSecurityOperation(document, "loginAdmin");
+      operation.parameters = [];
+    },
+  ],
+  [
+    "request media widening",
+    (document) => {
+      adminSecurityOperation(document, "loginAdmin").requestBody.content[
+        "text/plain"
+      ] = { schema: { type: "string" } };
+    },
+  ],
+  [
+    "internal refresh reuse code exposed publicly",
+    (document) => {
+      document["x-kora-operation-errors"].refreshAdminSession = [
+        "AUTH_REFRESH_REUSED",
+      ];
+    },
+  ],
+  [
+    "recovery-code count weakened",
+    (document) => {
+      document.components.schemas.AdminRecoveryCodes.properties.codes.maxItems = 11;
+    },
+  ],
+  [
+    "audit execution-context XOR weakened",
+    (document) => {
+      document.components.schemas.AdminAuditLogEntry.oneOf.pop();
+    },
+  ],
+  [
+    "operator reason made optional",
+    (document) => {
+      const schema = document.components.schemas.AdminRoleChangeRequest;
+      schema.required = schema.required.filter(
+        (field) => field !== "operatorReason",
+      );
+    },
+  ],
+  [
+    "TOTP seed exposed in JSON",
+    (document) => {
+      document.components.schemas.AdminTotpEnrollment.properties.seed = {
+        type: "string",
+      };
+    },
+  ],
+  [
+    "recovery verification creates a session",
+    (document) => {
+      adminSecurityOperation(document, "verifyAdminRecoveryCode").responses[
+        "200"
+      ].content["application/json"].schema.$ref =
+        "#/components/schemas/AdminSessionEnvelope";
+    },
+  ],
+  [
+    "SUPPORT reintroduced on historical content reads",
+    (document) => {
+      document.paths["/api/v1/admin/artists"].get["x-kora-roles"].push(
+        "SUPPORT",
+      );
+    },
+  ],
+  [
+    "audit administrator filter removed",
+    (document) => {
+      const operation = adminSecurityOperation(document, "listAdminAuditLogs");
+      operation.parameters = operation.parameters.filter(
+        (parameter) =>
+          parameter.$ref !== "#/components/parameters/AuditActorAdminUserId",
+      );
+    },
+  ],
+  [
+    "audit entity evidence removed",
+    (document) => {
+      const schema = document.components.schemas.AdminAuditLogEntry;
+      schema.required = schema.required.filter(
+        (field) => field !== "entityType",
+      );
+      delete schema.properties.entityType;
+    },
+  ],
+  [
+    "session audit actor made nullable",
+    (document) => {
+      document.components.schemas.AdminAuditLogEntry.oneOf[0].properties.actorAdminUserId.type =
+        "null";
+    },
+  ],
+  [
+    "pre-auth success routed to AuditLog",
+    (document) => {
+      adminSecurityOperation(document, "loginAdmin")["x-kora-audit-sink"] =
+        "AUDIT_LOG";
+    },
+  ],
+  [
+    "unproven failure routed to AuditLog",
+    (document) => {
+      document["x-kora-admin-failure-audit-sinks"].verifyAdminTotp =
+        "AUDIT_LOG";
+    },
+  ],
+  [
+    "recovery-code response cache protection removed",
+    (document) => {
+      delete adminSecurityOperation(document, "rotateAdminRecoveryCodes")
+        .responses["200"].headers["Cache-Control"];
+    },
+  ],
+  [
+    "login Fetch Metadata policy removed",
+    (document) => {
+      delete adminSecurityOperation(document, "loginAdmin")[
+        "x-kora-fetch-metadata-policy"
+      ];
+    },
+  ],
+  [
+    "CSRF wire header renamed",
+    (document) => {
+      document.components.securitySchemes.adminCsrfHeader.name = "X-CSRF-Token";
+    },
+  ],
+  [
+    "refresh rate-limit profile removed",
+    (document) => {
+      delete adminSecurityOperation(document, "refreshAdminSession")[
+        "x-kora-rate-limit-profile"
+      ];
+    },
+  ],
+  [
+    "rate-limit Retry-After removed",
+    (document) => {
+      delete document.components.responses.RateLimitedError.headers[
+        "Retry-After"
+      ];
+    },
+  ],
+  [
+    "approved recovery case without approver",
+    (document) => {
+      document.components.schemas.AdminRecoveryCase.oneOf[0].required = [];
+    },
+  ],
+  [
+    "recovery cancellation transition removed",
+    (document) => {
+      delete document["x-kora-admin-recovery-case-state-machine"].transitions
+        .serverPolicySuperseded;
+    },
+  ],
+  [
+    "audit export signed manifest removed",
+    (document) => {
+      delete adminSecurityOperation(document, "downloadAdminAuditLogExport")[
+        "x-kora-signed-manifest"
+      ];
+    },
+  ],
+  [
+    "audit event class weakened",
+    (document) => {
+      document.components.schemas.AdminAuditLogEntry.properties.eventClass.enum.pop();
+    },
+  ],
+  [
+    "invitation public error leaks state",
+    (document) => {
+      document["x-kora-operation-errors"].acceptAdminInvitation = [
+        "VALIDATION_ERROR",
+        "INVITATION_EXPIRED",
+      ];
+    },
+  ],
+  [
+    "audit export signature algorithm weakened",
+    (document) => {
+      adminSecurityOperation(document, "downloadAdminAuditLogExport")[
+        "x-kora-signed-manifest"
+      ].signatureAlgorithm = "none";
+    },
+  ],
+  [
+    "audit export old payload-only signing input restored in policy",
+    (document) => {
+      document[
+        "x-kora-admin-security-policy"
+      ].auditExportManifest.signatureInput =
+        "RFC8785_CANONICAL_UTF8_BYTES_OF_MANIFEST_JSON";
+    },
+  ],
+  [
+    "audit export old payload-only signing input restored in operation",
+    (document) => {
+      adminSecurityOperation(document, "downloadAdminAuditLogExport")[
+        "x-kora-signed-manifest"
+      ].signatureInput = "RFC8785_CANONICAL_UTF8_BYTES_OF_MANIFEST_JSON";
+    },
+  ],
+  [
+    "audit export unencoded b64=false payload profile enabled",
+    (document) => {
+      adminSecurityOperation(document, "downloadAdminAuditLogExport")[
+        "x-kora-signed-manifest"
+      ].unencodedPayload = true;
+    },
+  ],
+  [
+    "audit export contradictory attached serialization declared",
+    (document) => {
+      adminSecurityOperation(document, "downloadAdminAuditLogExport")[
+        "x-kora-signed-manifest"
+      ].detachedSerialization = "PROTECTED.PAYLOAD.SIGNATURE";
+    },
+  ],
+  [
+    "audit export payload entry set made non-bijective",
+    (document) => {
+      adminSecurityOperation(document, "downloadAdminAuditLogExport")[
+        "x-kora-signed-manifest"
+      ].rejectUnlistedEntries = false;
+    },
+  ],
+  [
+    "autonomous SYSTEM audit forced to invent causation",
+    (document) => {
+      document.components.schemas.AdminAuditLogEntry.oneOf[2].oneOf.shift();
+    },
+  ],
+  [
+    "TOTP replay policy weakened",
+    (document) => {
+      document["x-kora-admin-auth-data-policy"].totpReplayWithinAcceptedWindow =
+        "ALLOW";
+    },
+  ],
+  [
+    "reset comparable timing removed",
+    (document) => {
+      delete document["x-kora-admin-public-failure-timing"].resetAdminPassword;
+    },
+  ],
+];
+
+for (const [name, mutate] of adminSecurityMutations) {
+  test(`S1.2-03B rejects ${name}`, () => {
+    const document = documentFixture();
+    mutate(document);
+
+    assert.throws(
+      () => validateOpenApiDocument(document),
+      /OpenAPI validation failed/,
+    );
+  });
+}
