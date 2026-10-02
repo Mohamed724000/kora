@@ -39,6 +39,19 @@ test('the generated boundary materializes all 27 admin-security operations', () 
   );
   assert.match(block, /signatureAlgorithm: 'EdDSA'/);
   assert.match(block, /signaturePath: 'manifest\.sig'/);
+  assert.match(block, /payload: 'RFC8785_JCS_CANONICAL_MANIFEST_UTF8_BYTES'/);
+  assert.match(block, /protectedHeader: 'EXACTLY_alg_EdDSA_AND_kid_SIGNATURE_KEY_ID'/);
+  assert.match(block, /payloadEncoding: 'BASE64URL_NO_PADDING'/);
+  assert.match(block, /unencodedPayload: false/);
+  assert.match(
+    block,
+    /signatureInput:\s*'ASCII\(BASE64URL_NO_PADDING\(PROTECTED_HEADER_UTF8\)\.BASE64URL_NO_PADDING\(PAYLOAD\)\)'/,
+  );
+  assert.match(
+    block,
+    /detachedSerialization:\s*'BASE64URL_NO_PADDING\(PROTECTED_HEADER_UTF8\)\.\.BASE64URL_NO_PADDING\(SIGNATURE\)'/,
+  );
+  assert.doesNotMatch(block, /RFC8785_CANONICAL_UTF8_BYTES_OF_MANIFEST_JSON/);
   assert.match(
     block,
     /payloadEntrySet: 'EXACTLY_ALL_ZIP_ENTRIES_EXCEPT_MANIFEST_JSON_AND_MANIFEST_SIG'/,

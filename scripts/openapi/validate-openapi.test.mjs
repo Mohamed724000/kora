@@ -1,4 +1,9 @@
 import assert from "node:assert/strict";
+import {
+  generateKeyPairSync,
+  sign as signBytes,
+  verify as verifyBytes,
+} from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { test } from "node:test";
@@ -40,6 +45,58 @@ function adminSecurityOperation(document, operationId) {
   );
   assert.ok(contract, `fixture must include ${operationId}`);
   return document.paths[contract.path][contract.method];
+}
+
+function base64UrlNoPadding(value) {
+  return Buffer.from(value).toString("base64url");
+}
+
+function verifyDetachedAuditManifestJws({
+  compact,
+  expectedKid,
+  payload,
+  publicKey,
+}) {
+  const [protectedSegment, detachedPayloadSegment, signatureSegment, extra] =
+    compact.split(".");
+  if (
+    extra !== undefined ||
+    !protectedSegment ||
+    detachedPayloadSegment !== "" ||
+    !signatureSegment ||
+    protectedSegment.includes("=") ||
+    signatureSegment.includes("=")
+  ) {
+    return false;
+  }
+
+  let protectedHeader;
+  try {
+    protectedHeader = JSON.parse(
+      Buffer.from(protectedSegment, "base64url").toString("utf8"),
+    );
+  } catch {
+    return false;
+  }
+  if (
+    protectedHeader.alg !== "EdDSA" ||
+    protectedHeader.kid !== expectedKid ||
+    Object.keys(protectedHeader).sort().join(",") !== "alg,kid"
+  ) {
+    return false;
+  }
+
+  const encodedPayload = base64UrlNoPadding(payload);
+  const signingInput = Buffer.from(
+    `${protectedSegment}.${encodedPayload}`,
+    "ascii",
+  );
+  return verifyBytes(
+    null,
+    signingInput,
+    publicKey,
+    Buffer.from(signatureSegment, "base64url"),
+  );
 }
 
 function replaceWithinModel(source, modelName, original, replacement) {
@@ -137,6 +194,103 @@ test("the S1.2-03B OpenAPI and unchanged Prisma target contracts are semanticall
   assert.equal(result.prisma.models, 33);
   assert.ok(result.prisma.integerFinancialFields >= 10);
   assert.equal(EXPECTED_PATHS.length, 60);
+});
+
+test("proves the detached audit-manifest JWS signing input independently", () => {
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const expectedKid = "audit-export-signing-key-2026-10";
+  const protectedHeader = Buffer.from(
+    JSON.stringify({ alg: "EdDSA", kid: expectedKid }),
+    "utf8",
+  );
+  const payload = Buffer.from(
+    '{"createdAt":"2026-10-01T00:00:00Z","entries":[],"exportId":"export-1"}',
+    "utf8",
+  );
+  const protectedSegment = base64UrlNoPadding(protectedHeader);
+  const encodedPayload = base64UrlNoPadding(payload);
+  const signingInput = Buffer.from(
+    `${protectedSegment}.${encodedPayload}`,
+    "ascii",
+  );
+  const signature = signBytes(null, signingInput, privateKey);
+  const compact = `${protectedSegment}..${base64UrlNoPadding(signature)}`;
+
+  assert.equal(
+    signingInput.toString("ascii"),
+    `${protectedSegment}.${encodedPayload}`,
+  );
+  assert.equal(compact.split(".")[1], "");
+  assert.ok(
+    verifyDetachedAuditManifestJws({
+      compact,
+      expectedKid,
+      payload,
+      publicKey,
+    }),
+  );
+
+  const payloadOnlySignature = signBytes(null, payload, privateKey);
+  assert.equal(
+    verifyDetachedAuditManifestJws({
+      compact: `${protectedSegment}..${base64UrlNoPadding(payloadOnlySignature)}`,
+      expectedKid,
+      payload,
+      publicKey,
+    }),
+    false,
+  );
+
+  const alteredProtectedSegment = base64UrlNoPadding(
+    Buffer.from(
+      JSON.stringify({ alg: "EdDSA", kid: `${expectedKid}-altered` }),
+      "utf8",
+    ),
+  );
+  assert.equal(
+    verifyDetachedAuditManifestJws({
+      compact: `${alteredProtectedSegment}..${base64UrlNoPadding(signature)}`,
+      expectedKid: `${expectedKid}-altered`,
+      payload,
+      publicKey,
+    }),
+    false,
+  );
+  assert.equal(
+    verifyDetachedAuditManifestJws({
+      compact,
+      expectedKid,
+      payload: Buffer.from(`${payload.toString("utf8")} `, "utf8"),
+      publicKey,
+    }),
+    false,
+  );
+
+  const unencodedProtectedSegment = base64UrlNoPadding(
+    Buffer.from(
+      JSON.stringify({
+        alg: "EdDSA",
+        b64: false,
+        crit: ["b64"],
+        kid: expectedKid,
+      }),
+      "utf8",
+    ),
+  );
+  const unencodedSigningInput = Buffer.concat([
+    Buffer.from(`${unencodedProtectedSegment}.`, "ascii"),
+    payload,
+  ]);
+  const unencodedSignature = signBytes(null, unencodedSigningInput, privateKey);
+  assert.equal(
+    verifyDetachedAuditManifestJws({
+      compact: `${unencodedProtectedSegment}..${base64UrlNoPadding(unencodedSignature)}`,
+      expectedKid,
+      payload,
+      publicKey,
+    }),
+    false,
+  );
 });
 
 test("rejects an unapproved OpenAPI schema", () => {
@@ -2990,6 +3144,39 @@ const adminSecurityMutations = [
       adminSecurityOperation(document, "downloadAdminAuditLogExport")[
         "x-kora-signed-manifest"
       ].signatureAlgorithm = "none";
+    },
+  ],
+  [
+    "audit export old payload-only signing input restored in policy",
+    (document) => {
+      document[
+        "x-kora-admin-security-policy"
+      ].auditExportManifest.signatureInput =
+        "RFC8785_CANONICAL_UTF8_BYTES_OF_MANIFEST_JSON";
+    },
+  ],
+  [
+    "audit export old payload-only signing input restored in operation",
+    (document) => {
+      adminSecurityOperation(document, "downloadAdminAuditLogExport")[
+        "x-kora-signed-manifest"
+      ].signatureInput = "RFC8785_CANONICAL_UTF8_BYTES_OF_MANIFEST_JSON";
+    },
+  ],
+  [
+    "audit export unencoded b64=false payload profile enabled",
+    (document) => {
+      adminSecurityOperation(document, "downloadAdminAuditLogExport")[
+        "x-kora-signed-manifest"
+      ].unencodedPayload = true;
+    },
+  ],
+  [
+    "audit export contradictory attached serialization declared",
+    (document) => {
+      adminSecurityOperation(document, "downloadAdminAuditLogExport")[
+        "x-kora-signed-manifest"
+      ].detachedSerialization = "PROTECTED.PAYLOAD.SIGNATURE";
     },
   ],
   [

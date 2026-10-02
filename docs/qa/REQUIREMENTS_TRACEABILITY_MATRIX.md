@@ -375,22 +375,22 @@ une autorisation CTO séparée.
 
 Qualification : **instantané historique prépublication du 2026-09-29**.
 
-| Exigence                                                | Contrat / décision                 | Preuve locale                                            | État              |
-| ------------------------------------------------------- | ---------------------------------- | -------------------------------------------------------- | ----------------- |
-| SEC-ADM-01 Surface exacte 60/67 et slices 12/15         | `docs/api/openapi.yaml`            | validateur + tests d'inventaire                          | Contract verified |
-| SEC-ADM-02 Login/TOTP/CSRF/Origin sans oracle           | OpenAPI + ADR-025                  | `X-Kora-CSRF`, AND/OR, Origin, Fetch et timings publics  | Contract verified |
-| SEC-ADM-03 QR TOTP à livraison unique                   | `deliverAdminTotpEnrollmentQr`     | media/header/secret/idempotency mutations                | Contract verified |
-| SEC-ADM-04 Codes sélecteur+vérificateur, exactement dix | schémas `AdminRecoveryCode*`       | tests de bornes et surface générée                       | Contract verified |
-| SEC-ADM-05 Refresh RS256/rotation/replay/familles       | politique admin + ADR-025          | `AUTH_REFRESH_INVALID`, cookies et limites verrouillés   | Contract verified |
-| SEC-ADM-06 Récupération assistée à trois parties        | routes recovery-cases + ADR-025    | approbateur + annulation serveur auditée sans 28e route  | Contract verified |
-| SEC-ADM-07 Audit XOR, preuve et acteur/sujet            | `AdminAuditLogEntry` + ADR-025     | union + SYSTEM autonome/délégué + preuve/causalité       | Contract verified |
-| SEC-ADM-08 Exports audit privés                         | routes audit-log-exports           | PII, JCS/JWS Ed25519, payload bijectif, chemins ZIP sûrs | Contract verified |
-| SEC-ADM-09 Invitations et administration RBAC           | invitations/users                  | deny-by-default, no self-change, dernier super-admin     | Contract verified |
-| SEC-ADM-10 Moindre privilège historique                 | cinq opérations Artist/Audio/Media | test de réintroduction `SUPPORT`                         | Contract verified |
-| SEC-ADM-11 Aucun runtime ni migration                   | allowlist S1.2-03B                 | preuve Git et scan domaines interdits                    | Verified locally  |
-| SEC-ADM-12 Lecture audit conforme ADR-004               | filtres admin/action/entité/date   | mutations filtre + paramètres générés                    | Contract verified |
-| SEC-ADM-13 Sinks succès/échec par opération             | `AdminSecurityEvent` / `AuditLog`  | mutation routage échec sans contexte + atomicité         | Contract verified |
-| SEC-ADM-14 Rate limit et réponses sensibles             | quatre profils + headers           | profil/429/Retry-After/no-store + timing anti-oracle     | Contract verified |
+| Exigence                                                | Contrat / décision                 | Preuve locale                                                                  | État              |
+| ------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------ | ----------------- |
+| SEC-ADM-01 Surface exacte 60/67 et slices 12/15         | `docs/api/openapi.yaml`            | validateur + tests d'inventaire                                                | Contract verified |
+| SEC-ADM-02 Login/TOTP/CSRF/Origin sans oracle           | OpenAPI + ADR-025                  | `X-Kora-CSRF`, AND/OR, Origin, Fetch et timings publics                        | Contract verified |
+| SEC-ADM-03 QR TOTP à livraison unique                   | `deliverAdminTotpEnrollmentQr`     | media/header/secret/idempotency mutations                                      | Contract verified |
+| SEC-ADM-04 Codes sélecteur+vérificateur, exactement dix | schémas `AdminRecoveryCode*`       | tests de bornes et surface générée                                             | Contract verified |
+| SEC-ADM-05 Refresh RS256/rotation/replay/familles       | politique admin + ADR-025          | `AUTH_REFRESH_INVALID`, cookies et limites verrouillés                         | Contract verified |
+| SEC-ADM-06 Récupération assistée à trois parties        | routes recovery-cases + ADR-025    | approbateur + annulation serveur auditée sans 28e route                        | Contract verified |
+| SEC-ADM-07 Audit XOR, preuve et acteur/sujet            | `AdminAuditLogEntry` + ADR-025     | union + SYSTEM autonome/délégué + preuve/causalité                             | Contract verified |
+| SEC-ADM-08 Exports audit privés                         | routes audit-log-exports           | payload JCS UTF-8, signing input RFC 7515, JWS Ed25519 détaché et ZIP bijectif | Contract verified |
+| SEC-ADM-09 Invitations et administration RBAC           | invitations/users                  | deny-by-default, no self-change, dernier super-admin                           | Contract verified |
+| SEC-ADM-10 Moindre privilège historique                 | cinq opérations Artist/Audio/Media | test de réintroduction `SUPPORT`                                               | Contract verified |
+| SEC-ADM-11 Aucun runtime ni migration                   | allowlist S1.2-03B                 | preuve Git et scan domaines interdits                                          | Verified locally  |
+| SEC-ADM-12 Lecture audit conforme ADR-004               | filtres admin/action/entité/date   | mutations filtre + paramètres générés                                          | Contract verified |
+| SEC-ADM-13 Sinks succès/échec par opération             | `AdminSecurityEvent` / `AuditLog`  | mutation routage échec sans contexte + atomicité                               | Contract verified |
+| SEC-ADM-14 Rate limit et réponses sensibles             | quatre profils + headers           | profil/429/Retry-After/no-store + timing anti-oracle                           | Contract verified |
 
 Les états ci-dessus attestent uniquement le contrat. Les garanties runtime, SQL
 et interface restent `Not started` jusqu'aux autorisations S1.2-03C1/C2/C3.
@@ -425,7 +425,7 @@ S1.2-03C1, S1.2-03C2 et S1.2-03C3 restent `Not started`.
 | SEC-SC-R2-03 Préserver la chronologie exacte des avis | Security R0 `36572630278` imprime `GHSA-qw65-cvwx-89v3`, `GHSA-58mr-gqgx-xq4g`, `GHSA-3pph-fpjx-jg34` ; R1 diagnostique aussi `GHSA-hrr3-gc8f-f4qj` et ferme les quatre                                                                                | Reconciled         |
 | SEC-SC-R2-04 Distinguer preuves locales et preuves CI | local : 1 130 signatures, 198 attestations sans invalide, licences 1 132/0/0, deux installations, sept WASM et validations API/Flutter/Infrastructure ; CI : audits complet/production à zéro, licences 1 139/0/0, scanner 358/52 et lock déterministe | Reconciled         |
 | SEC-SC-R2-05 Attester les quatre workflows R1         | Security `36642550938`, Infrastructure `36642550943`, Launcher Windows `36642550958`, Quality Linux `36642551010`, tous `pull_request/completed/success` sur le head R1                                                                                | Verified on GitHub |
-| SEC-SC-R2-06 Refléter l’état courant de la PR         | PR #48 ouverte, Draft, non fusionnée et `MERGEABLE` ; 2 commits, 20 fichiers, `+8291/-1220`                                                                                                                                                            | Reconciled         |
+| SEC-SC-R2-06 Conserver l’état historique au head R1   | PR #48 ouverte, Draft, non fusionnée et `MERGEABLE` ; 2 commits, 20 fichiers, `+8291/-1220`                                                                                                                                                            | Historical state   |
 | SEC-SC-R2-07 Préserver la capacité contractuelle      | 60 chemins, 67 opérations et 137 schémas ; aucun runtime, migration ou interface                                                                                                                                                                       | Contract unchanged |
 | SEC-SC-R2-08 Respecter la frontière documentaire R2   | exactement six documents modifiés, aucun fichier technique ; aucun rerun, Ready, merge, tag, release, déploiement ou démarrage S1.2-03C                                                                                                                | Scope verified     |
 
@@ -455,3 +455,20 @@ a terminé au code 0. S1.2-03C1, S1.2-03C2 et S1.2-03C3 restent `Not started`.
 
 Après cet instantané, l'état de publication R3 fait foi dans Git et GitHub ;
 aucun SHA, arbre ou Run ID futur n'est anticipé dans cette matrice.
+
+## Traçabilité S1.2-03B-R4 — Instantané local prépublication du 2026-10-01
+
+| Exigence                                           | Preuve                                                                                                                                                                                     | État                       |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------- |
+| SEC-SC-R4-01 Enregistrer la publication R3         | commit `1a6c4efeb169e89ccf989004559f4e0c1af80af3`, parent `6bc344c4eca7065089a6f6af6a9d47a98bf76b0f`, arbre `031101296c44d18d7f1a2ab1f917ac1432023f6d`, 13 fichiers `+893/-117`            | Published                  |
+| SEC-SC-R4-02 Attester la CI et la PR R3            | quatre workflows tentative 1 `pull_request/completed/success`; PR #48 `OPEN`, Draft, `CLEAN`, 4 commits, 23 fichiers, `+9342/-1298`; corps SHA-256 `b103546d…97b`                          | Verified on GitHub         |
+| SEC-SC-R4-03 Corriger le signing input JWS         | payload JCS UTF-8 ; `BASE64URL(protected).BASE64URL(payload)` ASCII sans padding ; forme `protected..signature` ; `b64=false` interdit ; EdDSA/Ed25519, trust bundle et rotation préservés | Contract corrected locally |
+| SEC-SC-R4-04 Prouver cryptographiquement le profil | signature RFC 7515 acceptée ; signature du seul payload, en-tête altéré, payload altéré et profil non encodé refusés ; reconstruction du payload détaché vérifiée                          | Verified locally           |
+| SEC-SC-R4-05 Qualifier les anciens champs vivants  | blocs R1/R2 renommés historiques sans changer leurs chiffres ; l'état courant de publication et de CI fait foi dans Git/GitHub                                                             | Reconciled                 |
+| SEC-SC-R4-06 Préserver la frontière                | fichiers existants de l'allowlist seulement ; aucun manifeste, lockfile, dépendance, workflow, runtime, Prisma, migration, provisioning ou interface ; S1.2-03C1/C2/C3 `Not started`       | Scope preserved            |
+
+Dans cet instantané du 2026-10-01, R4 était local, non indexé, non commité et
+non publié. Aucun SHA, arbre, Run ID ou succès CI R4 futur n'y était anticipé ;
+après cet instantané, l'état de publication et de CI fait foi dans Git et
+GitHub. Les résultats de validation locale sont consignés dans le rapport du
+gate.

@@ -10,7 +10,8 @@ Baseline : `09e64c889231cfa57cf68cb44cdf05ae47ad356d`
 
 Arbre baseline : `94cb165f651c1ccc2f06297e7c8024e3570a2ce8`
 
-Statut : **R2 PUBLIÉ — ÉCHEC SECURITY R2 HISTORIQUE — REMÉDIATION R3 VALIDÉE ET AUTORISÉE POUR PUBLICATION — PR #48 DRAFT NON FUSIONNÉE**
+Statut : **R4 VALIDÉ LOCALEMENT LE 2026-10-01 — ÉTAT DE PUBLICATION ET DE CI
+COURANT DANS GIT/GITHUB — PR #48 DRAFT NON FUSIONNÉE**
 
 ## Instantané historique R0 prépublication — 2026-09-29
 
@@ -283,13 +284,13 @@ attribué à la CI.
 | Launcher Windows | `36642550958` | `pull_request/completed/success` R1 |
 | Quality Linux    | `36642551010` | `pull_request/completed/success` R1 |
 
-### État courant et frontière R2
+### État historique et frontière R2
 
-La PR #48 reste ouverte, Draft, `MERGEABLE` et non fusionnée sur le head R1.
-Son cumul vérifié est de 2 commits, 20 fichiers et `+8291/-1220`. Le contrat
-publié reste inchangé à 60 chemins, 67 opérations et 137 schémas. Il ne livre
-aucun runtime, modèle, migration ou interface ; S1.2-03C1, S1.2-03C2 et
-S1.2-03C3 restent `Not started`.
+Au head R1, la PR #48 restait ouverte, Draft, `MERGEABLE` et non fusionnée. Son
+cumul vérifié était de 2 commits, 20 fichiers et `+8291/-1220`. Le contrat
+publié restait inchangé à 60 chemins, 67 opérations et 137 schémas. Il ne
+livrait aucun runtime, modèle, migration ou interface ; S1.2-03C1, S1.2-03C2
+et S1.2-03C3 restaient `Not started`.
 
 R2 réconcilie uniquement les six documents autorisés et ne modifie aucun octet
 technique. Son état de publication fait foi dans Git et GitHub ; aucun SHA ni
@@ -404,3 +405,88 @@ Draft et non fusionnée ; aucun rerun, changement de PR, Ready, merge, tag,
 release ou déploiement n'avait été effectué. S1.2-03C1, S1.2-03C2 et
 S1.2-03C3 restaient `Not started`. Après cet instantané, l'état de publication
 et de CI fait foi dans Git et GitHub.
+
+## S1.2-03B-R4 — Audit Export Signature Contract and Governance Reconciliation
+
+Qualification : **instantané local prépublication du 2026-10-01**.
+
+### Baseline publiée R3
+
+R3 est publié au commit
+`1a6c4efeb169e89ccf989004559f4e0c1af80af3`, parent direct R2
+`6bc344c4eca7065089a6f6af6a9d47a98bf76b0f`, arbre
+`031101296c44d18d7f1a2ab1f917ac1432023f6d`, message
+`fix(security): remediate brace-expansion and Next.js advisories`, avec 13
+fichiers et `+893/-117`.
+
+| Workflow         | Run ID        | État R3, tentative 1             |
+| ---------------- | ------------- | -------------------------------- |
+| Infrastructure   | `36894241121` | `pull_request/completed/success` |
+| Launcher Windows | `36894240862` | `pull_request/completed/success` |
+| Security         | `36894240870` | `pull_request/completed/success` |
+| Quality Linux    | `36894241013` | `pull_request/completed/success` |
+
+Avant la publication R4, la PR #48 était `OPEN`, Draft, `CLEAN` et non
+fusionnée. Son head et son upstream valaient le commit R3, sa base était
+`09e64c889231cfa57cf68cb44cdf05ae47ad356d`, et son cumul publié était de 4
+commits, 23 fichiers et `+9342/-1298`. Le SHA-256 du corps de PR était
+`b103546d26756e2a61378a6738a50ef3e23a562a23eac303b910966271fcb97b`.
+
+### Deux findings CTO résolus
+
+1. Le contrat appelait `signatureInput` les seuls octets UTF-8 du manifeste
+   canonisé. R4 distingue le payload JCS UTF-8, le signing input RFC 7515 ASCII
+   `BASE64URL(protected).BASE64URL(payload)` sans padding, et la sérialisation
+   détachée `protected..signature`. L'en-tête protégé contient exactement
+   `alg=EdDSA` et `kid=signatureKeyId`; le profil `b64=false` est interdit. Le
+   trust bundle et la rotation existants sont inchangés.
+2. Des blocs R1/R2 historiques portaient encore des titres ou champs
+   « courants ». Ils conservent leurs chiffres et preuves, mais sont désormais
+   explicitement historiques ; l'état courant de publication et de CI fait foi
+   dans Git et GitHub.
+
+La preuve cryptographique Ed25519 indépendante accepte le signing input JWS
+standard, reconstruit le payload détaché, refuse une signature calculée sur le
+seul payload, et refuse l'altération de l'en-tête protégé, du payload ou un
+profil `b64=false`. Les mutations contractuelles refusent également l'ancienne
+valeur de signing input et une sérialisation attachée contradictoire.
+
+### Validations locales effectives R4
+
+| Contrôle                  | Résultat R4                                                                                                       |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| OpenAPI                   | 60 chemins, 67 opérations, 137 schémas, 18 invariants hérités et 33 modèles cibles inchangés                      |
+| génération TypeScript     | byte-identique après réécriture ; SHA-256 `b3a62e0522d9ca0b8df582f0b9c23e712f0af4953941eadbd500f477f4396c3a`      |
+| tests OpenAPI + boundary  | 274/274 ; preuve JWS et mutations contradictoires incluses                                                        |
+| package Contracts         | format, lint, typecheck, 6/6 tests et build au code 0                                                             |
+| `test:tooling`            | 367/367 au code 0                                                                                                 |
+| Prettier ciblé            | 13/13 fichiers conformes ; parser JSON explicite pour `openapi.yaml`                                              |
+| documentation et encodage | 8/8 documents sans lien cassé ; chronologie valide ; 13/13 UTF-8 sans BOM, LF final et sans caractère de contrôle |
+| scanner officiel          | 358 fichiers, historique actif, 52 sources immuables et 5 scripts d'installation qualifiés                        |
+| scope et whitespace       | allowlist exacte 13/13 ; aucun ajout ; `git diff --check` au code 0                                               |
+| lockfile                  | inchangé, SHA-256 `3bbb2e4b476decf50a7165143c985719d234e9511deebf757a6c9527eb68c03a`                              |
+| audits npm frais          | complet et production au code 0 ; zéro vulnérabilité                                                              |
+
+Deux écarts intermédiaires ont été corrigés et leurs contrôles affectés
+rejoués : le premier test combiné comptait 273/274 à cause d'une expression
+régulière de boundary qui ne tolérait pas le retour à la ligne déterministe de
+Prettier ; une première passe Prettier sans parser explicite a ensuite traité
+`openapi.yaml` comme YAML. La forme JSON du dépôt a été restaurée avec le parser
+JSON, la génération revalidée byte-for-byte et les 274 tests rejoués au vert.
+Aucun échec n'est masqué.
+
+`npm audit signatures`, l'inventaire de licences, les builds Web/Admin/API/UI,
+Flutter, l'APK et PostgreSQL ne sont pas rejoués : R4 ne modifie ni dépendance,
+ni lockfile, ni fichier applicatif, mobile ou base de données. Les preuves
+historiques R3 restent intactes : les
+deux incidents réseau de signatures demeurent `NON CONCLUSIVE`, le troisième
+essai reste le succès retenu, le premier `npm test` global interrompu par le
+lock du cache Flutter reste distingué de la relance 22/22, et iOS reste non
+exécuté sous Windows.
+
+Dans cet instantané du 2026-10-01, R4 était local, non indexé, non commité et
+non publié. Aucun SHA, arbre, Run ID ou succès CI R4 futur n'y était affirmé ;
+aucun git add, commit, push, rerun, changement de PR, Ready, approval, merge,
+tag, release ou déploiement n'avait été effectué. Après cet instantané, l'état
+de publication et de CI fait foi dans Git et GitHub. Les neuf worktrees sont
+préservés et S1.2-03C1/C2/C3 restent `Not started`.

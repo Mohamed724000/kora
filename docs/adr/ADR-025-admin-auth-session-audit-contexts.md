@@ -60,16 +60,24 @@ La durée légale de rétention n'est pas inventée dans ce lot : jusqu'à une
 décision Produit/juridique distincte, `AuditLog` et `AdminSecurityEvent` sont
 append-only et aucune suppression n'est autorisée. Les exports masquent les PII
 et embarquent `manifest.json` canonisé RFC 8785 JCS et `manifest.sig`, une
-signature JWS compacte détachée Ed25519. Le manifeste lie l'identifiant de
-l'export, ses dates et la liste triée exacte des entrées payload avec chemin
-relatif NFC sûr, taille et SHA-256. `manifest.json` et `manifest.sig` sont
-explicitement exclus de cette liste afin d'éviter toute circularité ; chemins
-absolus/traversants/backslash, doublons, entrées manquantes ou supplémentaires
-sont rejetés. `signatureKeyId` résout une clé publique du trust bundle de
-déploiement ; la rotation conserve les anciennes clés de vérification jusqu'à
-expiration de tous les exports liés. Le mot « signed » d'ADR-004 décrit cette
-preuve d'intégrité vérifiable ; la livraison reste authentifiée par bearer +
-step-up, sans URL signée.
+signature JWS compacte détachée Ed25519. Le payload JWS est constitué des octets
+UTF-8 du manifeste canonisé JCS. L'en-tête protégé contient exactement
+`alg=EdDSA` et `kid=signatureKeyId`. Le signing input RFC 7515 est la
+représentation ASCII de `BASE64URL(protected UTF-8)`, un point, puis
+`BASE64URL(payload)`, sans padding ; le profil non encodé `b64=false` est
+interdit. La sérialisation transmise dans `manifest.sig` est
+`protected..signature`, le payload détaché étant reconstruit depuis
+`manifest.json`.
+
+Le manifeste lie l'identifiant de l'export, ses dates et la liste triée exacte
+des entrées payload avec chemin relatif NFC sûr, taille et SHA-256.
+`manifest.json` et `manifest.sig` sont explicitement exclus de cette liste afin
+d'éviter toute circularité ; chemins absolus/traversants/backslash, doublons,
+entrées manquantes ou supplémentaires sont rejetés. `signatureKeyId` résout une
+clé publique du trust bundle de déploiement ; la rotation conserve les
+anciennes clés de vérification jusqu'à expiration de tous les exports liés. Le
+mot « signed » d'ADR-004 décrit cette preuve d'intégrité vérifiable ; la
+livraison reste authentifiée par bearer + step-up, sans URL signée.
 
 ## Conséquences sur les parcours
 

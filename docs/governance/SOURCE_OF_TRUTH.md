@@ -1,6 +1,8 @@
 # KORA+ Final — Source de vérité
 
-Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A CLÔTURÉ ET FUSIONNÉ — S1.2-03B-R2 PUBLIÉ — R3 VALIDÉ ET AUTORISÉ POUR PUBLICATION — PR #48 DRAFT NON FUSIONNÉE**
+Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A CLÔTURÉ
+ET FUSIONNÉ — S1.2-03B-R4 VALIDÉ LOCALEMENT LE 2026-10-01 — ÉTAT DE
+PUBLICATION COURANT DANS GIT/GITHUB — PR #48 DRAFT NON FUSIONNÉE**
 
 Date d’effet : 2026-07-28
 Dernière réconciliation documentaire : 2026-10-01
@@ -413,7 +415,7 @@ migration, workflow, interface ou capacité produit n’est ajouté. R1 demeure
 local, non indexé, non commité et non publié, sans SHA, arbre ou Run ID futur.
 Toute publication exige une décision CTO distincte.
 
-## État courant postpublication R1 et réconciliation documentaire R2
+## État historique postpublication R1 et réconciliation documentaire R2
 
 R1 est publié au commit
 `3c1e0a067c1c977dcc7a85e4baa892ebdcc0b82e`, parent
@@ -436,11 +438,11 @@ attestations sans invalide, licences 1 132/0/0, deux installations
 reproductibles, sept artefacts WASM optionnels qualifiés et validations locales
 API, Flutter et Infrastructure.
 
-La PR #48 demeure `OPEN`, Draft, mergeable et non fusionnée, avec 2 commits,
-20 fichiers et `+8291/-1220`. Le contrat S1.2-03B est publié mais pas fusionné;
-sa surface reste de 60 chemins, 67 opérations et 137 schémas. Aucun runtime,
-schéma Prisma, migration ou interface n’est commencé, et S1.2-03C1/C2/C3
-restent `Not started`.
+Au head R1, la PR #48 demeurait `OPEN`, Draft, mergeable et non fusionnée, avec
+2 commits, 20 fichiers et `+8291/-1220`. Le contrat S1.2-03B était publié mais
+pas fusionné ; sa surface restait de 60 chemins, 67 opérations et 137 schémas.
+Aucun runtime, schéma Prisma, migration ou interface n’était commencé, et
+S1.2-03C1/C2/C3 restaient `Not started`.
 
 R2 modifie uniquement les six documents autorisés et aucun octet technique.
 Son état de publication fait foi dans Git et GitHub ; aucun SHA ni Run ID R2
@@ -482,3 +484,48 @@ interface. À la date de cet instantané, il était local, non indexé, non comm
 et non publié. La PR #48 restait Draft et S1.2-03C1/C2/C3 restaient
 `Not started`. Après cet instantané, l'état de publication fait foi dans Git et
 GitHub sans qu'aucun SHA ou Run ID futur soit anticipé ici.
+
+## Baseline publiée S1.2-03B-R3 et instantané historique local prépublication R4 — 2026-10-01
+
+R3 est publié au commit
+`1a6c4efeb169e89ccf989004559f4e0c1af80af3`, parent direct R2
+`6bc344c4eca7065089a6f6af6a9d47a98bf76b0f`, arbre
+`031101296c44d18d7f1a2ab1f917ac1432023f6d`, avec 13 fichiers et
+`+893/-117`. Infrastructure `36894241121`, Launcher Windows `36894240862`,
+Security `36894240870` et Quality Linux `36894241013`, tentative 1, sont tous
+`pull_request/completed/success` sur ce head exact.
+
+Avant la publication R4, la PR #48 était `OPEN`, Draft, `CLEAN` et non
+fusionnée. Son cumul publié était de 4 commits, 23 fichiers et `+9342/-1298` ;
+le SHA-256 de son corps était
+`b103546d26756e2a61378a6738a50ef3e23a562a23eac303b910966271fcb97b`.
+Les preuves locales R3 historiques restent distinctes de ces preuves CI : elles
+conservent notamment les deux essais réseau de signatures `NON CONCLUSIVE`, le
+troisième essai réussi, l'interruption initiale liée au lock du cache Flutter
+puis la relance 22/22, et la limite iOS non exécutée sous Windows.
+
+La revue CTO post-R3 a retenu deux findings : le champ `signatureInput` décrivait
+seulement le payload canonique et non le signing input RFC 7515, tandis que des
+blocs R1/R2 historiques restaient libellés comme courants. Dans l'instantané
+prépublication, R4 corrigeait le contrat en distinguant le payload JCS UTF-8, l'ASCII de
+`BASE64URL(protected).BASE64URL(payload)` sans padding et la sérialisation
+détachée `protected..signature`; le profil `b64=false` est interdit. Les blocs
+R1/R2 conservent tous leurs chiffres mais sont désormais qualifiés
+d'historiques.
+
+R4 constitue ici un instantané local prépublication daté du 2026-10-01. Il ne
+modifiait aucun manifeste, lockfile, dépendance, workflow, runtime, schéma
+Prisma, migration, provisioning ou interface ; aucun SHA, arbre, Run ID ou
+succès CI R4 futur n'y était affirmé. La PR #48 était Draft et S1.2-03C1/C2/C3
+restaient `Not started`. Après cet instantané, l'état de publication et de CI
+fait foi dans Git et GitHub.
+
+La validation locale ciblée conserve la surface 60/67/137, produit le contrat
+généré byte-identique d'empreinte SHA-256
+`b3a62e0522d9ca0b8df582f0b9c23e712f0af4953941eadbd500f477f4396c3a`,
+et conclut avec 274/274 tests OpenAPI+Contracts et 367/367 tests tooling. Les
+contrôles Contracts, Prettier ciblé, références, chronologie, encodage, scanner
+officiel avec historique, allowlist et `git diff --check` passent. Les audits
+npm complet et production frais terminent au code 0 avec zéro vulnérabilité.
+Les signatures, licences, builds applicatifs, Flutter et PostgreSQL ne sont pas
+rejoués, leurs fichiers techniques étant inchangés par R4.

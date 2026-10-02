@@ -1,6 +1,7 @@
 # S1.2-03B — Admin Security Contract Gate
 
-Statut : **INSTANTANÉ HISTORIQUE PRÉPUBLICATION DU 2026-09-29 — VALIDÉ LOCALEMENT — CONTRAT UNIQUEMENT**
+Statut : **R4 VALIDÉ LOCALEMENT LE 2026-10-01 — ÉTAT DE PUBLICATION COURANT
+DANS GIT/GITHUB — CONTRAT UNIQUEMENT**
 
 Décision associée : [ADR-025](../adr/ADR-025-admin-auth-session-audit-contexts.md)
 
@@ -118,8 +119,15 @@ causalité et délégant nuls ; un traitement délégué exige les deux ensemble
 
 L'export ZIP masque les PII et contient `manifest.json`, canonisé selon RFC 8785
 JCS, ainsi que `manifest.sig`, signature JWS compacte détachée Ed25519. Le
-manifeste lie export, échéances, chemin relatif normalisé, taille et SHA-256 de
-l'ensemble exact des entrées payload, en excluant `manifest.json` et
+payload est exactement les octets UTF-8 de ce manifeste canonique. L'en-tête
+protégé UTF-8 contient exactement `alg=EdDSA` et `kid=signatureKeyId`; le signing
+input RFC 7515 est l'ASCII de `BASE64URL(protected)`, un point, puis
+`BASE64URL(payload)`, sans padding. Le profil `b64=false` est interdit. La forme
+détachée transmise est `protected..signature` et le vérificateur reconstruit le
+payload depuis `manifest.json`.
+
+Le manifeste lie export, échéances, chemin relatif normalisé, taille et SHA-256
+de l'ensemble exact des entrées payload, en excluant `manifest.json` et
 `manifest.sig`. Les chemins absolus, traversants, à backslash ou dupliqués sont
 refusés ; toute entrée manquante ou non listée invalide le ZIP. La clé publique
 est résolue dans le trust bundle du déploiement par `signatureKeyId`; les

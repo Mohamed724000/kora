@@ -932,8 +932,14 @@ const REQUIRED_ADMIN_AUDIT_EXPORT_MANIFEST = {
   signatureFormat: "JWS_COMPACT_DETACHED",
   signatureAlgorithm: "EdDSA",
   signatureCurve: "Ed25519",
-  protectedHeader: "alg_EdDSA_kid_SIGNATURE_KEY_ID",
-  signatureInput: "RFC8785_CANONICAL_UTF8_BYTES_OF_MANIFEST_JSON",
+  payload: "RFC8785_JCS_CANONICAL_MANIFEST_UTF8_BYTES",
+  protectedHeader: "EXACTLY_alg_EdDSA_AND_kid_SIGNATURE_KEY_ID",
+  payloadEncoding: "BASE64URL_NO_PADDING",
+  unencodedPayload: false,
+  signatureInput:
+    "ASCII(BASE64URL_NO_PADDING(PROTECTED_HEADER_UTF8).BASE64URL_NO_PADDING(PAYLOAD))",
+  detachedSerialization:
+    "BASE64URL_NO_PADDING(PROTECTED_HEADER_UTF8)..BASE64URL_NO_PADDING(SIGNATURE)",
   payloadEntrySet:
     "EXACTLY_ALL_ZIP_ENTRIES_EXCEPT_MANIFEST_JSON_AND_MANIFEST_SIG",
   payloadPathPolicy:
