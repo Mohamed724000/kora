@@ -1,6 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { createApplication } from '../src/app.factory';
+import type { AdminWriterRuntimeBoundary } from '../src/database/admin-writer.service';
 import type { RuntimeDatabaseBoundary } from '../src/database/runtime-database-boundary';
 import type { ReadinessCheck } from '../src/health/readiness-check';
 import { SAFE_TEST_ENVIRONMENT } from './safe-test-environment';
@@ -46,6 +47,16 @@ function successfulRuntimeBoundary(): RuntimeDatabaseBoundary {
   };
 }
 
+function successfulAdminWriterBoundary(): AdminWriterRuntimeBoundary {
+  return {
+    async assertLeastPrivilege(): Promise<void> {},
+    async selectOne(): Promise<void> {},
+    async transaction<T>(): Promise<T> {
+      throw new Error('Admin writer transactions are not available in foundation tests.');
+    },
+  };
+}
+
 describe('API foundation', () => {
   let application: INestApplication;
 
@@ -61,6 +72,7 @@ describe('API foundation', () => {
     }
 
     application = await createApplication({
+      adminWriterBoundary: successfulAdminWriterBoundary(),
       environment: SAFE_TEST_ENVIRONMENT,
       readinessChecks: checks,
       runtimeDatabaseBoundary: successfulRuntimeBoundary(),
@@ -87,11 +99,30 @@ describe('API foundation', () => {
 
     await expect(
       createApplication({
+        adminWriterBoundary: successfulAdminWriterBoundary(),
         environment: SAFE_TEST_ENVIRONMENT,
         readinessChecks: [successfulCheck('postgresql'), successfulCheck('redis')],
         runtimeDatabaseBoundary,
       }),
     ).rejects.toThrow('controlled runtime boundary failure');
+  });
+
+  it('refuse le demarrage lorsque le writer administrateur echoue', async () => {
+    const adminWriterBoundary: AdminWriterRuntimeBoundary = {
+      ...successfulAdminWriterBoundary(),
+      async assertLeastPrivilege(): Promise<void> {
+        throw new Error('controlled admin writer boundary failure');
+      },
+    };
+
+    await expect(
+      createApplication({
+        adminWriterBoundary,
+        environment: SAFE_TEST_ENVIRONMENT,
+        readinessChecks: [successfulCheck('postgresql'), successfulCheck('redis')],
+        runtimeDatabaseBoundary: successfulRuntimeBoundary(),
+      }),
+    ).rejects.toThrow('controlled admin writer boundary failure');
   });
 
   it('déclare ready uniquement lorsque les deux probes réussissent', async () => {

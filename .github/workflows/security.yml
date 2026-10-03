@@ -38,6 +38,8 @@ jobs:
         run: |
           npm ci --ignore-scripts
           flutter pub get --directory apps/mobile
+      - name: Qualify Next ESLint glob compatibility
+        run: npm run security:next-root-dirs
       - name: Audit dependency trees
         run: |
           npm ls --all

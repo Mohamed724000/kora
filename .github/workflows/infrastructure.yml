@@ -28,6 +28,9 @@ jobs:
           cache: npm
       - name: Install npm dependencies
         run: npm ci
+      - name: Validate Admin Auth Session PostgreSQL runtime
+        shell: pwsh
+        run: ./apps/api/prisma/run-admin-auth-runtime-validation.ps1
       - name: Prepare and validate Compose
         run: |
           npm run infra:prepare

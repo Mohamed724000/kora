@@ -6,6 +6,24 @@ const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'
 type NodeEnvironment = (typeof NODE_ENVIRONMENTS)[number];
 
 export interface RuntimeConfig {
+  adminAuth: {
+    origin: string;
+    postgresql: {
+      host: string;
+      port: number;
+      database: string;
+      user: string;
+      password: string;
+      ssl: boolean;
+    };
+    redis: {
+      host: string;
+      port: number;
+      password?: string;
+      tls: boolean;
+      waitAofTimeoutMs: number;
+    };
+  };
   environment: NodeEnvironment;
   http: {
     host: string;
@@ -84,6 +102,30 @@ function optionalString(
   return { field, value };
 }
 
+function exactHttpsOrigin(
+  environment: Record<string, string | undefined>,
+  field: string,
+): ValidationResult<string> {
+  const candidate = requiredString(environment, field);
+  if (candidate.value === undefined) {
+    return candidate;
+  }
+  try {
+    const parsed = new URL(candidate.value);
+    if (
+      parsed.protocol !== 'https:' ||
+      parsed.origin !== candidate.value ||
+      parsed.username.length > 0 ||
+      parsed.password.length > 0
+    ) {
+      return { field };
+    }
+  } catch {
+    return { field };
+  }
+  return candidate;
+}
+
 function integer(
   environment: Record<string, string | undefined>,
   field: string,
@@ -159,6 +201,35 @@ export function loadRuntimeConfig(environment: Record<string, string | undefined
   const redisPassword = optionalString(environment, 'REDIS_PASSWORD');
   const redisTls = boolean(environment, 'REDIS_TLS');
   const readinessTimeout = integer(environment, 'READINESS_TIMEOUT_MS', 100, 10_000);
+  const adminOrigin = exactHttpsOrigin(environment, 'ADMIN_ORIGIN');
+  const adminDatabaseHost = requiredString(
+    environment,
+    'ADMIN_DATABASE_HOST',
+    /^(?!.*:\/\/)(?!.*\/)\S+$/,
+  );
+  const adminDatabasePort = integer(environment, 'ADMIN_DATABASE_PORT', 1, 65_535);
+  const adminDatabaseName = requiredString(
+    environment,
+    'ADMIN_DATABASE_NAME',
+    /^[A-Za-z_][A-Za-z0-9_-]*$/,
+  );
+  const adminDatabaseUser = requiredString(environment, 'ADMIN_DATABASE_USER');
+  const adminDatabasePassword = requiredString(environment, 'ADMIN_DATABASE_PASSWORD');
+  const adminDatabaseSsl = boolean(environment, 'ADMIN_DATABASE_SSL');
+  const adminRedisHost = requiredString(
+    environment,
+    'ADMIN_REDIS_HOST',
+    /^(?!.*:\/\/)(?!.*\/)\S+$/,
+  );
+  const adminRedisPort = integer(environment, 'ADMIN_REDIS_PORT', 1, 65_535);
+  const adminRedisPassword = optionalString(environment, 'ADMIN_REDIS_PASSWORD');
+  const adminRedisTls = boolean(environment, 'ADMIN_REDIS_TLS');
+  const adminRedisWaitAofTimeout = integer(
+    environment,
+    'ADMIN_REDIS_WAIT_AOF_TIMEOUT_MS',
+    1,
+    10_000,
+  );
 
   const results = [
     nodeEnvironment,
@@ -175,6 +246,17 @@ export function loadRuntimeConfig(environment: Record<string, string | undefined
     redisPort,
     redisTls,
     readinessTimeout,
+    adminOrigin,
+    adminDatabaseHost,
+    adminDatabasePort,
+    adminDatabaseName,
+    adminDatabaseUser,
+    adminDatabasePassword,
+    adminDatabaseSsl,
+    adminRedisHost,
+    adminRedisPort,
+    adminRedisTls,
+    adminRedisWaitAofTimeout,
   ];
   const invalid = invalidFields(results);
 
@@ -183,6 +265,24 @@ export function loadRuntimeConfig(environment: Record<string, string | undefined
     if (suppliedRedisPassword.length > 0) {
       invalid.push(redisPassword.field);
     }
+  }
+
+  if (
+    adminRedisPassword.value === undefined &&
+    environment.ADMIN_REDIS_PASSWORD !== undefined &&
+    environment.ADMIN_REDIS_PASSWORD.length > 0
+  ) {
+    invalid.push(adminRedisPassword.field);
+  }
+
+  if (adminDatabaseUser.value !== undefined && adminDatabaseUser.value === databaseUser.value) {
+    invalid.push(adminDatabaseUser.field);
+  }
+  if (
+    adminDatabasePassword.value !== undefined &&
+    adminDatabasePassword.value === databasePassword.value
+  ) {
+    invalid.push(adminDatabasePassword.field);
   }
 
   for (const optional of [sentryDsn, sentryEnvironment, sentryRelease]) {
@@ -204,6 +304,24 @@ export function loadRuntimeConfig(environment: Record<string, string | undefined
   };
 
   return {
+    adminAuth: {
+      origin: adminOrigin.value as string,
+      postgresql: {
+        host: adminDatabaseHost.value as string,
+        port: adminDatabasePort.value as number,
+        database: adminDatabaseName.value as string,
+        user: adminDatabaseUser.value as string,
+        password: adminDatabasePassword.value as string,
+        ssl: adminDatabaseSsl.value as boolean,
+      },
+      redis: {
+        host: adminRedisHost.value as string,
+        port: adminRedisPort.value as number,
+        tls: adminRedisTls.value as boolean,
+        waitAofTimeoutMs: adminRedisWaitAofTimeout.value as number,
+        ...(adminRedisPassword.value === undefined ? {} : { password: adminRedisPassword.value }),
+      },
+    },
     environment: nodeEnvironment.value as NodeEnvironment,
     http: {
       host: apiHost.value as string,

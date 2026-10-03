@@ -107,6 +107,55 @@ enum AdminRole {
   SUPPORT
 }
 
+enum AdminStatus {
+  INVITED
+  PENDING_MFA
+  ACTIVE
+  SUSPENDED
+  DISABLED
+}
+
+enum AdminPreAuthPurpose {
+  FIRST_TOTP_ENROLLMENT
+  TOTP_VERIFY
+}
+
+enum AdminStepUpPurpose {
+  SESSION_REVOCATION
+  RECOVERY_APPROVAL
+  AUDIT_EXPORT
+  INVITATION
+  ROLE_CHANGE
+  STATUS_CHANGE
+}
+
+enum AdminAuditContext {
+  ADMIN_SESSION
+  ADMIN_RECOVERY
+  SYSTEM
+}
+
+enum AdminAuditEventClass {
+  LOGIN
+  SESSION
+  EXPORT
+  BUSINESS
+}
+
+enum AdminSecurityEventOutcome {
+  SUCCEEDED
+  FAILED
+}
+
+enum AdminReasonCode {
+  SECURITY_RESPONSE
+  ACCOUNT_RECOVERY
+  ROLE_ADMINISTRATION
+  STATUS_ADMINISTRATION
+  AUDIT_EXPORT
+  INVITATION_ADMINISTRATION
+}
+
 model Customer {
   id                 String              @id @default(uuid())
   verifiedPhone      String              @unique
@@ -187,37 +236,54 @@ model OtpChallenge {
 }
 
 model AdminUser {
-  id                   String                   @id @default(uuid())
-  email                String                   @unique
-  passwordHash         String
-  role                 AdminRole
-  totpSecretEncrypted  String?
-  totpEnabledAt        DateTime?
-  createdAt            DateTime                 @default(now())
-  sessions             AdminSession[]
-  recoveryCodes        AdminRecoveryCode[]
-  createdArtists       Artist[]                 @relation("ArtistCreatedByAdmin")
-  createdAudioContents AudioContent[]           @relation("AudioContentCreatedByAdmin")
-  publications         ContentPublication[]
-  auditLogs            AuditLog[]
-  idempotencyRecords   AdminIdempotencyRecord[]
+  id                      String                   @id @default(uuid())
+  email                   String                   @unique
+  passwordHash            String
+  role                    AdminRole
+  status                  AdminStatus              @default(DISABLED)
+  authorizationVersion    Int                      @default(1)
+  totpSecretEncrypted     String?
+  totpEnabledAt           DateTime?
+  lastAcceptedTotpCounter BigInt?
+  createdAt               DateTime                 @default(now())
+  sessions                AdminSession[]
+  recoveryCodes           AdminRecoveryCode[]
+  preAuthContexts         AdminPreAuthContext[]
+  totpEnrollments         AdminTotpEnrollment[]
+  recoveryContexts        AdminRecoveryContext[]
+  refreshTokens           AdminRefreshToken[]
+  recoveryCodeBatches     AdminRecoveryCodeBatch[]
+  securityEvents          AdminSecurityEvent[]
+  createdArtists          Artist[]                 @relation("ArtistCreatedByAdmin")
+  createdAudioContents    AudioContent[]           @relation("AudioContentCreatedByAdmin")
+  publications            ContentPublication[]
+  actorAuditLogs          AuditLog[]               @relation("AuditActor")
+  subjectAuditLogs        AuditLog[]               @relation("AuditSubject")
+  delegatedAuditLogs      AuditLog[]               @relation("AuditDelegatedBy")
+  idempotencyRecords      AdminIdempotencyRecord[]
 }
 
 model AdminSession {
-  id                  String     @id @default(uuid())
-  adminUserId         String
-  adminUser           AdminUser  @relation(fields: [adminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  tokenFamilyId       String
-  accessTokenJti      String     @unique
-  refreshTokenHash    String     @unique
-  refreshTokenVersion Int        @default(1)
-  lastTwoFactorAt     DateTime
-  lastActivityAt      DateTime   @default(now())
-  expiresAt           DateTime
-  revokedAt           DateTime?
-  createdAt           DateTime   @default(now())
-  updatedAt           DateTime   @updatedAt
-  auditLogs           AuditLog[]
+  id                   String              @id @default(uuid())
+  adminUserId          String
+  adminUser            AdminUser           @relation(fields: [adminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  tokenFamilyId        String
+  accessTokenJti       String              @unique
+  refreshTokenHash     String              @unique
+  refreshTokenVersion  Int                 @default(1)
+  lastTwoFactorAt      DateTime
+  lastActivityAt       DateTime            @default(now())
+  expiresAt            DateTime
+  absoluteExpiresAt    DateTime?
+  authorizationVersion Int?
+  stepUpPurpose        AdminStepUpPurpose?
+  stepUpVerifiedAt     DateTime?
+  stepUpExpiresAt      DateTime?
+  revokedAt            DateTime?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  refreshTokens        AdminRefreshToken[]
+  auditLogs            AuditLog[]          @relation("AuditSession")
 
   @@unique([id, adminUserId])
   @@unique([adminUserId, tokenFamilyId])
@@ -226,15 +292,127 @@ model AdminSession {
 }
 
 model AdminRecoveryCode {
-  id          String    @id @default(uuid())
-  adminUserId String
-  adminUser   AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  codeHash    String
-  usedAt      DateTime?
-  createdAt   DateTime  @default(now())
+  id               String                  @id @default(uuid())
+  adminUserId      String
+  adminUser        AdminUser               @relation(fields: [adminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  batchId          String?
+  batch            AdminRecoveryCodeBatch? @relation(fields: [batchId, adminUserId], references: [id, adminUserId], onDelete: Restrict, onUpdate: Restrict)
+  selector         String?                 @unique
+  codeHash         String
+  usedAt           DateTime?
+  createdAt        DateTime                @default(now())
+  recoveryContexts AdminRecoveryContext[]
 
+  @@unique([id, adminUserId])
   @@unique([adminUserId, codeHash])
   @@index([adminUserId, usedAt])
+}
+
+model AdminPreAuthContext {
+  id                   String               @id @default(uuid())
+  adminUserId          String
+  adminUser            AdminUser            @relation(fields: [adminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  tokenHash            String               @unique
+  purpose              AdminPreAuthPurpose
+  authorizationVersion Int
+  expiresAt            DateTime
+  consumedAt           DateTime?
+  revokedAt            DateTime?
+  createdAt            DateTime             @default(now())
+  totpEnrollment       AdminTotpEnrollment? @relation("EnrollmentPreAuth")
+
+  @@unique([id, adminUserId])
+  @@index([adminUserId, expiresAt])
+}
+
+model AdminTotpEnrollment {
+  id                     String                @id @default(uuid())
+  adminUserId            String
+  adminUser              AdminUser             @relation(fields: [adminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  adminPreAuthContextId  String?               @unique
+  adminPreAuthContext    AdminPreAuthContext?  @relation("EnrollmentPreAuth", fields: [adminPreAuthContextId, adminUserId], references: [id, adminUserId], onDelete: Restrict, onUpdate: Restrict)
+  adminRecoveryContextId String?               @unique
+  adminRecoveryContext   AdminRecoveryContext? @relation("EnrollmentRecovery", fields: [adminRecoveryContextId, adminUserId], references: [id, adminUserId], onDelete: Restrict, onUpdate: Restrict)
+  secretEncrypted        String
+  authorizationVersion   Int
+  expiresAt              DateTime
+  qrDeliveredAt          DateTime?
+  confirmedAt            DateTime?
+  revokedAt              DateTime?
+  createdAt              DateTime              @default(now())
+
+  @@unique([id, adminUserId])
+  @@unique([adminPreAuthContextId, adminUserId])
+  @@unique([adminRecoveryContextId, adminUserId])
+  @@index([adminUserId, expiresAt])
+}
+
+model AdminRecoveryContext {
+  id                   String               @id @default(uuid())
+  adminUserId          String
+  adminUser            AdminUser            @relation(fields: [adminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  tokenHash            String               @unique
+  recoveryCodeId       String               @unique
+  recoveryCode         AdminRecoveryCode    @relation(fields: [recoveryCodeId, adminUserId], references: [id, adminUserId], onDelete: Restrict, onUpdate: Restrict)
+  authorizationVersion Int
+  expiresAt            DateTime
+  consumedAt           DateTime?
+  revokedAt            DateTime?
+  createdAt            DateTime             @default(now())
+  totpEnrollment       AdminTotpEnrollment? @relation("EnrollmentRecovery")
+  auditLogs            AuditLog[]           @relation("AuditRecovery")
+
+  @@unique([id, adminUserId])
+  @@index([adminUserId, expiresAt])
+}
+
+model AdminRefreshToken {
+  id              String             @id @default(uuid())
+  adminUserId     String
+  adminUser       AdminUser          @relation(fields: [adminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  adminSessionId  String
+  adminSession    AdminSession       @relation(fields: [adminSessionId, adminUserId], references: [id, adminUserId], onDelete: Restrict, onUpdate: Restrict)
+  previousTokenId String?            @unique
+  previousToken   AdminRefreshToken? @relation("AdminRefreshChain", fields: [previousTokenId, adminUserId, adminSessionId], references: [id, adminUserId, adminSessionId], onDelete: Restrict, onUpdate: Restrict)
+  nextToken       AdminRefreshToken? @relation("AdminRefreshChain")
+  tokenHash       String             @unique
+  generation      Int
+  expiresAt       DateTime
+  consumedAt      DateTime?
+  createdAt       DateTime           @default(now())
+
+  @@unique([id, adminUserId, adminSessionId])
+  @@unique([previousTokenId, adminUserId, adminSessionId])
+  @@index([adminSessionId, generation])
+  @@index([adminUserId, expiresAt])
+}
+
+model AdminRecoveryCodeBatch {
+  id          String              @id @default(uuid())
+  adminUserId String
+  adminUser   AdminUser           @relation(fields: [adminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  revokedAt   DateTime?
+  createdAt   DateTime            @default(now())
+  codes       AdminRecoveryCode[]
+
+  @@unique([id, adminUserId])
+  @@index([adminUserId, createdAt])
+}
+
+model AdminSecurityEvent {
+  id             String                    @id @default(uuid())
+  adminUserId    String?
+  adminUser      AdminUser?                @relation(fields: [adminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  eventClass     AdminAuditEventClass
+  action         String
+  outcome        AdminSecurityEventOutcome
+  failureCode    String?
+  requestId      String
+  subjectRefHash String?
+  createdAt      DateTime                  @default(now())
+
+  @@index([adminUserId, createdAt])
+  @@index([eventClass, action, createdAt])
 }
 
 model Artist {
@@ -702,20 +880,37 @@ model AdminIdempotencyRecord {
 // Critical mutation and audit insert must share one transaction. Application
 // roles receive no UPDATE/DELETE privilege on this table.
 model AuditLog {
-  id             String       @id @default(uuid())
-  adminUserId    String
-  adminUser      AdminUser    @relation(fields: [adminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  adminSessionId String
-  adminSession   AdminSession @relation(fields: [adminSessionId, adminUserId], references: [id, adminUserId], onDelete: Restrict, onUpdate: Restrict)
-  action         String
-  entityType     String
-  entityId       String
-  maskedBefore   Json?
-  maskedAfter    Json?
-  reason         String
-  requestId      String
-  createdAt      DateTime     @default(now())
+  id                     String                @id @default(uuid())
+  version                Int                   @default(2)
+  actorAdminUserId       String?               @map("adminUserId")
+  actorAdminUser         AdminUser?            @relation("AuditActor", fields: [actorAdminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  subjectAdminUserId     String?
+  subjectAdminUser       AdminUser?            @relation("AuditSubject", fields: [subjectAdminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  delegatedByAdminUserId String?
+  delegatedByAdminUser   AdminUser?            @relation("AuditDelegatedBy", fields: [delegatedByAdminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  adminSessionId         String?
+  adminSession           AdminSession?         @relation("AuditSession", fields: [adminSessionId, actorAdminUserId], references: [id, adminUserId], onDelete: Restrict, onUpdate: Restrict)
+  adminRecoveryContextId String?
+  adminRecoveryContext   AdminRecoveryContext? @relation("AuditRecovery", fields: [adminRecoveryContextId, actorAdminUserId], references: [id, adminUserId], onDelete: Restrict, onUpdate: Restrict)
+  systemExecutionRefHash String?
+  eventClass             AdminAuditEventClass?
+  context                AdminAuditContext?
+  action                 String
+  entityType             String
+  entityId               String
+  maskedBefore           Json?
+  maskedAfter            Json?
+  legacyReason           String                @map("reason")
+  reasonCode             AdminReasonCode?
+  operatorReason         String?
+  requestId              String
+  causationEventId       String?
+  causationEvent         AuditLog?             @relation("AuditCausation", fields: [causationEventId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  causedEvents           AuditLog[]            @relation("AuditCausation")
+  createdAt              DateTime              @default(now())
 
   @@index([entityType, entityId, createdAt])
-  @@index([adminUserId, createdAt])
+  @@index([actorAdminUserId, createdAt], map: "AuditLog_adminUserId_createdAt_idx")
+  @@index([subjectAdminUserId, createdAt])
+  @@index([context, createdAt])
 }

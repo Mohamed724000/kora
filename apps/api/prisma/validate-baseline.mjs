@@ -1,7 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import { dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -158,35 +157,26 @@ async function dropDatabase(admin, name) {
 }
 
 function verifyDeterministicBaseline() {
-  const temporaryDirectory = mkdtempSync(resolve(tmpdir(), 'kora-s1202-prisma-'));
-  const generatedPath = resolve(temporaryDirectory, 'migration.sql');
-  try {
-    runPrisma(
-      [
-        'migrate',
-        'diff',
-        '--config',
-        'prisma.config.ts',
-        '--from-empty',
-        '--to-schema',
-        'prisma/schema.prisma',
-        '--script',
-        '--output',
-        generatedPath,
-      ],
-      process.env,
-    );
-    const committed = readFileSync(baselinePath);
-    const generated = readFileSync(generatedPath);
-    if (!committed.equals(generated)) {
-      fail('the committed Prisma baseline is not byte-for-byte reproducible');
-    }
-    process.stdout.write(
-      `DETERMINISTIC_BASELINE_PASS sha256=${sha256(committed)} bytes=${committed.length}\n`,
-    );
-  } finally {
-    rmSync(temporaryDirectory, { force: true, recursive: true });
+  const baseline = readFileSync(baselinePath);
+  const constraints = readFileSync(constraintsPath);
+  const migrationLock = readFileSync(resolve(migrationsDirectory, 'migration_lock.toml'));
+  const expected = new Map([
+    [baselinePath, '37e97b5bb370447fdfa6cc856c44d8d25dd518b43879ff8cd04c951ad062c6f6'],
+    [constraintsPath, 'e316e5fcf0b452c003074ba7e6cf60a07384b68fb2d904cfd387cac54919ffb2'],
+    [
+      resolve(migrationsDirectory, 'migration_lock.toml'),
+      '99836963713b4f5b269ad49af0ed3d7b0b2e336115c2f92dc9ac683d139d0900',
+    ],
+  ]);
+  for (const [path, contents] of [
+    [baselinePath, baseline],
+    [constraintsPath, constraints],
+    [resolve(migrationsDirectory, 'migration_lock.toml'), migrationLock],
+  ]) {
+    if (sha256(contents) !== expected.get(path))
+      fail(`immutable historical artifact changed: ${path}`);
   }
+  process.stdout.write(`HISTORICAL_BASELINE_HASHES_PASS migrations=2 lock=unchanged\n`);
 }
 
 async function structuralInventory(client) {
@@ -1132,17 +1122,35 @@ function comparePrismaProjection(environment) {
 
 async function validateDatabase(name, withConstraintTests) {
   const environment = environmentForDatabase(name);
-  runPrisma(['migrate', 'deploy', '--config', 'prisma.config.ts'], environment);
-  process.stdout.write(`MIGRATION_APPLY_PASS ${name}\n`);
-  runPrisma(['migrate', 'status', '--config', 'prisma.config.ts'], environment);
-  runPrisma(['migrate', 'deploy', '--config', 'prisma.config.ts'], environment);
-  process.stdout.write(`SECOND_PASS_NO_PENDING_MIGRATIONS_PASS ${name}\n`);
-
   const client = new Client(connectionConfiguration(name));
   await client.connect();
   try {
+    await client.query(readFileSync(baselinePath, 'utf8'));
+    runPrisma(
+      [
+        'migrate',
+        'resolve',
+        '--applied',
+        '20260914000000_canonical_postgresql_baseline',
+        '--config',
+        'prisma.config.ts',
+      ],
+      environment,
+    );
+    await client.query(readFileSync(constraintsPath, 'utf8'));
+    runPrisma(
+      [
+        'migrate',
+        'resolve',
+        '--applied',
+        '20260914000100_canonical_sql_constraints',
+        '--config',
+        'prisma.config.ts',
+      ],
+      environment,
+    );
+    process.stdout.write(`HISTORICAL_MIGRATION_APPLY_PASS ${name}\n`);
     await structuralInventory(client);
-    comparePrismaProjection(environment);
     if (withConstraintTests) {
       await insertPositiveFixture(client);
       await insertLateEarningReopenFixture(client);

@@ -76,6 +76,18 @@ const NEXT_SAFE_VERSION = "16.3.8";
 const NEXT_WORKSPACES = ["apps/admin", "apps/web"];
 const NEXT_ENV_PACKAGE = "@next/env";
 const NEXT_ESLINT_PLUGIN_PACKAGE = "@next/eslint-plugin-next";
+const NEXT_ESLINT_PLUGIN_PATH = `node_modules/${NEXT_ESLINT_PLUGIN_PACKAGE}`;
+const NEXT_ESLINT_PLUGIN_SELECTOR = `${NEXT_ESLINT_PLUGIN_PACKAGE}@${NEXT_SAFE_VERSION}`;
+const NEXT_FAST_GLOB_PACKAGE = "fast-glob";
+const NEXT_FAST_GLOB_ALIAS_PATH = `${NEXT_ESLINT_PLUGIN_PATH}/node_modules/${NEXT_FAST_GLOB_PACKAGE}`;
+const NEXT_FAST_GLOB_DECLARED_VERSION = "3.3.1";
+const NEXT_FAST_GLOB_ALIAS_SPEC = "npm:tinyglobby@0.2.17";
+const NEXT_FAST_GLOB_ALIAS_PACKAGE = "tinyglobby";
+const NEXT_FAST_GLOB_ALIAS_VERSION = "0.2.17";
+const NEXT_FAST_GLOB_ALIAS_INTEGRITY =
+  "sha512-wXR/dYpcqKmfWpEdZjiKJOwCNFndD0DMnrW/cYjVGttEkBfVgcLFHoNrlj47mjOVic9yyNu65alsgF4NQyTa2g==";
+const NEXT_FAST_GLOB_ALIAS_RESOLVED =
+  "https://registry.npmjs.org/tinyglobby/-/tinyglobby-0.2.17.tgz";
 const NEXT_SWC_PACKAGES = [
   "@next/swc-darwin-arm64",
   "@next/swc-darwin-x64",
@@ -132,6 +144,18 @@ const NEST_PLATFORM_EXPRESS_VERSION = "11.1.28";
 const NEST_PLATFORM_EXPRESS_PATH = "node_modules/@nestjs/platform-express";
 const NEST_PLATFORM_EXPRESS_OVERRIDE = `@nestjs/platform-express@${NEST_PLATFORM_EXPRESS_VERSION}`;
 const MULTER_DECLARED_VERSION = "2.2.0";
+const ADMIN_AUTH_API_PATH = "apps/api";
+const ADMIN_AUTH_PACKAGES = new Map([
+  ["argon2", { section: "dependencies", version: "0.45.1" }],
+  ["jose", { section: "dependencies", version: "6.2.12" }],
+  ["qrcode", { section: "dependencies", version: "1.5.4" }],
+  ["@types/qrcode", { section: "devDependencies", version: "1.5.6" }],
+]);
+const ARGON2_PATH = "node_modules/argon2";
+const ARGON2_VERSION = "0.45.1";
+const ARGON2_INTEGRITY =
+  "sha512-skm+/WCjkGqCQxF7FG1LuZXM5yvbFjgbfiCGsud2oLgaDhh6b6dbH0b1EkghbM+xx4Bj8Ape+KKgixoIlWZicQ==";
+const ARGON2_INSTALL_SCRIPT = "cross-env ZERO_AR_DATE=1 node-gyp-build";
 const DEPENDABOT_ECOSYSTEMS = new Map([
   ["npm", "/"],
   ["pub", "/apps/mobile"],
@@ -145,6 +169,7 @@ const APPROVED_LARGE_FILES = new Set([
 ]);
 const APPROVED_INSTALL_SCRIPTS = new Set([
   "node_modules/@prisma/engines@7.9.1",
+  `${ARGON2_PATH}@${ARGON2_VERSION}`,
   "node_modules/fsevents@2.3.3",
   "node_modules/msgpackr-extract@3.0.4",
   "node_modules/prisma@7.9.1",
@@ -284,6 +309,63 @@ export function validateManifestVersions(manifests) {
       }
     }
   }
+  return errors;
+}
+
+export function validateAdminAuthSupplyChain(
+  manifests,
+  lockfile,
+  installedArgon2Manifest,
+) {
+  const errors = [];
+  const apiManifest = manifests[ADMIN_AUTH_API_PATH] ?? {};
+  const lockedApiManifest = lockfile.packages?.[ADMIN_AUTH_API_PATH] ?? {};
+
+  for (const [packageName, { section, version }] of ADMIN_AUTH_PACKAGES) {
+    if (apiManifest[section]?.[packageName] !== version) {
+      errors.push(
+        `${packageName} must be pinned to ${version} in ${ADMIN_AUTH_API_PATH}/${section}`,
+      );
+    }
+    if (lockedApiManifest[section]?.[packageName] !== version) {
+      errors.push(
+        `${packageName} lock specification must be ${version} in ${ADMIN_AUTH_API_PATH}/${section}`,
+      );
+    }
+
+    const installations = packageInstallations(lockfile, packageName);
+    const expectedPath = `node_modules/${packageName}`;
+    if (
+      installations.length !== 1 ||
+      installations[0]?.[0] !== expectedPath ||
+      installations[0]?.[1]?.version !== version
+    ) {
+      errors.push(
+        `${packageName} must have one physical installation at ${expectedPath}@${version}; found ${installationSummary(installations)}`,
+      );
+    }
+  }
+
+  const lockedArgon2 = lockfile.packages?.[ARGON2_PATH];
+  if (
+    lockedArgon2?.integrity !== ARGON2_INTEGRITY ||
+    lockedArgon2?.hasInstallScript !== true ||
+    lockedArgon2?.license !== "MIT" ||
+    lockedArgon2?.resolved !==
+      `https://registry.npmjs.org/argon2/-/argon2-${ARGON2_VERSION}.tgz`
+  ) {
+    errors.push("argon2 lock metadata must match the qualified 0.45.1 package");
+  }
+  if (
+    installedArgon2Manifest?.name !== "argon2" ||
+    installedArgon2Manifest?.version !== ARGON2_VERSION ||
+    installedArgon2Manifest?.scripts?.install !== ARGON2_INSTALL_SCRIPT
+  ) {
+    errors.push(
+      `argon2 installed hook must be exactly: ${ARGON2_INSTALL_SCRIPT}`,
+    );
+  }
+
   return errors;
 }
 
@@ -1117,7 +1199,6 @@ export function validateNextToolchain(manifests, lockfile) {
   for (const packageName of [
     NEXT_PACKAGE,
     NEXT_ENV_PACKAGE,
-    NEXT_ESLINT_PLUGIN_PACKAGE,
     ...NEXT_SWC_PACKAGES,
     ESLINT_CONFIG_NEXT_PACKAGE,
   ]) {
@@ -1193,6 +1274,118 @@ export function validateNextToolchain(manifests, lockfile) {
         `${packageName} has an unapproved lock parent: ${parentPath}`,
       );
     }
+  }
+  errors.push(...validateNextLintGlobOverride(manifests, lockfile));
+  return errors;
+}
+
+export function validateNextLintGlobOverride(manifests, lockfile) {
+  const errors = [];
+  const overrides = manifests[""]?.overrides ?? {};
+  const targetedOverride = overrides[NEXT_ESLINT_PLUGIN_SELECTOR];
+
+  for (const overridePath of forbiddenTargetedOverridePaths(overrides, {
+    childPackage: NEXT_FAST_GLOB_PACKAGE,
+    parentPackage: NEXT_ESLINT_PLUGIN_PACKAGE,
+    parentSelector: NEXT_ESLINT_PLUGIN_SELECTOR,
+  })) {
+    errors.push(
+      `Next lint glob security override is forbidden at path: ${overridePath}`,
+    );
+  }
+  for (const packageName of [
+    "braces",
+    "micromatch",
+    NEXT_FAST_GLOB_ALIAS_PACKAGE,
+  ]) {
+    for (const overridePath of overridePathsTargetingPackage(
+      overrides,
+      packageName,
+    )) {
+      errors.push(
+        `${packageName} override is forbidden at path: ${overridePath}`,
+      );
+    }
+  }
+  if (
+    !isObjectRecord(targetedOverride) ||
+    targetedOverride[NEXT_FAST_GLOB_PACKAGE] !== NEXT_FAST_GLOB_ALIAS_SPEC ||
+    Object.keys(targetedOverride).length !== 1
+  ) {
+    errors.push(
+      `${NEXT_ESLINT_PLUGIN_SELECTOR} must override fast-glob to exact alias ${NEXT_FAST_GLOB_ALIAS_SPEC}`,
+    );
+  }
+
+  const packages = lockfile.packages ?? {};
+  const pluginMetadata = packages[NEXT_ESLINT_PLUGIN_PATH];
+  if (
+    pluginMetadata?.version !== NEXT_SAFE_VERSION ||
+    pluginMetadata?.dependencies?.[NEXT_FAST_GLOB_PACKAGE] !==
+      NEXT_FAST_GLOB_DECLARED_VERSION
+  ) {
+    errors.push(
+      `${NEXT_ESLINT_PLUGIN_SELECTOR} lock metadata must retain its audited fast-glob ${NEXT_FAST_GLOB_DECLARED_VERSION} dependency declaration`,
+    );
+  }
+
+  for (const parentPath of unexpectedDependencyParentPaths(
+    lockfile,
+    NEXT_FAST_GLOB_PACKAGE,
+    [NEXT_ESLINT_PLUGIN_PATH],
+  )) {
+    errors.push(`fast-glob has an unapproved lock parent: ${parentPath}`);
+  }
+
+  const aliasMetadata = packages[NEXT_FAST_GLOB_ALIAS_PATH];
+  if (
+    aliasMetadata?.name !== NEXT_FAST_GLOB_ALIAS_PACKAGE ||
+    aliasMetadata?.version !== NEXT_FAST_GLOB_ALIAS_VERSION ||
+    aliasMetadata?.resolved !== NEXT_FAST_GLOB_ALIAS_RESOLVED ||
+    aliasMetadata?.integrity !== NEXT_FAST_GLOB_ALIAS_INTEGRITY ||
+    aliasMetadata?.license !== "MIT" ||
+    aliasMetadata?.engines?.node !== ">=12.0.0" ||
+    aliasMetadata?.dependencies?.fdir !== "^6.5.0" ||
+    aliasMetadata?.dependencies?.picomatch !== "^4.0.4"
+  ) {
+    errors.push(
+      "fast-glob alias lock metadata must identify the qualified tinyglobby@0.2.17 package",
+    );
+  }
+
+  const fastGlobInstallations = packageInstallations(
+    lockfile,
+    NEXT_FAST_GLOB_PACKAGE,
+  );
+  if (
+    fastGlobInstallations.length !== 1 ||
+    fastGlobInstallations[0]?.[0] !== NEXT_FAST_GLOB_ALIAS_PATH ||
+    fastGlobInstallations[0]?.[1]?.name !== NEXT_FAST_GLOB_ALIAS_PACKAGE ||
+    fastGlobInstallations[0]?.[1]?.version !== NEXT_FAST_GLOB_ALIAS_VERSION
+  ) {
+    errors.push(
+      `fast-glob import identity must resolve only to ${NEXT_FAST_GLOB_ALIAS_PATH} as tinyglobby@${NEXT_FAST_GLOB_ALIAS_VERSION}; found ${installationSummary(fastGlobInstallations)}`,
+    );
+  }
+
+  for (const packageName of ["braces", "micromatch"]) {
+    const installations = packageInstallations(lockfile, packageName);
+    if (installations.length > 0) {
+      errors.push(
+        `${packageName} must have no physical installation after the scoped alias; found ${installationSummary(installations)}`,
+      );
+    }
+  }
+
+  const unexpectedNamedFastGlob = Object.entries(packages).filter(
+    ([packagePath, metadata]) =>
+      metadata?.name === NEXT_FAST_GLOB_PACKAGE &&
+      packagePath !== NEXT_FAST_GLOB_ALIAS_PATH,
+  );
+  if (unexpectedNamedFastGlob.length > 0) {
+    errors.push(
+      `real fast-glob package residue is forbidden: ${installationSummary(unexpectedNamedFastGlob)}`,
+    );
   }
   return errors;
 }
@@ -1677,6 +1870,18 @@ export function scanRepository(repositoryRoot = process.cwd(), options = {}) {
   );
   errors.push(...validateManifestVersions(manifests));
   errors.push(...validateManifestLockConsistency(manifests, lockfile));
+  errors.push(
+    ...validateAdminAuthSupplyChain(
+      manifests,
+      lockfile,
+      JSON.parse(
+        readFileSync(
+          resolve(repositoryRoot, "node_modules", "argon2", "package.json"),
+          "utf8",
+        ),
+      ),
+    ),
+  );
   errors.push(...validateReactTypesSingleton(manifests, lockfile));
   errors.push(...validatePrismaDeepmergeOverride(manifests, lockfile));
   errors.push(...validatePrismaMysqlOverride(manifests, lockfile));

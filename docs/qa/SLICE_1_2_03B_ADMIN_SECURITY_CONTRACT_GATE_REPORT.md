@@ -2,16 +2,90 @@
 
 Date : 2026-09-28
 
-Dernière réconciliation documentaire : 2026-10-01
+Dernière réconciliation documentaire : 2026-10-02
 
-Branche : `feat/s1-2-03b-admin-security-contract-gate`
+Branche historique 03B : `feat/s1-2-03b-admin-security-contract-gate`
+
+Branche de préparation C1 actuelle :
+`feat/s1-2-03c1-admin-auth-session-runtime`
 
 Baseline : `09e64c889231cfa57cf68cb44cdf05ae47ad356d`
 
 Arbre baseline : `94cb165f651c1ccc2f06297e7c8024e3570a2ce8`
 
-Statut : **R4 VALIDÉ LOCALEMENT LE 2026-10-01 — ÉTAT DE PUBLICATION ET DE CI
-COURANT DANS GIT/GITHUB — PR #48 DRAFT NON FUSIONNÉE**
+Statut : **R4 FUSIONNÉ VIA PR #48 LE 2026-10-02 — QUATRE WORKFLOWS
+POST-FUSION RÉUSSIS — RAPPORT CONTRACTUEL HISTORIQUE ; RUNTIME C1 DOCUMENTÉ
+SÉPARÉMENT**
+
+## État courant post-fusion et préparation C1 — 2026-10-02
+
+La PR #48 est fusionnée et fermée, non Draft, sous le titre inchangé
+`feat(contracts): define S1.2-03B Admin security gate`. Son merge est
+`c97992ca2c82bc4f22f9222ea98ed53714fede4c`, arbre
+`c8a6d52e7dcfdd24b5b9d0caee14363fa8220869`, et son empreinte de corps est
+`27de6246da0dfa178dfd19e9d128bd4d6d0f48f23b4ca53ed7c4ac8f26a76708`.
+Infrastructure `36991329968`, Launcher Windows `36991329948`, Security
+`36991329957` et Quality Linux `36991330060` sont tous
+`push/main`, tentative 1, `completed/success` sur ce merge.
+
+Ce bloc décrivait l'instantané de préparation contractuelle antérieur au mandat
+runtime. Les sections R0–R4 ci-dessous restent historiques. L'implémentation C1
+locale ultérieure, non publiée, est suivie dans
+[le rapport S1.2-03C1](SLICE_1_2_03C1_ADMIN_AUTH_SESSION_RUNTIME_REPORT.md) ; C2
+et C3 restent `Not started`.
+
+### Arbitrages CTO C1 désormais contractés
+
+1. Enrollment et QR distinguent explicitement succès et échecs : contexte
+   recovery prouvé côté serveur vers `AuditLog/ADMIN_RECOVERY`, sinon
+   `AdminSecurityEvent`. Les données présentées par le client ne constituent
+   jamais seules une preuve.
+2. La rotation consomme le TOTP du corps comme step-up inline
+   `RECOVERY_CODE_ROTATION`; aucun pré-step-up ni second OTP, compteur global
+   anti-rejeu et transaction compteur/batch/idempotence/audit.
+3. Le dépassement de trois familles applique l'éviction LRU atomique sous
+   verrou utilisateur après authentification complète, ordre déterministe ; un
+   refresh reste dans la même famille.
+4. Les douze opérations C1 ajoutent 503 `SERVICE_UNAVAILABLE` dans
+   l'`ErrorResponse` fermé, sans changer C2. Rollback confirmé et COMMIT inconnu
+   sont distingués ; aucun secret ni succès avant commit confirmé et aucun
+   retry aveugle. Le schéma impose code/message/détails vides et
+   `retryable=false`.
+5. Le futur writer PostgreSQL est séparé du lecteur, strictement borné, avec
+   sinks `INSERT`-only sans `RETURNING`; le lecteur devra devenir une allowlist
+   explicite. Ce principe n'implémente aucune ACL, migration ou connexion.
+
+Les nombres candidats de modèles/tables, la migration datée, les dépendances et
+la grande allowlist runtime restent des propositions non autorisées.
+
+### Validation locale de la préparation contractuelle C1
+
+Les contrôles portent sur les quatorze fichiers existants de l'allowlist C1.
+Le validateur confirme 60 chemins, 67 opérations, 137 schémas, 18 invariants
+hérités et 33 modèles cibles inchangés. La répartition reste C1=12, C2=15 et
+C3=0 ; les cinq retraits `SUPPORT` et la politique JWS R4 sont préservés.
+
+La génération exacte avec Prettier 3.9.6 est courante. Les tests ciblés
+OpenAPI et boundary passent 299/299, et les tests Contracts passent 7/7. Le
+scanner officiel exécuté sur ce worktree passe sur 358 fichiers avec
+`history=true`, 52 sources immuables et cinq scripts d'installation qualifiés.
+La suite scanner inchangée passe séparément 88/88 depuis le worktree déjà
+outillé.
+
+Le `test:tooling` racine lancé sans installation termine à 303/304 : son seul
+échec est le chargement ESM de `deepmerge-ts` par un sous-processus depuis ce
+worktree dépourvu de `node_modules`. Il est donc **BLOQUÉ PAR
+L'ENVIRONNEMENT**, et non déclaré PASS. De même, les commandes npm Contracts
+exactes de lint, typecheck et build ne peuvent résoudre les dépendances depuis
+ce worktree isolé ; les contrôles équivalents utilisant les versions et
+configurations byte-identiques du worktree déjà outillé passent. Aucun lien,
+jonction, installation, manifeste ou lockfile n'a été créé ou modifié pour
+masquer cette limite.
+
+Les validations runtime, Prisma, migration, PostgreSQL, navigateur et
+interface sont **NON EXÉCUTÉES**, car ces domaines sont absents et hors du
+mandat contract-only. C1 ne contient toujours aucune implémentation runtime ;
+C2 et C3 restent `Not started`.
 
 ## Instantané historique R0 prépublication — 2026-09-29
 

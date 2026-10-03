@@ -22,11 +22,13 @@ $container = 'kora-s1203a-validation-' + $PID + '-' + ([guid]::NewGuid().ToStrin
 $secretDirectory = Join-Path ([IO.Path]::GetTempPath()) ('kora-s1203a-secret-' + [guid]::NewGuid().ToString('N'))
 $ownerSecretFile = Join-Path $secretDirectory 'postgres_password'
 $runtimeSecretFile = Join-Path $secretDirectory 'postgres_runtime_password'
+$writerSecretFile = Join-Path $secretDirectory 'postgres_admin_writer_password'
 $provisionScript = [IO.Path]::GetFullPath(
   (Join-Path $PSScriptRoot '..\..\..\infra\postgres\provision-runtime.sh')
 )
 $ownerPassword = New-EphemeralSecret
 $runtimePassword = New-EphemeralSecret
+$writerPassword = New-EphemeralSecret
 $environmentNames = @(
   'S1203A_EPHEMERAL_POSTGRES',
   'S1203A_ADMIN_HOST',
@@ -35,6 +37,7 @@ $environmentNames = @(
   'S1203A_ADMIN_USER',
   'S1203A_ADMIN_PASSWORD',
   'S1203A_RUNTIME_PASSWORD',
+  'S1203A_WRITER_PASSWORD',
   'S1203A_VALIDATION_CONTAINER'
 )
 $savedEnvironment = @{}
@@ -69,6 +72,7 @@ try {
   $secretDirectoryCreated = $true
   [IO.File]::WriteAllText($ownerSecretFile, $ownerPassword + [Environment]::NewLine)
   [IO.File]::WriteAllText($runtimeSecretFile, $runtimePassword + [Environment]::NewLine)
+  [IO.File]::WriteAllText($writerSecretFile, $writerPassword + [Environment]::NewLine)
 
   $existingContainerId = docker container ls --all --quiet --filter "name=^/$container$"
   if ($LASTEXITCODE -ne 0) {
@@ -85,6 +89,7 @@ try {
     --env POSTGRES_DB=postgres `
     --mount "type=bind,source=$ownerSecretFile,target=/run/secrets/postgres_password,readonly" `
     --mount "type=bind,source=$runtimeSecretFile,target=/run/secrets/postgres_runtime_password,readonly" `
+    --mount "type=bind,source=$writerSecretFile,target=/run/secrets/postgres_admin_writer_password,readonly" `
     --mount "type=bind,source=$provisionScript,target=/usr/local/bin/kora-provision-postgresql-runtime.sh,readonly" `
     --publish 127.0.0.1::5432 `
     --tmpfs /var/lib/postgresql:rw,nosuid,nodev `
@@ -135,6 +140,7 @@ try {
   $env:S1203A_ADMIN_USER = 'kora_s1203a_admin'
   $env:S1203A_ADMIN_PASSWORD = $ownerPassword
   $env:S1203A_RUNTIME_PASSWORD = $runtimePassword
+  $env:S1203A_WRITER_PASSWORD = $writerPassword
   $env:S1203A_VALIDATION_CONTAINER = $container
 
   & node (Join-Path $PSScriptRoot 'validate-runtime-boundary.mjs')
@@ -151,6 +157,7 @@ finally {
   }
   $ownerPassword = $null
   $runtimePassword = $null
+  $writerPassword = $null
 
   if ($containerCreated) {
     try {
@@ -165,7 +172,7 @@ finally {
     }
   }
 
-  foreach ($secretFile in @($ownerSecretFile, $runtimeSecretFile)) {
+  foreach ($secretFile in @($ownerSecretFile, $runtimeSecretFile, $writerSecretFile)) {
     try {
       if (Test-Path -LiteralPath $secretFile) {
         [IO.File]::Delete($secretFile)

@@ -1,20 +1,24 @@
 # API KORA+
 
-Fondation NestJS de Sprint 0.3. Cette application ne contient aucune fonction
-métier.
+Fondation NestJS de Sprint 0.3 étendue par le runtime local S1.2-03C1. Les
+seules fonctions métier actives sont les douze opérations d'authentification et
+de session administrateur C1 ; C2 et C3 ne sont pas démarrés.
 
 ## Démarrage local
 
 1. Copier `.env.example` vers `.env`.
 2. Remplacer uniquement les valeurs locales nécessaires. `DATABASE_USER` et
-   `DATABASE_PASSWORD` doivent désigner le rôle runtime provisionné par
-   `infra:up` ou `infra:check`, jamais le propriétaire/migrateur.
+   `DATABASE_PASSWORD` doivent désigner le lecteur runtime ;
+   `ADMIN_DATABASE_USER` et `ADMIN_DATABASE_PASSWORD` doivent désigner le
+   writer administratif provisionné par `infra:up` ou `infra:check`. Les deux
+   identités et secrets sont distincts, et ne désignent jamais le
+   propriétaire/migrateur.
 3. Depuis la racine du dépôt, exécuter `npm.cmd run db:generate --workspace
 @kora-plus/api` sous Windows.
 4. Exécuter `npm.cmd run start:dev --workspace @kora-plus/api`.
 
-L’API écoute sur l’hôte et le port validés par la configuration. Les futures
-routes applicatives sont sous le préfixe `/api/v1`. Les health checks
+L’API écoute sur l’hôte et le port validés par la configuration. Les routes
+applicatives sont sous le préfixe `/api/v1`. Les health checks
 d’infrastructure restent volontairement à la racine.
 
 ## Health checks
@@ -23,8 +27,9 @@ d’infrastructure restent volontairement à la racine.
 - `GET /health/ready` sonde PostgreSQL et Redis à la demande.
 
 La readiness répond `503` avec l’état séparé de chaque dépendance si l’une
-d’elles est indisponible. PostgreSQL est connecté par Prisma au démarrage pour
-attester la frontière de privilèges ; Redis et BullMQ restent paresseux.
+d’elles est indisponible. PostgreSQL est connecté par Prisma et par le pool
+writer au démarrage pour attester les deux frontières de privilèges ; Redis et
+BullMQ restent paresseux.
 
 ## Configuration
 
@@ -35,6 +40,11 @@ Les variables suivantes sont validées avant le démarrage :
 - `LOG_LEVEL`
 - `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER`,
   `DATABASE_PASSWORD`, `DATABASE_SSL`
+- `ADMIN_DATABASE_HOST`, `ADMIN_DATABASE_PORT`, `ADMIN_DATABASE_NAME`,
+  `ADMIN_DATABASE_USER`, `ADMIN_DATABASE_PASSWORD`, `ADMIN_DATABASE_SSL`
+- `ADMIN_ORIGIN`
+- `ADMIN_REDIS_HOST`, `ADMIN_REDIS_PORT`, `ADMIN_REDIS_PASSWORD` facultatif,
+  `ADMIN_REDIS_TLS`, `ADMIN_REDIS_WAIT_AOF_TIMEOUT_MS`
 - `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` facultatif, `REDIS_TLS`
 - `READINESS_TIMEOUT_MS`
 
@@ -43,9 +53,10 @@ jamais leur valeur.
 
 ## Frontière PostgreSQL runtime
 
-L’API construit un pool `pg` unique, utilisé par Prisma 7.9.1 via
-`@prisma/adapter-pg` 7.9.1 et par la readiness. Avant `application.init()`, elle
-exécute `SELECT 1` puis refuse le démarrage si le compte reçu :
+L’API construit un pool lecteur `pg`, utilisé par Prisma 7.9.1 via
+`@prisma/adapter-pg` 7.9.1, et un pool writer C1 distinct. La readiness agrège
+leurs probes. Avant `application.init()`, elle atteste les deux connexions et
+refuse le démarrage si le compte reçu :
 
 - diffère de l’identité de session ou possède un attribut administratif ;
 - hérite d’un rôle, détient un membership ou possède un objet dans un schéma
@@ -66,34 +77,37 @@ exécute `SELECT 1` puis refuse le démarrage si le compte reçu :
 - démarre avec `session_replication_role` différent de `origin` ;
 - reçoit un droit inattendu via `PUBLIC`.
 
-Le profil accepté est limité à `CONNECT`, `USAGE` sur `public` et `SELECT` sur
-les tables canoniques. Tout autre schéma non système doit rester inaccessible au
-rôle runtime. Les privilèges courants et par défaut sur ses objets, colonnes,
-séquences, routines, large objects et paramètres sont inspectés avant le
-démarrage. Le seul privilège par défaut accepté pour le runtime est le `SELECT`
-non redélégable sur les futures tables `public` du propriétaire explicite de la
-base ; le même privilège créé par un rôle tiers est refusé. Les default ACL de
-large objects du propriétaire sont normalisées ; celles d’un tiers sont refusées
-sans mutation. L’exécution des routines `pg_catalog` de large objects est
+Le profil lecteur accepté est limité à `CONNECT`, `USAGE` sur `public` et au
+`SELECT` des colonnes de projection C1. Le pool writer doit utiliser une
+identité et un secret distincts, ne reçoit que les privilèges de colonnes C1 et
+ne peut qu’insérer dans les sinks d’audit, sans `RETURNING`. Tout autre schéma
+non système doit rester inaccessible aux rôles runtime. Les privilèges courants
+et par défaut sur leurs objets, colonnes, séquences, routines, large objects et
+paramètres sont inspectés avant le démarrage. Aucune default ACL de table n'est
+accordée aux rôles lecteur ou writer ; une ACL par défaut tierce hors profil est
+refusée sans mutation. Les default ACL de large objects du propriétaire sont
+normalisées ; celles d’un tiers sont refusées sans mutation. L’exécution des
+routines `pg_catalog` de large objects est
 révoquée pour `PUBLIC` et le runtime ; une ACL directe du runtime ou une option
 de redélégation inattendue est refusée avant mutation. Les erreurs contiennent
 seulement des codes de violation, jamais un identifiant, mot de passe ou DSN.
 
 ## Prisma et BullMQ
 
-Le schéma Prisma canonique de 33 modèles est matérialisé par les deux migrations
-S1.2-02 : la baseline générée depuis `schema.prisma`, puis la couche d’intégrité
-PostgreSQL (`CHECK`, index partiels, fonctions et triggers). Le validateur
+Le schéma Prisma canonique de 39 modèles est matérialisé par les deux migrations
+historiques S1.2-02, puis par l’unique migration S1.2-03C1. Cette dernière crée
+les six modèles d’authentification administrative et renforce l’audit sans
+réécrire les lignes historiques. Le validateur
 `prisma/validate-baseline.mjs` exige un PostgreSQL éphémère local explicitement
 marqué, crée deux bases isolées, prouve leur reproductibilité et ne supprime que
 ces deux bases.
 
-Cette baseline n’implémente aucune route métier P2. S1.2-03A ajoute uniquement
-un adaptateur de lecture et une frontière de démarrage ; il n’ajoute aucun
-service ou droit d’écriture métier. BullMQ conserve sa configuration Redis
-partagée sans queue, worker ou job. Les transactions applicatives restent
-réservées à des lots ultérieurs explicitement autorisés et devront utiliser des
-rôles distincts, sans élargir le rôle de lecture.
+S1.2-03A conserve son adaptateur de lecture et sa frontière de démarrage.
+S1.2-03C1 ajoute un writer PostgreSQL séparé, transactionnel et strictement
+borné aux colonnes autorisées, sans élargir le rôle de lecture. Le rate limit
+C1 utilise un client Redis dédié, distinct de BullMQ, sans offline queue ni
+retry illimité. BullMQ conserve sa configuration Redis sans queue, worker ou
+job.
 
 ## Commandes
 
@@ -103,6 +117,11 @@ rôles distincts, sans élargir le rôle de lecture.
 - `npm.cmd test --workspace @kora-plus/api`
 - `npm.cmd run build --workspace @kora-plus/api`
 - `npm.cmd run db:generate --workspace @kora-plus/api`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File
+apps/api/prisma/run-admin-auth-runtime-validation.ps1` : exécute les scénarios
+  PostgreSQL 18.4 historiques puis fresh, compare leurs catalogues, prouve les
+  contraintes, triggers et ACL reader/writer C1, puis exerce les routes HTTP
+  avec PostgreSQL, Redis et clés éphémères réels ;
 - `powershell -NoProfile -ExecutionPolicy Bypass -File
 apps/api/prisma/run-runtime-boundary-validation.ps1` : build API, crée un conteneur
   PostgreSQL 18.4 isolé en `tmpfs`, applique les migrations existantes sous

@@ -1,4 +1,4 @@
-name: kora-plus-local
+name: ${KORA_INFRA_PROJECT_NAME:-kora-plus-local}
 
 services:
   postgres:
@@ -8,9 +8,11 @@ services:
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       POSTGRES_USER: ${KORA_POSTGRES_USER:?KORA_POSTGRES_USER is required}
       KORA_POSTGRES_RUNTIME_USER: ${KORA_POSTGRES_RUNTIME_USER:?KORA_POSTGRES_RUNTIME_USER is required}
+      KORA_POSTGRES_ADMIN_WRITER_USER: ${KORA_POSTGRES_ADMIN_WRITER_USER:?KORA_POSTGRES_ADMIN_WRITER_USER is required}
     secrets:
       - postgres_password
       - postgres_runtime_password
+      - postgres_admin_writer_password
     ports:
       - "127.0.0.1:${KORA_POSTGRES_PORT:?KORA_POSTGRES_PORT is required}:5432"
     volumes:
@@ -31,7 +33,7 @@ services:
     restart: unless-stopped
     labels:
       com.kora-plus.managed: "true"
-      com.kora-plus.project: kora-plus-local
+      com.kora-plus.project: ${KORA_INFRA_PROJECT_NAME:-kora-plus-local}
       com.kora-plus.service: postgresql
 
   redis:
@@ -61,35 +63,37 @@ services:
     restart: unless-stopped
     labels:
       com.kora-plus.managed: "true"
-      com.kora-plus.project: kora-plus-local
+      com.kora-plus.project: ${KORA_INFRA_PROJECT_NAME:-kora-plus-local}
       com.kora-plus.service: redis
 
 networks:
   local:
-    name: kora-plus-local-network
+    name: ${KORA_INFRA_NETWORK_NAME:-kora-plus-local-network}
     driver: bridge
     labels:
       com.kora-plus.managed: "true"
-      com.kora-plus.project: kora-plus-local
+      com.kora-plus.project: ${KORA_INFRA_PROJECT_NAME:-kora-plus-local}
 
 volumes:
   postgres-data:
-    name: kora-plus-local-postgres-data
+    name: ${KORA_INFRA_POSTGRES_VOLUME_NAME:-kora-plus-local-postgres-data}
     labels:
       com.kora-plus.managed: "true"
-      com.kora-plus.project: kora-plus-local
+      com.kora-plus.project: ${KORA_INFRA_PROJECT_NAME:-kora-plus-local}
       com.kora-plus.volume: postgresql
   redis-data:
-    name: kora-plus-local-redis-data
+    name: ${KORA_INFRA_REDIS_VOLUME_NAME:-kora-plus-local-redis-data}
     labels:
       com.kora-plus.managed: "true"
-      com.kora-plus.project: kora-plus-local
+      com.kora-plus.project: ${KORA_INFRA_PROJECT_NAME:-kora-plus-local}
       com.kora-plus.volume: redis
 
 secrets:
   postgres_password:
-    file: ./.local/secrets/postgres_password
+    file: ${KORA_INFRA_LOCAL_DIRECTORY:-./.local}/secrets/postgres_password
   postgres_runtime_password:
-    file: ./.local/secrets/postgres_runtime_password
+    file: ${KORA_INFRA_LOCAL_DIRECTORY:-./.local}/secrets/postgres_runtime_password
+  postgres_admin_writer_password:
+    file: ${KORA_INFRA_LOCAL_DIRECTORY:-./.local}/secrets/postgres_admin_writer_password
   redis_password:
-    file: ./.local/secrets/redis_password
+    file: ${KORA_INFRA_LOCAL_DIRECTORY:-./.local}/secrets/redis_password

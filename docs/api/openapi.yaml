@@ -56,6 +56,12 @@
     "absoluteWindowHours": 12,
     "sensitiveActionTotpFreshnessMinutes": 5,
     "maximumActiveSessionFamilies": 3,
+    "activeSessionFamilyDefinition": "NOT_REVOKED_AND_IDLE_EXPIRY_AFTER_NOW_AND_ABSOLUTE_EXPIRY_AFTER_NOW",
+    "sessionFamilyOverflowPolicy": "ATOMIC_LRU_EVICTION_AFTER_COMPLETE_AUTHENTICATION_UNDER_ADMIN_USER_LOCK",
+    "sessionFamilyLruOrder": ["lastActivityAt_ASC", "createdAt_ASC", "id_ASC"],
+    "sessionFamilyOverflowTransaction": "REVOKE_REQUIRED_ACTIVE_FAMILIES_CREATE_NEW_FAMILY_AND_WRITE_AUDIT_IN_ONE_TRANSACTION",
+    "refreshCreatesSessionFamily": false,
+    "auditFailureRollsBackUncommittedSessionFamilyChanges": true,
     "recoveryCodeSelector": "PUBLIC_RANDOM_SELECTOR",
     "recoveryCodeVerifierEntropyBits": 128,
     "recoveryCodeAlphabet": "NON_AMBIGUOUS",
@@ -79,10 +85,10 @@
     "auditEventClasses": ["LOGIN", "SESSION", "EXPORT", "BUSINESS"],
     "auditContextCardinality": "EXACTLY_ONE",
     "auditActorSubjectSeparation": true,
-    "preAuthenticationSink": "AdminSecurityEvent_FOR_SUCCESS_AND_FAILURE_WITHOUT_PROVEN_AUDIT_CONTEXT",
+    "preAuthenticationSink": "AdminSecurityEvent_WITHOUT_PROVEN_AUDIT_CONTEXT_ADMIN_RECOVERY_AUDIT_LOG_WHEN_SERVER_PROVEN",
     "authenticatedOrProvenMutationSink": "AuditLog_IN_SAME_TRANSACTION",
     "failureAuditRouting": "EACH_OPERATION_ROUTES_UNPROVEN_CONTEXT_TO_ADMIN_SECURITY_EVENT_AND_PROVEN_CONTEXT_BY_EXACT_FAILURE_SINK_MAP",
-    "failureAuditWrite": "DURABLE_BEFORE_ERROR_RESPONSE_AND_ATOMIC_WITH_ANY_SECURITY_STATE_CHANGE",
+    "failureAuditWrite": "DURABLE_BEFORE_ERROR_RESPONSE_AND_ATOMIC_WITH_ANY_SECURITY_STATE_CHANGE_EXCEPT_EXPLICIT_SAFE_503_WHEN_DURABILITY_ITSELF_IS_IMPOSSIBLE",
     "adminSecurityEventContract": "NO_ACTOR_IMPERSONATION_REQUEST_ID_EVENT_CLASS_OUTCOME_REASON_CODE_REDACTED_SUBJECT_DIGEST_NO_SECRET",
     "auditRetention": "APPEND_ONLY_NO_DELETION_UNTIL_PRODUCT_LEGAL_RETENTION_DECISION",
     "auditEvidence": "ENTITY_MASKED_BEFORE_AFTER_REQUEST_CORRELATION_CAUSATION_AND_OPTIONAL_DELEGATION",
@@ -153,10 +159,84 @@
     },
     "deliverySlices": ["S1.2-03C1", "S1.2-03C2"]
   },
+  "x-kora-admin-enrollment-audit-routing-policy": {
+    "operationIds": [
+      "createAdminTotpEnrollment",
+      "deliverAdminTotpEnrollmentQr"
+    ],
+    "serverProvenRecoveryContext": "VALID_MFA_RECOVERY_BOUND_TO_ACTOR",
+    "requiredServerChecks": [
+      "OWNERSHIP",
+      "ACTOR_BINDING",
+      "ACTIVE_STATE",
+      "NOT_EXPIRED"
+    ],
+    "clientEvidenceNeverSufficient": ["COOKIE", "SELECTOR", "IDENTIFIER"],
+    "provenContextSink": "AUDIT_LOG_ADMIN_RECOVERY",
+    "unprovenContextSink": "ADMIN_SECURITY_EVENT",
+    "successAndFailureRoutingExplicit": true,
+    "mutationAndSecurityRecordAtomic": true
+  },
+  "x-kora-admin-recovery-code-rotation-policy": {
+    "operationId": "rotateAdminRecoveryCodes",
+    "stepUpMode": "INLINE_TOTP_REQUEST_BODY",
+    "stepUpPurpose": "RECOVERY_CODE_ROTATION",
+    "priorStepUpPolicy": "NOT_REQUIRED_AND_DOES_NOT_SUBSTITUTE_FOR_BODY_TOTP",
+    "secondOtpRequired": false,
+    "totpCounterScope": "GLOBAL_PER_ADMIN_USER_REJECT_REUSE",
+    "transactionEffects": [
+      "CONSUME_TOTP_COUNTER",
+      "REPLACE_RECOVERY_CODE_BATCH",
+      "RECORD_IDEMPOTENCY",
+      "WRITE_AUDIT_LOG"
+    ],
+    "authorizesOtherPurpose": false
+  },
+  "x-kora-admin-session-family-policy": {
+    "maximumActiveFamilies": 3,
+    "creationTiming": "AFTER_COMPLETE_AUTHENTICATION",
+    "serializationLock": "ADMIN_USER",
+    "activeFamilyDefinition": "NOT_REVOKED_AND_IDLE_EXPIRY_AFTER_NOW_AND_ABSOLUTE_EXPIRY_AFTER_NOW",
+    "overflowPolicy": "ATOMIC_LRU_EVICTION",
+    "lruOrder": ["lastActivityAt_ASC", "createdAt_ASC", "id_ASC"],
+    "transactionEffects": [
+      "REVOKE_REQUIRED_ACTIVE_FAMILIES",
+      "CREATE_NEW_FAMILY",
+      "WRITE_AUDIT_RECORD"
+    ],
+    "auditFailure": "ROLLBACK_UNCOMMITTED_EFFECTS",
+    "refreshCreatesFamily": false
+  },
+  "x-kora-admin-c1-unavailability-policy": {
+    "operationIds": [
+      "loginAdmin",
+      "createAdminTotpEnrollment",
+      "deliverAdminTotpEnrollmentQr",
+      "confirmAdminTotpEnrollment",
+      "verifyAdminTotp",
+      "verifyAdminRecoveryCode",
+      "rotateAdminRecoveryCodes",
+      "stepUpAdminSession",
+      "refreshAdminSession",
+      "revokeCurrentAdminSession",
+      "listAdminSessions",
+      "revokeAdminSession"
+    ],
+    "httpStatus": 503,
+    "errorCode": "SERVICE_UNAVAILABLE",
+    "publicMessage": "Service temporairement indisponible.",
+    "publicDetails": "EMPTY_OBJECT",
+    "dependencyDisclosure": "FORBIDDEN",
+    "requiredDependencyFailure": "FAIL_CLOSED",
+    "criticalMutationWithoutDurableAudit": "FORBIDDEN",
+    "auditDurabilityImpossible": "ROLLBACK_UNCOMMITTED_RETURN_SAFE_503_NEUTRALIZED_OPERATIONAL_OBSERVATION_NO_DURABLE_AUDIT_CLAIM",
+    "commitAcknowledgementLoss": "UNKNOWN_OUTCOME_NO_SUCCESS_OR_SECRET_NO_BLIND_AUTOMATIC_RETRY",
+    "idempotencyAndSingleUseRulesPreserved": true
+  },
   "x-kora-admin-failure-audit-sinks": {
     "loginAdmin": "ADMIN_SECURITY_EVENT",
-    "createAdminTotpEnrollment": "ADMIN_SECURITY_EVENT",
-    "deliverAdminTotpEnrollmentQr": "ADMIN_SECURITY_EVENT",
+    "createAdminTotpEnrollment": "AUDIT_LOG_ADMIN_RECOVERY_IF_SERVER_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
+    "deliverAdminTotpEnrollmentQr": "AUDIT_LOG_ADMIN_RECOVERY_IF_SERVER_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
     "confirmAdminTotpEnrollment": "AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
     "verifyAdminTotp": "AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
     "verifyAdminRecoveryCode": "AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
@@ -359,6 +439,7 @@
     "IDEMPOTENCY_KEY_REQUIRED": 400,
     "IDEMPOTENCY_CONFLICT": 409,
     "PAYMENT_PROVIDER_UNAVAILABLE": 503,
+    "SERVICE_UNAVAILABLE": 503,
     "PAYMENT_ATTEMPT_NOT_FOUND": 404,
     "PAYMENT_ATTEMPT_TERMINAL": 409,
     "PAYMENT_WEBHOOK_INVALID": 400,
@@ -555,18 +636,21 @@
     "loginAdmin": [
       "VALIDATION_ERROR",
       "AUTH_INVALID_CREDENTIALS",
-      "RATE_LIMITED"
+      "RATE_LIMITED",
+      "SERVICE_UNAVAILABLE"
     ],
     "createAdminTotpEnrollment": [
       "VALIDATION_ERROR",
       "AUTH_REQUIRED",
       "FORBIDDEN",
-      "IDEMPOTENCY_CONFLICT"
+      "IDEMPOTENCY_CONFLICT",
+      "SERVICE_UNAVAILABLE"
     ],
     "deliverAdminTotpEnrollmentQr": [
       "AUTH_REQUIRED",
       "FORBIDDEN",
-      "SENSITIVE_RESPONSE_ALREADY_DELIVERED"
+      "SENSITIVE_RESPONSE_ALREADY_DELIVERED",
+      "SERVICE_UNAVAILABLE"
     ],
     "confirmAdminTotpEnrollment": [
       "OTP_INVALID",
@@ -574,40 +658,50 @@
       "FORBIDDEN",
       "IDEMPOTENCY_CONFLICT",
       "OTP_EXPIRED",
-      "RATE_LIMITED"
+      "RATE_LIMITED",
+      "SERVICE_UNAVAILABLE"
     ],
     "verifyAdminTotp": [
       "OTP_INVALID",
       "AUTH_REQUIRED",
       "OTP_EXPIRED",
-      "RATE_LIMITED"
+      "RATE_LIMITED",
+      "SERVICE_UNAVAILABLE"
     ],
     "verifyAdminRecoveryCode": [
       "ADMIN_RECOVERY_CODE_INVALID",
       "AUTH_REQUIRED",
-      "RATE_LIMITED"
+      "RATE_LIMITED",
+      "SERVICE_UNAVAILABLE"
     ],
     "rotateAdminRecoveryCodes": [
       "OTP_INVALID",
       "AUTH_REQUIRED",
       "FORBIDDEN",
       "IDEMPOTENCY_CONFLICT",
-      "RATE_LIMITED"
+      "RATE_LIMITED",
+      "SERVICE_UNAVAILABLE"
     ],
     "stepUpAdminSession": [
       "OTP_INVALID",
       "AUTH_REQUIRED",
       "FORBIDDEN",
-      "RATE_LIMITED"
+      "RATE_LIMITED",
+      "SERVICE_UNAVAILABLE"
     ],
-    "refreshAdminSession": ["AUTH_REFRESH_INVALID", "RATE_LIMITED"],
-    "revokeCurrentAdminSession": ["AUTH_REQUIRED"],
-    "listAdminSessions": ["AUTH_REQUIRED"],
+    "refreshAdminSession": [
+      "AUTH_REFRESH_INVALID",
+      "RATE_LIMITED",
+      "SERVICE_UNAVAILABLE"
+    ],
+    "revokeCurrentAdminSession": ["AUTH_REQUIRED", "SERVICE_UNAVAILABLE"],
+    "listAdminSessions": ["AUTH_REQUIRED", "SERVICE_UNAVAILABLE"],
     "revokeAdminSession": [
       "VALIDATION_ERROR",
       "AUTH_REQUIRED",
       "FORBIDDEN",
-      "ADMIN_SESSION_NOT_FOUND"
+      "ADMIN_SESSION_NOT_FOUND",
+      "SERVICE_UNAVAILABLE"
     ],
     "requestAdminPasswordReset": ["VALIDATION_ERROR", "RATE_LIMITED"],
     "resetAdminPassword": ["ADMIN_RECOVERY_INVALID", "RATE_LIMITED"],
@@ -1931,7 +2025,8 @@
           },
           "400": { "$ref": "#/components/responses/ClientError" },
           "401": { "$ref": "#/components/responses/ClientError" },
-          "429": { "$ref": "#/components/responses/RateLimitedError" }
+          "429": { "$ref": "#/components/responses/RateLimitedError" },
+          "503": { "$ref": "#/components/responses/AdminServiceUnavailable" }
         }
       }
     },
@@ -1944,9 +2039,11 @@
         "x-kora-auth-class": "PREAUTH",
         "x-kora-roles": [],
         "x-kora-step-up-required": false,
-        "x-kora-audit-sink": "ADMIN_SECURITY_EVENT",
+        "x-kora-audit-sink": "AUDIT_LOG_ADMIN_RECOVERY_IF_SERVER_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
+        "x-kora-audit-context-proof": "SERVER_VERIFIED_MFA_RECOVERY_OWNERSHIP_ACTOR_BINDING_STATE_AND_EXPIRY_CLIENT_INPUT_NEVER_SUFFICIENT",
         "x-kora-origin-policy": "EXACT_ALLOWLIST",
         "x-kora-security-record-atomic": true,
+        "x-kora-transactional-audit": true,
         "x-kora-idempotent": true,
         "x-kora-idempotent-replay": "REPLAY_SAME_RESPONSE_FOR_SAME_PAYLOAD_DIFFERENT_PAYLOAD_409",
         "security": [
@@ -1980,7 +2077,8 @@
           "400": { "$ref": "#/components/responses/ClientError" },
           "401": { "$ref": "#/components/responses/ClientError" },
           "403": { "$ref": "#/components/responses/ClientError" },
-          "409": { "$ref": "#/components/responses/ClientError" }
+          "409": { "$ref": "#/components/responses/ClientError" },
+          "503": { "$ref": "#/components/responses/AdminServiceUnavailable" }
         }
       }
     },
@@ -1993,9 +2091,11 @@
         "x-kora-auth-class": "PREAUTH",
         "x-kora-roles": [],
         "x-kora-step-up-required": false,
-        "x-kora-audit-sink": "ADMIN_SECURITY_EVENT",
+        "x-kora-audit-sink": "AUDIT_LOG_ADMIN_RECOVERY_IF_SERVER_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
+        "x-kora-audit-context-proof": "SERVER_VERIFIED_MFA_RECOVERY_OWNERSHIP_ACTOR_BINDING_STATE_AND_EXPIRY_CLIENT_INPUT_NEVER_SUFFICIENT",
         "x-kora-origin-policy": "EXACT_ALLOWLIST",
         "x-kora-security-record-atomic": true,
+        "x-kora-transactional-audit": true,
         "x-kora-idempotent": true,
         "x-kora-idempotent-replay": "SECRET_RESPONSE_RETRY_409",
         "x-kora-non-persistable-response": true,
@@ -2029,7 +2129,8 @@
           },
           "401": { "$ref": "#/components/responses/ClientError" },
           "403": { "$ref": "#/components/responses/ClientError" },
-          "409": { "$ref": "#/components/responses/ClientError" }
+          "409": { "$ref": "#/components/responses/ClientError" },
+          "503": { "$ref": "#/components/responses/AdminServiceUnavailable" }
         }
       }
     },
@@ -2098,7 +2199,8 @@
           "403": { "$ref": "#/components/responses/ClientError" },
           "409": { "$ref": "#/components/responses/ClientError" },
           "410": { "$ref": "#/components/responses/ClientError" },
-          "429": { "$ref": "#/components/responses/RateLimitedError" }
+          "429": { "$ref": "#/components/responses/RateLimitedError" },
+          "503": { "$ref": "#/components/responses/AdminServiceUnavailable" }
         }
       }
     },
@@ -2157,7 +2259,8 @@
           "400": { "$ref": "#/components/responses/ClientError" },
           "401": { "$ref": "#/components/responses/ClientError" },
           "410": { "$ref": "#/components/responses/ClientError" },
-          "429": { "$ref": "#/components/responses/RateLimitedError" }
+          "429": { "$ref": "#/components/responses/RateLimitedError" },
+          "503": { "$ref": "#/components/responses/AdminServiceUnavailable" }
         }
       }
     },
@@ -2215,7 +2318,8 @@
           },
           "400": { "$ref": "#/components/responses/ClientError" },
           "401": { "$ref": "#/components/responses/ClientError" },
-          "429": { "$ref": "#/components/responses/RateLimitedError" }
+          "429": { "$ref": "#/components/responses/RateLimitedError" },
+          "503": { "$ref": "#/components/responses/AdminServiceUnavailable" }
         }
       }
     },
@@ -2233,6 +2337,16 @@
           "SUPPORT"
         ],
         "x-kora-step-up-required": true,
+        "x-kora-step-up-mode": "INLINE_TOTP_REQUEST_BODY",
+        "x-kora-step-up-purpose": "RECOVERY_CODE_ROTATION",
+        "x-kora-prior-step-up-policy": "NOT_REQUIRED_AND_DOES_NOT_SUBSTITUTE_FOR_BODY_TOTP",
+        "x-kora-totp-counter-policy": "GLOBAL_PER_ADMIN_USER_REJECT_REUSE",
+        "x-kora-transaction-effects": [
+          "CONSUME_TOTP_COUNTER",
+          "REPLACE_RECOVERY_CODE_BATCH",
+          "RECORD_IDEMPOTENCY",
+          "WRITE_AUDIT_LOG"
+        ],
         "x-kora-audit-sink": "AUDIT_LOG",
         "x-kora-rate-limit-profile": "TOTP",
         "x-kora-origin-policy": "EXACT_ALLOWLIST",
@@ -2278,7 +2392,8 @@
           "401": { "$ref": "#/components/responses/ClientError" },
           "403": { "$ref": "#/components/responses/ClientError" },
           "409": { "$ref": "#/components/responses/ClientError" },
-          "429": { "$ref": "#/components/responses/RateLimitedError" }
+          "429": { "$ref": "#/components/responses/RateLimitedError" },
+          "503": { "$ref": "#/components/responses/AdminServiceUnavailable" }
         }
       }
     },
@@ -2333,7 +2448,8 @@
           "400": { "$ref": "#/components/responses/ClientError" },
           "401": { "$ref": "#/components/responses/ClientError" },
           "403": { "$ref": "#/components/responses/ClientError" },
-          "429": { "$ref": "#/components/responses/RateLimitedError" }
+          "429": { "$ref": "#/components/responses/RateLimitedError" },
+          "503": { "$ref": "#/components/responses/AdminServiceUnavailable" }
         }
       }
     },
@@ -2379,7 +2495,8 @@
             }
           },
           "401": { "$ref": "#/components/responses/ClientError" },
-          "429": { "$ref": "#/components/responses/RateLimitedError" }
+          "429": { "$ref": "#/components/responses/RateLimitedError" },
+          "503": { "$ref": "#/components/responses/AdminServiceUnavailable" }
         }
       }
     },
@@ -2404,7 +2521,8 @@
         "parameters": [{ "$ref": "#/components/parameters/AdminOrigin" }],
         "responses": {
           "204": { "description": "Current session revoked." },
-          "401": { "$ref": "#/components/responses/ClientError" }
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "503": { "$ref": "#/components/responses/AdminServiceUnavailable" }
         }
       }
     },
@@ -2435,7 +2553,8 @@
               }
             }
           },
-          "401": { "$ref": "#/components/responses/ClientError" }
+          "401": { "$ref": "#/components/responses/ClientError" },
+          "503": { "$ref": "#/components/responses/AdminServiceUnavailable" }
         }
       }
     },
@@ -2473,7 +2592,8 @@
           "400": { "$ref": "#/components/responses/ClientError" },
           "401": { "$ref": "#/components/responses/ClientError" },
           "403": { "$ref": "#/components/responses/ClientError" },
-          "404": { "$ref": "#/components/responses/ClientError" }
+          "404": { "$ref": "#/components/responses/ClientError" },
+          "503": { "$ref": "#/components/responses/AdminServiceUnavailable" }
         }
       }
     },
@@ -3397,6 +3517,53 @@
           }
         }
       },
+      "AdminServiceUnavailable": {
+        "description": "Uniform fail-closed Admin C1 dependency or audit-durability failure without dependency disclosure.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                { "$ref": "#/components/schemas/ErrorResponse" },
+                {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code", "details", "message", "retryable"],
+                      "properties": {
+                        "code": { "const": "SERVICE_UNAVAILABLE" },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "maxProperties": 0
+                        },
+                        "message": {
+                          "const": "Service temporairement indisponible."
+                        },
+                        "retryable": { "const": false }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "examples": {
+              "unavailable": {
+                "value": {
+                  "error": {
+                    "code": "SERVICE_UNAVAILABLE",
+                    "details": {},
+                    "message": "Service temporairement indisponible.",
+                    "retryable": false
+                  },
+                  "requestId": "req_example_503"
+                }
+              }
+            }
+          }
+        }
+      },
       "PublishConflict": {
         "description": "Publication precondition, state or idempotency conflict.",
         "content": {
@@ -3583,6 +3750,7 @@
           "IDEMPOTENCY_KEY_REQUIRED",
           "IDEMPOTENCY_CONFLICT",
           "PAYMENT_PROVIDER_UNAVAILABLE",
+          "SERVICE_UNAVAILABLE",
           "PAYMENT_ATTEMPT_NOT_FOUND",
           "PAYMENT_ATTEMPT_TERMINAL",
           "PAYMENT_WEBHOOK_INVALID",
@@ -4976,8 +5144,7 @@
               "AUDIT_EXPORT",
               "INVITATION",
               "ROLE_CHANGE",
-              "STATUS_CHANGE",
-              "RECOVERY_CODE_ROTATION"
+              "STATUS_CHANGE"
             ]
           },
           "totpCode": {

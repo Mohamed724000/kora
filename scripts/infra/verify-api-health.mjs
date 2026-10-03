@@ -49,9 +49,27 @@ function delay(milliseconds) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
 }
 
-function apiEnvironment({ local, password, redisPassword, user }) {
+function apiEnvironment({
+  local,
+  password,
+  redisPassword,
+  user,
+  writerPassword,
+}) {
   return {
     ...process.env,
+    ADMIN_DATABASE_HOST: "127.0.0.1",
+    ADMIN_DATABASE_NAME: local.KORA_POSTGRES_DB,
+    ADMIN_DATABASE_PASSWORD: writerPassword,
+    ADMIN_DATABASE_PORT: local.KORA_POSTGRES_PORT,
+    ADMIN_DATABASE_SSL: "false",
+    ADMIN_DATABASE_USER: local.KORA_POSTGRES_ADMIN_WRITER_USER,
+    ADMIN_ORIGIN: "https://admin.kora.invalid",
+    ADMIN_REDIS_HOST: "127.0.0.1",
+    ADMIN_REDIS_PASSWORD: redisPassword,
+    ADMIN_REDIS_PORT: local.KORA_REDIS_PORT,
+    ADMIN_REDIS_TLS: "false",
+    ADMIN_REDIS_WAIT_AOF_TIMEOUT_MS: "1000",
     API_HOST: "127.0.0.1",
     API_PORT: local.KORA_API_PORT,
     DATABASE_HOST: "127.0.0.1",
@@ -313,8 +331,16 @@ try {
   const local = readLocalConfiguration();
   const postgresPassword = readSecret("postgres_password");
   const postgresRuntimePassword = readSecret("postgres_runtime_password");
+  const postgresAdminWriterPassword = readSecret(
+    "postgres_admin_writer_password",
+  );
   const redisPassword = readSecret("redis_password");
-  sensitiveValues = [postgresPassword, postgresRuntimePassword, redisPassword];
+  sensitiveValues = [
+    postgresPassword,
+    postgresRuntimePassword,
+    postgresAdminWriterPassword,
+    redisPassword,
+  ];
   const baseUrl = `http://127.0.0.1:${local.KORA_API_PORT}`;
 
   deployMigrationsAsOwner(
@@ -323,6 +349,7 @@ try {
       password: postgresPassword,
       redisPassword,
       user: local.KORA_POSTGRES_USER,
+      writerPassword: postgresAdminWriterPassword,
     }),
     sensitiveValues,
   );
@@ -338,6 +365,7 @@ try {
       password: postgresPassword,
       redisPassword,
       user: local.KORA_POSTGRES_USER,
+      writerPassword: postgresAdminWriterPassword,
     }),
     secrets: sensitiveValues,
   });
@@ -349,6 +377,7 @@ try {
       password: postgresRuntimePassword,
       redisPassword,
       user: local.KORA_POSTGRES_RUNTIME_USER,
+      writerPassword: postgresAdminWriterPassword,
     }),
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
@@ -422,6 +451,17 @@ try {
   console.log(`PostgreSQL recovery: ready=200, API PID=${expectedPid}.`);
 
   resetProject(PROJECT_NAME);
+  deployMigrationsAsOwner(
+    apiEnvironment({
+      local,
+      password: postgresPassword,
+      redisPassword,
+      user: local.KORA_POSTGRES_USER,
+      writerPassword: postgresAdminWriterPassword,
+    }),
+    sensitiveValues,
+  );
+  provisionPostgresqlRuntime();
   assertApiProcess(api, expectedPid, "targeted reset");
   const liveAfterReset = await readHealthEventually({
     api,

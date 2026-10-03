@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { RuntimeConfig } from '../config/runtime-config';
+import { AdminWriterService } from './admin-writer.service';
 import { PrismaService, type RuntimeBoundarySnapshot } from './prisma.service';
 import { RuntimeDatabaseBoundary } from './runtime-database-boundary';
 
@@ -107,6 +108,7 @@ export function runtimeBoundaryViolations(
 export class PostgresqlRuntimeBoundary extends RuntimeDatabaseBoundary {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(AdminWriterService) private readonly adminWriter: AdminWriterService,
     @Inject(ConfigService) private readonly config: ConfigService<RuntimeConfig, true>,
   ) {
     super();
@@ -114,11 +116,13 @@ export class PostgresqlRuntimeBoundary extends RuntimeDatabaseBoundary {
 
   async assertLeastPrivilege(): Promise<void> {
     await this.prisma.selectOne();
+    await this.prisma.selectCustomerProbe();
     const snapshot = await this.prisma.runtimeBoundarySnapshot();
     const expectedUser = this.config.get('postgresql', { infer: true }).user;
     const violations = runtimeBoundaryViolations(snapshot, expectedUser);
     if (violations.length > 0) {
       throw new RuntimeDatabaseBoundaryError(violations);
     }
+    await this.adminWriter.assertLeastPrivilege();
   }
 }

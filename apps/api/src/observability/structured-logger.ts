@@ -14,6 +14,18 @@ export const REDACTION_PATHS = [
   'password',
   'token',
   'otp',
+  'seed',
+  'totpSecretEncrypted',
+  'otpauthUri',
+  'qrPng',
+  'verifier',
+  'csrf',
+  'jwt',
+  'wrappedDek',
+  'dek',
+  'privateKey',
+  'keyMaterial',
+  'encryptionKeyId',
   'email',
   'phone',
   'dsn',
@@ -23,6 +35,18 @@ export const REDACTION_PATHS = [
   '*.password',
   '*.token',
   '*.otp',
+  '*.seed',
+  '*.totpSecretEncrypted',
+  '*.otpauthUri',
+  '*.qrPng',
+  '*.verifier',
+  '*.csrf',
+  '*.jwt',
+  '*.wrappedDek',
+  '*.dek',
+  '*.privateKey',
+  '*.keyMaterial',
+  '*.encryptionKeyId',
   '*.email',
   '*.phone',
   '*.dsn',
@@ -71,7 +95,7 @@ const SENSITIVE_MESSAGE_PATTERNS: readonly {
   },
   {
     pattern:
-      /\b(authorization|cookie|password|passwd|pwd|token|access[_-]?token|refresh[_-]?token|otp|dsn|email|phone|telephone|tel)(\s*(?:=|:)\s*|\s+)(?:"[^"]*"|'[^']*'|[^\s,;]+)/giu,
+      /\b(authorization|cookie|password|passwd|pwd|token|access[_-]?token|refresh[_-]?token|otp|seed|totp[_-]?secret(?:[_-]?encrypted)?|otpauth[_-]?uri|qr[_-]?png|verifier|csrf|jwt|wrapped[_-]?dek|dek|private[_-]?key|key[_-]?material|encryption[_-]?key[_-]?id|dsn|email|phone|telephone|tel)(\s*(?:=|:)\s*|\s+)(?:"[^"]*"|'[^']*'|[^\s,;]+)/giu,
     replacement: `$1$2${REDACTED_VALUE}`,
   },
   {
@@ -100,7 +124,7 @@ export function sanitizeLogText(value: unknown): string {
 }
 
 const SENSITIVE_FIELD_PATTERN =
-  /^(?:authorization|cookie|password|passwd|pwd|token|access[_-]?token|refresh[_-]?token|otp|dsn|email|phone|telephone|tel|user|username|ip(?:_address|address)?|device[_-]?id|card|payment)$/iu;
+  /^(?:authorization|cookie|password|passwd|pwd|token|access[_-]?token|refresh[_-]?token|otp|seed|totp[_-]?secret(?:[_-]?encrypted)?|otpauth[_-]?uri|qr[_-]?png|verifier|csrf|jwt|wrapped[_-]?dek|dek|private[_-]?key|key[_-]?material|encryption[_-]?key[_-]?id|dsn|email|phone|telephone|tel|user|username|ip(?:_address|address)?|device[_-]?id|card|payment)$/iu;
 
 export function sanitizeObservabilityValue(value: unknown, field = ''): unknown {
   if (SENSITIVE_FIELD_PATTERN.test(field)) {

@@ -16,8 +16,18 @@ describe('createStructuredLogger', () => {
       authorization: 'Bearer private-credential',
       cookie: 'session=private-cookie',
       credentials: {
+        csrf: 'private-csrf',
+        encryptionKeyId: 'private-encryption-key-id',
+        jwt: 'private-jwt',
+        keyMaterial: 'private-key-material',
         password: 'private-password',
+        privateKey: 'private-key',
+        qrPng: 'private-qr-png',
+        seed: 'private-seed',
         token: 'private-token',
+        totpSecretEncrypted: 'private-envelope',
+        verifier: 'private-verifier',
+        wrappedDek: 'private-wrapped-dek',
       },
       verification: {
         email: 'private@example.test',
@@ -35,6 +45,9 @@ describe('createStructuredLogger', () => {
     expect(output).not.toContain('private-cookie');
     expect(output).not.toContain('private-password');
     expect(output).not.toContain('private-token');
+    expect(output).not.toMatch(
+      /private-(?:csrf|encryption|jwt|key|qr|seed|envelope|verifier|wrapped)/,
+    );
     expect(output).not.toContain('private@example.test');
     expect(output).not.toContain('123456');
     expect(output).not.toContain('+22370000000');
@@ -55,6 +68,8 @@ describe('createStructuredLogger', () => {
       '912345',
       'direct@example.test',
       '+22370000000',
+      'direct-recovery-verifier',
+      'direct-wrapped-dek',
     ] as const;
     const message = [
       'Échec contrôlé',
@@ -64,6 +79,8 @@ describe('createStructuredLogger', () => {
       `OTP=${sensitiveValues[3]}`,
       `email=${sensitiveValues[4]}`,
       `phone=${sensitiveValues[5]}`,
+      `verifier=${sensitiveValues[6]}`,
+      `wrappedDek=${sensitiveValues[7]}`,
     ].join(' ');
 
     logger.log(message, 'SafeContext');

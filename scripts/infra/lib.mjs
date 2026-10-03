@@ -10,24 +10,53 @@ import { randomBytes } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const PROJECT_NAME = "kora-plus-local";
+const DEFAULT_INSTANCE = "local";
+const LEGACY_LIFECYCLE_CONFIRMATION = "kora-plus-local";
+const INSTANCE = process.env.KORA_INFRA_EPHEMERAL_INSTANCE ?? DEFAULT_INSTANCE;
+
+if (!/^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/u.test(INSTANCE)) {
+  throw new Error(
+    "KORA_INFRA_EPHEMERAL_INSTANCE must be a lowercase Docker identifier of at most 40 characters.",
+  );
+}
+
+const legacyLifecycleConfirmation =
+  process.env.KORA_INFRA_ALLOW_LEGACY_LIFECYCLE_CONFIRMATION ?? "false";
+if (!new Set(["false", "true"]).has(legacyLifecycleConfirmation)) {
+  throw new Error(
+    "KORA_INFRA_ALLOW_LEGACY_LIFECYCLE_CONFIRMATION must be true or false.",
+  );
+}
+
+export const PROJECT_NAME = `kora-plus-${INSTANCE}`;
 export const POSTGRES_IMAGE =
   "postgres:18.4-alpine3.24@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15";
 export const REDIS_IMAGE =
   "redis:7.2.15-alpine3.21@sha256:05a97a479bc73de66f087dc05b569010772880f778cc8671fa6b8aadee32e5c6";
 export const VOLUME_NAMES = [
-  "kora-plus-local-postgres-data",
-  "kora-plus-local-redis-data",
+  `${PROJECT_NAME}-postgres-data`,
+  `${PROJECT_NAME}-redis-data`,
 ];
-export const NETWORK_NAME = "kora-plus-local-network";
+export const NETWORK_NAME = `${PROJECT_NAME}-network`;
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 export const repositoryRoot = resolve(scriptDirectory, "..", "..");
 export const infrastructureDirectory = resolve(repositoryRoot, "infra");
-export const localDirectory = resolve(infrastructureDirectory, ".local");
+export const localDirectory =
+  INSTANCE === DEFAULT_INSTANCE
+    ? resolve(infrastructureDirectory, ".local")
+    : resolve(infrastructureDirectory, ".local", "instances", INSTANCE);
 export const secretsDirectory = resolve(localDirectory, "secrets");
 export const environmentFile = resolve(localDirectory, "compose.env");
 export const composeFile = resolve(infrastructureDirectory, "compose.yaml");
+const apiDirectory = resolve(repositoryRoot, "apps", "api");
+const prismaEntryPath = resolve(
+  repositoryRoot,
+  "node_modules",
+  "prisma",
+  "build",
+  "index.js",
+);
 export const postgresProvisionScript = resolve(
   infrastructureDirectory,
   "postgres",
@@ -35,6 +64,7 @@ export const postgresProvisionScript = resolve(
 );
 
 const SECRET_NAMES = [
+  "postgres_admin_writer_password",
   "postgres_password",
   "postgres_runtime_password",
   "redis_password",
@@ -43,17 +73,44 @@ const REQUIRED_ENVIRONMENT = [
   "KORA_POSTGRES_DB",
   "KORA_POSTGRES_USER",
   "KORA_POSTGRES_RUNTIME_USER",
+  "KORA_POSTGRES_ADMIN_WRITER_USER",
   "KORA_POSTGRES_PORT",
   "KORA_REDIS_PORT",
   "KORA_API_PORT",
 ];
+
+function requestedPort(name, fallback) {
+  const value = process.env[name] ?? fallback;
+  const port = Number(value);
+  if (!Number.isInteger(port) || port < 1024 || port > 65_535) {
+    throw new Error(`${name} must be an unprivileged TCP port.`);
+  }
+  return String(port);
+}
+
+const requestedPorts = {
+  KORA_API_PORT: requestedPort("KORA_INFRA_API_PORT", "3102"),
+  KORA_POSTGRES_PORT: requestedPort("KORA_INFRA_POSTGRES_PORT", "15432"),
+  KORA_REDIS_PORT: requestedPort("KORA_INFRA_REDIS_PORT", "16379"),
+};
+
+function dockerEnvironment() {
+  return {
+    ...process.env,
+    KORA_INFRA_LOCAL_DIRECTORY: localDirectory.replaceAll("\\", "/"),
+    KORA_INFRA_NETWORK_NAME: NETWORK_NAME,
+    KORA_INFRA_POSTGRES_VOLUME_NAME: VOLUME_NAMES[0],
+    KORA_INFRA_PROJECT_NAME: PROJECT_NAME,
+    KORA_INFRA_REDIS_VOLUME_NAME: VOLUME_NAMES[1],
+  };
+}
 
 function commandResult(argumentsList, options = {}) {
   const capture = options.capture === true;
   const result = spawnSync("docker", argumentsList, {
     cwd: repositoryRoot,
     encoding: "utf8",
-    env: process.env,
+    env: dockerEnvironment(),
     shell: false,
     stdio: capture ? "pipe" : "inherit",
     windowsHide: true,
@@ -109,7 +166,57 @@ function writeNewPrivateFile(path, content) {
   }
 }
 
+function assertNewEphemeralInstanceIsUnused() {
+  if (INSTANCE === DEFAULT_INSTANCE || existsSync(localDirectory)) {
+    return;
+  }
+
+  const containers = runDocker(
+    [
+      "ps",
+      "--all",
+      "--quiet",
+      "--no-trunc",
+      "--filter",
+      `label=com.docker.compose.project=${PROJECT_NAME}`,
+    ],
+    { capture: true },
+  ).stdout;
+  const existingResources = [];
+  if (containers.length > 0) {
+    existingResources.push(`containers for ${PROJECT_NAME}`);
+  }
+
+  for (const volumeName of VOLUME_NAMES) {
+    const volume = runDocker(["volume", "inspect", volumeName], {
+      allowFailure: true,
+      capture: true,
+    });
+    if (volume.status === 0) {
+      existingResources.push(`volume ${volumeName}`);
+    }
+  }
+
+  const network = runDocker(["network", "inspect", NETWORK_NAME], {
+    allowFailure: true,
+    capture: true,
+  });
+  if (network.status === 0) {
+    existingResources.push(`network ${NETWORK_NAME}`);
+  }
+
+  if (existingResources.length > 0) {
+    throw new Error(
+      `Ephemeral infrastructure instance is not unused: ${existingResources.join(
+        ", ",
+      )}.`,
+    );
+  }
+  console.log(`Ephemeral infrastructure instance ${PROJECT_NAME} is unused.`);
+}
+
 export function prepareLocalFiles() {
+  assertNewEphemeralInstanceIsUnused();
   mkdirSync(secretsDirectory, { recursive: true, mode: 0o700 });
   const created = [];
   const preserved = [];
@@ -129,17 +236,25 @@ export function prepareLocalFiles() {
 
   if (existsSync(environmentFile)) {
     const existingEnvironment = readFileSync(environmentFile, "utf8");
-    const hasRuntimeUser = existingEnvironment
-      .split(/\r?\n/u)
-      .some((line) => line.trim().startsWith("KORA_POSTGRES_RUNTIME_USER="));
-    if (!hasRuntimeUser) {
-      const separator =
+    const existingKeys = new Set(
+      existingEnvironment
+        .split(/\r?\n/u)
+        .map((line) => line.trim().split("=", 1)[0]),
+    );
+    const additions = [
+      ["KORA_POSTGRES_RUNTIME_USER", "kora_runtime"],
+      ["KORA_POSTGRES_ADMIN_WRITER_USER", "kora_admin_writer"],
+    ].filter(([key]) => !existingKeys.has(key));
+    if (additions.length > 0) {
+      const prefix =
         existingEnvironment.length === 0 || existingEnvironment.endsWith("\n")
           ? ""
           : "\n";
       writeFileSync(
         environmentFile,
-        `${separator}KORA_POSTGRES_RUNTIME_USER=kora_runtime\n`,
+        `${prefix}${additions
+          .map(([key, value]) => `${key}=${value}`)
+          .join("\n")}\n`,
         { encoding: "utf8", flag: "a" },
       );
       upgraded.push(environmentFile);
@@ -152,9 +267,10 @@ export function prepareLocalFiles() {
         "KORA_POSTGRES_DB=kora_local",
         "KORA_POSTGRES_USER=kora_local",
         "KORA_POSTGRES_RUNTIME_USER=kora_runtime",
-        "KORA_POSTGRES_PORT=15432",
-        "KORA_REDIS_PORT=16379",
-        "KORA_API_PORT=3102",
+        "KORA_POSTGRES_ADMIN_WRITER_USER=kora_admin_writer",
+        `KORA_POSTGRES_PORT=${requestedPorts.KORA_POSTGRES_PORT}`,
+        `KORA_REDIS_PORT=${requestedPorts.KORA_REDIS_PORT}`,
+        `KORA_API_PORT=${requestedPorts.KORA_API_PORT}`,
         "",
       ].join("\n"),
     );
@@ -162,6 +278,7 @@ export function prepareLocalFiles() {
   }
 
   readLocalConfiguration();
+  readSecret("postgres_admin_writer_password");
   readSecret("postgres_password");
   readSecret("postgres_runtime_password");
   readSecret("redis_password");
@@ -239,6 +356,20 @@ export function readLocalConfiguration() {
     );
   }
 
+  if (
+    !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(
+      configuration.KORA_POSTGRES_ADMIN_WRITER_USER,
+    ) ||
+    configuration.KORA_POSTGRES_ADMIN_WRITER_USER ===
+      configuration.KORA_POSTGRES_USER ||
+    configuration.KORA_POSTGRES_ADMIN_WRITER_USER ===
+      configuration.KORA_POSTGRES_RUNTIME_USER
+  ) {
+    throw new Error(
+      "KORA_POSTGRES_ADMIN_WRITER_USER must be a distinct valid PostgreSQL role.",
+    );
+  }
+
   for (const key of [
     "KORA_POSTGRES_PORT",
     "KORA_REDIS_PORT",
@@ -288,7 +419,7 @@ export function validateCompose() {
   const configuration = JSON.parse(rendered);
 
   if (configuration.name !== PROJECT_NAME) {
-    throw new Error("Compose project name is not locked to kora-plus-local.");
+    throw new Error(`Compose project name is not locked to ${PROJECT_NAME}.`);
   }
 
   const serviceNames = Object.keys(configuration.services ?? {}).sort();
@@ -314,13 +445,22 @@ export function validateCompose() {
   ) {
     throw new Error("PostgreSQL runtime role is not rendered exactly.");
   }
+  if (
+    postgresService.environment?.KORA_POSTGRES_ADMIN_WRITER_USER !==
+    local.KORA_POSTGRES_ADMIN_WRITER_USER
+  ) {
+    throw new Error("PostgreSQL admin writer role is not rendered exactly.");
+  }
   const postgresSecrets = (postgresService.secrets ?? [])
     .map((secret) => secret.source)
     .sort();
   if (
-    postgresSecrets.join(",") !== "postgres_password,postgres_runtime_password"
+    postgresSecrets.join(",") !==
+    "postgres_admin_writer_password,postgres_password,postgres_runtime_password"
   ) {
-    throw new Error("PostgreSQL owner and runtime secrets are not separated.");
+    throw new Error(
+      "PostgreSQL owner, runtime, and admin writer secrets are not separated.",
+    );
   }
   const provisionMount = (postgresService.volumes ?? []).find(
     (volume) =>
@@ -358,8 +498,22 @@ export function validateCompose() {
     );
   }
 
+  for (const secretName of SECRET_NAMES) {
+    const expectedSecretPath = resolve(secretsDirectory, secretName);
+    const renderedSecretPath = configuration.secrets?.[secretName]?.file;
+    if (
+      typeof renderedSecretPath !== "string" ||
+      resolve(renderedSecretPath) !== expectedSecretPath
+    ) {
+      throw new Error(
+        `Local secret ${secretName} is not bound to the isolated directory.`,
+      );
+    }
+  }
+
   const renderedText = rendered;
   for (const secret of [
+    readSecret("postgres_admin_writer_password"),
     readSecret("postgres_password"),
     readSecret("postgres_runtime_password"),
     readSecret("redis_password"),
@@ -384,7 +538,7 @@ export function provisionPostgresqlRuntime() {
     "/usr/local/bin/kora-provision-postgresql-runtime.sh",
   ]);
 
-  const result = runCompose(
+  const runtimeResult = runCompose(
     [
       "exec",
       "-T",
@@ -396,9 +550,73 @@ export function provisionPostgresqlRuntime() {
     { capture: true },
   ).stdout.trim();
 
-  if (result !== "1" || local.KORA_POSTGRES_RUNTIME_USER.length === 0) {
+  if (runtimeResult !== "1" || local.KORA_POSTGRES_RUNTIME_USER.length === 0) {
     throw new Error("PostgreSQL runtime smoke query did not return 1.");
   }
+
+  const writerResult = runCompose(
+    [
+      "exec",
+      "-T",
+      "postgres",
+      "sh",
+      "-ec",
+      'PGPASSWORD="$(cat /run/secrets/postgres_admin_writer_password)" psql --host=127.0.0.1 --port=5432 --username="$KORA_POSTGRES_ADMIN_WRITER_USER" --dbname="$POSTGRES_DB" --no-psqlrc --tuples-only --no-align --set=ON_ERROR_STOP=1 --command="SELECT 1;"',
+    ],
+    { capture: true },
+  ).stdout.trim();
+
+  if (
+    writerResult !== "1" ||
+    local.KORA_POSTGRES_ADMIN_WRITER_USER.length === 0
+  ) {
+    throw new Error("PostgreSQL admin writer smoke query did not return 1.");
+  }
+}
+
+function deployPostgresqlMigrations() {
+  if (!existsSync(prismaEntryPath)) {
+    throw new Error(
+      "Prisma CLI is missing. Install dependencies before starting infrastructure.",
+    );
+  }
+
+  const local = readLocalConfiguration();
+  const secrets = SECRET_NAMES.map((name) => readSecret(name));
+  const result = spawnSync(
+    process.execPath,
+    [prismaEntryPath, "migrate", "deploy", "--config", "prisma.config.ts"],
+    {
+      cwd: apiDirectory,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        DATABASE_HOST: "127.0.0.1",
+        DATABASE_NAME: local.KORA_POSTGRES_DB,
+        DATABASE_PASSWORD: readSecret("postgres_password"),
+        DATABASE_PORT: local.KORA_POSTGRES_PORT,
+        DATABASE_SSL: "false",
+        DATABASE_USER: local.KORA_POSTGRES_USER,
+      },
+      shell: false,
+      stdio: "pipe",
+      windowsHide: true,
+    },
+  );
+  if (result.error !== undefined) {
+    throw result.error;
+  }
+
+  const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+  if (secrets.some((secret) => output.includes(secret))) {
+    throw new Error("Prisma migration output exposed a local secret.");
+  }
+  if (result.status !== 0) {
+    throw new Error(
+      `Prisma migration deploy failed as owner/migrator (exit=${result.status ?? "unknown"}).`,
+    );
+  }
+  console.log("Prisma migrations applied under the owner/migrator identity.");
 }
 
 export function pullImages() {
@@ -462,6 +680,7 @@ export function upProject() {
   runCompose(["up", "--detach", "--wait", "--wait-timeout", "120"]);
   waitForServiceHealthy("postgres");
   waitForServiceHealthy("redis");
+  deployPostgresqlMigrations();
   provisionPostgresqlRuntime();
   console.log("PostgreSQL and Redis are healthy.");
 }
@@ -656,7 +875,14 @@ export function assertForeignResourcesUnchanged(before, after) {
 }
 
 export function resetProject(confirmation) {
-  if (confirmation !== PROJECT_NAME) {
+  const legacyLifecycleGateIsExplicitlyIsolated =
+    INSTANCE !== DEFAULT_INSTANCE &&
+    legacyLifecycleConfirmation === "true" &&
+    confirmation === LEGACY_LIFECYCLE_CONFIRMATION;
+  if (
+    confirmation !== PROJECT_NAME &&
+    !legacyLifecycleGateIsExplicitlyIsolated
+  ) {
     throw new Error(`Reset refused. Use --confirm=${PROJECT_NAME}.`);
   }
 
