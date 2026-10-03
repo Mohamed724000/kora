@@ -1,11 +1,13 @@
 # KORA+ Final — Source de vérité
 
-Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A CLÔTURÉ
-ET FUSIONNÉ — S1.2-03B-R4 VALIDÉ LOCALEMENT LE 2026-10-01 — ÉTAT DE
-PUBLICATION COURANT DANS GIT/GITHUB — PR #48 DRAFT NON FUSIONNÉE**
+Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 ET S1.2-03A CLÔTURÉS ET
+FUSIONNÉS — S1.2-03B-R4 FUSIONNÉ VIA PR #48 — S1.2-03C1 IMPLÉMENTÉ
+ET VALIDÉ LOCALEMENT, REMÉDIATION SUPPLY-CHAIN DEV QUALIFIÉE, AUDITS COMPLET ET
+PRODUCTION PROPRES, NON PUBLIÉ, FOURNISSEUR DE CLÉS DE PRODUCTION NON QUALIFIÉ
+— C2/C3 NOT STARTED**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-10-01
+Dernière réconciliation documentaire : 2026-10-03
 
 ## Hiérarchie normative
 
@@ -62,6 +64,40 @@ les types ; Prisma et les migrations restent inchangés jusqu'à une autorisatio
 runtime distincte.
 S1.2-02 matérialise le schéma Prisma par des migrations PostgreSQL versionnées et
 des contraintes SQL ; il ne constitue toujours pas un runtime métier.
+
+État courant vérifié le 2026-10-02 : la PR #48, titre
+`feat(contracts): define S1.2-03B Admin security gate`, est fusionnée et fermée
+au merge `c97992ca2c82bc4f22f9222ea98ed53714fede4c`, arbre
+`c8a6d52e7dcfdd24b5b9d0caee14363fa8220869`. Les workflows `push/main`
+Infrastructure `36991329968`, Launcher Windows `36991329948`, Security
+`36991329957` et Quality Linux `36991330060`, tentative 1, sont tous
+`completed/success` sur ce merge. Les instantanés Draft R0–R4 plus bas restent
+historiques.
+
+Le mandat runtime distinct S1.2-03C1 matérialise localement les douze opérations
+auth/session, six modèles, la migration unique, les contraintes et ACL C1, les
+pools lecteur/writer attestés et le client Redis dédié. La surface contractuelle
+reste à 60 chemins, 67 opérations et 137 schémas. Les gates applicatifs,
+PostgreSQL, Redis et contractuels passent localement. La chaîne dev-only
+signalée par `GHSA-vfj7-8cjw-p6xm` est retirée par l'override strictement scoped
+du seul import `fast-glob` de `@next/eslint-plugin-next@16.3.8` vers
+`tinyglobby@0.2.17`. Les audits npm bruts complet et production passent à zéro
+vulnérabilité. Cette substitution est qualifiée uniquement sans
+`settings.next.rootDir` ; le gate permanent refuse toute future apparition de
+cette propriété et impose une nouvelle qualification. Le travail reste non
+publié. Le fournisseur KMS/JWT de production reste non qualifié ; C2 et C3
+restent `Not started`. L'architecture courante est décrite dans
+[SLICE_1_2_03C1_ADMIN_AUTH_SESSION_RUNTIME.md](../architecture/SLICE_1_2_03C1_ADMIN_AUTH_SESSION_RUNTIME.md).
+
+Le complément Infrastructure du 2026-10-03 a rendu les scripts génériques
+isolables sans modifier leurs valeurs locales par défaut, puis a exécuté
+`infra:verify` et `infra:verify-api` au code 0 sur des ressources jetables. Il
+prouve la création depuis volumes vides, l'ordre migrations puis
+provisionnement/reprovisionnement, la persistance et le reset ciblé, le refus
+du propriétaire, l'acceptation runtime, les transitions de santé
+PostgreSQL/Redis et l'absence de fuite de secrets. Les ressources jetables ont
+été supprimées ; les ressources Docker préexistantes ont conservé leurs IDs,
+volumes, réseau, images, états et ports.
 
 ## Règle de contradiction
 

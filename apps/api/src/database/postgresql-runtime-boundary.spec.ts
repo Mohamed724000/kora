@@ -6,6 +6,7 @@ import {
   runtimeBoundaryViolations,
 } from './postgresql-runtime-boundary';
 import type { PrismaService, RuntimeBoundarySnapshot } from './prisma.service';
+import type { AdminWriterService } from './admin-writer.service';
 
 const SAFE_RUNTIME_USER = 'kora_runtime';
 
@@ -63,18 +64,28 @@ function createPrisma(snapshot: RuntimeBoundarySnapshot): PrismaService {
       .fn<Promise<RuntimeBoundarySnapshot>, []>()
       .mockResolvedValue(snapshot),
     selectOne: jest.fn<Promise<void>, []>().mockResolvedValue(undefined),
+    selectCustomerProbe: jest.fn<Promise<void>, []>().mockResolvedValue(undefined),
   } as unknown as PrismaService;
+}
+
+function createWriter(): AdminWriterService {
+  return {
+    assertLeastPrivilege: jest.fn<Promise<void>, []>().mockResolvedValue(undefined),
+  } as unknown as AdminWriterService;
 }
 
 describe('PostgresqlRuntimeBoundary', () => {
   it('accepte uniquement la connexion de lecture attendue et vérifie SELECT 1', async () => {
     const prisma = createPrisma(validSnapshot());
-    const boundary = new PostgresqlRuntimeBoundary(prisma, createConfig());
+    const writer = createWriter();
+    const boundary = new PostgresqlRuntimeBoundary(prisma, writer, createConfig());
 
     await boundary.assertLeastPrivilege();
 
     expect(prisma.selectOne).toHaveBeenCalledTimes(1);
     expect(prisma.runtimeBoundarySnapshot).toHaveBeenCalledTimes(1);
+    expect(prisma.selectCustomerProbe).toHaveBeenCalledTimes(1);
+    expect(writer.assertLeastPrivilege).toHaveBeenCalledTimes(1);
   });
 
   it('rejette les attributs privilégiés, l’écriture et les droits PUBLIC', () => {
@@ -148,7 +159,7 @@ describe('PostgresqlRuntimeBoundary', () => {
       ...validSnapshot(),
       roleCanCreateRole: true,
     });
-    const boundary = new PostgresqlRuntimeBoundary(prisma, createConfig());
+    const boundary = new PostgresqlRuntimeBoundary(prisma, createWriter(), createConfig());
 
     try {
       await boundary.assertLeastPrivilege();

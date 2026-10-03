@@ -6,6 +6,9 @@ describe('loadRuntimeConfig', () => {
     const config = loadRuntimeConfig(SAFE_TEST_ENVIRONMENT);
 
     expect(config.environment).toBe('test');
+    expect(config.adminAuth.origin).toBe('https://admin.kora.invalid');
+    expect(config.adminAuth.postgresql.user).toBe('kora_admin_writer_test');
+    expect(config.adminAuth.redis.waitAofTimeoutMs).toBe(100);
     expect(config.http).toEqual({ host: '127.0.0.1', port: 3001 });
     expect(config.observability).toEqual({ environment: 'test' });
     expect(config.redis.password).toBeUndefined();
@@ -53,6 +56,27 @@ describe('loadRuntimeConfig', () => {
     } catch (error: unknown) {
       expect(error).toBeInstanceOf(ConfigValidationError);
       expect((error as ConfigValidationError).invalidFields).toEqual(['API_PORT', 'DATABASE_HOST']);
+    }
+  });
+
+  it('rejette une origine non HTTPS et des credentials writer non distincts', () => {
+    const invalid = {
+      ...SAFE_TEST_ENVIRONMENT,
+      ADMIN_DATABASE_PASSWORD: SAFE_TEST_ENVIRONMENT.DATABASE_PASSWORD,
+      ADMIN_DATABASE_USER: SAFE_TEST_ENVIRONMENT.DATABASE_USER,
+      ADMIN_ORIGIN: 'http://admin.kora.invalid/path',
+    };
+
+    try {
+      loadRuntimeConfig(invalid);
+      throw new Error('La validation aurait dû échouer');
+    } catch (error: unknown) {
+      expect(error).toBeInstanceOf(ConfigValidationError);
+      expect((error as ConfigValidationError).invalidFields).toEqual([
+        'ADMIN_ORIGIN',
+        'ADMIN_DATABASE_USER',
+        'ADMIN_DATABASE_PASSWORD',
+      ]);
     }
   });
 

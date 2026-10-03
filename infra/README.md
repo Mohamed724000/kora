@@ -17,26 +17,52 @@ Les ports par défaut sont `15432` pour PostgreSQL et `16379` pour Redis. Ils
 peuvent être modifiés dans `infra/.local/compose.env`, fichier local ignoré par
 Git. L’API de vérification utilise par défaut le port `3102`.
 
+### Instance éphémère isolée
+
+Le comportement par défaut ci-dessus reste inchangé. Pour une validation
+jetable, `KORA_INFRA_EPHEMERAL_INSTANCE` accepte un identifiant Docker
+minuscule validé et dérive un projet, deux volumes, un réseau et un répertoire
+de secrets distincts sous `infra/.local/instances/<instance>/`. Les trois ports
+sont fournis séparément par `KORA_INFRA_POSTGRES_PORT`,
+`KORA_INFRA_REDIS_PORT` et `KORA_INFRA_API_PORT`.
+
+Lors de la première préparation d’une instance éphémère, les conteneurs,
+volumes et réseau dérivés doivent être absents. Compose reçoit explicitement
+les noms et le répertoire isolés ; une option `-p` seule ne constitue pas cette
+garantie. Le gate historique `infra:verify` peut utiliser sa confirmation
+littérale uniquement si l’instance n’est pas `local` et si
+`KORA_INFRA_ALLOW_LEGACY_LIFECYCLE_CONFIRMATION=true` est fourni
+explicitement. La suppression reste alors limitée aux deux volumes dérivés,
+après vérification de leurs labels. Cette option ne modifie pas la confirmation
+du reset CLI, qui reste le nom exact du projet courant.
+
 ## Secrets locaux
 
 `npm run infra:prepare` génère des valeurs aléatoires dans
 `infra/.local/secrets/` et une configuration locale dans
 `infra/.local/compose.env`. Les fichiers existants ne sont jamais écrasés. Pour
-une configuration antérieure à S1.2-03A, la seule clé absente
-`KORA_POSTGRES_RUNTIME_USER=kora_runtime` est ajoutée en fin de fichier sans
-modifier les valeurs déjà présentes.
+une configuration antérieure à S1.2-03C1, les clés absentes
+`KORA_POSTGRES_RUNTIME_USER=kora_runtime` et
+`KORA_POSTGRES_ADMIN_WRITER_USER=kora_admin_writer` sont ajoutées en fin de
+fichier sans modifier les valeurs déjà présentes.
 
-PostgreSQL reçoit deux secrets distincts : `postgres_password` pour le compte
-local propriétaire/migrateur et `postgres_runtime_password` pour l’API. Le
-second n’est jamais injecté comme variable Compose ni argument de processus ;
-le provisionneur le lit depuis `/run/secrets`. Redis reçoit également son
-secret comme fichier Compose et construit une configuration privée dans un
-`tmpfs` interne.
+PostgreSQL reçoit trois secrets distincts : `postgres_password` pour le compte
+local propriétaire/migrateur, `postgres_runtime_password` pour le lecteur de
+l’API et `postgres_admin_writer_password` pour son writer administratif. Les
+deux secrets runtime ne sont jamais injectés comme variables Compose ni
+arguments de processus ; le provisionneur les lit depuis `/run/secrets`.
+Redis reçoit également son secret comme fichier Compose et construit une
+configuration privée dans un `tmpfs` interne.
 
-`infra:up` et `infra:check` rejouent le provisionneur idempotent. Le rôle
-`KORA_POSTGRES_RUNTIME_USER` est `NOINHERIT`, sans attribut administratif ni
-membership ; ses droits effectifs sont limités à `CONNECT`, `USAGE` du schéma
-`public` et `SELECT` sur les tables. Les droits de `PUBLIC`, les écritures,
+`infra:up` applique d'abord les migrations Prisma sous l'identité locale
+propriétaire/migrateur, puis `infra:up` et `infra:check` rejouent le
+provisionneur idempotent. Le rôle
+`KORA_POSTGRES_RUNTIME_USER` et `KORA_POSTGRES_ADMIN_WRITER_USER` sont
+`NOINHERIT`, sans attribut administratif ni membership. Le lecteur est limité
+à `CONNECT`, `USAGE` du schéma `public` et aux colonnes de projection C1. Le
+writer reçoit uniquement les privilèges de colonnes nécessaires aux commandes
+administratives ; `AuditLog` et `AdminSecurityEvent` sont des sinks
+`INSERT`-only. Les droits de `PUBLIC`, les écritures non prévues,
 colonnes, vues, `MAINTAIN`, séquences, routines, types, large objects, options de
 redélégation, DDL et objets temporaires sont révoqués, y compris dans les
 privilèges par défaut. Tout droit `SET` ou `ALTER SYSTEM` sur un paramètre
@@ -47,7 +73,8 @@ hériter de `session_replication_role=origin` et de
 retirées à `PUBLIC` et au runtime, ce qui bloque notamment `lo_create`,
 `lo_from_bytea`, `lo_put` et `lo_open`. Le compte
 `KORA_POSTGRES_USER` reste réservé aux migrations locales et ne doit jamais
-être fourni à l’API.
+être fourni à l’API. Les deux identités runtime et leurs secrets doivent rester
+distincts entre eux et du propriétaire.
 
 Avant de normaliser les ACL du périmètre `public`, le provisionneur inspecte
 tous les schémas non système de la base courante. Un schéma tiers possédé ou
@@ -71,11 +98,12 @@ antérieur complet.
 
 Les ACL de paramètres sont globales au cluster. Le provisionneur les contrôle
 avant toute mutation et refuse avec un diagnostic borné sans secret ; il ne les
-révoque jamais automatiquement. Dans `public`, le `SELECT` par défaut destiné
-au runtime n’est réparable que lorsqu’il appartient explicitement au
-propriétaire de la base. Une ACL par défaut équivalente créée par un rôle tiers
-est refusée sans modification ; sa remédiation reste sous l’autorité de ce
-propriétaire tiers. La même règle s’applique aux default ACL PostgreSQL 18 de
+révoque jamais automatiquement. Dans `public`, le provisionneur retire les
+anciens droits relationnels et default ACL de table des rôles runtime avant
+d'accorder les projections de colonnes C1. Une ACL par défaut hors profil créée
+par un rôle tiers est refusée sans modification ; sa remédiation reste sous
+l’autorité de ce propriétaire tiers. La même règle s’applique aux default ACL
+PostgreSQL 18 de
 large objects : celles du propriétaire/migrateur sont normalisées, celles d’un
 tiers sont refusées avant mutation. Les réglages `pg_db_role_setting` aux
 portées base, rôle et rôle/base qui imposent
@@ -101,7 +129,7 @@ Sous Windows, utiliser `npm.cmd` :
 | `npm.cmd run infra:prepare`    | Crée les fichiers locaux ignorés sans écraser l’existant |
 | `npm.cmd run infra:validate`   | Valide Compose et ses invariants sans afficher de secret |
 | `npm.cmd run infra:pull`       | Télécharge seulement les deux images verrouillées        |
-| `npm.cmd run infra:up`         | Démarre, attend la santé et provisionne le rôle runtime  |
+| `npm.cmd run infra:up`         | Démarre, migre puis provisionne les rôles runtime        |
 | `npm.cmd run infra:status`     | Affiche uniquement l’état du projet local                |
 | `npm.cmd run infra:check`      | Vérifie la pile et reprovisionne la frontière runtime    |
 | `npm.cmd run infra:down`       | Arrête la pile sans supprimer les volumes                |

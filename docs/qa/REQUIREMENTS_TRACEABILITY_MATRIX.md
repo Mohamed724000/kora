@@ -395,6 +395,47 @@ Qualification : **instantané historique prépublication du 2026-09-29**.
 Les états ci-dessus attestent uniquement le contrat. Les garanties runtime, SQL
 et interface restent `Not started` jusqu'aux autorisations S1.2-03C1/C2/C3.
 
+## Traçabilité S1.2-03C1 — préparation contractuelle locale
+
+Qualification : **arbitrages CTO C1 matérialisés dans le contrat ; aucune
+preuve runtime ou PostgreSQL**.
+
+| Exigence                                                   | Contrat / décision                           | Preuve contractuelle attendue                                                     | État                      |
+| ---------------------------------------------------------- | -------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------- |
+| SEC-ADM-C1-PREP-01 Audit enrollment/QR selon contexte      | OpenAPI + ADR-025 amendé                     | sinks succès/échec explicites, preuve serveur, mutations adversariales            | Contract prepared locally |
+| SEC-ADM-C1-PREP-02 Rotation avec TOTP inline purpose-bound | `rotateAdminRecoveryCodes`                   | métadonnées générées, absence de pré-step-up/second OTP, compteur global          | Contract prepared locally |
+| SEC-ADM-C1-PREP-03 Quatrième famille par éviction LRU      | politique familles de session                | plafond 3, verrou, activité, ordre déterministe, transaction et refresh           | Contract prepared locally |
+| SEC-ADM-C1-PREP-04 503 générique sur les douze C1          | erreurs/réponses + politique indisponibilité | 12 réponses, message uniforme, C2 inchangé, dépendances non révélées              | Contract prepared locally |
+| SEC-ADM-C1-PREP-05 Audit impossible et COMMIT inconnu      | politique indisponibilité                    | rollback non commité, aucune fausse preuve, aucun secret/retry avant confirmation | Contract prepared locally |
+| SEC-ADM-C1-PREP-06 Principe writer/reader PostgreSQL       | ADR-025 + architecture + Threat Model        | séparation, allowlists, sinks insert-only ; aucune migration/provision            | Design recorded only      |
+| SEC-ADM-C1-PREP-07 Surface et JWS préservés                | OpenAPI/génération                           | 60/67/137, C1=12, C2=15, C3=0, cinq retraits SUPPORT, JWS R4                      | Verified locally          |
+| SEC-ADM-C1-PREP-08 Frontière sans runtime                  | allowlist fermée et postflight               | aucun Prisma/runtime/dépendance/workflow/installation                             | Verified locally          |
+
+La table PREP ci-dessus est l'instantané historique du cadrage contractuel. Le
+mandat runtime distinct est tracé ci-dessous sans réécrire cette preuve.
+
+## Traçabilité S1.2-03C1 — runtime local
+
+Qualification : **implémenté et validé localement ; remédiation supply-chain
+dev qualifiée ; audits npm complet et production à zéro ; non publié ;
+fournisseur KMS/JWT de production non qualifié**.
+
+| Exigence                                          | Preuve runtime                                                                                                                                                                                                                 | État             |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------- |
+| SEC-ADM-C1-RUN-01 Douze opérations seulement      | module/contrôleur C1, inventaire Nest et parcours HTTP réel                                                                                                                                                                    | Verified locally |
+| SEC-ADM-C1-RUN-02 Surface contractuelle préservée | OpenAPI 60/67/137, C1=12, C2=15, C3=0, génération byte-identique                                                                                                                                                               | Verified locally |
+| SEC-ADM-C1-RUN-03 Stockage et audit legacy        | six modèles, migration unique, AuditLog v1/v2 sans DML historique, 39 modèles/40 tables                                                                                                                                        | Verified locally |
+| SEC-ADM-C1-RUN-04 Frontières reader/writer        | deux identités/pools attestés avant init, projections et ACL de colonnes, sinks insert-only                                                                                                                                    | Verified locally |
+| SEC-ADM-C1-RUN-05 Transactions et concurrence     | compteur TOTP, recovery one-shot, refresh winner/replay, LRU trois familles, audit atomique                                                                                                                                    | Verified locally |
+| SEC-ADM-C1-RUN-06 Cryptographie réelle            | TOTP SHA-256, Argon2id, AES-GCM/rewrap, RS256 + JOSE réel, QR serveur                                                                                                                                                          | Verified locally |
+| SEC-ADM-C1-RUN-07 Transport fermé                 | cookies `__Host-*`, Origin/Fetch/JSON/CSRF et parser borné                                                                                                                                                                     | Verified locally |
+| SEC-ADM-C1-RUN-08 Redis durable et borné          | Lua atomique, profils, `WAITAOF 1 0`, restart AOF et panne fermée                                                                                                                                                              | Verified locally |
+| SEC-ADM-C1-RUN-09 Provider fail-closed            | clés réelles éphémères injectées en test ; provider absent = 503 C1, health préservé                                                                                                                                           | Verified locally |
+| SEC-ADM-C1-RUN-10 Supply-chain                    | pins JOSE/Argon2/QR ; alias scoped `tinyglobby@0.2.17` ; gate sans `settings.next.rootDir` ; audits complet/production zéro                                                                                                    | Verified locally |
+| SEC-ADM-C1-RUN-11 Observabilité sans secret       | callbacks Pino/Sentry et enveloppes d'erreur sanitizés                                                                                                                                                                         | Verified locally |
+| SEC-ADM-C1-RUN-12 Frontière de publication        | aucun add/commit/push/PR/tag/release/déploiement ; décision CTO distincte requise ; C2/C3 non démarrés                                                                                                                         | Verified locally |
+| SEC-ADM-C1-RUN-13 Lifecycle et health isolés      | `infra:verify`/`infra:verify-api` code 0 ; volumes vides, migrations puis provisioning, restart/reset, owner refusé, runtime accepté, pannes/récupérations PostgreSQL/Redis, cleanup ciblé et ressources étrangères inchangées | Verified locally |
+
 ## Traçabilité S1.2-03B-R1 — Supply-chain remediation
 
 Qualification : **instantané historique local prépublication du 2026-09-29**.

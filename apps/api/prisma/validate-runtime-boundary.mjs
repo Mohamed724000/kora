@@ -92,6 +92,7 @@ function validationContainer() {
 }
 
 function executeProvisioner(database, owner, runtime) {
+  const writer = runtime.replace('_runtime_', '_writer_');
   return spawnSync(
     'docker',
     [
@@ -102,6 +103,8 @@ function executeProvisioner(database, owner, runtime) {
       `POSTGRES_USER=${owner}`,
       '--env',
       `KORA_POSTGRES_RUNTIME_USER=${runtime}`,
+      '--env',
+      `KORA_POSTGRES_ADMIN_WRITER_USER=${writer}`,
       validationContainer(),
       'sh',
       '/usr/local/bin/kora-provision-postgresql-runtime.sh',
@@ -1096,8 +1099,8 @@ function assertRuntimeSnapshot(snapshot) {
       fail(`runtime catalog assertion failed: ${field}`);
     }
   }
-  if (snapshot.table_count !== 34) {
-    fail(`runtime expected 34 readable tables, received ${snapshot.table_count}`);
+  if (snapshot.table_count !== 40) {
+    fail(`runtime expected 40 physical tables, received ${snapshot.table_count}`);
   }
   if (snapshot.session_replication_role !== 'origin') {
     fail('runtime catalog assertion failed: session_replication_role');
@@ -1109,7 +1112,6 @@ function assertRuntimeSnapshot(snapshot) {
     'membership_count',
     'owned_object_count',
     'unexpected_schema_privilege_count',
-    'table_violation_count',
     'sequence_privilege_count',
     'routine_privilege_count',
     'type_privilege_count',
@@ -1173,14 +1175,8 @@ async function assertDefaultPrivilegeBoundary(ownerClient, runtime) {
     fail('PUBLIC retained an owner default privilege after provisioning');
   }
   const runtimeGrants = result.rows.filter((row) => row.grantee === runtime);
-  if (
-    runtimeGrants.length !== 1 ||
-    runtimeGrants[0]?.object_type !== 'r' ||
-    runtimeGrants[0]?.schema_name !== 'public' ||
-    runtimeGrants[0]?.privilege_type !== 'SELECT' ||
-    runtimeGrants[0]?.is_grantable !== false
-  ) {
-    fail('runtime owner default privileges are not exactly public-table SELECT');
+  if (runtimeGrants.length !== 0) {
+    fail('runtime retained an owner default privilege');
   }
 }
 
@@ -1256,7 +1252,7 @@ async function verifyFutureObjectPrivileges(ownerClient, runtime) {
     );
     const row = result.rows[0];
     if (
-      row?.can_select_table !== true ||
+      row?.can_select_table !== false ||
       row.can_write_table !== false ||
       row.can_write_column !== false ||
       row.can_use_sequence !== false ||
@@ -1311,7 +1307,7 @@ async function verifyPrismaAdapter(configuration) {
     if (rows.length !== 1 || rows[0]?.value !== 1) {
       fail('Prisma adapter SELECT 1 did not return the expected value');
     }
-    await prisma.customer.findMany({ take: 1 });
+    await prisma.customer.findMany({ select: { id: true }, take: 1 });
   } finally {
     await prisma.$disconnect();
     await pool.end();
@@ -1319,9 +1315,16 @@ async function verifyPrismaAdapter(configuration) {
 }
 
 function apiEnvironment(configuration) {
+  const writerUser = configuration.user.replace(/_(?:owner|runtime)_/u, '_writer_');
   return {
     API_HOST: '127.0.0.1',
     API_PORT: '3103',
+    ADMIN_DATABASE_HOST: configuration.host,
+    ADMIN_DATABASE_NAME: configuration.database,
+    ADMIN_DATABASE_PASSWORD: process.env.S1203A_WRITER_PASSWORD,
+    ADMIN_DATABASE_PORT: String(configuration.port),
+    ADMIN_DATABASE_SSL: 'false',
+    ADMIN_DATABASE_USER: writerUser,
     DATABASE_HOST: configuration.host,
     DATABASE_NAME: configuration.database,
     DATABASE_PASSWORD: configuration.password,
@@ -2532,10 +2535,12 @@ async function validateDatabase(admin, label, suffix, cleanup) {
   const database = `kora_s1203a_database_${label}_${suffix}`;
   const owner = `kora_s1203a_owner_${label}_${suffix}`;
   const runtime = `kora_s1203a_runtime_${label}_${suffix}`;
+  const writer = `kora_s1203a_writer_${label}_${suffix}`;
   const thirdParty = `kora_s1203a_thirdparty_${label}_${suffix}`;
   const ownerPassword = adminConfiguration().password;
   const runtimePassword = process.env.S1203A_RUNTIME_PASSWORD;
-  const secrets = [ownerPassword, runtimePassword];
+  const writerPassword = process.env.S1203A_WRITER_PASSWORD;
+  const secrets = [ownerPassword, runtimePassword, writerPassword];
   await createOwnerRole(admin, owner, ownerPassword);
   cleanup.roles.push(owner);
   await createThirdPartyRole(admin, thirdParty);
@@ -2543,6 +2548,7 @@ async function validateDatabase(admin, label, suffix, cleanup) {
   await createDatabase(admin, database, owner);
   cleanup.databases.push(database);
   cleanup.roles.unshift(runtime);
+  cleanup.roles.unshift(writer);
   if (label === 'b') {
     await createDegradedRuntimeRole(admin, runtime, runtimePassword, thirdParty, database);
   }
@@ -2721,6 +2727,23 @@ async function validateDatabase(admin, label, suffix, cleanup) {
       fail('runtime SELECT 1 did not return the expected value');
     }
     assertRuntimeSnapshot(await runtimeSnapshot(runtimeClient));
+    await runtimeClient.query('SELECT "id" FROM public."Customer" LIMIT 1');
+    await runtimeClient.query(
+      'SELECT "id", "role", "status", "authorizationVersion", "totpEnabledAt" FROM public."AdminUser" LIMIT 1',
+    );
+    await runtimeClient.query(
+      'SELECT "id", "adminUserId", "authorizationVersion", "lastTwoFactorAt", "lastActivityAt", "expiresAt", "absoluteExpiresAt", "revokedAt", "createdAt", "updatedAt", "stepUpPurpose", "stepUpVerifiedAt", "stepUpExpiresAt" FROM public."AdminSession" LIMIT 1',
+    );
+    await assertDenied(
+      runtimeClient,
+      'admin_email',
+      'SELECT "email" FROM public."AdminUser" LIMIT 1',
+    );
+    await assertDenied(
+      runtimeClient,
+      'admin_context',
+      'SELECT "id" FROM public."AdminPreAuthContext" LIMIT 1',
+    );
     await assertDenied(runtimeClient, 'ddl', 'CREATE TABLE public.s1203a_forbidden(id integer)');
     await assertDenied(runtimeClient, 'truncate', 'TRUNCATE TABLE public."Customer"');
     await assertDenied(
@@ -2805,6 +2828,7 @@ function assertEnvironment() {
     'S1203A_ADMIN_USER',
     'S1203A_ADMIN_PASSWORD',
     'S1203A_RUNTIME_PASSWORD',
+    'S1203A_WRITER_PASSWORD',
     'S1203A_VALIDATION_CONTAINER',
   ]) {
     if (process.env[name] === undefined || process.env[name].length === 0) {
@@ -2813,6 +2837,12 @@ function assertEnvironment() {
   }
   if (!/^[A-Za-z0-9_-]{43}$/u.test(process.env.S1203A_RUNTIME_PASSWORD)) {
     fail('S1203A_RUNTIME_PASSWORD failed its in-memory format guard');
+  }
+  if (!/^[A-Za-z0-9_-]{43}$/u.test(process.env.S1203A_WRITER_PASSWORD)) {
+    fail('S1203A_WRITER_PASSWORD failed its in-memory format guard');
+  }
+  if (process.env.S1203A_RUNTIME_PASSWORD === process.env.S1203A_WRITER_PASSWORD) {
+    fail('reader and writer passwords must be distinct');
   }
   validationContainer();
 }

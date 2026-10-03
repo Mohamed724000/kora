@@ -129,6 +129,17 @@ function referencedSchemaName(schema) {
     : null;
 }
 
+export function buildAdminC1ContractPolicies(document) {
+  return {
+    enrollmentAuditRouting:
+      document["x-kora-admin-enrollment-audit-routing-policy"],
+    recoveryCodeRotation:
+      document["x-kora-admin-recovery-code-rotation-policy"],
+    sessionFamilies: document["x-kora-admin-session-family-policy"],
+    unavailability: document["x-kora-admin-c1-unavailability-policy"],
+  };
+}
+
 export function buildAdminSecurityOperations(document) {
   const operations = [];
   for (const [path, pathItem] of Object.entries(document.paths ?? {})) {
@@ -199,7 +210,13 @@ export function buildAdminSecurityOperations(document) {
         securityRequirement: Object.keys(securityRequirement),
         roles: operation["x-kora-roles"] ?? [],
         stepUpRequired: operation["x-kora-step-up-required"] === true,
+        stepUpMode: operation["x-kora-step-up-mode"] ?? null,
+        stepUpPurpose: operation["x-kora-step-up-purpose"] ?? null,
+        priorStepUpPolicy: operation["x-kora-prior-step-up-policy"] ?? null,
+        totpCounterPolicy: operation["x-kora-totp-counter-policy"] ?? null,
+        transactionalEffects: operation["x-kora-transaction-effects"] ?? [],
         auditSink: operation["x-kora-audit-sink"],
+        auditContextProof: operation["x-kora-audit-context-proof"] ?? null,
         failureAuditSink:
           document["x-kora-admin-failure-audit-sinks"]?.[
             operation.operationId
@@ -210,6 +227,16 @@ export function buildAdminSecurityOperations(document) {
           document["x-kora-admin-public-failure-timing"]?.[
             operation.operationId
           ] ?? null,
+        serviceUnavailable:
+          operation["x-kora-delivery-slice"] === "S1.2-03C1"
+            ? {
+                status: 503,
+                errorCode: "SERVICE_UNAVAILABLE",
+                publicMessage:
+                  document["x-kora-admin-c1-unavailability-policy"]
+                    ?.publicMessage ?? null,
+              }
+            : null,
         signedManifest: operation["x-kora-signed-manifest"] ?? null,
         idempotency: {
           required: operation["x-kora-idempotent"] === true,
@@ -241,6 +268,7 @@ export function buildContractTypes(document) {
   const paths = Object.keys(document.paths);
   const schemas = Object.entries(document.components?.schemas ?? {});
   const adminSecurityOperations = buildAdminSecurityOperations(document);
+  const adminC1ContractPolicies = buildAdminC1ContractPolicies(document);
   const lines = [
     "// Generated from docs/api/openapi.yaml by scripts/openapi/generate-contract-types.mjs.",
     "// Do not edit by hand. Runtime clients are intentionally outside S1.2-03B.",
@@ -250,6 +278,8 @@ export function buildContractTypes(document) {
     "] as const;",
     "",
     "export type AudioPilotPath = (typeof audioPilotPaths)[number];",
+    "",
+    `export const adminC1ContractPolicies = ${JSON.stringify(adminC1ContractPolicies, null, 2)} as const;`,
     "",
     `export const adminSecurityOperations = ${JSON.stringify(adminSecurityOperations, null, 2)} as const;`,
     "",

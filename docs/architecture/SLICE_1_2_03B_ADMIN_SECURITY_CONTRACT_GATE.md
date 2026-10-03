@@ -1,7 +1,7 @@
 # S1.2-03B — Admin Security Contract Gate
 
-Statut : **R4 VALIDÉ LOCALEMENT LE 2026-10-01 — ÉTAT DE PUBLICATION COURANT
-DANS GIT/GITHUB — CONTRAT UNIQUEMENT**
+Statut : **R4 FUSIONNÉ VIA PR #48 LE 2026-10-02 — GATE CONTRACTUEL HISTORIQUE ;
+RUNTIME C1 LOCAL DÉCRIT DANS LE DOCUMENT S1.2-03C1 DÉDIÉ**
 
 Décision associée : [ADR-025](../adr/ADR-025-admin-auth-session-audit-contexts.md)
 
@@ -13,8 +13,11 @@ structurellement identiques, sauf le retrait intentionnel de `SUPPORT` sur cinq
 lectures Artist/Audio/Media. Les 27 opérations nouvelles sont réparties en 12
 opérations `S1.2-03C1` et 15 opérations `S1.2-03C2`.
 
-S1.2-03B ne livre aucun contrôleur, service, worker, migration, changement
-Prisma, seed, interface ou dépendance. Il prépare les slices runtime futures.
+S1.2-03B n'a livré aucun contrôleur, service, worker, migration, changement
+Prisma, seed, interface ou dépendance. Le runtime local ultérieur est décrit
+dans
+[S1.2-03C1](SLICE_1_2_03C1_ADMIN_AUTH_SESSION_RUNTIME.md), sans réécrire cet
+instantané contractuel.
 
 ## Inventaire C1 — authentification et sessions
 
@@ -103,13 +106,17 @@ porte `Retry-After`, sans journaliser de clé de partition brute.
 
 ## Audit, récupération et bootstrap futurs
 
-Les parcours sans contexte d'audit prouvé — login initial, création/livraison
-d'enrôlement, demande de reset et acceptation d'invitation — écrivent un futur
-`AdminSecurityEvent`, succès comme échec, sans fabriquer d'acteur. Dès qu'une
-session ou un contexte de récupération est prouvé, les mutations critiques et
-leur `AuditLog` sont atomiques. Pour chaque opération, le contrat sépare le sink
-du succès de celui de l'échec : tout échec sans contexte prouvé rejoint
-`AdminSecurityEvent`, y compris TOTP, recovery code, refresh et reset invalides.
+Les parcours sans contexte d'audit prouvé — login initial, première
+pré-authentification de création/livraison d'enrôlement, demande de reset et
+acceptation d'invitation — écrivent un futur `AdminSecurityEvent`, succès comme
+échec, sans fabriquer d'acteur. Pour la création et la livraison QR, un
+`MFA_RECOVERY` que le serveur a vérifié comme possédé, lié au bon acteur, actif
+et non expiré route explicitement succès et échecs vers un `AuditLog`
+`ADMIN_RECOVERY`, atomique avec la mutation. Cookie, selector ou identifiant
+client ne constituent jamais une preuve. Pour chaque opération, le contrat
+sépare le sink du succès de celui de l'échec : tout échec sans contexte prouvé
+rejoint `AdminSecurityEvent`, y compris TOTP, recovery code, refresh et reset
+invalides.
 La lecture et l'export restaurent les filtres
 ADR-004 administrateur/action/entité/date et les preuves ADR-019 : entité,
 avant/après masqués, corrélation, causalité et délégation éventuelle. L'union
@@ -155,14 +162,48 @@ version et rotation internes. Les pré-sessions et enrôlements expirent en dix
 minutes, le contexte `MFA_RECOVERY` en dix minutes, le reset en quinze minutes
 et l'invitation en vingt-quatre heures.
 
+## Arbitrages CTO C1 matérialisés le 2026-10-02
+
+- `rotateAdminRecoveryCodes` utilise le TOTP de son corps comme preuve inline
+  `RECOVERY_CODE_ROTATION`. Aucun `/step-up` préalable ni second OTP n'est
+  requis ; une preuve antérieure ne se substitue pas au corps. Le compteur TOTP
+  global, le batch, l'idempotence et l'audit sont consommés/remplacés dans une
+  transaction et cette preuve n'autorise aucun autre purpose. Le schéma du
+  corps générique `/step-up` exclut donc `RECOVERY_CODE_ROTATION`.
+- La création d'une quatrième famille après authentification complète applique
+  une éviction LRU atomique sous verrou utilisateur. Seules les familles
+  effectivement actives comptent ; l'ordre est `lastActivityAt`, `createdAt`,
+  puis `id`. Le plafond reste trois. Un refresh ne crée pas de famille.
+- Les douze opérations C1 exposent 503 `SERVICE_UNAVAILABLE` dans
+  l'`ErrorResponse` fermé. Le message ne révèle aucune dépendance. PostgreSQL,
+  Redis, KMS ou durabilité d'audit requis indisponibles entraînent un échec
+  fermé. Si l'audit durable est impossible, les mutations non commitées sont
+  annulées, le 503 est sûr et l'observation opérationnelle neutralisée ne vaut
+  pas preuve d'audit durable. Le schéma de cette réponse impose le code, le
+  message, les détails vides et `retryable=false`, au-delà du seul exemple.
+- Un rollback confirmé est distingué d'un COMMIT au résultat inconnu après
+  perte d'accusé. Aucun succès ni secret ne précède un commit confirmé ; aucun
+  retry aveugle n'est permis et les garanties idempotentes/one-shot subsistent.
+
+Le futur PostgreSQL C1 aura un writer et un pool séparés du lecteur 03A, avec
+droits tables/colonnes/transitions strictement nécessaires. `AuditLog` et
+`AdminSecurityEvent` seront `INSERT`-only sans `RETURNING`. Le lecteur devra
+passer d'un `SELECT` et de default grants globaux à une allowlist explicite,
+y compris pour les tables sensibles existantes, tout en conservant les
+protections 03A. Aucun privilège C2 n'est inclus. Les chiffres candidats de
+modèles/tables, migration et dépendances restent proposés, non autorisés ;
+aucun SQL, Prisma, rôle, pool ou provisioning n'est créé ici.
+
 ## Génération et garde-fous
 
-`adminSecurityOperations` matérialise dans la frontière TypeScript la méthode,
+`adminC1ContractPolicies` et `adminSecurityOperations` matérialisent dans la
+frontière TypeScript les quatre arbitrages C1 ainsi que la méthode,
 le chemin, l'`operationId`, la slice, la classe de sécurité, les rôles, le
 step-up, les sinks d'audit succès/échec, le profil de rate limit, Fetch
 Metadata, le timing public, le manifeste signé, l'idempotence, les paramètres,
 les schémas et media types, ainsi que les en-têtes de requête et de réponse. Le
 validateur verrouille l'inventaire, les
 statuts, les enveloppes, les AND de sécurité, les filtres, l'XOR d'audit, les
-rôles et les propriétés sensibles. Les tests adversariaux mutent chaque
-dimension et exigent un rejet fail-closed.
+rôles, le 503 C1 et les propriétés sensibles. Les tests adversariaux mutent
+chaque arbitrage, ses métadonnées et ses omissions et exigent un rejet
+fail-closed. Ces preuves valident le contrat, jamais le runtime ni PostgreSQL.

@@ -16,6 +16,9 @@
     "packages/ui"
   ],
   "overrides": {
+    "@next/eslint-plugin-next@16.3.8": {
+      "fast-glob": "npm:tinyglobby@0.2.17"
+    },
     "@nestjs/platform-express@11.1.28": {
       "multer": "2.4.0"
     },
@@ -52,10 +55,11 @@
     "typecheck": "node scripts/run-workspace-task.mjs typecheck",
     "test": "node scripts/run-workspace-task.mjs test",
     "build": "node scripts/run-workspace-task.mjs build",
-    "test:tooling": "node --test scripts/run-workspace-task.test.mjs scripts/ci/validate-workflows.test.mjs scripts/openapi/validate-openapi.test.mjs scripts/security/scan-repository.test.mjs scripts/infra/verify-api-health-assertions.test.mjs",
+    "test:tooling": "node --test scripts/run-workspace-task.test.mjs scripts/ci/validate-workflows.test.mjs scripts/openapi/validate-openapi.test.mjs scripts/security/scan-repository.test.mjs scripts/security/next-root-dirs-compatibility.test.mjs scripts/infra/verify-api-health-assertions.test.mjs",
     "launcher:verify": "node scripts/ci/verify-launcher-failure.mjs",
     "ci:validate": "node scripts/ci/validate-workflows.mjs",
     "security:scan": "node scripts/security/scan-repository.mjs",
+    "security:next-root-dirs": "node --test scripts/security/next-root-dirs-compatibility.test.mjs",
     "openapi:validate": "node scripts/openapi/validate-openapi.mjs",
     "db:generate": "npm run db:generate --workspace @kora-plus/api",
     "licenses": "node scripts/report-licenses.mjs",

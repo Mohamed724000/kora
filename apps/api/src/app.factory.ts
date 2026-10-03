@@ -4,6 +4,8 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule, type AppModuleOptions } from './app.module';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import type { RuntimeConfig } from './config/runtime-config';
+import { AdminWriterService } from './database/admin-writer.service';
+import { AdminAuthRepository } from './admin-auth/admin-auth.repository';
 import { RuntimeDatabaseBoundary } from './database/runtime-database-boundary';
 import { createHttpLogger } from './observability/http-logger';
 import { captureSentryException, initializeSentry } from './observability/sentry';
@@ -11,6 +13,7 @@ import { createStructuredLogger, NestStructuredLogger } from './observability/st
 
 export async function createApplication(options: AppModuleOptions = {}): Promise<INestApplication> {
   const application = await NestFactory.create(AppModule.register(options), {
+    abortOnError: false,
     logger: false,
   });
   const config = application.get(ConfigService<RuntimeConfig, true>);
@@ -22,7 +25,19 @@ export async function createApplication(options: AppModuleOptions = {}): Promise
 
   application.useLogger(new NestStructuredLogger(logger));
   application.use(createHttpLogger(logger));
-  application.useGlobalFilters(new GlobalExceptionFilter(logger, captureSentryException));
+  const adminAuthRepository = application.get(AdminAuthRepository);
+  application.useGlobalFilters(
+    new GlobalExceptionFilter(logger, captureSentryException, (exception, requestId) =>
+      adminAuthRepository.recordFailure(
+        {
+          code: exception.code,
+          ...(exception.auditAction === undefined ? {} : { auditAction: exception.auditAction }),
+          ...(exception.auditContext === undefined ? {} : { auditContext: exception.auditContext }),
+        },
+        requestId,
+      ),
+    ),
+  );
   application.setGlobalPrefix('api/v1', {
     exclude: [
       { path: 'health/live', method: RequestMethod.GET },
@@ -31,7 +46,9 @@ export async function createApplication(options: AppModuleOptions = {}): Promise
   });
   try {
     const runtimeDatabaseBoundary = application.get(RuntimeDatabaseBoundary);
+    const adminWriter = application.get(AdminWriterService);
     await runtimeDatabaseBoundary.assertLeastPrivilege();
+    await adminWriter.assertLeastPrivilege();
     await application.init();
   } catch (error: unknown) {
     await application.close();

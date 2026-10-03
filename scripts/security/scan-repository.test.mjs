@@ -6,11 +6,13 @@ import { deepmerge } from "deepmerge-ts";
 
 import {
   findSecretTypes,
+  validateAdminAuthSupplyChain,
   validateBraceExpansionOverride,
   validateDependabotPolicy,
   validateManifestLockConsistency,
   validateManifestVersions,
   validateNestMulterOverride,
+  validateNextLintGlobOverride,
   validateNextToolchain,
   validatePackageLock,
   validateAjvFastUriOverride,
@@ -128,6 +130,97 @@ test("unknown install scripts are rejected", () => {
       },
     }),
     ["unapproved install script: node_modules/example@1.0.0"],
+  );
+});
+
+const qualifiedAdminAuthManifests = {
+  "apps/api": {
+    dependencies: {
+      argon2: "0.45.1",
+      jose: "6.2.12",
+      qrcode: "1.5.4",
+    },
+    devDependencies: { "@types/qrcode": "1.5.6" },
+  },
+};
+
+const qualifiedAdminAuthLock = {
+  packages: {
+    "apps/api": structuredClone(qualifiedAdminAuthManifests["apps/api"]),
+    "node_modules/argon2": {
+      hasInstallScript: true,
+      integrity:
+        "sha512-skm+/WCjkGqCQxF7FG1LuZXM5yvbFjgbfiCGsud2oLgaDhh6b6dbH0b1EkghbM+xx4Bj8Ape+KKgixoIlWZicQ==",
+      license: "MIT",
+      resolved: "https://registry.npmjs.org/argon2/-/argon2-0.45.1.tgz",
+      version: "0.45.1",
+    },
+    "node_modules/jose": { version: "6.2.12" },
+    "node_modules/qrcode": { version: "1.5.4" },
+    "node_modules/@types/qrcode": { version: "1.5.6" },
+  },
+};
+
+const qualifiedArgon2Manifest = {
+  name: "argon2",
+  scripts: { install: "cross-env ZERO_AR_DATE=1 node-gyp-build" },
+  version: "0.45.1",
+};
+
+test("accepts the exact C1 dependency pins and qualified Argon2 hook", () => {
+  assert.deepEqual(
+    validateAdminAuthSupplyChain(
+      qualifiedAdminAuthManifests,
+      qualifiedAdminAuthLock,
+      qualifiedArgon2Manifest,
+    ),
+    [],
+  );
+});
+
+test("rejects Argon2 version, path, duplicate and hook drift", () => {
+  const versionDrift = structuredClone(qualifiedAdminAuthLock);
+  versionDrift.packages["node_modules/argon2"].version = "0.45.0";
+  assert.ok(
+    validateAdminAuthSupplyChain(
+      qualifiedAdminAuthManifests,
+      versionDrift,
+      qualifiedArgon2Manifest,
+    ).some((error) => error.includes("one physical installation")),
+  );
+
+  const pathDrift = structuredClone(qualifiedAdminAuthLock);
+  pathDrift.packages["node_modules/example/node_modules/argon2"] =
+    pathDrift.packages["node_modules/argon2"];
+  delete pathDrift.packages["node_modules/argon2"];
+  assert.ok(
+    validateAdminAuthSupplyChain(
+      qualifiedAdminAuthManifests,
+      pathDrift,
+      qualifiedArgon2Manifest,
+    ).some((error) => error.includes("one physical installation")),
+  );
+
+  const duplicate = structuredClone(qualifiedAdminAuthLock);
+  duplicate.packages["node_modules/example/node_modules/argon2"] =
+    duplicate.packages["node_modules/argon2"];
+  assert.ok(
+    validateAdminAuthSupplyChain(
+      qualifiedAdminAuthManifests,
+      duplicate,
+      qualifiedArgon2Manifest,
+    ).some((error) => error.includes("one physical installation")),
+  );
+
+  assert.ok(
+    validateAdminAuthSupplyChain(
+      qualifiedAdminAuthManifests,
+      qualifiedAdminAuthLock,
+      {
+        ...qualifiedArgon2Manifest,
+        scripts: { install: "node-gyp rebuild" },
+      },
+    ).some((error) => error.includes("installed hook must be exactly")),
   );
 });
 
@@ -1347,6 +1440,9 @@ test("rejects minimatch override and parent graph drift", () => {
 const validR2Manifests = {
   "": {
     overrides: {
+      "@next/eslint-plugin-next@16.3.8": {
+        "fast-glob": "npm:tinyglobby@0.2.17",
+      },
       "@nestjs/platform-express@11.1.28": { multer: "2.4.0" },
       "js-yaml@3.15.0": "3.15.2",
       "js-yaml@4.3.0": "4.3.2",
@@ -1396,7 +1492,10 @@ const validR2Lock = {
       version: "11.1.28",
     },
     "node_modules/@next/env": { version: "16.3.8" },
-    "node_modules/@next/eslint-plugin-next": { version: "16.3.8" },
+    "node_modules/@next/eslint-plugin-next": {
+      dependencies: { "fast-glob": "3.3.1" },
+      version: "16.3.8",
+    },
     "node_modules/@next/swc-darwin-arm64": { version: "16.3.8" },
     "node_modules/@next/swc-darwin-x64": { version: "16.3.8" },
     "node_modules/@next/swc-linux-arm64-gnu": { version: "16.3.8" },
@@ -1413,6 +1512,16 @@ const validR2Lock = {
     "node_modules/eslint-config-next": {
       dependencies: { "@next/eslint-plugin-next": "16.3.8" },
       version: "16.3.8",
+    },
+    "node_modules/@next/eslint-plugin-next/node_modules/fast-glob": {
+      dependencies: { fdir: "^6.5.0", picomatch: "^4.0.4" },
+      engines: { node: ">=12.0.0" },
+      integrity:
+        "sha512-wXR/dYpcqKmfWpEdZjiKJOwCNFndD0DMnrW/cYjVGttEkBfVgcLFHoNrlj47mjOVic9yyNu65alsgF4NQyTa2g==",
+      license: "MIT",
+      name: "tinyglobby",
+      resolved: "https://registry.npmjs.org/tinyglobby/-/tinyglobby-0.2.17.tgz",
+      version: "0.2.17",
     },
     "node_modules/js-yaml": { version: "4.3.2" },
     "node_modules/multer": { version: "2.4.0" },
@@ -1442,6 +1551,10 @@ const validR2Lock = {
 test("accepts the exact S1.1-R2 supply-chain graph", () => {
   assert.deepEqual(validateNextToolchain(validR2Manifests, validR2Lock), []);
   assert.deepEqual(
+    validateNextLintGlobOverride(validR2Manifests, validR2Lock),
+    [],
+  );
+  assert.deepEqual(
     validateVitestSupplyChain(validR2Manifests, validR2Lock),
     [],
   );
@@ -1451,6 +1564,69 @@ test("accepts the exact S1.1-R2 supply-chain graph", () => {
     validateNestMulterOverride(validR2Manifests, validR2Lock),
     [],
   );
+});
+
+test("rejects every Next lint glob override scope and alias identity drift", () => {
+  for (const mutate of [
+    (manifests) => {
+      manifests[""].overrides["fast-glob"] = "npm:tinyglobby@0.2.17";
+    },
+    (manifests) => {
+      delete manifests[""].overrides["@next/eslint-plugin-next@16.3.8"];
+      manifests[""].overrides["@next/eslint-plugin-next@16.3.7"] = {
+        "fast-glob": "npm:tinyglobby@0.2.17",
+      };
+    },
+    (manifests) => {
+      manifests[""].overrides["@next/eslint-plugin-next@16.3.8"]["fast-glob"] =
+        "npm:tinyglobby@0.2.16";
+    },
+    (manifests) => {
+      manifests[""].overrides.micromatch = "4.0.8";
+    },
+    (manifests) => {
+      manifests[""].overrides.braces = "3.0.3";
+    },
+  ]) {
+    const manifests = structuredClone(validR2Manifests);
+    mutate(manifests);
+    assert.ok(validateNextLintGlobOverride(manifests, validR2Lock).length > 0);
+  }
+
+  for (const mutate of [
+    (lockfile) => {
+      lockfile.packages[
+        "node_modules/@next/eslint-plugin-next/node_modules/fast-glob"
+      ].name = "fast-glob";
+    },
+    (lockfile) => {
+      lockfile.packages[
+        "node_modules/@next/eslint-plugin-next/node_modules/fast-glob"
+      ].version = "0.2.16";
+    },
+    (lockfile) => {
+      lockfile.packages[
+        "node_modules/@next/eslint-plugin-next/node_modules/fast-glob"
+      ].integrity = "unexpected";
+    },
+    (lockfile) => {
+      lockfile.packages["node_modules/@next/eslint-plugin-next"].dependencies[
+        "fast-glob"
+      ] = "3.3.3";
+    },
+    (lockfile) => {
+      lockfile.packages["node_modules/braces"] = { version: "3.0.3" };
+    },
+    (lockfile) => {
+      lockfile.packages["node_modules/micromatch"] = { version: "4.0.8" };
+    },
+  ]) {
+    const lockfile = structuredClone(validR2Lock);
+    mutate(lockfile);
+    assert.ok(
+      validateNextLintGlobOverride(validR2Manifests, lockfile).length > 0,
+    );
+  }
 });
 
 test("rejects Next and ESLint Config Next pin, placement and override drift", () => {

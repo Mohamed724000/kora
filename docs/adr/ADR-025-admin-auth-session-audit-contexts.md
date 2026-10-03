@@ -3,7 +3,8 @@
 Statut : **Accepted**
 
 Date : 2026-09-28
-Portée : S1.2-03B, contrat uniquement
+Amendement CTO C1 : 2026-10-02
+Portée : S1.2-03B et implémentation runtime locale S1.2-03C1
 
 ## Contexte
 
@@ -40,16 +41,25 @@ obligatoires ensemble et préservent la chaîne de preuve sans usurpation.
 
 Les événements sans contexte d'audit prouvé, succès ou échec, sont écrits dans
 un futur `AdminSecurityEvent`, et non dans `AuditLog`, puisqu'aucun acteur
-attribuable n'existe encore. Cela couvre le login initial, la création et la
-livraison de l'enrôlement TOTP, la demande de reset et l'acceptation
-d'invitation. Dès qu'une session ou un contexte de récupération est prouvé,
-toute mutation critique et son `AuditLog` sont atomiques dans une même
-transaction. Le sink de succès ne vaut pas implicitement pour tous les échecs :
+attribuable n'existe encore. Cela couvre le login initial, la première
+pré-authentification de création/livraison d'enrôlement TOTP, la demande de
+reset et l'acceptation d'invitation. Pour `createAdminTotpEnrollment` et
+`deliverAdminTotpEnrollmentQr`, un contexte `MFA_RECOVERY` valide, possédé et
+lié au bon acteur, actif et non expiré, route explicitement succès et échecs
+vers `AuditLog` en contexte `ADMIN_RECOVERY`, atomiquement avec la mutation.
+Un cookie, selector ou identifiant client ne prouve jamais ce contexte ; sans
+preuve serveur complète, le sink reste `AdminSecurityEvent`. Dès qu'une session
+ou un contexte de récupération est prouvé, toute mutation critique et son
+`AuditLog` sont atomiques dans une même transaction. Le sink de succès ne vaut
+pas implicitement pour tous les échecs :
 la table contractuelle par `operationId` envoie toujours un échec sans contexte
 prouvé dans `AdminSecurityEvent`, notamment pour TOTP, recovery code, refresh
 et reset invalides ; un contexte déjà prouvé suit le sink d'échec explicite.
 L'enregistrement est durable avant la réponse d'erreur et atomique avec tout
-changement d'état de sécurité.
+changement d'état de sécurité, sauf lorsque cette durabilité est elle-même
+indisponible : les mutations non commitées sont alors annulées, une réponse 503
+neutre est produite et seule une observation opérationnelle neutralisée est
+possible, sans prétendre qu'un audit durable a été écrit.
 
 La future contrainte SQL devra imposer un XOR strict entre les trois contextes,
 ainsi que les nullabilités conditionnelles ci-dessus. S1.2-03B ne modifie ni
@@ -86,6 +96,14 @@ livraison reste authentifiée par bearer + step-up, sans URL signée.
   jamais une session.
 - La confirmation du nouveau TOTP termine la récupération, crée une session et
   livre exactement dix nouveaux codes de récupération une seule fois.
+- La rotation des codes de récupération consomme le TOTP frais présent dans son
+  propre corps et établit directement la preuve `RECOVERY_CODE_ROTATION` liée à
+  la session courante. Aucun appel préalable à `/step-up` ni second OTP n'est
+  requis ; une preuve antérieure ne remplace pas ce TOTP. Le compteur est
+  global par administrateur et son rejeu est refusé. Consommation du compteur,
+  remplacement du batch, idempotence et audit forment une transaction unique ;
+  la preuve inline n'autorise aucun autre purpose. `RECOVERY_CODE_ROTATION`
+  n'est donc pas une valeur admise par le corps générique de `/step-up`.
 - Une récupération assistée sépare créateur, approbateur et sujet. Ces trois
   identités sont distinctes ; l'approbateur est `SUPER_ADMIN`, dispose d'un
   step-up frais, et consomme atomiquement un dossier valable 24 heures,
@@ -108,7 +126,15 @@ runtime devra vérifier à chaque requête la session active, le statut du compt
 la révocation et `authorizationVersion`, et recharger le rôle côté serveur. Le
 rôle du JWT n'est jamais l'unique autorité. L'inactivité est bornée à 8 heures,
 la durée absolue à 12 heures, le step-up à 5 minutes et le nombre de familles
-actives à 3.
+actives à 3. Lorsqu'une authentification complète créerait une quatrième
+famille, le runtime futur verrouille l'utilisateur, ne compte que les familles
+non révoquées dont les fenêtres idle et absolue restent ouvertes, puis révoque
+atomiquement les familles LRU nécessaires. L'ordre déterministe est
+`lastActivityAt`, puis `createdAt`, puis `id`, tous ascendants. Révocations,
+création et audit partagent la transaction ; un échec d'audit annule les effets
+non commités. Un refresh tourne une famille existante et n'en crée jamais une
+nouvelle. Cette éviction est l'arbitrage CTO du 2026-10-02, pas une ancienne
+exigence de 03B.
 
 Le refresh est un secret opaque CSPRNG de 256 bits, cookie `HttpOnly`, `Secure`,
 `SameSite=Strict`, host-only et à usage unique. Un replay ou le perdant d'une
@@ -139,6 +165,33 @@ inconnu, expiré, consommé, révoqué et état de compte. Les tests statistique
 les budgets de latence restent des preuves runtime C1/C2, pas une garantie
 opérationnelle de 03B.
 
+Les douze opérations C1 exposent aussi le seul code générique
+`SERVICE_UNAVAILABLE` en 503, dans l'`ErrorResponse` fermé et avec un message
+uniforme sans nom de dépendance, compte, secret, cookie ou token. Toute
+dépendance requise PostgreSQL, Redis, KMS ou d'audit indisponible échoue en mode
+fermé ; aucune mutation critique ne réussit sans audit durable. Une perte de
+l'accusé de COMMIT est un résultat inconnu, distinct d'un rollback confirmé :
+aucun succès ni secret n'est livré avant commit confirmé et aucune répétition
+automatique aveugle n'est autorisée. Idempotence et consommation unique restent
+applicables. L'enveloppe 503 impose normativement le code, le message, les
+détails vides et `retryable=false` ; son exemple n'est pas la seule contrainte.
+
+## Principe PostgreSQL pour le futur runtime C1
+
+Le futur writer C1 emploie une identité et un pool séparés du lecteur 03A. Ses
+droits sont bornés aux tables, colonnes et transitions C1 nécessaires ; les
+écritures `AuditLog` et `AdminSecurityEvent` sont `INSERT`-only, dans la
+transaction métier et sans `RETURNING`. Le lecteur futur utilise une allowlist
+explicite de tables et colonnes, y compris sur les tables sensibles existantes ;
+le `SELECT` global et les default grants globaux devront être supprimés sans
+affaiblir les protections 03A hors exceptions approuvées.
+
+Aucun privilège C2 de rôle, invitation, bootstrap ou reset assisté n'est inclus.
+Les candidats de modèles/tables, migrations datées et dépendances restent des
+propositions non autorisées. Baseline, upgrade et append-only devront être
+prouvés sous mandat runtime distinct ; le présent amendement ne crée ni schéma,
+migration, rôle, pool ou provisioning.
+
 Le premier compte ne vient ni d'un seed ni d'un endpoint. Une commande
 `admin:bootstrap` one-shot, auditée et hors OpenAPI est différée à C2 ; C1 ne
 dispose que de fixtures éphémères de test. S1.2-03B ne crée ni commande ni
@@ -156,5 +209,17 @@ C1 ou C2 sont des prérequis de leur runtime respectif, jamais un hardening
 repoussé après activation. Ils restent absents de 03B et exigent une
 autorisation distincte.
 
-Toute implémentation runtime, migration ou interface nécessite une autorisation
-distincte.
+## Note d'implémentation locale C1 — 2026-10-03
+
+Le mandat runtime S1.2-03C1 distinct a matérialisé localement les décisions de
+cet ADR : six modèles C1, une migration unique, l'upgrade AuditLog v1/v2 sans
+réécriture des lignes historiques, un lecteur et un writer PostgreSQL séparés,
+les contraintes XOR et append-only, ainsi que les douze opérations C1. Les
+paragraphes ci-dessus rédigés au futur conservent la décision de conception
+prise pendant 03B ; ils ne décrivent plus l'état courant du worktree C1.
+
+Cette matérialisation reste locale et non publiée. Le fournisseur KMS et la
+signature JWT de production ne sont pas qualifiés ; l'adaptateur à clés réelles
+éphémères est exclusivement injecté par les tests. Sans provider qualifié, C1
+échoue fermé. Toute publication C1, toute capacité C2 et toute interface C3
+exigent encore une décision distincte.
