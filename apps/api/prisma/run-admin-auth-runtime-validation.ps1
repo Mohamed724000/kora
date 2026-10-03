@@ -206,7 +206,7 @@ try {
   $env:S1203C1_REAL_REDIS = '1'
   $env:S1203C1_REDIS_PORT = $redisPort
   $env:S1203C1_REDIS_CONTAINER = $redisContainer
-  & $npmCommand.Source exec --workspace '@kora-plus/api' -- jest --runInBand test/admin-auth.integration.spec.ts
+  & $npmCommand.Source run test --workspace '@kora-plus/api' -- test/admin-auth.integration.spec.ts
   if ($LASTEXITCODE -ne 0) { throw 'C1 real HTTP integration validation failed.' }
   Write-Output 'S1.2-03C1_ADMIN_AUTH_HTTP_PASS operations=12 postgresql=real redis=real keys=ephemeral'
 }

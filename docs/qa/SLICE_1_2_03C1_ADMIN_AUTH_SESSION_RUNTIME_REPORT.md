@@ -359,3 +359,88 @@ C2/C3 restent `Not started`. Au moment de cet instantané prépublication, R1
 demeure local, non indexé, non commité et non publié. Après cet instantané,
 seul l'état réellement observé dans Git et GitHub fait foi ; aucun SHA, Run ID
 ou résultat de publication futur n'est affirmé ici.
+
+## Publication R1 et instantané local prépublication S1.2-03C1-R2
+
+### État publié R1 et échec Infrastructure
+
+R1 a ensuite été publié au commit
+`efb14d1d075dac50ff081b6ef3c1cce516de01e0`, parent
+`72f2192c912e9f626cb6a69bbc542ebd7e00d31e`, arbre
+`6312671eccbf114346b44d441ef513d10f266084`, avec quatre fichiers et
+`+101/-4`. La PR #50 reste `OPEN`, Draft et non fusionnée ; elle totalise deux
+commits, 78 fichiers et `+15184/-641`. Son titre, sa base et son corps sont
+inchangés.
+
+Les quatre runs R1 sont des événements `pull_request`, tentative 1, sur ce head
+exact. Launcher Windows `37157062397`, Security `37157062318` et Quality Linux
+`37157062368` ont réussi. Infrastructure `37157062382` a échoué.
+
+Le correctif d'invocation par `sh` a effectivement dépassé l'ancien refus
+Linux `126`. Le gate PostgreSQL R1 a validé les deux bases A/B, 39 modèles,
+40 tables, quatre provisionnements, un refus writer sans mutation et les deux
+passages ACL. Le second appel par `sh` a aussi appliqué les trois migrations et
+provisionné les rôles du parcours HTTP.
+
+L'échec primaire suivant s'est produit à la compilation Jest, avant toute
+exécution de test HTTP : `TS2339` signalait l'absence de
+`PrismaService.adminSession`, puis `TS7006` en était la conséquence. La suite a
+échoué au chargement et zéro test HTTP a été exécuté. Les étapes Prepare
+Compose, lifecycle et API health ont été `skipped`.
+
+Le nettoyage ciblé du validateur a supprimé le conteneur et le volume Redis,
+la base HTTP, le conteneur PostgreSQL et les secrets. L'étape distincte
+`Stop local infrastructure` a échoué secondairement parce que
+`infra:prepare` n'avait pas été atteint et que les fichiers `.local`
+n'existaient pas. Cette observation ne doit pas être reformulée comme si tous
+les nettoyages CI avaient réussi.
+
+### Correction causale R2
+
+Le wrapper invoquait Jest directement par `npm exec`, ce qui contournait le
+lifecycle `pretest` déjà défini dans `apps/api/package.json`. R2 remplace
+uniquement cet appel par
+`npm run test --workspace '@kora-plus/api' -- test/admin-auth.integration.spec.ts`.
+Le script `pretest` exécute ainsi `db:generate`, qui lance
+`prisma generate --config prisma.config.ts`, avant le script
+`jest --runInBand` et sa seule suite ciblée. Le contrôle du code de sortie reste
+inchangé ; ni `package.json`, ni workflow, runtime, schéma, migration, contrat,
+provisionneur, montage ou ACL ne change.
+
+### Preuve cold-start locale R2
+
+La sortie réellement résolue est
+`node_modules/.prisma/client` dans le worktree C1. Le chemin et ses parents sont
+des répertoires physiques normaux, sans jonction ni point de réanalyse ; la
+sortie est ignorée par Git et n'est partagée avec aucun ancien worktree. Seule
+cette sortie générée a été mise de côté sous garde. Le paquet installé
+`@prisma/client` n'a pas été déplacé et aucune installation n'a été lancée.
+
+Avec la sortie absente, le wrapper seul a montré dans l'ordre `pretest`,
+`db:generate`, la génération de Prisma Client `7.9.1` depuis
+`prisma/schema.prisma`, puis Jest sur
+`test/admin-auth.integration.spec.ts`. Le schéma source et le schéma du client
+généré portent tous deux l'empreinte
+`812fe0b405009e153fbc5221aae66f3527ea2e9e2e6f818f173a0bf61601827f`,
+et le client utilisé expose `adminSession`.
+
+Le même passage a validé PostgreSQL A/B avec 39 modèles et 40 tables, quatre
+provisionnements réussis, un refus writer sans mutation, les ACL et les deux
+invocations par `sh`. La suite HTTP/PostgreSQL/Redis a réellement exécuté une
+suite sur une, 18 tests sur 18 et les douze opérations C1. Le wrapper a terminé
+au code 0.
+
+Le nettoyage ciblé a supprimé le conteneur et le volume Redis, la base HTTP,
+le conteneur PostgreSQL et les secrets. La sauvegarde du client a été supprimée
+après vérification du client régénéré. L'inventaire final retrouve exactement
+les quatre conteneurs, cinq volumes et cinq réseaux préexistants, avec leurs
+identifiants initiaux, et aucune ressource R2 résiduelle.
+
+R2 constitue un instantané local prépublication limité à trois fichiers
+existants. Aucun `git add`, commit, push, changement de PR, rerun, Ready,
+approval, merge, tag, release ou déploiement R2 n'est effectué. Les audits,
+signatures, licences, installations, suites générales, builds, Flutter,
+`infra:verify` et `infra:verify-api` ne sont pas répétés. La politique open
+source reste différée, le fournisseur de clés de production reste
+**NON QUALIFIÉ** et C2/C3 restent `Not started`. Aucun SHA, arbre ou Run ID R2
+futur n'est affirmé.
