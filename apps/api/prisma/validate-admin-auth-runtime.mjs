@@ -167,6 +167,7 @@ function provisionerArguments(database) {
     '--env',
     `KORA_POSTGRES_ADMIN_WRITER_USER=${process.env.S1203C1_WRITER_USER}`,
     process.env.S1203C1_VALIDATION_CONTAINER,
+    'sh',
     '/usr/local/bin/kora-provision-postgresql-runtime.sh',
   ];
 }

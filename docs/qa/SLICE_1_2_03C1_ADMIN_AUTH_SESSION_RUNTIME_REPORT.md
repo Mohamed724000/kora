@@ -1,8 +1,8 @@
 # Rapport de validation locale S1.2-03C1 — Admin Auth Session Runtime
 
-Statut : **IMPLÉMENTATION ET VALIDATION LOCALES COMPLÈTES — REMÉDIATION
-SUPPLY-CHAIN DEV QUALIFIÉE — AUDITS COMPLET ET PRODUCTION PROPRES — NON PUBLIÉ
-— FOURNISSEUR DE CLÉS DE PRODUCTION NON QUALIFIÉ — C2/C3 NOT STARTED**
+Statut : **BASELINE C1 PUBLIÉE DANS LA DRAFT PR #50 — INSTANTANÉ R1
+PRÉPUBLICATION VALIDÉ LOCALEMENT — ÉCHEC INFRASTRUCTURE HISTORIQUE PRÉSERVÉ —
+FOURNISSEUR DE CLÉS DE PRODUCTION NON QUALIFIÉ — C2/C3 NOT STARTED**
 
 Date : 2026-10-03
 
@@ -273,3 +273,89 @@ Aucun `git add`, commit, push, changement de PR, rerun GitHub, tag, release ou
 déploiement n'a été effectué. C2 et C3 restent `Not started`. Le fournisseur de
 clés de production reste explicitement non qualifié ; aucune validation locale
 ne vaut décision de publication ou de déploiement.
+
+## Instantané local prépublication S1.2-03C1-R1 — invocation Linux du provisionneur
+
+Les sections précédentes constituent la preuve historique locale antérieure à
+la publication. La baseline C1 a ensuite été publiée au commit unique
+`72f2192c912e9f626cb6a69bbc542ebd7e00d31e`, parent
+`c97992ca2c82bc4f22f9222ea98ed53714fede4c`, arbre
+`272fa9c79ec9faba1ae34c4e649be62881fea208`, dans la Draft PR #50. Son gel
+reconstruit depuis les blobs Git contient 78 chemins, 8 491 octets et porte
+l'empreinte
+`26665774c52313cb1712357bd0e57308a36d425d0231837f9c7bf095ec01c213`.
+La PR reste `OPEN`, Draft et non fusionnée, avec un commit, 78 fichiers et
+`+15087/-641`. Son titre publié reste
+`feat(admin): implement S1.2-03C1 auth session runtime` et son corps conserve
+l'empreinte
+`115c481fb8e68df4f70668085882035f43c155bdbe2aa5a719671dd7d1c8ac2f`.
+
+### Échec Infrastructure historique
+
+Les quatre runs `pull_request`, tentative 1, portent ce head exact. Launcher
+Windows `37128808326`, Security `37128808380` et Quality Linux `37128808376`
+ont réussi. Infrastructure `37128808344` a échoué à l'étape
+`Validate Admin Auth Session PostgreSQL runtime` : le provisionneur monté en
+lecture seule, conservé au mode Git `100644`, était invoqué directement et
+Linux a refusé son exécution avec `exit 126` et `permission denied`.
+
+Avant ce refus, le run avait validé l'upgrade des migrations historiques, la
+préservation de l'audit legacy, les 39 modèles et 40 tables, les douze
+contraintes négatives, le stockage positif et la projection PostgreSQL A/B. Il
+n'avait validé ni le provisionnement reader/writer, ni les ACL et refus
+associés, ni le parcours HTTP/PostgreSQL/Redis. Les étapes Prepare Compose,
+lifecycle et API health avaient été `skipped`. Les deux bases, le conteneur et
+les secrets de validation C1 avaient été supprimés. L'étape secondaire
+`infra:down` avait ensuite échoué parce que la préparation Compose n'avait pas
+créé les fichiers `.local` ; ce second échec n'est ni un PASS ni une preuve de
+fuite et reste hors du correctif R1.
+
+### Correctif causal et preuve Linux
+
+R1 ajoute uniquement l'argument distinct `sh` entre le conteneur et le chemin
+du provisionneur dans `provisionerArguments()`, puis dans l'appel HTTP/E2E du
+wrapper PowerShell. Le provisionneur reste byte-identique, au mode Git
+`100644`, monté en lecture seule, avec les mêmes paramètres, secrets, contrôles
+SQL, ACL, transactions et refus.
+
+La sonde Linux jetable a copié le provisionneur exact dans un conteneur
+PostgreSQL 18.4 après application des trois migrations. Les empreintes hôte et
+conteneur étaient identiques :
+`3c71c009ad62248da12b2736c2b283fc5bb853af2499c461f5863047e70f646c`.
+Les permissions réellement observées étaient `0444` (`-r--r--r--`,
+`root:root`, 56 875 octets). L'invocation directe a été refusée avec
+`exit 126` ;
+deux invocations successives par `sh` ont terminé au code 0 et matérialisé les
+deux rôles attendus, prouvant aussi l'idempotence. La première tentative de
+sonde n'est pas comptée comme PASS : PowerShell avait promu un `NOTICE` psql
+bénin en `NativeCommandError` avant l'invocation. Son conteneur et ses secrets
+avaient été supprimés avant la relance concluante.
+
+### Validation intégrée locale R1
+
+Le wrapper corrigé
+`apps/api/prisma/run-admin-auth-runtime-validation.ps1` termine au code 0. Les
+preuves terminales observées sont : deux bases A/B, trois migrations, 39
+modèles, 40 tables, projection de catalogue
+`5b2bf03fbe7fc292ff48102e7bbdd66f63a2b0a62b698e350f8122575ab88120`,
+dix codes recovery, génération refresh 2, audit v2, douze contraintes
+négatives, quatre provisionnements réussis et un refus du writer contaminé
+sans mutation. Les deux passages ACL confirment trois projections reader, un
+writer limité aux colonnes et des sinks insert-only sans `RETURNING`.
+
+Le parcours HTTP a appliqué les trois migrations puis provisionné les rôles par
+le second appel corrigé. Jest termine avec une suite sur une, 18 tests sur 18,
+douze opérations, PostgreSQL et Redis réels et clés éphémères. Le conteneur
+Redis, son volume, la base HTTP, le conteneur PostgreSQL et le répertoire de
+secrets ont tous été supprimés de manière ciblée.
+
+R1 reste limité aux deux fichiers techniques et aux deux documents de preuve
+autorisés. Les gates `infra:verify` et `infra:verify-api` ne sont pas répétés :
+leurs fichiers sont inchangés et aucun finding précis ne rend leur preuve
+caduque. Installations, audits réseau, signatures, licences, suites générales,
+Flutter et builds restent également non répétés. La politique open source
+reste différée, le fournisseur de clés de production reste **NON QUALIFIÉ** et
+C2/C3 restent `Not started`. Au moment de cet instantané prépublication, R1
+demeure local, non indexé, non commité et non publié. Après cet instantané,
+seul l'état réellement observé dans Git et GitHub fait foi ; aucun SHA, Run ID
+ou résultat de publication futur n'est affirmé ici.

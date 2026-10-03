@@ -190,7 +190,7 @@ try {
     --env POSTGRES_USER=kora_s1203c1_admin `
     --env KORA_POSTGRES_RUNTIME_USER=kora_s1203c1_reader `
     --env KORA_POSTGRES_ADMIN_WRITER_USER=kora_s1203c1_writer `
-    $container /usr/local/bin/kora-provision-postgresql-runtime.sh
+    $container sh /usr/local/bin/kora-provision-postgresql-runtime.sh
   if ($LASTEXITCODE -ne 0) { throw 'C1 HTTP E2E role provisioning failed.' }
 
   $env:S1203C1_HTTP_E2E = '1'
