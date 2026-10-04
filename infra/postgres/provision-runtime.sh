@@ -56,6 +56,36 @@ WITH runtime_role AS (
   SELECT oid
   FROM pg_catalog.pg_roles
   WHERE rolname = :'runtime_user'
+), writer_role AS (
+  SELECT oid
+  FROM pg_catalog.pg_roles
+  WHERE rolname = :'admin_writer_user'
+), unsafe_role_membership AS (
+  SELECT 1
+  FROM pg_catalog.pg_auth_members AS membership
+  WHERE membership.roleid = (SELECT oid FROM runtime_role)
+     OR membership.member = (SELECT oid FROM writer_role)
+     OR membership.roleid = (SELECT oid FROM writer_role)
+)
+SELECT
+  NOT EXISTS (SELECT 1 FROM unsafe_role_membership) AS role_membership_boundary_safe,
+  (SELECT count(*) FROM unsafe_role_membership) AS role_membership_violation_count
+\gset
+
+\if :role_membership_boundary_safe
+\else
+  \echo PostgreSQL runtime provisioning refused unsafe role membership count=:role_membership_violation_count.
+  DO $role_membership_refusal$
+  BEGIN
+    RAISE EXCEPTION 'unsafe reader or admin writer role membership';
+  END
+  $role_membership_refusal$;
+\endif
+
+WITH runtime_role AS (
+  SELECT oid
+  FROM pg_catalog.pg_roles
+  WHERE rolname = :'runtime_user'
 ), current_owner_role AS (
   SELECT oid
   FROM pg_catalog.pg_roles
@@ -401,6 +431,7 @@ WITH writer_role AS (
   UNION ALL
   SELECT 1 FROM pg_catalog.pg_auth_members AS membership
   WHERE membership.member = (SELECT oid FROM writer_role)
+     OR membership.roleid = (SELECT oid FROM writer_role)
   UNION ALL
   SELECT 1
   FROM pg_catalog.pg_shdepend AS dependency
@@ -997,6 +1028,39 @@ SELECT format(
   :'admin_writer_user'
 ) \gexec
 
+WITH runtime_role AS (
+  SELECT oid
+  FROM pg_catalog.pg_roles
+  WHERE rolname = :'runtime_user'
+), writer_role AS (
+  SELECT oid
+  FROM pg_catalog.pg_roles
+  WHERE rolname = :'admin_writer_user'
+), incident_role_membership AS (
+  SELECT 1
+  FROM pg_catalog.pg_auth_members AS membership
+  WHERE membership.member IN (
+          (SELECT oid FROM runtime_role),
+          (SELECT oid FROM writer_role)
+        )
+     OR membership.roleid IN (
+          (SELECT oid FROM runtime_role),
+          (SELECT oid FROM writer_role)
+        )
+)
+SELECT NOT EXISTS (SELECT 1 FROM incident_role_membership)
+  AS role_membership_postcondition_safe
+\gset
+
+\if :role_membership_postcondition_safe
+\else
+  DO $role_membership_postcondition_refusal$
+  BEGIN
+    RAISE EXCEPTION 'reader or admin writer role membership postcondition failed';
+  END
+  $role_membership_postcondition_refusal$;
+\endif
+
 COMMIT;
 SQL
 
@@ -1011,7 +1075,7 @@ runtime_result="$(
     --tuples-only \
     --no-align \
     --set=ON_ERROR_STOP=1 \
-    --command="WITH runtime_role AS (SELECT oid, rolbypassrls, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolsuper FROM pg_catalog.pg_roles WHERE rolname = current_user), current_database_entry AS (SELECT oid FROM pg_catalog.pg_database WHERE datname = current_database()), non_system_schemas AS (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname <> 'information_schema' AND nspname !~ '^pg_'), privilege_bearing_types AS (SELECT type_entry.oid FROM pg_catalog.pg_type AS type_entry JOIN non_system_schemas AS namespace_entry ON namespace_entry.oid = type_entry.typnamespace LEFT JOIN pg_catalog.pg_class AS composite_entry ON composite_entry.oid = type_entry.typrelid WHERE type_entry.typisdefined AND type_entry.typelem = 0 AND (type_entry.typrelid = 0 OR composite_entry.relkind = 'c')), large_object_routines AS (SELECT routine_entry.oid FROM pg_catalog.pg_proc AS routine_entry JOIN pg_catalog.pg_namespace AS namespace_entry ON namespace_entry.oid = routine_entry.pronamespace WHERE namespace_entry.nspname = 'pg_catalog' AND (routine_entry.proname ~ '^lo_' OR routine_entry.proname IN ('loread', 'lowrite'))) SELECT current_user = session_user AND current_setting('session_replication_role') = 'origin' AND current_setting('lo_compat_privileges') = 'off' AND NOT runtime_role.rolsuper AND NOT runtime_role.rolcreaterole AND NOT runtime_role.rolcreatedb AND NOT runtime_role.rolinherit AND NOT runtime_role.rolreplication AND NOT runtime_role.rolbypassrls AND has_database_privilege(current_user, current_database(), 'CONNECT') AND NOT has_database_privilege(current_user, current_database(), 'CONNECT WITH GRANT OPTION') AND NOT has_database_privilege(current_user, current_database(), 'CREATE') AND NOT has_database_privilege(current_user, current_database(), 'TEMPORARY') AND has_schema_privilege(current_user, 'public', 'USAGE') AND NOT has_schema_privilege(current_user, 'public', 'USAGE WITH GRANT OPTION') AND NOT has_schema_privilege(current_user, 'public', 'CREATE') AND NOT EXISTS (SELECT 1 FROM privilege_bearing_types AS type_entry WHERE has_type_privilege(current_user, type_entry.oid, 'USAGE')) AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_largeobject_metadata AS large_object WHERE large_object.lomowner = runtime_role.oid OR has_largeobject_privilege(current_user, large_object.oid, 'SELECT,UPDATE')) AND NOT EXISTS (SELECT 1 FROM large_object_routines AS routine_entry WHERE has_function_privilege(current_user, routine_entry.oid, 'EXECUTE')) AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_parameter_acl AS parameter_acl WHERE pg_catalog.has_parameter_privilege(current_user, parameter_acl.parname, 'SET') OR pg_catalog.has_parameter_privilege(current_user, parameter_acl.parname, 'ALTER SYSTEM')) AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_shdepend AS dependency CROSS JOIN current_database_entry WHERE dependency.refclassid = 'pg_catalog.pg_authid'::regclass AND dependency.refobjid = runtime_role.oid AND dependency.deptype = 'o' AND (dependency.dbid = current_database_entry.oid OR (dependency.dbid = 0 AND dependency.classid = 'pg_catalog.pg_database'::regclass AND dependency.objid = current_database_entry.oid))) FROM runtime_role;"
+    --command="WITH runtime_role AS (SELECT oid, rolbypassrls, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolsuper FROM pg_catalog.pg_roles WHERE rolname = current_user), current_database_entry AS (SELECT oid FROM pg_catalog.pg_database WHERE datname = current_database()), non_system_schemas AS (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname <> 'information_schema' AND nspname !~ '^pg_'), privilege_bearing_types AS (SELECT type_entry.oid FROM pg_catalog.pg_type AS type_entry JOIN non_system_schemas AS namespace_entry ON namespace_entry.oid = type_entry.typnamespace LEFT JOIN pg_catalog.pg_class AS composite_entry ON composite_entry.oid = type_entry.typrelid WHERE type_entry.typisdefined AND type_entry.typelem = 0 AND (type_entry.typrelid = 0 OR composite_entry.relkind = 'c')), large_object_routines AS (SELECT routine_entry.oid FROM pg_catalog.pg_proc AS routine_entry JOIN pg_catalog.pg_namespace AS namespace_entry ON namespace_entry.oid = routine_entry.pronamespace WHERE namespace_entry.nspname = 'pg_catalog' AND (routine_entry.proname ~ '^lo_' OR routine_entry.proname IN ('loread', 'lowrite'))) SELECT current_user = session_user AND current_setting('session_replication_role') = 'origin' AND current_setting('lo_compat_privileges') = 'off' AND NOT runtime_role.rolsuper AND NOT runtime_role.rolcreaterole AND NOT runtime_role.rolcreatedb AND NOT runtime_role.rolinherit AND NOT runtime_role.rolreplication AND NOT runtime_role.rolbypassrls AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_auth_members AS membership WHERE membership.member = runtime_role.oid OR membership.roleid = runtime_role.oid) AND has_database_privilege(current_user, current_database(), 'CONNECT') AND NOT has_database_privilege(current_user, current_database(), 'CONNECT WITH GRANT OPTION') AND NOT has_database_privilege(current_user, current_database(), 'CREATE') AND NOT has_database_privilege(current_user, current_database(), 'TEMPORARY') AND has_schema_privilege(current_user, 'public', 'USAGE') AND NOT has_schema_privilege(current_user, 'public', 'USAGE WITH GRANT OPTION') AND NOT has_schema_privilege(current_user, 'public', 'CREATE') AND NOT EXISTS (SELECT 1 FROM privilege_bearing_types AS type_entry WHERE has_type_privilege(current_user, type_entry.oid, 'USAGE')) AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_largeobject_metadata AS large_object WHERE large_object.lomowner = runtime_role.oid OR has_largeobject_privilege(current_user, large_object.oid, 'SELECT,UPDATE')) AND NOT EXISTS (SELECT 1 FROM large_object_routines AS routine_entry WHERE has_function_privilege(current_user, routine_entry.oid, 'EXECUTE')) AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_parameter_acl AS parameter_acl WHERE pg_catalog.has_parameter_privilege(current_user, parameter_acl.parname, 'SET') OR pg_catalog.has_parameter_privilege(current_user, parameter_acl.parname, 'ALTER SYSTEM')) AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_shdepend AS dependency CROSS JOIN current_database_entry WHERE dependency.refclassid = 'pg_catalog.pg_authid'::regclass AND dependency.refobjid = runtime_role.oid AND dependency.deptype = 'o' AND (dependency.dbid = current_database_entry.oid OR (dependency.dbid = 0 AND dependency.classid = 'pg_catalog.pg_database'::regclass AND dependency.objid = current_database_entry.oid))) FROM runtime_role;"
 )"
 
 if [ "$runtime_result" != 't' ]; then
@@ -1166,7 +1230,7 @@ admin_writer_result="$(
       AND NOT EXISTS (SELECT 1 FROM actual_column_privileges WHERE is_grantable)
       AND NOT EXISTS (SELECT 1 FROM public_grants)
       AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_auth_members
-                       WHERE member = writer_role.oid)
+                       WHERE member = writer_role.oid OR roleid = writer_role.oid)
       AND NOT EXISTS (SELECT 1 FROM non_system_schemas AS namespace_entry
                        WHERE namespace_entry.nspname <> 'public'
                          AND has_schema_privilege(current_user, namespace_entry.oid, 'USAGE,CREATE'))

@@ -1,4 +1,7 @@
-import { TestEphemeralAdminKeyProvider } from './admin-key-provider';
+import {
+  AdminKeyProviderUnavailableError,
+  TestEphemeralAdminKeyProvider,
+} from './admin-key-provider';
 import {
   ADMIN_JWT_AUDIENCE,
   ADMIN_JWT_ISSUER,
@@ -204,6 +207,29 @@ describe('AdminAuthCrypto', () => {
       await expect(crypto.verifyAccessToken(token, now + 1)).rejects.toBeInstanceOf(
         AdminAuthCryptoError,
       );
+    }
+  });
+
+  it('préserve une indisponibilité du fournisseur pendant la résolution de la clé JWT', async () => {
+    const now = 1_800_000_000;
+    const token = await crypto.issueAccessToken(
+      {
+        adminUserId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        authorizationVersion: 1,
+        role: 'SUPPORT',
+        sessionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      },
+      now,
+    );
+    const unavailable = new AdminKeyProviderUnavailableError();
+    const resolve = jest
+      .spyOn(provider, 'resolveJwtVerificationKey')
+      .mockRejectedValueOnce(unavailable);
+
+    try {
+      await expect(crypto.verifyAccessToken(token, now + 1)).rejects.toBe(unavailable);
+    } finally {
+      resolve.mockRestore();
     }
   });
 });

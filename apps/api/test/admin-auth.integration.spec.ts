@@ -1,5 +1,6 @@
 import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { RequestMethod, type INestApplication } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomInt, type KeyObject } from 'node:crypto';
 import Redis from 'ioredis';
@@ -21,11 +22,18 @@ import {
   type AdminRequestPolicy,
 } from '../src/admin-auth/admin-request-policy';
 import { createApplication } from '../src/app.factory';
+import type { RuntimeConfig } from '../src/config/runtime-config';
 import {
+  AdminWriterBoundaryError,
   AdminWriterCommitUnknownError,
   AdminWriterService,
   type AdminWriterTransaction,
 } from '../src/database/admin-writer.service';
+import {
+  PostgresqlRuntimeBoundary,
+  RuntimeDatabaseBoundaryError,
+} from '../src/database/postgresql-runtime-boundary';
+import { PrismaService } from '../src/database/prisma.service';
 
 const { Client } = pg;
 
@@ -164,6 +172,8 @@ function deterministicUuid(value: number): string {
 
 class OperationFaultKeyProvider implements AdminKeyProvider {
   private failed: AdminKeyProviderOperation | undefined;
+  private failAvailabilityAfter: number | undefined;
+  private availabilityCalls = 0;
   private failedDigestAfter = 0;
   private failedDigestDomain: string | undefined;
   private matchedDigestCalls = 0;
@@ -174,6 +184,11 @@ class OperationFaultKeyProvider implements AdminKeyProvider {
     this.failed = operation;
   }
 
+  failAssertAvailableAfter(successfulCalls: number): void {
+    this.failAvailabilityAfter = successfulCalls;
+    this.availabilityCalls = 0;
+  }
+
   failKeyedDigestDomain(domain: string, afterSuccessfulMatches = 0): void {
     this.failedDigestDomain = domain;
     this.failedDigestAfter = afterSuccessfulMatches;
@@ -182,12 +197,21 @@ class OperationFaultKeyProvider implements AdminKeyProvider {
 
   recover(): void {
     this.failed = undefined;
+    this.failAvailabilityAfter = undefined;
+    this.availabilityCalls = 0;
     this.failedDigestAfter = 0;
     this.failedDigestDomain = undefined;
     this.matchedDigestCalls = 0;
   }
 
   async assertAvailable(): Promise<void> {
+    if (
+      this.failAvailabilityAfter !== undefined &&
+      this.availabilityCalls >= this.failAvailabilityAfter
+    ) {
+      throw new AdminKeyProviderUnavailableError();
+    }
+    this.availabilityCalls += 1;
     await this.delegate.assertAvailable();
   }
 
@@ -260,6 +284,16 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     sinkFailure: deterministicUuid(118),
     stepUp: deterministicUuid(104),
     target: deterministicUuid(105),
+    invalidConfirm: deterministicUuid(123),
+    invalidTotp: deterministicUuid(124),
+    replayConcurrent: deterministicUuid(125),
+    auditRotate: deterministicUuid(126),
+    auditStepUp: deterministicUuid(127),
+    revokeActor: deterministicUuid(128),
+    revokeTarget: deterministicUuid(129),
+    revokeSupport: deterministicUuid(130),
+    digestFailure: deterministicUuid(131),
+    commitUnknown: deterministicUuid(132),
   } as const;
   const seeds = new Map<string, Uint8Array>();
   const keys = new TestEphemeralAdminKeyProvider();
@@ -285,6 +319,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     passwordHash: string,
     status: 'ACTIVE' | 'DISABLED' | 'PENDING_MFA' | 'SUSPENDED',
     withTotp: boolean,
+    role: 'SUPER_ADMIN' | 'CONTENT_EDITOR' | 'FINANCE_MANAGER' | 'SUPPORT' = 'SUPER_ADMIN',
   ): Promise<void> {
     let encrypted: string | null = null;
     if (withTotp) {
@@ -296,19 +331,23 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
       `INSERT INTO "AdminUser"
          ("id", "email", "passwordHash", "role", "status", "authorizationVersion",
           "totpSecretEncrypted", "totpEnabledAt", "lastAcceptedTotpCounter", "createdAt")
-       VALUES ($1, $2, $3, 'SUPER_ADMIN', $4, 1, $5, $6, NULL, CURRENT_TIMESTAMP)`,
-      [id, email, passwordHash, status, encrypted, withTotp ? new Date() : null],
+       VALUES ($1, $2, $3, $4, $5, 1, $6, $7, NULL, CURRENT_TIMESTAMP)`,
+      [id, email, passwordHash, role, status, encrypted, withTotp ? new Date() : null],
     );
   }
 
-  async function insertSession(adminUserId: string, sequence: number): Promise<string> {
+  async function insertSession(
+    adminUserId: string,
+    sequence: number,
+    role: 'SUPER_ADMIN' | 'CONTENT_EDITOR' | 'FINANCE_MANAGER' | 'SUPPORT' = 'SUPER_ADMIN',
+  ): Promise<string> {
     const sessionId = deterministicUuid(1_000 + sequence);
     const now = new Date();
     const accessToken = await crypto.issueAccessToken(
       {
         adminUserId,
         authorizationVersion: 1,
-        role: 'SUPER_ADMIN',
+        role,
         sessionId,
       },
       Math.floor(now.getTime() / 1000),
@@ -405,6 +444,22 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     return crypto.generateTotpCode(seed, counter);
   }
 
+  function invalidTotp(adminUserId: string): string {
+    const seed = seeds.get(adminUserId);
+    if (seed === undefined) throw new Error('Missing fixture TOTP seed.');
+    const counter = BigInt(Math.floor(Date.now() / 30_000));
+    const accepted = new Set([
+      crypto.generateTotpCode(seed, counter - 1n),
+      crypto.generateTotpCode(seed, counter),
+      crypto.generateTotpCode(seed, counter + 1n),
+    ]);
+    for (let candidate = 0; candidate <= 999_999; candidate += 1) {
+      const code = String(candidate).padStart(6, '0');
+      if (!accepted.has(code)) return code;
+    }
+    throw new Error('Could not generate an invalid TOTP fixture.');
+  }
+
   beforeAll(async () => {
     const required = [
       'S1203C1_E2E_DATABASE',
@@ -494,6 +549,53 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     await insertUser(ids.csrfFailure, 'csrf-failure@example.invalid', passwordHash, 'ACTIVE', true);
     await insertUser(ids.crossA, 'cross-a@example.invalid', passwordHash, 'ACTIVE', true);
     await insertUser(ids.crossB, 'cross-b@example.invalid', passwordHash, 'ACTIVE', true);
+    await insertUser(
+      ids.invalidConfirm,
+      'invalid-confirm@example.invalid',
+      passwordHash,
+      'PENDING_MFA',
+      false,
+    );
+    await insertUser(ids.invalidTotp, 'invalid-totp@example.invalid', passwordHash, 'ACTIVE', true);
+    await insertUser(
+      ids.replayConcurrent,
+      'replay-concurrent@example.invalid',
+      passwordHash,
+      'PENDING_MFA',
+      false,
+    );
+    await insertUser(ids.auditRotate, 'audit-rotate@example.invalid', passwordHash, 'ACTIVE', true);
+    await insertUser(ids.auditStepUp, 'audit-stepup@example.invalid', passwordHash, 'ACTIVE', true);
+    await insertUser(ids.revokeActor, 'revoke-actor@example.invalid', passwordHash, 'ACTIVE', true);
+    await insertUser(
+      ids.revokeTarget,
+      'revoke-target@example.invalid',
+      passwordHash,
+      'ACTIVE',
+      true,
+    );
+    await insertUser(
+      ids.revokeSupport,
+      'revoke-support@example.invalid',
+      passwordHash,
+      'ACTIVE',
+      true,
+      'SUPPORT',
+    );
+    await insertUser(
+      ids.digestFailure,
+      'digest-failure@example.invalid',
+      passwordHash,
+      'PENDING_MFA',
+      false,
+    );
+    await insertUser(
+      ids.commitUnknown,
+      'commit-unknown@example.invalid',
+      passwordHash,
+      'ACTIVE',
+      true,
+    );
     for (let index = 1; index <= 3; index += 1) await insertSession(ids.totp, index);
     for (let index = 20; index <= 22; index += 1) await insertSession(ids.concurrent, index);
     const rotateToken = await insertSession(ids.rotate, 10);
@@ -506,6 +608,12 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     accessTokens.set(ids.sinkFailure, await insertSession(ids.sinkFailure, 34));
     accessTokens.set(ids.crossA, await insertSession(ids.crossA, 40));
     accessTokens.set(ids.crossB, await insertSession(ids.crossB, 41));
+    accessTokens.set(ids.auditRotate, await insertSession(ids.auditRotate, 42));
+    accessTokens.set(ids.auditStepUp, await insertSession(ids.auditStepUp, 43));
+    accessTokens.set(ids.revokeActor, await insertSession(ids.revokeActor, 44));
+    accessTokens.set(ids.revokeTarget, await insertSession(ids.revokeTarget, 45));
+    accessTokens.set(ids.revokeSupport, await insertSession(ids.revokeSupport, 46, 'SUPPORT'));
+    accessTokens.set(ids.commitUnknown, await insertSession(ids.commitUnknown, 47));
     recoveryMaterials.set(ids.recovery, await insertRecoveryCode(ids.recovery, 1));
     recoveryMaterials.set(ids.binding, await insertRecoveryCode(ids.binding, 2));
     process.env.S1203C1_ROTATE_TOKEN = rotateToken;
@@ -646,6 +754,24 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
       selector: string;
       verifier: string;
     };
+    const confirmationStateBeforeReplay = await owner.query<{
+      batchCount: string;
+      codeCount: string;
+      idempotencyCount: string;
+      sessionCount: string;
+    }>(
+      `SELECT
+         (SELECT count(*)::text FROM "AdminRecoveryCodeBatch" WHERE "adminUserId" = $1)
+           AS "batchCount",
+         (SELECT count(*)::text FROM "AdminRecoveryCode" WHERE "adminUserId" = $1)
+           AS "codeCount",
+         (SELECT count(*)::text FROM "AdminIdempotencyRecord"
+           WHERE "adminUserId" = $1 AND "operation" = 'confirmAdminTotpEnrollment')
+           AS "idempotencyCount",
+         (SELECT count(*)::text FROM "AdminSession" WHERE "adminUserId" = $1)
+           AS "sessionCount"`,
+      [ids.first],
+    );
     const confirmationReplay = await request(server)
       .post(`/api/v1/admin/auth/totp/enrollments/${enrollmentId}/confirm`)
       .set('Content-Type', 'application/json')
@@ -654,8 +780,33 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
       .set('Origin', origin)
       .set('X-Kora-Csrf', firstCookies.csrf)
       .send({ code: initialCode });
-    expect(confirmationReplay.status).not.toBe(200);
+    expect(confirmationReplay.status).toBe(409);
+    expect(confirmationReplay.body.error.code).toBe('IDEMPOTENCY_CONFLICT');
     expect(confirmationReplay.body.data?.recoveryCodes).toBeUndefined();
+    expect(confirmationReplay.headers['set-cookie']).toBeUndefined();
+    expect(JSON.stringify(confirmationReplay.body)).not.toMatch(
+      /accessToken|refreshToken|selector|verifier/iu,
+    );
+
+    const confirmationStateAfterReplay = await owner.query<{
+      batchCount: string;
+      codeCount: string;
+      idempotencyCount: string;
+      sessionCount: string;
+    }>(
+      `SELECT
+         (SELECT count(*)::text FROM "AdminRecoveryCodeBatch" WHERE "adminUserId" = $1)
+           AS "batchCount",
+         (SELECT count(*)::text FROM "AdminRecoveryCode" WHERE "adminUserId" = $1)
+           AS "codeCount",
+         (SELECT count(*)::text FROM "AdminIdempotencyRecord"
+           WHERE "adminUserId" = $1 AND "operation" = 'confirmAdminTotpEnrollment')
+           AS "idempotencyCount",
+         (SELECT count(*)::text FROM "AdminSession" WHERE "adminUserId" = $1)
+           AS "sessionCount"`,
+      [ids.first],
+    );
+    expect(confirmationStateAfterReplay.rows[0]).toEqual(confirmationStateBeforeReplay.rows[0]);
 
     const loginTotp = await request(server)
       .post('/api/v1/admin/auth/login')
@@ -816,6 +967,220 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     expect(revokedCurrent.status).toBe(204);
   });
 
+  it('returns one success and one secret-free 409 for concurrent enrollment confirmation', async () => {
+    const server = application.getHttpServer();
+    const cookies = await loginBrowser(server, 'replay-concurrent@example.invalid');
+    const enrollment = await request(server)
+      .post('/api/v1/admin/auth/totp/enrollments')
+      .set('Cookie', cookies.cookie)
+      .set('Idempotency-Key', 'replay-concurrent-enrollment-0001')
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', cookies.csrf);
+    expect(enrollment.status).toBe(201);
+    const enrollmentId = String(enrollment.body.data.enrollmentId);
+    await request(server)
+      .post(`/api/v1/admin/auth/totp/enrollments/${enrollmentId}/qr`)
+      .set('Cookie', cookies.cookie)
+      .set('Idempotency-Key', 'replay-concurrent-qr-0001')
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', cookies.csrf)
+      .expect(200);
+    const stored = await owner.query<{ secretEncrypted: string }>(
+      `SELECT "secretEncrypted" FROM "AdminTotpEnrollment" WHERE "id" = $1`,
+      [enrollmentId],
+    );
+    const decrypted = await crypto.decryptTotpSecret(
+      stored.rows[0]!.secretEncrypted,
+      ids.replayConcurrent,
+    );
+    const code = crypto.generateTotpCode(decrypted.secret, BigInt(Math.floor(Date.now() / 30_000)));
+    decrypted.secret.fill(0);
+    const confirm = (): request.Test =>
+      request(server)
+        .post(`/api/v1/admin/auth/totp/enrollments/${enrollmentId}/confirm`)
+        .set('Content-Type', 'application/json')
+        .set('Cookie', cookies.cookie)
+        .set('Idempotency-Key', 'replay-concurrent-confirm-0001')
+        .set('Origin', origin)
+        .set('X-Kora-Csrf', cookies.csrf)
+        .send({ code });
+
+    const responses = await Promise.all([confirm(), confirm()]);
+    expect(responses.map(({ status }) => status).sort()).toEqual([200, 409]);
+    const replay = responses.find(({ status }) => status === 409)!;
+    expect(replay.body.error.code).toBe('IDEMPOTENCY_CONFLICT');
+    expect(replay.headers['set-cookie']).toBeUndefined();
+    expect(JSON.stringify(replay.body)).not.toMatch(
+      /accessToken|refreshToken|recoveryCodes|selector|verifier/iu,
+    );
+
+    const otherKey = await request(server)
+      .post(`/api/v1/admin/auth/totp/enrollments/${enrollmentId}/confirm`)
+      .set('Content-Type', 'application/json')
+      .set('Cookie', cookies.cookie)
+      .set('Idempotency-Key', 'replay-concurrent-other-key-0001')
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', cookies.csrf)
+      .send({ code });
+    expect(otherKey.status).toBe(401);
+    expect(otherKey.body.error.code).toBe('AUTH_REQUIRED');
+
+    const divergentPayload = await request(server)
+      .post(`/api/v1/admin/auth/totp/enrollments/${enrollmentId}/confirm`)
+      .set('Content-Type', 'application/json')
+      .set('Cookie', cookies.cookie)
+      .set('Idempotency-Key', 'replay-concurrent-confirm-0001')
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', cookies.csrf)
+      .send({ code: code === '999999' ? '000000' : '999999' });
+    expect(divergentPayload.status).toBe(409);
+    expect(divergentPayload.body.error.code).toBe('IDEMPOTENCY_CONFLICT');
+    expect(divergentPayload.headers['set-cookie']).toBeUndefined();
+    expect(JSON.stringify(divergentPayload.body)).not.toMatch(
+      /accessToken|refreshToken|recoveryCodes|selector|verifier/iu,
+    );
+
+    const otherUserCookies = await loginBrowser(server, 'qr-failure@example.invalid');
+    const otherUserContext = await request(server)
+      .post(`/api/v1/admin/auth/totp/enrollments/${enrollmentId}/confirm`)
+      .set('Content-Type', 'application/json')
+      .set('Cookie', otherUserCookies.cookie)
+      .set('Idempotency-Key', 'replay-concurrent-confirm-0001')
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', otherUserCookies.csrf)
+      .send({ code });
+    expect(otherUserContext.status).toBe(403);
+    expect(otherUserContext.body.error.code).toBe('FORBIDDEN');
+    expect(otherUserContext.headers['set-cookie']).toBeUndefined();
+
+    const state = await owner.query<{
+      auditCount: string;
+      batchCount: string;
+      codeCount: string;
+      idempotencyCount: string;
+      sessionCount: string;
+    }>(
+      `SELECT
+         (SELECT count(*)::text FROM "AuditLog"
+           WHERE "adminUserId" = $1 AND "action" = 'ADMIN_TOTP_ENROLLMENT_CONFIRMED')
+           AS "auditCount",
+         (SELECT count(*)::text FROM "AdminRecoveryCodeBatch" WHERE "adminUserId" = $1)
+           AS "batchCount",
+         (SELECT count(*)::text FROM "AdminRecoveryCode" WHERE "adminUserId" = $1)
+           AS "codeCount",
+         (SELECT count(*)::text FROM "AdminIdempotencyRecord"
+           WHERE "adminUserId" = $1 AND "operation" = 'confirmAdminTotpEnrollment')
+           AS "idempotencyCount",
+         (SELECT count(*)::text FROM "AdminSession" WHERE "adminUserId" = $1)
+           AS "sessionCount"`,
+      [ids.replayConcurrent],
+    );
+    expect(state.rows[0]).toEqual({
+      auditCount: '1',
+      batchCount: '1',
+      codeCount: '10',
+      idempotencyCount: '1',
+      sessionCount: '1',
+    });
+  });
+
+  it('returns exact 400 contract statuses for every invalid TOTP and recovery surface', async () => {
+    const server = application.getHttpServer();
+    const enrollmentCookies = await loginBrowser(server, 'invalid-confirm@example.invalid');
+    const enrollment = await request(server)
+      .post('/api/v1/admin/auth/totp/enrollments')
+      .set('Cookie', enrollmentCookies.cookie)
+      .set('Idempotency-Key', 'invalid-confirm-enrollment-0001')
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', enrollmentCookies.csrf);
+    expect(enrollment.status).toBe(201);
+    const enrollmentId = String(enrollment.body.data.enrollmentId);
+    await request(server)
+      .post(`/api/v1/admin/auth/totp/enrollments/${enrollmentId}/qr`)
+      .set('Cookie', enrollmentCookies.cookie)
+      .set('Idempotency-Key', 'invalid-confirm-qr-0001')
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', enrollmentCookies.csrf)
+      .expect(200);
+    const enrollmentSecret = await owner.query<{ secretEncrypted: string }>(
+      `SELECT "secretEncrypted" FROM "AdminTotpEnrollment" WHERE "id" = $1`,
+      [enrollmentId],
+    );
+    const decrypted = await crypto.decryptTotpSecret(
+      enrollmentSecret.rows[0]!.secretEncrypted,
+      ids.invalidConfirm,
+    );
+    const counter = BigInt(Math.floor(Date.now() / 30_000));
+    const accepted = new Set([
+      crypto.generateTotpCode(decrypted.secret, counter - 1n),
+      crypto.generateTotpCode(decrypted.secret, counter),
+      crypto.generateTotpCode(decrypted.secret, counter + 1n),
+    ]);
+    let invalidEnrollmentCode: string | undefined;
+    for (let candidate = 0; candidate <= 999_999; candidate += 1) {
+      const code = String(candidate).padStart(6, '0');
+      if (!accepted.has(code)) {
+        invalidEnrollmentCode = code;
+        break;
+      }
+    }
+    decrypted.secret.fill(0);
+    if (invalidEnrollmentCode === undefined) throw new Error('Missing invalid enrollment code.');
+    const invalidConfirmation = await request(server)
+      .post(`/api/v1/admin/auth/totp/enrollments/${enrollmentId}/confirm`)
+      .set('Content-Type', 'application/json')
+      .set('Cookie', enrollmentCookies.cookie)
+      .set('Idempotency-Key', 'invalid-confirm-confirm-0001')
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', enrollmentCookies.csrf)
+      .send({ code: invalidEnrollmentCode });
+    expect(invalidConfirmation.status).toBe(400);
+    expect(invalidConfirmation.body.error.code).toBe('OTP_INVALID');
+
+    const totpCookies = await loginBrowser(server, 'invalid-totp@example.invalid');
+    const invalidVerification = await request(server)
+      .post('/api/v1/admin/auth/totp/verify')
+      .set('Content-Type', 'application/json')
+      .set('Cookie', totpCookies.cookie)
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', totpCookies.csrf)
+      .send({ code: invalidTotp(ids.invalidTotp) });
+    expect(invalidVerification.status).toBe(400);
+    expect(invalidVerification.body.error.code).toBe('OTP_INVALID');
+
+    const recoveryCookies = await loginBrowser(server, 'binding@example.invalid');
+    const foreignRecovery = recoveryMaterials.get(ids.recovery);
+    if (foreignRecovery === undefined) throw new Error('Missing recovery fixture material.');
+    const invalidRecovery = await request(server)
+      .post('/api/v1/admin/auth/recovery-codes/verify')
+      .set('Content-Type', 'application/json')
+      .set('Cookie', recoveryCookies.cookie)
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', recoveryCookies.csrf)
+      .send(foreignRecovery);
+    expect(invalidRecovery.status).toBe(400);
+    expect(invalidRecovery.body.error.code).toBe('ADMIN_RECOVERY_CODE_INVALID');
+
+    const invalidRotation = await request(server)
+      .post('/api/v1/admin/auth/recovery-codes/rotate')
+      .set('Authorization', `Bearer ${accessTokens.get(ids.auditRotate)}`)
+      .set('Content-Type', 'application/json')
+      .set('Idempotency-Key', 'invalid-rotation-0001')
+      .set('Origin', origin)
+      .send({ code: invalidTotp(ids.auditRotate) });
+    expect(invalidRotation.status).toBe(400);
+    expect(invalidRotation.body.error.code).toBe('OTP_INVALID');
+
+    const invalidStepUp = await request(server)
+      .post('/api/v1/admin/auth/step-up')
+      .set('Authorization', `Bearer ${accessTokens.get(ids.auditStepUp)}`)
+      .set('Content-Type', 'application/json')
+      .set('Origin', origin)
+      .send({ purpose: 'SESSION_REVOCATION', totpCode: invalidTotp(ids.auditStepUp) });
+    expect(invalidStepUp.status).toBe(400);
+    expect(invalidStepUp.body.error.code).toBe('OTP_INVALID');
+  });
+
   it('rejects one TOTP counter reused across operations', async () => {
     const server = application.getHttpServer();
     const cookies = await loginBrowser(server, 'double-totp@example.invalid');
@@ -835,7 +1200,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
       .set('Content-Type', 'application/json')
       .set('Origin', origin)
       .send({ purpose: 'SESSION_REVOCATION', totpCode: code });
-    expect(reused.status).toBe(401);
+    expect(reused.status).toBe(400);
     expect(reused.body.error.code).toBe('OTP_INVALID');
 
     const state = await owner.query<{ lastAcceptedTotpCounter: string }>(
@@ -928,7 +1293,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
       .set('Origin', origin)
       .set('X-Kora-Csrf', expired.csrf)
       .send(recovery);
-    expect(expiredAttempt.status).toBe(401);
+    expect(expiredAttempt.status).toBe(400);
     expect(expiredAttempt.body.error.code).toBe('ADMIN_RECOVERY_CODE_INVALID');
 
     const foreign = await loginBrowser(server, 'binding@example.invalid');
@@ -939,7 +1304,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
       .set('Origin', origin)
       .set('X-Kora-Csrf', foreign.csrf)
       .send(recovery);
-    expect(foreignAttempt.status).toBe(401);
+    expect(foreignAttempt.status).toBe(400);
     expect(foreignAttempt.body.error.code).toBe('ADMIN_RECOVERY_CODE_INVALID');
 
     const valid = await loginBrowser(server, 'recovery@example.invalid');
@@ -961,7 +1326,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
       .set('Origin', origin)
       .set('X-Kora-Csrf', replayContext.csrf)
       .send(recovery);
-    expect(replay.status).toBe(401);
+    expect(replay.status).toBe(400);
     expect(replay.body.error.code).toBe('ADMIN_RECOVERY_CODE_INVALID');
     expect(replay.body.data).toBeUndefined();
 
@@ -1008,6 +1373,249 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
       expect(response.status).toBe(401);
       expect(response.body.error.code).toBe('AUTH_REQUIRED');
     }
+  });
+
+  it('audits revokeOther success and refusals with exact subject and validated reason fields', async () => {
+    const server = application.getHttpServer();
+    const actorClaims = await crypto.verifyAccessToken(
+      accessTokens.get(ids.revokeActor)!,
+      Math.floor(Date.now() / 1000),
+    );
+    const targetClaims = await crypto.verifyAccessToken(
+      accessTokens.get(ids.revokeTarget)!,
+      Math.floor(Date.now() / 1000),
+    );
+    const supportClaims = await crypto.verifyAccessToken(
+      accessTokens.get(ids.revokeSupport)!,
+      Math.floor(Date.now() / 1000),
+    );
+    const initialSessions = await owner.query<{
+      id: string;
+      lastActivityAt: Date;
+      revokedAt: Date | null;
+    }>(
+      `SELECT "id", "lastActivityAt", "revokedAt" FROM "AdminSession"
+        WHERE "id" = ANY($1::text[]) ORDER BY "id"`,
+      [[actorClaims.sessionId, targetClaims.sessionId, supportClaims.sessionId]],
+    );
+
+    const assertFailureAudit = async (
+      response: request.Response,
+      expected: {
+        actorAdminUserId: string;
+        actorSessionId: string;
+        operatorReason: string;
+        reasonCode: string;
+        subjectAdminUserId?: string;
+        targetSessionId: string;
+      },
+    ): Promise<void> => {
+      const rows = await owner.query<{
+        action: string;
+        actorAdminUserId: string;
+        adminSessionId: string;
+        entityId: string;
+        operatorReason: string;
+        reasonCode: string;
+        subjectAdminUserId: string | null;
+      }>(
+        `SELECT "action", "adminUserId" AS "actorAdminUserId",
+                "adminSessionId", "entityId", "operatorReason",
+                "reasonCode"::text AS "reasonCode", "subjectAdminUserId"
+           FROM "AuditLog" WHERE "requestId" = $1`,
+        [String(response.body.requestId)],
+      );
+      expect(rows.rows).toHaveLength(1);
+      expect(rows.rows[0]).toEqual({
+        action: 'ADMIN_SESSION_REVOCATION_REJECTED',
+        actorAdminUserId: expected.actorAdminUserId,
+        adminSessionId: expected.actorSessionId,
+        entityId: expected.targetSessionId,
+        operatorReason: expected.operatorReason,
+        reasonCode: expected.reasonCode,
+        subjectAdminUserId: expected.subjectAdminUserId ?? null,
+      });
+    };
+    const revoke = (
+      bearer: string,
+      targetSessionId: string,
+      reasonCode: string,
+      operatorReason: string,
+    ): request.Test =>
+      request(server)
+        .post(`/api/v1/admin/auth/sessions/${targetSessionId}/revocations`)
+        .set('Authorization', `Bearer ${bearer}`)
+        .set('Content-Type', 'application/json')
+        .set('Origin', origin)
+        .send({ operatorReason, reasonCode });
+
+    const insufficientReason = 'Support role cannot revoke sessions';
+    const insufficient = await revoke(
+      accessTokens.get(ids.revokeSupport)!,
+      targetClaims.sessionId,
+      'ROLE_ADMINISTRATION',
+      insufficientReason,
+    );
+    expect(insufficient.status).toBe(403);
+    expect(insufficient.body.error.code).toBe('FORBIDDEN');
+    await assertFailureAudit(insufficient, {
+      actorAdminUserId: ids.revokeSupport,
+      actorSessionId: supportClaims.sessionId,
+      operatorReason: insufficientReason,
+      reasonCode: 'ROLE_ADMINISTRATION',
+      subjectAdminUserId: ids.revokeTarget,
+      targetSessionId: targetClaims.sessionId,
+    });
+    const unauthorizedUnknownSessionId = deterministicUuid(99_998);
+    const unauthorizedUnknown = await revoke(
+      accessTokens.get(ids.revokeSupport)!,
+      unauthorizedUnknownSessionId,
+      'ROLE_ADMINISTRATION',
+      insufficientReason,
+    );
+    expect(unauthorizedUnknown.status).toBe(403);
+    expect(unauthorizedUnknown.body.error).toEqual(insufficient.body.error);
+    await assertFailureAudit(unauthorizedUnknown, {
+      actorAdminUserId: ids.revokeSupport,
+      actorSessionId: supportClaims.sessionId,
+      operatorReason: insufficientReason,
+      reasonCode: 'ROLE_ADMINISTRATION',
+      targetSessionId: unauthorizedUnknownSessionId,
+    });
+
+    const absentReason = 'Step-up proof is required';
+    const absent = await revoke(
+      accessTokens.get(ids.revokeActor)!,
+      targetClaims.sessionId,
+      'SECURITY_RESPONSE',
+      absentReason,
+    );
+    expect(absent.status).toBe(403);
+    await assertFailureAudit(absent, {
+      actorAdminUserId: ids.revokeActor,
+      actorSessionId: actorClaims.sessionId,
+      operatorReason: absentReason,
+      reasonCode: 'SECURITY_RESPONSE',
+      subjectAdminUserId: ids.revokeTarget,
+      targetSessionId: targetClaims.sessionId,
+    });
+
+    await owner.query(
+      `UPDATE "AdminSession"
+          SET "stepUpPurpose" = 'SESSION_REVOCATION',
+              "stepUpVerifiedAt" = CURRENT_TIMESTAMP - INTERVAL '10 minutes',
+              "stepUpExpiresAt" = CURRENT_TIMESTAMP - INTERVAL '5 minutes'
+        WHERE "id" = $1`,
+      [actorClaims.sessionId],
+    );
+    const expiredReason = 'Step-up proof has expired';
+    const expired = await revoke(
+      accessTokens.get(ids.revokeActor)!,
+      targetClaims.sessionId,
+      'STATUS_ADMINISTRATION',
+      expiredReason,
+    );
+    expect(expired.status).toBe(403);
+    await assertFailureAudit(expired, {
+      actorAdminUserId: ids.revokeActor,
+      actorSessionId: actorClaims.sessionId,
+      operatorReason: expiredReason,
+      reasonCode: 'STATUS_ADMINISTRATION',
+      subjectAdminUserId: ids.revokeTarget,
+      targetSessionId: targetClaims.sessionId,
+    });
+
+    await owner.query(
+      `UPDATE "AdminSession"
+          SET "stepUpPurpose" = 'SESSION_REVOCATION',
+              "stepUpVerifiedAt" = CURRENT_TIMESTAMP,
+              "stepUpExpiresAt" = CURRENT_TIMESTAMP + INTERVAL '5 minutes'
+        WHERE "id" = $1`,
+      [actorClaims.sessionId],
+    );
+    const selfReason = 'Self-target is forbidden';
+    const self = await revoke(
+      accessTokens.get(ids.revokeActor)!,
+      actorClaims.sessionId,
+      'ACCOUNT_RECOVERY',
+      selfReason,
+    );
+    expect(self.status).toBe(403);
+    await assertFailureAudit(self, {
+      actorAdminUserId: ids.revokeActor,
+      actorSessionId: actorClaims.sessionId,
+      operatorReason: selfReason,
+      reasonCode: 'ACCOUNT_RECOVERY',
+      subjectAdminUserId: ids.revokeActor,
+      targetSessionId: actorClaims.sessionId,
+    });
+
+    const unknownSessionId = deterministicUuid(99_999);
+    const unknownReason = 'Unknown target requested';
+    const unknown = await revoke(
+      accessTokens.get(ids.revokeActor)!,
+      unknownSessionId,
+      'SECURITY_RESPONSE',
+      unknownReason,
+    );
+    expect(unknown.status).toBe(404);
+    expect(unknown.body.error.code).toBe('ADMIN_SESSION_NOT_FOUND');
+    await assertFailureAudit(unknown, {
+      actorAdminUserId: ids.revokeActor,
+      actorSessionId: actorClaims.sessionId,
+      operatorReason: unknownReason,
+      reasonCode: 'SECURITY_RESPONSE',
+      targetSessionId: unknownSessionId,
+    });
+
+    const afterFailures = await owner.query<{
+      id: string;
+      lastActivityAt: Date;
+      revokedAt: Date | null;
+    }>(
+      `SELECT "id", "lastActivityAt", "revokedAt" FROM "AdminSession"
+        WHERE "id" = ANY($1::text[]) ORDER BY "id"`,
+      [[actorClaims.sessionId, targetClaims.sessionId, supportClaims.sessionId]],
+    );
+    expect(afterFailures.rows).toEqual(initialSessions.rows);
+
+    const successReason = 'Confirmed compromised target';
+    const succeeded = await revoke(
+      accessTokens.get(ids.revokeActor)!,
+      targetClaims.sessionId,
+      'SECURITY_RESPONSE',
+      successReason,
+    );
+    expect(succeeded.status).toBe(204);
+    const successAudit = await owner.query<{
+      action: string;
+      actorAdminUserId: string;
+      adminSessionId: string;
+      operatorReason: string;
+      reasonCode: string;
+      subjectAdminUserId: string;
+    }>(
+      `SELECT "action", "adminUserId" AS "actorAdminUserId", "adminSessionId",
+              "operatorReason", "reasonCode"::text AS "reasonCode", "subjectAdminUserId"
+         FROM "AuditLog"
+        WHERE "action" = 'ADMIN_SESSION_REVOKED_BY_ADMIN' AND "entityId" = $1`,
+      [targetClaims.sessionId],
+    );
+    expect(successAudit.rows).toEqual([
+      {
+        action: 'ADMIN_SESSION_REVOKED_BY_ADMIN',
+        actorAdminUserId: ids.revokeActor,
+        adminSessionId: actorClaims.sessionId,
+        operatorReason: successReason,
+        reasonCode: 'SECURITY_RESPONSE',
+        subjectAdminUserId: ids.revokeTarget,
+      },
+    ]);
+    const targetState = await owner.query<{ revokedAt: Date | null }>(
+      `SELECT "revokedAt" FROM "AdminSession" WHERE "id" = $1`,
+      [targetClaims.sessionId],
+    );
+    expect(targetState.rows[0]!.revokedAt).not.toBeNull();
   });
 
   it('serializes crossed session revocations without a PostgreSQL deadlock', async () => {
@@ -1211,6 +1819,98 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     }
   });
 
+  it('rejects incoming reader and writer memberships on fresh application connections', async () => {
+    const config = application.get<ConfigService<RuntimeConfig, true>>(ConfigService);
+    const readerRole = process.env.S1203C1_E2E_READER_USER;
+    const writerRole = process.env.S1203C1_E2E_WRITER_USER;
+    if (
+      readerRole === undefined ||
+      writerRole === undefined ||
+      !/^[a-z][a-z0-9_]{0,62}$/u.test(readerRole) ||
+      !/^[a-z][a-z0-9_]{0,62}$/u.test(writerRole)
+    ) {
+      throw new Error('The isolated membership targets failed their identifier guard.');
+    }
+
+    const incomingMembershipCount = async (
+      targetRole: string,
+      probeRole: string,
+    ): Promise<number> => {
+      const result = await owner.query<{ count: string }>(
+        `SELECT count(*)::text AS count
+           FROM pg_catalog.pg_auth_members AS membership
+           JOIN pg_catalog.pg_roles AS granted_role
+             ON granted_role.oid = membership.roleid
+           JOIN pg_catalog.pg_roles AS member_role
+             ON member_role.oid = membership.member
+          WHERE granted_role.rolname = $1 AND member_role.rolname = $2`,
+        [targetRole, probeRole],
+      );
+      return Number(result.rows[0]!.count);
+    };
+    const assertFreshReader = async (): Promise<void> => {
+      const prisma = new PrismaService(config);
+      const writer = new AdminWriterService(config as unknown as ConfigService);
+      const boundary = new PostgresqlRuntimeBoundary(prisma, writer, config);
+      try {
+        await boundary.assertLeastPrivilege();
+      } finally {
+        await prisma.onApplicationShutdown();
+        await writer.onModuleDestroy();
+      }
+    };
+    const assertFreshWriter = async (): Promise<void> => {
+      const writer = new AdminWriterService(config as unknown as ConfigService);
+      try {
+        await writer.assertLeastPrivilege();
+      } finally {
+        await writer.onModuleDestroy();
+      }
+    };
+
+    for (const [kind, targetRole] of [
+      ['reader', readerRole],
+      ['writer', writerRole],
+    ] as const) {
+      const probeRole = `c1_incoming_${kind}_${randomInt(100_000_000, 999_999_999)}`;
+      if (!/^[a-z][a-z0-9_]{0,62}$/u.test(probeRole)) {
+        throw new Error('The isolated membership probe failed its identifier guard.');
+      }
+      await owner.query(`CREATE ROLE "${probeRole}" NOLOGIN NOINHERIT`);
+      try {
+        await owner.query(`GRANT "${targetRole}" TO "${probeRole}"`);
+        expect(await incomingMembershipCount(targetRole, probeRole)).toBe(1);
+
+        let rejection: unknown;
+        try {
+          if (kind === 'reader') await assertFreshReader();
+          else await assertFreshWriter();
+        } catch (error: unknown) {
+          rejection = error;
+        }
+        if (kind === 'reader') {
+          expect(rejection).toBeInstanceOf(RuntimeDatabaseBoundaryError);
+          expect((rejection as RuntimeDatabaseBoundaryError).violations).toContain(
+            'role_membership_present',
+          );
+        } else {
+          expect(rejection).toBeInstanceOf(AdminWriterBoundaryError);
+          expect((rejection as AdminWriterBoundaryError).violations).toContain(
+            'role_membership_present',
+          );
+        }
+        expect(await incomingMembershipCount(targetRole, probeRole)).toBe(1);
+      } finally {
+        await owner.query(`REVOKE "${targetRole}" FROM "${probeRole}"`);
+        await owner.query(`DROP ROLE "${probeRole}"`);
+      }
+
+      expect(await incomingMembershipCount(targetRole, probeRole)).toBe(0);
+      if (kind === 'reader') await expect(assertFreshReader()).resolves.toBeUndefined();
+      else await expect(assertFreshWriter()).resolves.toBeUndefined();
+    }
+  });
+
   it('rolls back all TOTP completion state when CSRF generation fails before COMMIT', async () => {
     const server = faultApplication.getHttpServer();
     const cookies = await loginBrowser(server, 'csrf-failure@example.invalid');
@@ -1258,6 +1958,114 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
       auditCount: '0',
       consumedAt: null,
       lastAcceptedTotpCounter: null,
+      sessionCount: '0',
+    });
+  });
+
+  it('fails closed when a keyed digest becomes unavailable after the provider preflight', async () => {
+    const server = faultApplication.getHttpServer();
+
+    faultKeys.failKeyedDigestDomain('ADMIN_LOGIN_SUBJECT_V1');
+    let failedLogin: request.Response;
+    try {
+      failedLogin = await request(server)
+        .post('/api/v1/admin/auth/login')
+        .set('Content-Type', 'application/json')
+        .set('Origin', origin)
+        .set('Sec-Fetch-Site', 'same-origin')
+        .send({ email: 'digest-failure@example.invalid', password });
+    } finally {
+      faultKeys.recover();
+    }
+    expect(failedLogin.status).toBe(503);
+    expect(failedLogin.body.error).toEqual({
+      code: 'SERVICE_UNAVAILABLE',
+      details: {},
+      message: 'Service temporairement indisponible.',
+      retryable: false,
+    });
+    expect(failedLogin.headers['set-cookie']).toBeUndefined();
+
+    const cookies = await loginBrowser(server, 'digest-failure@example.invalid');
+    const contextToken = cookieValue(cookies, '__Host-kora_admin_preauth');
+    const enrollment = await request(server)
+      .post('/api/v1/admin/auth/totp/enrollments')
+      .set('Cookie', cookies.cookie)
+      .set('Idempotency-Key', 'digest-failure-enrollment-0001')
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', cookies.csrf);
+    expect(enrollment.status).toBe(201);
+    const enrollmentId = String(enrollment.body.data.enrollmentId);
+    await request(server)
+      .post(`/api/v1/admin/auth/totp/enrollments/${enrollmentId}/qr`)
+      .set('Cookie', cookies.cookie)
+      .set('Idempotency-Key', 'digest-failure-qr-0001')
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', cookies.csrf)
+      .expect(200);
+    const stored = await owner.query<{ secretEncrypted: string }>(
+      `SELECT "secretEncrypted" FROM "AdminTotpEnrollment" WHERE "id" = $1`,
+      [enrollmentId],
+    );
+    const decrypted = await crypto.decryptTotpSecret(
+      stored.rows[0]!.secretEncrypted,
+      ids.digestFailure,
+    );
+    const code = crypto.generateTotpCode(decrypted.secret, BigInt(Math.floor(Date.now() / 30_000)));
+    decrypted.secret.fill(0);
+
+    faultKeys.failKeyedDigestDomain('ADMIN_IDEMPOTENCY_CONFIRM_V1');
+    let failedConfirmation: request.Response;
+    try {
+      failedConfirmation = await request(server)
+        .post(`/api/v1/admin/auth/totp/enrollments/${enrollmentId}/confirm`)
+        .set('Content-Type', 'application/json')
+        .set('Cookie', cookies.cookie)
+        .set('Idempotency-Key', 'digest-failure-confirm-0001')
+        .set('Origin', origin)
+        .set('X-Kora-Csrf', cookies.csrf)
+        .send({ code });
+    } finally {
+      faultKeys.recover();
+    }
+    expect(failedConfirmation.status).toBe(503);
+    expect(failedConfirmation.body.error.code).toBe('SERVICE_UNAVAILABLE');
+    expect(failedConfirmation.headers['set-cookie']).toBeUndefined();
+    expect(JSON.stringify(failedConfirmation.body)).not.toMatch(
+      /accessToken|refreshToken|recoveryCodes|selector|verifier/iu,
+    );
+
+    const state = await owner.query<{
+      auditCount: string;
+      batchCount: string;
+      confirmedAt: Date | null;
+      consumedAt: Date | null;
+      idempotencyCount: string;
+      sessionCount: string;
+    }>(
+      `SELECT
+         (SELECT "confirmedAt" FROM "AdminTotpEnrollment" WHERE "id" = $1)
+           AS "confirmedAt",
+         (SELECT "consumedAt" FROM "AdminPreAuthContext" WHERE "tokenHash" = $2)
+           AS "consumedAt",
+         (SELECT count(*)::text FROM "AdminRecoveryCodeBatch" WHERE "adminUserId" = $3)
+           AS "batchCount",
+         (SELECT count(*)::text FROM "AdminSession" WHERE "adminUserId" = $3)
+           AS "sessionCount",
+         (SELECT count(*)::text FROM "AdminIdempotencyRecord"
+           WHERE "adminUserId" = $3 AND "operation" = 'confirmAdminTotpEnrollment')
+           AS "idempotencyCount",
+         (SELECT count(*)::text FROM "AuditLog"
+           WHERE "adminUserId" = $3 AND "action" = 'ADMIN_TOTP_ENROLLMENT_CONFIRMED')
+           AS "auditCount"`,
+      [enrollmentId, createHash('sha256').update(contextToken).digest('hex'), ids.digestFailure],
+    );
+    expect(state.rows[0]).toEqual({
+      auditCount: '0',
+      batchCount: '0',
+      confirmedAt: null,
+      consumedAt: null,
+      idempotencyCount: '0',
       sessionCount: '0',
     });
   });
@@ -1390,6 +2198,235 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     expect(retried.headers['content-type']).toMatch(/^image\/png/u);
   });
 
+  it('returns 503 when JWT key resolution fails after provider availability succeeds', async () => {
+    const server = faultApplication.getHttpServer();
+    faultKeys.fail('RESOLVE_SIGNING_KEY');
+    let response: request.Response;
+    try {
+      response = await request(server)
+        .get('/api/v1/admin/auth/sessions')
+        .set('Authorization', `Bearer ${accessTokens.get(ids.auditStepUp)}`);
+    } finally {
+      faultKeys.recover();
+    }
+    expect(response.status).toBe(503);
+    expect(response.body.error).toEqual({
+      code: 'SERVICE_UNAVAILABLE',
+      details: {},
+      message: 'Service temporairement indisponible.',
+      retryable: false,
+    });
+    expect(JSON.stringify(response.body)).not.toMatch(/adminUserId|sessionId/iu);
+  });
+
+  it('records exactly one contextual AuditLog for post-session availability, crypto and transaction failures', async () => {
+    const server = faultApplication.getHttpServer();
+    const operations = [
+      {
+        action: 'ADMIN_RECOVERY_CODES_ROTATION_REJECTED',
+        adminUserId: ids.auditRotate,
+        invoke: (suffix: string) =>
+          request(server)
+            .post('/api/v1/admin/auth/recovery-codes/rotate')
+            .set('Authorization', `Bearer ${accessTokens.get(ids.auditRotate)}`)
+            .set('Content-Type', 'application/json')
+            .set('Idempotency-Key', `audit-rotation-${suffix}-0001`)
+            .set('Origin', origin)
+            .send({ code: currentTotp(ids.auditRotate) }),
+      },
+      {
+        action: 'ADMIN_SESSION_STEP_UP_REJECTED',
+        adminUserId: ids.auditStepUp,
+        invoke: (suffix: string) => {
+          void suffix;
+          return request(server)
+            .post('/api/v1/admin/auth/step-up')
+            .set('Authorization', `Bearer ${accessTokens.get(ids.auditStepUp)}`)
+            .set('Content-Type', 'application/json')
+            .set('Origin', origin)
+            .send({ purpose: 'SESSION_REVOCATION', totpCode: currentTotp(ids.auditStepUp) });
+        },
+      },
+    ] as const;
+    const failures = ['availability', 'crypto', 'transaction'] as const;
+
+    for (const operation of operations) {
+      const claims = await crypto.verifyAccessToken(
+        accessTokens.get(operation.adminUserId)!,
+        Math.floor(Date.now() / 1000),
+      );
+      for (const failure of failures) {
+        await rateLimitRedis.flushdb();
+        let transactionSpy: jest.SpiedFunction<AdminWriterService['transaction']> | undefined;
+        if (failure === 'availability') faultKeys.failAssertAvailableAfter(1);
+        if (failure === 'crypto') faultKeys.fail('UNWRAP_DEK');
+        if (failure === 'transaction') {
+          const writer = faultApplication.get(AdminWriterService);
+          const originalTransaction = writer.transaction.bind(writer);
+          let transactionCalls = 0;
+          transactionSpy = jest
+            .spyOn(writer, 'transaction')
+            .mockImplementation(
+              async <T>(
+                callback: (transaction: AdminWriterTransaction) => Promise<T>,
+              ): Promise<T> => {
+                transactionCalls += 1;
+                if (transactionCalls === 2) {
+                  throw new Error('controlled post-session transaction failure');
+                }
+                return originalTransaction(callback);
+              },
+            );
+        }
+
+        let response: request.Response;
+        try {
+          response = await operation.invoke(failure);
+        } finally {
+          transactionSpy?.mockRestore();
+          faultKeys.recover();
+        }
+        expect(response.status).toBe(503);
+        expect(response.body.error.code).toBe('SERVICE_UNAVAILABLE');
+        expect(response.headers['set-cookie']).toBeUndefined();
+        expect(JSON.stringify(response.body)).not.toMatch(
+          /accessToken|refreshToken|recoveryCodes|totpCode/iu,
+        );
+
+        const sink = await owner.query<{
+          action: string;
+          actorAdminUserId: string;
+          adminSessionId: string;
+          auditCount: string;
+          reasonCode: string;
+          securityCount: string;
+          subjectAdminUserId: string;
+        }>(
+          `SELECT
+             min("action") AS "action",
+             min("adminUserId") AS "actorAdminUserId",
+             min("adminSessionId") AS "adminSessionId",
+             count(*)::text AS "auditCount",
+             min("reasonCode"::text) AS "reasonCode",
+             (SELECT count(*)::text FROM "AdminSecurityEvent" WHERE "requestId" = $1)
+               AS "securityCount",
+             min("subjectAdminUserId") AS "subjectAdminUserId"
+           FROM "AuditLog" WHERE "requestId" = $1`,
+          [String(response.body.requestId)],
+        );
+        expect(sink.rows[0]).toEqual({
+          action: operation.action,
+          actorAdminUserId: operation.adminUserId,
+          adminSessionId: claims.sessionId,
+          auditCount: '1',
+          reasonCode: 'SECURITY_RESPONSE',
+          securityCount: '0',
+          subjectAdminUserId: operation.adminUserId,
+        });
+      }
+    }
+
+    const state = await owner.query<{
+      recoveryBatchCount: string;
+      rotateCounter: string | null;
+      stepCounter: string | null;
+      stepUpExpiresAt: Date | null;
+      stepUpPurpose: string | null;
+    }>(
+      `SELECT
+         (SELECT "lastAcceptedTotpCounter"::text FROM "AdminUser" WHERE "id" = $1)
+           AS "rotateCounter",
+         (SELECT count(*)::text FROM "AdminRecoveryCodeBatch" WHERE "adminUserId" = $1)
+           AS "recoveryBatchCount",
+         (SELECT "lastAcceptedTotpCounter"::text FROM "AdminUser" WHERE "id" = $2)
+           AS "stepCounter",
+         (SELECT "stepUpPurpose"::text FROM "AdminSession" WHERE "adminUserId" = $2)
+           AS "stepUpPurpose",
+         (SELECT "stepUpExpiresAt" FROM "AdminSession" WHERE "adminUserId" = $2)
+           AS "stepUpExpiresAt"`,
+      [ids.auditRotate, ids.auditStepUp],
+    );
+    expect(state.rows[0]).toEqual({
+      recoveryBatchCount: '0',
+      rotateCounter: null,
+      stepCounter: null,
+      stepUpExpiresAt: null,
+      stepUpPurpose: null,
+    });
+  });
+
+  it('does not assert a contradictory rejection when COMMIT acknowledgement is unknown', async () => {
+    const server = application.getHttpServer();
+    const writer = application.get(AdminWriterService);
+    const originalTransaction = writer.transaction.bind(writer);
+    let transactionCalls = 0;
+    const transactionSpy = jest
+      .spyOn(writer, 'transaction')
+      .mockImplementation(
+        async <T>(callback: (transaction: AdminWriterTransaction) => Promise<T>): Promise<T> => {
+          transactionCalls += 1;
+          const result = await originalTransaction(callback);
+          if (transactionCalls === 2) {
+            throw new AdminWriterCommitUnknownError(
+              new Error('controlled lost COMMIT acknowledgement after callback'),
+            );
+          }
+          return result;
+        },
+      );
+    const code = currentTotp(ids.commitUnknown);
+    let response: request.Response;
+    try {
+      response = await request(server)
+        .post('/api/v1/admin/auth/step-up')
+        .set('Authorization', `Bearer ${accessTokens.get(ids.commitUnknown)}`)
+        .set('Content-Type', 'application/json')
+        .set('Origin', origin)
+        .send({ purpose: 'SESSION_REVOCATION', totpCode: code });
+    } finally {
+      transactionSpy.mockRestore();
+    }
+    expect(response.status).toBe(503);
+    expect(response.body.error).toEqual({
+      code: 'SERVICE_UNAVAILABLE',
+      details: {},
+      message: 'Service temporairement indisponible.',
+      retryable: false,
+    });
+    expect(response.headers['set-cookie']).toBeUndefined();
+    expect(JSON.stringify(response.body)).not.toContain(code);
+
+    const state = await owner.query<{
+      failureAuditCount: string;
+      lastAcceptedTotpCounter: string | null;
+      securityEventCount: string;
+      successAuditCount: string;
+      stepUpPurpose: string | null;
+    }>(
+      `SELECT
+         (SELECT "lastAcceptedTotpCounter"::text FROM "AdminUser" WHERE "id" = $1)
+           AS "lastAcceptedTotpCounter",
+         (SELECT "stepUpPurpose"::text FROM "AdminSession" WHERE "adminUserId" = $1)
+           AS "stepUpPurpose",
+         (SELECT count(*)::text FROM "AuditLog"
+           WHERE "adminUserId" = $1 AND "action" = 'ADMIN_SESSION_STEP_UP')
+           AS "successAuditCount",
+         (SELECT count(*)::text FROM "AuditLog"
+           WHERE "adminUserId" = $1 AND "action" = 'ADMIN_SESSION_STEP_UP_REJECTED')
+           AS "failureAuditCount",
+         (SELECT count(*)::text FROM "AdminSecurityEvent" WHERE "adminUserId" = $1)
+           AS "securityEventCount"`,
+      [ids.commitUnknown],
+    );
+    expect(state.rows[0]).toEqual({
+      failureAuditCount: '0',
+      lastAcceptedTotpCounter: expect.any(String),
+      securityEventCount: '0',
+      stepUpPurpose: 'SESSION_REVOCATION',
+      successAuditCount: '1',
+    });
+  });
+
   it('rolls back the privileged mutation when the AuditLog sink fails', async () => {
     const server = application.getHttpServer();
     const writer = application.get(AdminWriterService);
@@ -1432,7 +2469,9 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     );
     const rolledBack = await owner.query<{
       auditCount: string;
+      failureAuditCount: string;
       lastAcceptedTotpCounter: string | null;
+      securityEventCount: string;
       stepUpPurpose: string | null;
       stepUpVerifiedAt: Date | null;
     }>(
@@ -1444,12 +2483,18 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
          (SELECT "stepUpVerifiedAt" FROM "AdminSession" WHERE "id" = $2)
            AS "stepUpVerifiedAt",
          (SELECT count(*)::text FROM "AuditLog"
-           WHERE "adminUserId" = $1 AND "action" = 'ADMIN_SESSION_STEP_UP') AS "auditCount"`,
-      [ids.sinkFailure, sessionClaims.sessionId],
+           WHERE "adminUserId" = $1 AND "action" = 'ADMIN_SESSION_STEP_UP') AS "auditCount",
+         (SELECT count(*)::text FROM "AuditLog" WHERE "requestId" = $3)
+           AS "failureAuditCount",
+         (SELECT count(*)::text FROM "AdminSecurityEvent" WHERE "requestId" = $3)
+           AS "securityEventCount"`,
+      [ids.sinkFailure, sessionClaims.sessionId, String(failed.body.requestId)],
     );
     expect(rolledBack.rows[0]).toMatchObject({
       auditCount: '0',
+      failureAuditCount: '0',
       lastAcceptedTotpCounter: null,
+      securityEventCount: '0',
       stepUpPurpose: null,
       stepUpVerifiedAt: null,
     });

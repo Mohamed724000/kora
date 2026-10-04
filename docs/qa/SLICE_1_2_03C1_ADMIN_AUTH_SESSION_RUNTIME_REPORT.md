@@ -1,12 +1,14 @@
 # Rapport de validation locale S1.2-03C1 — Admin Auth Session Runtime
 
-Statut : **BASELINE C1 PUBLIÉE DANS LA DRAFT PR #50 — INSTANTANÉ R1
-PRÉPUBLICATION VALIDÉ LOCALEMENT — ÉCHEC INFRASTRUCTURE HISTORIQUE PRÉSERVÉ —
-FOURNISSEUR DE CLÉS DE PRODUCTION NON QUALIFIÉ — C2/C3 NOT STARTED**
+Statut : **INSTANTANÉ LOCAL PRÉPUBLICATION R3 DU 2026-10-04 — R2 ÉTAIT LE
+DERNIER HEAD PUBLIÉ DANS LA DRAFT PR #50 AVEC QUATRE WORKFLOWS VERTS — REVUE
+CTO TERMINALE BLOCK — R3 VALIDÉ LOCALEMENT ET NON PUBLIÉ À CET INSTANT — APRÈS
+CET INSTANTANÉ, GIT/GITHUB FONT FOI — FOURNISSEUR DE CLÉS DE PRODUCTION NON
+QUALIFIÉ — C2/C3 NOT STARTED**
 
-Date : 2026-10-03
+Date : 2026-10-04
 
-## Périmètre et préflight
+## Périmètre et préflight historiques C1 initial
 
 La validation porte sur le worktree
 `C:\Users\moham\AppData\Local\Temp\KORA-PLUS-S1-2-03C1`, branche
@@ -444,3 +446,92 @@ signatures, licences, installations, suites générales, builds, Flutter,
 source reste différée, le fournisseur de clés de production reste
 **NON QUALIFIÉ** et C2/C3 restent `Not started`. Aucun SHA, arbre ou Run ID R2
 futur n'est affirmé.
+
+## Publication R2, revue CTO terminale et instantané local prépublication R3
+
+R2 a ensuite été publié au commit
+`59972cc0614842627c8c17717605345eaae277c4`, parent
+`efb14d1d075dac50ff081b6ef3c1cce516de01e0`, arbre
+`a4e721cf14350655c9d7a94baae28a5f4edb298d`, avec trois fichiers et
+`+96/-1`. À cet instant, la PR #50 était `OPEN`, Draft et non fusionnée ; elle totalisait trois
+commits, 78 fichiers et `+15279/-641`. Son titre reste
+`feat(admin): implement S1.2-03C1 auth session runtime`. Son corps contient
+8 024 octets UTF-8 et conserve l'empreinte
+`cf991445a785fef4b856b01cf3a4f8262db509fb508912cacc731f53febaff05`.
+
+Les quatre runs R2 sont `pull_request`, tentative 1, `completed/success` sur le
+head exact : Infrastructure `37160117048`, Launcher Windows `37160117009`,
+Security `37160117045` et Quality Linux `37160117042`. Ils établissent la
+publication R2 et la correction lifecycle ; les 18/18 tests restent exactement
+la preuve historique R2. Ils ne couvrent pas les régressions ajoutées en R3.
+
+La revue CTO terminale en lecture seule a conclu **BLOCK** sur six findings :
+
+1. les snapshots et le provisionneur ne refusaient que `member = reader/writer`
+   et laissaient passer `roleid = reader/writer` ;
+2. cinq branches `OTP_INVALID` ou `ADMIN_RECOVERY_CODE_INVALID` répondaient 401
+   au lieu du 400 canonique ;
+3. le rejeu exact de confirmation était rejeté avant l'idempotence et ne
+   produisait pas le 409 contractuel ;
+4. des erreurs de disponibilité, crypto ou transaction après session prouvée
+   perdaient le contexte et alimentaient un événement générique ;
+5. `verifyAccessToken` convertissait l'indisponibilité de résolution de clé en
+   erreur d'authentification 401 ;
+6. les refus `revokeOther` forçaient l'acteur comme sujet et perdaient le motif
+   validé, même lorsque la cible était connue.
+
+Dans cet instantané daté, R3 corrige localement ces six findings et réconcilie les champs vivants. La
+liaison JTI transactionnelle demeure une recommandation non bloquante séparée.
+La pagination de l'inventaire des sessions demeure **NON CONCLUSIVE**. Aucun de
+ces deux points n'est présenté comme une correction technique R3 et tout finding
+nouveau exigerait un arbitrage de périmètre distinct.
+
+### État de validation R3
+
+Le gel R3 modifie exactement 19 fichiers existants de l'allowlist et n'ajoute
+aucun fichier. OpenAPI, contrats générés, schéma Prisma, migrations,
+dépendances, manifestes, lockfile, workflows et wrappers PowerShell restent
+inchangés. Le lockfile conserve son SHA-256
+`51a4a23fe87cbf7b441e464b2b066e501f8f66748d355077a3241ee4933f6b37` et aucun
+mode Git ne change.
+
+Le wrapper C1 final termine au code 0. Il conserve 39 modèles, 40 tables, trois
+migrations et la signature de catalogue A/B
+`5b2bf03fbe7fc292ff48102e7bbdd66f63a2b0a62b698e350f8122575ab88120`.
+Il exécute quatre provisionnements réussis, cinq refus de provisionnement et
+quatre refus de membership entrante. Pour chaque base A/B, reader et writer
+prouvent le grant brut et l'ancien contournement, puis le refus sans mutation,
+la signature complète inchangée, le grant tiers préservé et le retour nominal
+après retrait explicite. Les deux attestations applicatives fraîches refusent
+avec `role_membership_present`. La suite HTTP/PostgreSQL/Redis exécute une suite
+sur une et 26 tests sur 26 pour les douze opérations. Une première tentative
+22/24, affectée uniquement par l'interférence du rate limit dans le harness,
+reste non concluante et n'est pas un PASS.
+
+La contre-revue Security du premier gel R3 a encore bloqué trois branches de la
+même remédiation. Le gel final renvoie aussi 409 pour une même clé avec payload
+divergent, mappe en 503 neutre une panne de digest postérieure au préflight du
+provider et préserve le résultat COMMIT inconnu sans écrire un rejet durable
+contradictoire. Deux régressions réelles supplémentaires portent le wrapper de
+24 à 26 tests ; elles prouvent l'absence de cookie, secret, nouvelle mutation
+ou double sink. L'observation statique distincte sur une panne transactionnelle
+de `revokeOther`, hors des refus métier mandatés et non reproduite, n'est pas
+élargie silencieusement dans R3.
+
+Lint et typecheck API, 17 suites API avec 83 tests exécutés et 25 `skipped`, le
+build API, OpenAPI 60 chemins/67 opérations/137 schémas, Contracts 7/7 et
+tooling 403/403 passent. Le scanner officiel passe sur 384 fichiers avec
+l'historique actif, 52 sources immuables et six scripts d'installation
+qualifiés. Les gates `infra:verify` et `infra:verify-api` passent sur l'instance
+isolée après une première tentative `infra:verify` arrêtée par l'absence de
+confirmation explicite du lifecycle legacy ; cette tentative n'est pas un
+PASS. Le nettoyage ciblé retrouve exactement les quatre conteneurs, cinq
+volumes et cinq réseaux initiaux, sans listener ni ressource R3 résiduelle.
+
+Les preuves historiques Flutter/APK, signatures, licences et audits
+supply-chain ne sont pas rejouées, conformément au mandat ; iOS reste non
+exécuté sous Windows. Dans cet instantané du 2026-10-04, R3 était **VALIDÉ
+LOCALEMENT**, non indexé, non commité et non publié. Après cet instantané,
+l'état Git/GitHub fait foi. La recommandation JTI et la pagination **NON
+CONCLUSIVE** restent séparées. La politique open source demeure différée, le
+fournisseur de clés de production **NON QUALIFIÉ** et C2/C3 `Not started`.

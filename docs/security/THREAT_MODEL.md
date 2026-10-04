@@ -3,9 +3,11 @@
 Périmètre durable couvert : **BASELINE + S0.4/S0.5/M0.1/M0.2/S0.6 ET M0.3
 FUSIONNÉS ET CLÔTURÉS + S1.1 FERMÉ + CONTRACT & DATA READINESS S1.2-01 +
 S1.2-02 CLÔTURÉ ET FUSIONNÉ + S1.2-03A CLÔTURÉ ET FUSIONNÉ + S1.2-03B-R4
-FUSIONNÉ VIA PR #48 + S1.2-03C1 IMPLÉMENTÉ LOCALEMENT, VALIDATION FINALE
-ACHEVÉE AVEC REMÉDIATION SUPPLY-CHAIN DEV QUALIFIÉE ET AUDITS PROPRES, NON
-PUBLIÉ, KMS/JWT DE PRODUCTION NON QUALIFIÉS — C2/C3 NOT STARTED**.
+FUSIONNÉ VIA PR #48 + INSTANTANÉ PRÉPUBLICATION S1.2-03C1-R3 DU 2026-10-04 :
+R2 ÉTAIT LE DERNIER HEAD PUBLIÉ DANS LA DRAFT PR #50, REVUE CTO TERMINALE
+BLOCK, R3 VALIDÉ LOCALEMENT ET NON PUBLIÉ À CET INSTANT ; APRÈS CET
+INSTANTANÉ, GIT/GITHUB FONT FOI — KMS/JWT DE PRODUCTION NON QUALIFIÉS — C2/C3
+NOT STARTED**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
 commit, push ou changement GitHub S1.1 n’avait encore été effectué : il s’agit
@@ -19,12 +21,23 @@ cible de données et leurs gates. S1.2-02 matérialise uniquement les contrôles
 d’intégrité SQL explicitement énumérés plus bas ; aucun endpoint, service,
 worker, seed, runtime métier ou interface n’est déclaré opérationnel.
 
-Le mandat runtime C1 matérialise localement la preuve serveur du contexte
+Le mandat runtime C1 matérialise la preuve serveur du contexte
 recovery pour l'audit enrollment/QR, le TOTP inline de rotation, l'éviction LRU
 atomique au plafond de trois familles et le 503 générique fail-closed. Il ajoute
 les frontières PostgreSQL reader/writer, la migration et les ACL de colonnes,
 la crypto réelle du harness et un client Redis auth séparé. Il ne qualifie ni
-KMS/JWT de production, ni exploitation, publication ou déploiement.
+KMS/JWT de production, ni exploitation ou déploiement.
+Dans l'instantané local prépublication du 2026-10-04, R2 était le dernier head
+publié, `59972cc0614842627c8c17717605345eaae277c4`, de la Draft PR #50 ; ses
+quatre workflows avaient réussi. La revue CTO terminale ultérieure avait toutefois conclu
+**BLOCK** sur les memberships PostgreSQL entrantes et cinq écarts Auth/audit.
+R3 traite ces six findings localement sans étendre la surface C1.
+Les preuves finales exercent les memberships incidentes reader/writer dans les
+deux orientations sur PostgreSQL A/B, les cinq corrections Auth/audit dans
+26/26 tests d'intégration réels et les pannes Infrastructure isolées. Le
+scanner officiel avec historique passe ; aucune dépendance, surface OpenAPI,
+migration ou capacité C2/C3 n'est ajoutée. R3 était alors non publié ; après
+cet instantané, l'état réellement observé dans Git et GitHub fait foi.
 
 Le gate supply-chain final du 2026-10-03 retire la chaîne dev-only
 `eslint-config-next → @next/eslint-plugin-next → fast-glob → micromatch → braces`
@@ -40,16 +53,16 @@ les alias ou parents divergents et la désactivation des règles Next témoins.
 
 ### Frontière runtime locale S1.2-03C1
 
-| Menace                              | Contrôle local C1                                                                              | Limite résiduelle                                                |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| Compte, session ou version obsolète | rechargement serveur du statut, rôle, session et `authorizationVersion`                        | aucun déploiement ou runbook production qualifié                 |
-| Rejeu TOTP/recovery/refresh         | compteur TOTP strict, codes one-shot Argon2id, refresh à usage unique et révocation de famille | `WAITAOF` n'est pas une transaction distribuée                   |
-| Vol ou altération de secret         | AES-256-GCM avec AAD/tag/version, enveloppe et rewrap après preuve ; cookies `__Host-*`        | KMS externe et clés JWT de production non qualifiés              |
-| Escalade PostgreSQL                 | lecteur/writer séparés, ACL de colonnes, sinks insert-only, attestation avant init             | opérations C2 volontairement absentes                            |
-| Course sur familles/sessions        | verrou utilisateur, plafond trois et LRU déterministe ; refresh winner unique                  | preuve locale seulement, pas de charge production                |
-| Oracle d'existence                  | réponses publiques uniformes, travail Argon2 comparable et observations randomisées            | échantillon local limité ; aucune déclaration d'absence d'oracle |
-| Fuite logs/Sentry                   | sanitation traversante testée sur callbacks et erreurs                                         | aucune télémétrie Sentry réseau exercée en test                  |
-| Dépendance indisponible             | rollback des mutations non commitées et 503 C1 constant sans secret                            | résultat COMMIT inconnu reste explicitement non retryable        |
+| Menace                              | Contrôle local C1                                                                                                                                                              | Limite résiduelle                                                |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| Compte, session ou version obsolète | rechargement serveur du statut, rôle, session et `authorizationVersion`                                                                                                        | aucun déploiement ou runbook production qualifié                 |
+| Rejeu TOTP/recovery/refresh         | compteur TOTP strict, codes one-shot Argon2id, refresh à usage unique et révocation de famille                                                                                 | `WAITAOF` n'est pas une transaction distribuée                   |
+| Vol ou altération de secret         | AES-256-GCM avec AAD/tag/version, enveloppe et rewrap après preuve ; cookies `__Host-*`                                                                                        | KMS externe et clés JWT de production non qualifiés              |
+| Escalade PostgreSQL                 | lecteur/writer séparés, ACL de colonnes, sinks insert-only, memberships incidentes contrôlées dans les deux orientations avant mutation, avant COMMIT et sur connexion fraîche | opérations C2 volontairement absentes                            |
+| Course sur familles/sessions        | verrou utilisateur, plafond trois et LRU déterministe ; refresh winner unique                                                                                                  | preuve locale seulement, pas de charge production                |
+| Oracle d'existence                  | réponses publiques uniformes, travail Argon2 comparable et observations randomisées                                                                                            | échantillon local limité ; aucune déclaration d'absence d'oracle |
+| Fuite logs/Sentry                   | sanitation traversante testée sur callbacks et erreurs                                                                                                                         | aucune télémétrie Sentry réseau exercée en test                  |
+| Dépendance indisponible             | rollback des mutations non commitées et 503 C1 constant sans secret                                                                                                            | résultat COMMIT inconnu reste explicitement non retryable        |
 
 ## Actifs
 

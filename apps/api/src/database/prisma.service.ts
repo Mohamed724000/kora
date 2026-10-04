@@ -425,6 +425,7 @@ export class PrismaService extends PrismaClient implements OnApplicationShutdown
           SELECT count(*)::integer
           FROM pg_catalog.pg_auth_members AS membership
           WHERE membership.member = runtime_role.oid
+             OR membership.roleid = runtime_role.oid
         ) AS "directMembershipCount",
         (
           SELECT count(*)::integer

@@ -446,9 +446,73 @@ export class AdminAuthService {
   ): Promise<{ codes: readonly AdminRecoveryCodeDelivery[]; session: SessionDelivery }> {
     await this.consumeRateLimit('TOTP', execution.ipAddress, contextToken);
     await this.requireKeys();
+    const tokenHash = sha256(contextToken);
+    const requestHash = await this.digest(
+      'ADMIN_IDEMPOTENCY_CONFIRM_V1',
+      `${enrollmentId}\0${code}\0${contextToken}`,
+    );
     const result = await this.runTransaction(async (transaction) => {
-      const resolved = await this.resolveContext(transaction, sha256(contextToken), now);
+      const preauthCandidate = await transaction.findPreAuthByHash(tokenHash);
+      const recoveryCandidate =
+        preauthCandidate === undefined
+          ? await transaction.findRecoveryContextByHash(tokenHash)
+          : undefined;
+      const candidate = preauthCandidate ?? recoveryCandidate;
+      const user =
+        candidate === undefined
+          ? undefined
+          : await transaction.lockAdminUser(candidate.adminUserId);
+      const context =
+        user === undefined
+          ? undefined
+          : preauthCandidate === undefined
+            ? await transaction.lockRecoveryContextByHash(tokenHash)
+            : await transaction.lockPreAuthByHash(tokenHash);
       const enrollment = await transaction.lockEnrollment(enrollmentId);
+      const existing =
+        user === undefined
+          ? undefined
+          : await transaction.findIdempotency(
+              user.id,
+              'confirmAdminTotpEnrollment',
+              idempotencyKey,
+            );
+      const contextBound =
+        context !== undefined &&
+        enrollment !== undefined &&
+        context.adminUserId === user?.id &&
+        enrollment.adminUserId === user.id &&
+        enrollment.authorizationVersion === context.authorizationVersion &&
+        (preauthCandidate === undefined
+          ? enrollment.adminRecoveryContextId === context.id
+          : enrollment.adminPreAuthContextId === context.id);
+      if (
+        contextBound &&
+        context!.consumedAt !== null &&
+        context!.revokedAt === null &&
+        enrollment!.confirmedAt !== null &&
+        enrollment!.revokedAt === null &&
+        existing !== undefined &&
+        existing.expiresAt > now &&
+        existing.resourceId === enrollmentId &&
+        existing.resourceType === 'AdminTotpEnrollment' &&
+        existing.responseCode === 200
+      ) {
+        throw new AdminC1HttpError(409, 'IDEMPOTENCY_CONFLICT', {
+          auditAction: 'ADMIN_TOTP_ENROLLMENT_CONFIRM_REJECTED',
+        });
+      }
+      if (!activeContext(context, user, now)) {
+        throw new AdminC1HttpError(
+          context !== undefined && context.expiresAt <= now ? 410 : 401,
+          context !== undefined && context.expiresAt <= now ? 'OTP_EXPIRED' : 'AUTH_REQUIRED',
+        );
+      }
+      const resolved = {
+        context: context!,
+        kind: preauthCandidate === undefined ? ('RECOVERY' as const) : ('PREAUTH' as const),
+        user: user!,
+      };
       this.assertEnrollment(
         enrollment,
         resolved.user,
@@ -466,11 +530,6 @@ export class AdminAuthService {
             enrollmentId,
           ),
         );
-      const existing = await transaction.findIdempotency(
-        resolved.user.id,
-        'confirmAdminTotpEnrollment',
-        idempotencyKey,
-      );
       if (existing !== undefined)
         throw new AdminC1HttpError(
           409,
@@ -571,10 +630,7 @@ export class AdminAuthService {
         id: randomUUID(),
         idempotencyKey,
         operation: 'confirmAdminTotpEnrollment',
-        requestHash: await this.digest(
-          'ADMIN_IDEMPOTENCY_CONFIRM_V1',
-          `${enrollmentId}\0${code}\0${contextToken}`,
-        ),
+        requestHash,
         resourceId: enrollmentId,
         resourceType: 'AdminTotpEnrollment',
         responseCode: 200,
@@ -596,7 +652,7 @@ export class AdminAuthService {
         value: { codes, session: this.sessions.delivery(prepared) },
       };
     });
-    if (result.rejected) throw new AdminC1HttpError(401, 'OTP_INVALID', { auditRecorded: true });
+    if (result.rejected) throw new AdminC1HttpError(400, 'OTP_INVALID', { auditRecorded: true });
     return result.value;
   }
 
@@ -673,7 +729,7 @@ export class AdminAuthService {
       });
       return { delivery: this.sessions.delivery(prepared), rejected: false as const };
     }).then((result) => {
-      if (result.rejected) throw new AdminC1HttpError(401, 'OTP_INVALID', { auditRecorded: true });
+      if (result.rejected) throw new AdminC1HttpError(400, 'OTP_INVALID', { auditRecorded: true });
       return result.delivery;
     });
     return result;
@@ -746,7 +802,7 @@ export class AdminAuthService {
       return { expiresAt, recoveryContextId, rejected: false as const };
     });
     if (result.rejected)
-      throw new AdminC1HttpError(401, 'ADMIN_RECOVERY_CODE_INVALID', {
+      throw new AdminC1HttpError(400, 'ADMIN_RECOVERY_CODE_INVALID', {
         auditRecorded: true,
       });
     return {
@@ -767,52 +823,88 @@ export class AdminAuthService {
   ): Promise<readonly AdminRecoveryCodeDelivery[]> {
     try {
       await this.consumeRateLimit('TOTP', execution.ipAddress, principal.adminUserId);
-    } catch (error: unknown) {
-      if (error instanceof AdminC1HttpError)
-        throw this.withSessionAudit(error, principal, 'ADMIN_RECOVERY_CODES_ROTATION_REJECTED');
-      throw error;
-    }
-    await this.requireKeys();
-    const result = await this.runTransaction(async (transaction) => {
-      const { session, user } = await this.sessions.lockPrincipal(transaction, principal, now);
-      const existing = await transaction.findIdempotency(
-        user.id,
-        'rotateAdminRecoveryCodes',
-        idempotencyKey,
-      );
-      if (existing !== undefined)
-        throw new AdminC1HttpError(409, 'IDEMPOTENCY_CONFLICT', {
-          auditContext: this.sessionAuditContext(
-            principal,
-            'ADMIN_RECOVERY_CODES_ROTATION_REJECTED',
-          ),
-        });
-      if (user.totpSecretEncrypted === null)
-        throw new AdminC1HttpError(403, 'FORBIDDEN', {
-          auditContext: this.sessionAuditContext(
-            principal,
-            'ADMIN_RECOVERY_CODES_ROTATION_REJECTED',
-          ),
-        });
-      const decrypted = await this.crypto.decryptTotpSecret(user.totpSecretEncrypted, user.id);
-      let counter: bigint | undefined;
-      let rewrappedSecret: string | undefined;
-      try {
-        counter = this.crypto.verifyTotp(
-          decrypted.secret,
-          code,
-          Math.floor(now.getTime() / 1000),
-          user.lastAcceptedTotpCounter,
+      await this.requireKeys();
+      const result = await this.runTransaction(async (transaction) => {
+        const { session, user } = await this.sessions.lockPrincipal(transaction, principal, now);
+        const existing = await transaction.findIdempotency(
+          user.id,
+          'rotateAdminRecoveryCodes',
+          idempotencyKey,
         );
-        if (counter !== undefined && decrypted.needsRewrap) {
-          rewrappedSecret = await this.crypto.encryptTotpSecret(decrypted.secret, user.id);
+        if (existing !== undefined)
+          throw new AdminC1HttpError(409, 'IDEMPOTENCY_CONFLICT', {
+            auditContext: this.sessionAuditContext(
+              principal,
+              'ADMIN_RECOVERY_CODES_ROTATION_REJECTED',
+            ),
+          });
+        if (user.totpSecretEncrypted === null)
+          throw new AdminC1HttpError(403, 'FORBIDDEN', {
+            auditContext: this.sessionAuditContext(
+              principal,
+              'ADMIN_RECOVERY_CODES_ROTATION_REJECTED',
+            ),
+          });
+        const decrypted = await this.crypto.decryptTotpSecret(user.totpSecretEncrypted, user.id);
+        let counter: bigint | undefined;
+        let rewrappedSecret: string | undefined;
+        try {
+          counter = this.crypto.verifyTotp(
+            decrypted.secret,
+            code,
+            Math.floor(now.getTime() / 1000),
+            user.lastAcceptedTotpCounter,
+          );
+          if (counter !== undefined && decrypted.needsRewrap) {
+            rewrappedSecret = await this.crypto.encryptTotpSecret(decrypted.secret, user.id);
+          }
+        } finally {
+          decrypted.secret.fill(0);
         }
-      } finally {
-        decrypted.secret.fill(0);
-      }
-      if (counter === undefined) {
+        if (counter === undefined) {
+          await transaction.insertAudit({
+            action: 'ADMIN_RECOVERY_CODES_ROTATION_REJECTED',
+            actorAdminUserId: user.id,
+            adminSessionId: session.id,
+            createdAt: now,
+            entityId: user.id,
+            entityType: 'AdminRecoveryCodeBatch',
+            id: randomUUID(),
+            reasonCode: 'SECURITY_RESPONSE',
+            requestId: execution.requestId,
+            subjectAdminUserId: user.id,
+          });
+          return { rejected: true as const };
+        }
+        const codes = this.crypto.generateRecoveryCodes();
+        const stored: NewRecoveryCodeInput[] = [];
+        for (const material of codes)
+          stored.push({
+            codeHash: await this.crypto.hashRecoveryCode(material),
+            id: randomUUID(),
+            selector: material.selector,
+          });
+        await transaction.updateTotpCounter(user.id, counter, rewrappedSecret);
+        await transaction.replaceRecoveryCodes({
+          adminUserId: user.id,
+          batchId: randomUUID(),
+          codes: stored,
+          createdAt: now,
+        });
+        await transaction.insertIdempotency({
+          adminUserId: user.id,
+          createdAt: now,
+          expiresAt: new Date(now.getTime() + IDEMPOTENCY_MILLISECONDS),
+          id: randomUUID(),
+          idempotencyKey,
+          operation: 'rotateAdminRecoveryCodes',
+          requestHash: await this.digest('ADMIN_IDEMPOTENCY_ROTATE_V1', `${user.id}\0${code}`),
+          resourceId: randomUUID(),
+          resourceType: 'AdminRecoveryCodeBatch',
+          responseCode: 200,
+        });
         await transaction.insertAudit({
-          action: 'ADMIN_RECOVERY_CODES_ROTATION_REJECTED',
+          action: 'ADMIN_RECOVERY_CODES_ROTATED',
           actorAdminUserId: user.id,
           adminSessionId: session.id,
           createdAt: now,
@@ -823,51 +915,19 @@ export class AdminAuthService {
           requestId: execution.requestId,
           subjectAdminUserId: user.id,
         });
-        return { rejected: true as const };
-      }
-      const codes = this.crypto.generateRecoveryCodes();
-      const stored: NewRecoveryCodeInput[] = [];
-      for (const material of codes)
-        stored.push({
-          codeHash: await this.crypto.hashRecoveryCode(material),
-          id: randomUUID(),
-          selector: material.selector,
-        });
-      await transaction.updateTotpCounter(user.id, counter, rewrappedSecret);
-      await transaction.replaceRecoveryCodes({
-        adminUserId: user.id,
-        batchId: randomUUID(),
-        codes: stored,
-        createdAt: now,
+        return { codes, rejected: false as const };
       });
-      await transaction.insertIdempotency({
-        adminUserId: user.id,
-        createdAt: now,
-        expiresAt: new Date(now.getTime() + IDEMPOTENCY_MILLISECONDS),
-        id: randomUUID(),
-        idempotencyKey,
-        operation: 'rotateAdminRecoveryCodes',
-        requestHash: await this.digest('ADMIN_IDEMPOTENCY_ROTATE_V1', `${user.id}\0${code}`),
-        resourceId: randomUUID(),
-        resourceType: 'AdminRecoveryCodeBatch',
-        responseCode: 200,
-      });
-      await transaction.insertAudit({
-        action: 'ADMIN_RECOVERY_CODES_ROTATED',
-        actorAdminUserId: user.id,
-        adminSessionId: session.id,
-        createdAt: now,
-        entityId: user.id,
-        entityType: 'AdminRecoveryCodeBatch',
-        id: randomUUID(),
-        reasonCode: 'SECURITY_RESPONSE',
-        requestId: execution.requestId,
-        subjectAdminUserId: user.id,
-      });
-      return { codes, rejected: false as const };
-    });
-    if (result.rejected) throw new AdminC1HttpError(401, 'OTP_INVALID', { auditRecorded: true });
-    return result.codes;
+      if (result.rejected) throw new AdminC1HttpError(400, 'OTP_INVALID', { auditRecorded: true });
+      return result.codes;
+    } catch (error: unknown) {
+      throw this.withSessionAudit(
+        error instanceof AdminC1HttpError
+          ? error
+          : new AdminC1HttpError(503, 'SERVICE_UNAVAILABLE'),
+        principal,
+        'ADMIN_RECOVERY_CODES_ROTATION_REJECTED',
+      );
+    }
   }
 
   async stepUp(
@@ -878,37 +938,53 @@ export class AdminAuthService {
   ): Promise<{ expiresAt: string; verifiedAt: string }> {
     try {
       await this.consumeRateLimit('TOTP', execution.ipAddress, principal.adminUserId);
-    } catch (error: unknown) {
-      if (error instanceof AdminC1HttpError)
-        throw this.withSessionAudit(error, principal, 'ADMIN_SESSION_STEP_UP_REJECTED');
-      throw error;
-    }
-    await this.requireKeys();
-    const result = await this.runTransaction(async (transaction) => {
-      const { session, user } = await this.sessions.lockPrincipal(transaction, principal, now);
-      if (user.totpSecretEncrypted === null)
-        throw new AdminC1HttpError(403, 'FORBIDDEN', {
-          auditContext: this.sessionAuditContext(principal, 'ADMIN_SESSION_STEP_UP_REJECTED'),
-        });
-      const decrypted = await this.crypto.decryptTotpSecret(user.totpSecretEncrypted, user.id);
-      let counter: bigint | undefined;
-      let rewrappedSecret: string | undefined;
-      try {
-        counter = this.crypto.verifyTotp(
-          decrypted.secret,
-          input.totpCode,
-          Math.floor(now.getTime() / 1000),
-          user.lastAcceptedTotpCounter,
-        );
-        if (counter !== undefined && decrypted.needsRewrap) {
-          rewrappedSecret = await this.crypto.encryptTotpSecret(decrypted.secret, user.id);
+      await this.requireKeys();
+      const result = await this.runTransaction(async (transaction) => {
+        const { session, user } = await this.sessions.lockPrincipal(transaction, principal, now);
+        if (user.totpSecretEncrypted === null)
+          throw new AdminC1HttpError(403, 'FORBIDDEN', {
+            auditContext: this.sessionAuditContext(principal, 'ADMIN_SESSION_STEP_UP_REJECTED'),
+          });
+        const decrypted = await this.crypto.decryptTotpSecret(user.totpSecretEncrypted, user.id);
+        let counter: bigint | undefined;
+        let rewrappedSecret: string | undefined;
+        try {
+          counter = this.crypto.verifyTotp(
+            decrypted.secret,
+            input.totpCode,
+            Math.floor(now.getTime() / 1000),
+            user.lastAcceptedTotpCounter,
+          );
+          if (counter !== undefined && decrypted.needsRewrap) {
+            rewrappedSecret = await this.crypto.encryptTotpSecret(decrypted.secret, user.id);
+          }
+        } finally {
+          decrypted.secret.fill(0);
         }
-      } finally {
-        decrypted.secret.fill(0);
-      }
-      if (counter === undefined) {
+        if (counter === undefined) {
+          await transaction.insertAudit({
+            action: 'ADMIN_SESSION_STEP_UP_REJECTED',
+            actorAdminUserId: user.id,
+            adminSessionId: session.id,
+            createdAt: now,
+            entityId: session.id,
+            entityType: 'AdminSession',
+            id: randomUUID(),
+            reasonCode: 'SECURITY_RESPONSE',
+            requestId: execution.requestId,
+            subjectAdminUserId: user.id,
+          });
+          return { rejected: true as const };
+        }
+        await transaction.updateTotpCounter(user.id, counter, rewrappedSecret);
+        const expiresAt = await this.sessions.establishStepUp(
+          transaction,
+          session.id,
+          input.purpose,
+          now,
+        );
         await transaction.insertAudit({
-          action: 'ADMIN_SESSION_STEP_UP_REJECTED',
+          action: 'ADMIN_SESSION_STEP_UP',
           actorAdminUserId: user.id,
           adminSessionId: session.id,
           createdAt: now,
@@ -919,34 +995,22 @@ export class AdminAuthService {
           requestId: execution.requestId,
           subjectAdminUserId: user.id,
         });
-        return { rejected: true as const };
-      }
-      await transaction.updateTotpCounter(user.id, counter, rewrappedSecret);
-      const expiresAt = await this.sessions.establishStepUp(
-        transaction,
-        session.id,
-        input.purpose,
-        now,
-      );
-      await transaction.insertAudit({
-        action: 'ADMIN_SESSION_STEP_UP',
-        actorAdminUserId: user.id,
-        adminSessionId: session.id,
-        createdAt: now,
-        entityId: session.id,
-        entityType: 'AdminSession',
-        id: randomUUID(),
-        reasonCode: 'SECURITY_RESPONSE',
-        requestId: execution.requestId,
-        subjectAdminUserId: user.id,
+        return {
+          rejected: false as const,
+          value: { expiresAt: expiresAt.toISOString(), verifiedAt: now.toISOString() },
+        };
       });
-      return {
-        rejected: false as const,
-        value: { expiresAt: expiresAt.toISOString(), verifiedAt: now.toISOString() },
-      };
-    });
-    if (result.rejected) throw new AdminC1HttpError(401, 'OTP_INVALID', { auditRecorded: true });
-    return result.value;
+      if (result.rejected) throw new AdminC1HttpError(400, 'OTP_INVALID', { auditRecorded: true });
+      return result.value;
+    } catch (error: unknown) {
+      throw this.withSessionAudit(
+        error instanceof AdminC1HttpError
+          ? error
+          : new AdminC1HttpError(503, 'SERVICE_UNAVAILABLE'),
+        principal,
+        'ADMIN_SESSION_STEP_UP_REJECTED',
+      );
+    }
   }
 
   private async resolveContext(
@@ -1114,7 +1178,9 @@ export class AdminAuthService {
     action: string,
   ): AdminC1HttpError {
     return new AdminC1HttpError(error.status, error.code, {
-      auditContext: this.sessionAuditContext(principal, action),
+      ...(error.auditAction === undefined ? {} : { auditAction: error.auditAction }),
+      auditContext: error.auditContext ?? this.sessionAuditContext(principal, action),
+      auditRecorded: error.auditRecorded,
       details: error.details,
       ...(error.retryAfterSeconds === undefined
         ? {}
@@ -1131,9 +1197,13 @@ export class AdminAuthService {
   }
 
   private async digest(domain: string, value: string): Promise<string> {
-    return Buffer.from(
-      await this.keyProvider.keyedDigest(domain, Buffer.from(value, 'utf8')),
-    ).toString('hex');
+    try {
+      return Buffer.from(
+        await this.keyProvider.keyedDigest(domain, Buffer.from(value, 'utf8')),
+      ).toString('hex');
+    } catch {
+      throw new AdminC1HttpError(503, 'SERVICE_UNAVAILABLE');
+    }
   }
 
   private async issueCsrfToken(context: AdminBrowserContext, token: string): Promise<string> {
@@ -1151,8 +1221,10 @@ export class AdminAuthService {
       return await this.repository.transaction(callback);
     } catch (error: unknown) {
       if (error instanceof AdminC1HttpError) throw error;
+      if (error instanceof AdminWriterCommitUnknownError) {
+        throw new AdminC1HttpError(503, 'SERVICE_UNAVAILABLE', { auditRecorded: true });
+      }
       if (
-        error instanceof AdminWriterCommitUnknownError ||
         error instanceof AdminAuthCryptoError ||
         error instanceof AdminKeyProviderUnavailableError
       ) {

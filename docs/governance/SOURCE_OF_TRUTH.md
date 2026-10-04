@@ -1,13 +1,14 @@
 # KORA+ Final — Source de vérité
 
 Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 ET S1.2-03A CLÔTURÉS ET
-FUSIONNÉS — S1.2-03B-R4 FUSIONNÉ VIA PR #48 — S1.2-03C1 IMPLÉMENTÉ
-ET VALIDÉ LOCALEMENT, REMÉDIATION SUPPLY-CHAIN DEV QUALIFIÉE, AUDITS COMPLET ET
-PRODUCTION PROPRES, NON PUBLIÉ, FOURNISSEUR DE CLÉS DE PRODUCTION NON QUALIFIÉ
-— C2/C3 NOT STARTED**
+FUSIONNÉS — S1.2-03B-R4 FUSIONNÉ VIA PR #48 — INSTANTANÉ LOCAL
+PRÉPUBLICATION R3 DU 2026-10-04 : R2 ÉTAIT LE DERNIER HEAD PUBLIÉ DANS LA
+DRAFT PR #50 NON FUSIONNÉE, REVUE CTO TERMINALE BLOCK, R3 VALIDÉ LOCALEMENT
+ET NON PUBLIÉ À CET INSTANT — APRÈS CET INSTANTANÉ, GIT/GITHUB FONT FOI —
+FOURNISSEUR DE CLÉS DE PRODUCTION NON QUALIFIÉ — C2/C3 NOT STARTED**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-10-03
+Dernière réconciliation documentaire : 2026-10-04
 
 ## Hiérarchie normative
 
@@ -74,7 +75,7 @@ Infrastructure `36991329968`, Launcher Windows `36991329948`, Security
 `completed/success` sur ce merge. Les instantanés Draft R0–R4 plus bas restent
 historiques.
 
-Le mandat runtime distinct S1.2-03C1 matérialise localement les douze opérations
+Le mandat runtime distinct S1.2-03C1 matérialise les douze opérations
 auth/session, six modèles, la migration unique, les contraintes et ACL C1, les
 pools lecteur/writer attestés et le client Redis dédié. La surface contractuelle
 reste à 60 chemins, 67 opérations et 137 schémas. Les gates applicatifs,
@@ -84,9 +85,28 @@ du seul import `fast-glob` de `@next/eslint-plugin-next@16.3.8` vers
 `tinyglobby@0.2.17`. Les audits npm bruts complet et production passent à zéro
 vulnérabilité. Cette substitution est qualifiée uniquement sans
 `settings.next.rootDir` ; le gate permanent refuse toute future apparition de
-cette propriété et impose une nouvelle qualification. Le travail reste non
-publié. Le fournisseur KMS/JWT de production reste non qualifié ; C2 et C3
-restent `Not started`. L'architecture courante est décrite dans
+cette propriété et impose une nouvelle qualification. Dans l'instantané local
+prépublication du 2026-10-04, R2 était le dernier head publié au commit
+`59972cc0614842627c8c17717605345eaae277c4`, parent
+`efb14d1d075dac50ff081b6ef3c1cce516de01e0`, arbre
+`a4e721cf14350655c9d7a94baae28a5f4edb298d`, dans la Draft PR #50 toujours
+ouverte et non fusionnée. Les quatre workflows R2 ont réussi sur ce head exact :
+Infrastructure `37160117048`, Launcher Windows `37160117009`, Security
+`37160117045` et Quality Linux `37160117042`.
+
+La revue CTO terminale du head R2 a conclu **BLOCK** sur six findings :
+memberships PostgreSQL entrantes, statuts Auth, rejeu de confirmation,
+attribution des échecs post-session, indisponibilité de résolution JWT et audit
+des refus de révocation. R3 traite localement ces findings dans le périmètre
+autorisé ; les gates causaux locaux concluent au succès sur le gel des 19
+fichiers autorisés. Le wrapper C1 final réussit PostgreSQL A/B et 26/26 tests
+réels ; les gates Infrastructure isolés, API, OpenAPI 60/67/137, Contracts,
+tooling et scanner officiel réussissent. Les tentatives intermédiaires non
+concluantes ne sont pas comptées comme PASS. Dans cet instantané daté, R3 était
+non indexé, non commité et non publié. Après cet instantané, l'état réellement
+observé dans Git et GitHub fait foi.
+Le fournisseur KMS/JWT de production reste non qualifié ; C2 et C3 restent
+`Not started`. L'architecture courante est décrite dans
 [SLICE_1_2_03C1_ADMIN_AUTH_SESSION_RUNTIME.md](../architecture/SLICE_1_2_03C1_ADMIN_AUTH_SESSION_RUNTIME.md).
 
 Le complément Infrastructure du 2026-10-03 a rendu les scripts génériques

@@ -209,7 +209,7 @@ C1 ou C2 sont des prérequis de leur runtime respectif, jamais un hardening
 repoussé après activation. Ils restent absents de 03B et exigent une
 autorisation distincte.
 
-## Note d'implémentation locale C1 — 2026-10-03
+## Note de matérialisation C1 — instantané local prépublication du 2026-10-04
 
 Le mandat runtime S1.2-03C1 distinct a matérialisé localement les décisions de
 cet ADR : six modèles C1, une migration unique, l'upgrade AuditLog v1/v2 sans
@@ -218,8 +218,19 @@ les contraintes XOR et append-only, ainsi que les douze opérations C1. Les
 paragraphes ci-dessus rédigés au futur conservent la décision de conception
 prise pendant 03B ; ils ne décrivent plus l'état courant du worktree C1.
 
-Cette matérialisation reste locale et non publiée. Le fournisseur KMS et la
-signature JWT de production ne sont pas qualifiés ; l'adaptateur à clés réelles
-éphémères est exclusivement injecté par les tests. Sans provider qualifié, C1
-échoue fermé. Toute publication C1, toute capacité C2 et toute interface C3
-exigent encore une décision distincte.
+Dans cet instantané daté, la matérialisation avait été publiée jusqu'à R2 au commit
+`59972cc0614842627c8c17717605345eaae277c4` dans la Draft PR #50, toujours
+ouverte et non fusionnée. Les quatre workflows R2 ont réussi, puis la revue CTO
+terminale a conclu **BLOCK** sur six écarts d'implémentation, sans modifier les
+exigences normatives du présent ADR. R3 corrige localement les deux orientations
+de membership PostgreSQL, les statuts Auth, le rejeu de confirmation,
+l'attribution des échecs post-session, la propagation de l'indisponibilité JWT
+et l'audit des refus de révocation. R3 était alors non indexé, non commité et
+non publié ; ses validations causales locales avaient conclu au succès. Après
+cet instantané, l'état réellement observé dans Git et GitHub fait foi.
+
+Le fournisseur KMS et la signature JWT de production ne sont pas qualifiés ;
+l'adaptateur à clés réelles éphémères est exclusivement injecté par les tests.
+Sans provider qualifié, C1 échoue fermé. Toute décision Ready, fusion ou
+déploiement, toute capacité C2 et toute interface C3 exigent encore une
+décision distincte.

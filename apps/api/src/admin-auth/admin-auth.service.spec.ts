@@ -1,6 +1,7 @@
 import { AdminC1HttpError } from './admin-session.service';
 import { parseReason } from './admin-auth.controller';
 import {
+  AdminAuthService,
   assertAdminUuid,
   assertIdempotencyKey,
   parseAdminLogin,
@@ -62,5 +63,52 @@ describe('AdminAuthService contract validation', () => {
         reason: 'REQUIRED',
       });
     }
+  });
+
+  it('préserve toutes les métadonnées d erreur lors de l enrichissement session', () => {
+    const service = Object.create(AdminAuthService.prototype) as AdminAuthService;
+    const original = new AdminC1HttpError(429, 'RATE_LIMITED', {
+      auditAction: 'ORIGINAL_ACTION',
+      auditRecorded: true,
+      details: { reason: 'RATE_LIMITED', retryAfterSeconds: 17 },
+      retryAfterSeconds: 17,
+    });
+    const enrich = service as unknown as {
+      withSessionAudit(
+        error: AdminC1HttpError,
+        principal: {
+          adminUserId: string;
+          authorizationVersion: number;
+          role: 'SUPER_ADMIN';
+          sessionId: string;
+        },
+        action: string,
+      ): AdminC1HttpError;
+    };
+    const enriched = enrich.withSessionAudit(
+      original,
+      {
+        adminUserId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        authorizationVersion: 1,
+        role: 'SUPER_ADMIN',
+        sessionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      },
+      'ADMIN_SESSION_STEP_UP_REJECTED',
+    );
+
+    expect(enriched).toMatchObject({
+      auditAction: 'ORIGINAL_ACTION',
+      auditRecorded: true,
+      code: 'RATE_LIMITED',
+      details: { reason: 'RATE_LIMITED', retryAfterSeconds: 17 },
+      retryAfterSeconds: 17,
+      status: 429,
+    });
+    expect(enriched.auditContext).toMatchObject({
+      action: 'ADMIN_SESSION_STEP_UP_REJECTED',
+      actorAdminUserId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      adminSessionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      subjectAdminUserId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    });
   });
 });

@@ -344,7 +344,8 @@ const ADMIN_WRITER_BOUNDARY_SQL = `
          AND privilege.privilege_type = 'USAGE') AS "directSchemaUsagePrivilegeCount",
     (SELECT count(*)::integer FROM column_privilege_mismatches) AS "columnPrivilegeMismatchCount",
     (SELECT count(*)::integer FROM pg_catalog.pg_auth_members AS membership
-      WHERE membership.member = writer_role.oid) AS "directMembershipCount",
+      WHERE membership.member = writer_role.oid
+         OR membership.roleid = writer_role.oid) AS "directMembershipCount",
     (SELECT count(*)::integer
        FROM pg_catalog.pg_shdepend AS dependency
        WHERE dependency.refclassid = 'pg_catalog.pg_authid'::regclass

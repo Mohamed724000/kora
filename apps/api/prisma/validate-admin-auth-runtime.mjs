@@ -369,6 +369,103 @@ async function verifyWriterRefusalWithoutMutation(database) {
   }
 }
 
+async function verifyIncomingMembershipRefusalWithoutMutation(database, target) {
+  const owner = new Client(adminConfiguration(database));
+  const targetRole =
+    target === 'reader' ? process.env.S1203C1_READER_USER : process.env.S1203C1_WRITER_USER;
+  const probeRole = `c1_${target}_member_${process.pid}_${randomBytes(4).toString('hex')}`;
+  const quotedTarget = quoteIdentifier(targetRole);
+  const quotedProbe = quoteIdentifier(probeRole);
+  let probeCreated = false;
+  await owner.connect();
+  try {
+    await owner.query(`CREATE ROLE ${quotedProbe} NOLOGIN NOINHERIT`);
+    probeCreated = true;
+    await owner.query(`GRANT ${quotedTarget} TO ${quotedProbe}`);
+
+    const grant = await owner.query(
+      `
+        SELECT membership.admin_option, membership.inherit_option, membership.set_option
+        FROM pg_catalog.pg_auth_members AS membership
+        JOIN pg_catalog.pg_roles AS granted_role ON granted_role.oid = membership.roleid
+        JOIN pg_catalog.pg_roles AS member_role ON member_role.oid = membership.member
+        WHERE granted_role.rolname = $1 AND member_role.rolname = $2
+      `,
+      [targetRole, probeRole],
+    );
+    if (grant.rowCount !== 1) fail(`${target} incoming membership grant was not established`);
+
+    const formerPredicate = await owner.query(
+      `
+        SELECT count(*)::integer AS count
+        FROM pg_catalog.pg_auth_members AS membership
+        WHERE membership.member = (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = $1)
+      `,
+      [targetRole],
+    );
+    if (formerPredicate.rows[0]?.count !== 0) {
+      fail(`${target} pre-fix member-only predicate did not isolate the incoming-membership gap`);
+    }
+    process.stdout.write(
+      `C1_INCOMING_MEMBERSHIP_PRE_FIX_BYPASS_PROOF target=${target} member_only_count=0 raw_grant=present\n`,
+    );
+
+    const signatureBefore = await writerRefusalStateSignature(owner);
+    const result = spawnSync('docker', provisionerArguments(database), {
+      encoding: 'utf8',
+      windowsHide: true,
+    });
+    if (result.error !== undefined) throw result.error;
+    const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
+    for (const secret of [
+      process.env.S1203C1_READER_PASSWORD,
+      process.env.S1203C1_WRITER_PASSWORD,
+    ]) {
+      if (output.includes(secret)) fail('membership refusal output exposed a runtime credential');
+    }
+    const normalized = normalizeOutput(output).trim();
+    if (
+      result.status === 0 ||
+      !/PostgreSQL runtime provisioning refused unsafe role membership count=[1-9][0-9]*\./u.test(
+        normalized,
+      )
+    ) {
+      fail(
+        `${target} incoming membership was not deterministically refused; exit=${result.status ?? 'unknown'}; diagnostic=${normalized.slice(-1_000) || '<empty>'}`,
+      );
+    }
+    if (normalized.length > 2_000) fail('membership refusal diagnostic was not bounded');
+    const signatureAfter = await writerRefusalStateSignature(owner);
+    if (signatureBefore !== signatureAfter) {
+      fail(
+        `${target} incoming membership refusal mutated ACL, role, setting, membership, or credential state`,
+      );
+    }
+    const preservedGrant = await owner.query(
+      `
+        SELECT 1
+        FROM pg_catalog.pg_auth_members AS membership
+        JOIN pg_catalog.pg_roles AS granted_role ON granted_role.oid = membership.roleid
+        JOIN pg_catalog.pg_roles AS member_role ON member_role.oid = membership.member
+        WHERE granted_role.rolname = $1 AND member_role.rolname = $2
+      `,
+      [targetRole, probeRole],
+    );
+    if (preservedGrant.rowCount !== 1) {
+      fail(`${target} incoming third-party membership was silently revoked`);
+    }
+    process.stdout.write(
+      `C1_INCOMING_MEMBERSHIP_REFUSAL_PASS target=${target} raw_options=independent credentials=2 acl_role_setting_signature=unchanged third_party_grant=preserved diagnostic=bounded\n`,
+    );
+  } finally {
+    if (probeCreated) {
+      await owner.query(`REVOKE ${quotedTarget} FROM ${quotedProbe}`);
+      await owner.query(`DROP ROLE ${quotedProbe}`);
+    }
+    await owner.end();
+  }
+}
+
 async function catalogSignature(client) {
   const queries = [
     `SELECT table_name, column_name, ordinal_position, is_nullable, data_type, udt_name, COALESCE(column_default, '') AS column_default
@@ -885,6 +982,11 @@ async function verifyRuntimeAcl(database) {
           NOT has_database_privilege(current_user, current_database(), 'CREATE,TEMPORARY') AS database_safe,
           NOT has_schema_privilege(current_user, 'public', 'CREATE') AS schema_safe,
           NOT EXISTS (
+            SELECT 1 FROM pg_catalog.pg_auth_members AS membership
+            WHERE membership.member = (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = current_user)
+               OR membership.roleid = (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = current_user)
+          ) AS memberships_safe,
+          NOT EXISTS (
             SELECT 1 FROM pg_catalog.pg_default_acl AS default_acl
             CROSS JOIN LATERAL pg_catalog.aclexplode(default_acl.defaclacl) AS privilege
             WHERE privilege.grantee = (SELECT oid FROM pg_roles WHERE rolname = current_user)
@@ -910,7 +1012,7 @@ async function verifyRuntimeAcl(database) {
       }
     }
     process.stdout.write(
-      'C1_RUNTIME_ACL_PASS reader=3-projections writer=column-only sinks=insert-only returning=denied enumDml=true typeUsage=0\n',
+      'C1_RUNTIME_ACL_PASS reader=3-projections writer=column-only sinks=insert-only returning=denied enumDml=true typeUsage=0 memberships=0\n',
     );
   } finally {
     await reader.end();
@@ -1007,6 +1109,8 @@ async function main() {
       runProvisioner(database);
       runProvisioner(database);
       if (index === 0) await verifyWriterRefusalWithoutMutation(database);
+      await verifyIncomingMembershipRefusalWithoutMutation(database, 'reader');
+      await verifyIncomingMembershipRefusalWithoutMutation(database, 'writer');
       await verifyRuntimeAcl(database);
     }
   } finally {
@@ -1027,7 +1131,7 @@ async function main() {
       throw new AggregateError(cleanupErrors, 'targeted C1 cleanup failed');
   }
   process.stdout.write(
-    'S1.2-03C1_ADMIN_AUTH_POSTGRESQL_PASS databases=2 models=39 tables=40 provisioner_successes=4 provisioner_refusals=1\n',
+    'S1.2-03C1_ADMIN_AUTH_POSTGRESQL_PASS databases=2 models=39 tables=40 provisioner_successes=4 provisioner_refusals=5 incoming_membership_refusals=4\n',
   );
 }
 

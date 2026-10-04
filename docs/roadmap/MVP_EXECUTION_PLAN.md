@@ -29,7 +29,7 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 | Slice 1 / S1.2-02   | Baseline PostgreSQL et contraintes SQL        | Closed and merged — PR #43                                                   |
 | Slice 1 / S1.2-03A  | Frontière PostgreSQL runtime en lecture seule | Closed and merged — PR #45                                                   |
 | Slice 1 / S1.2-03B  | Admin Security Contract Gate, sans runtime    | Closed and merged — PR #48, merge `c97992ca2c82bc4f22f9222ea98ed53714fede4c` |
-| Slice 1 / S1.2-03C1 | Auth admin, TOTP et sessions runtime          | Validated locally; dev remediation verified; unpublished                     |
+| Slice 1 / S1.2-03C1 | Auth admin, TOTP et sessions runtime          | 2026-10-04 snapshot: R2 published; R3 local; later Git/GitHub governs        |
 | Slice 1 / S1.2-03C2 | Recovery, audit, invitations et RBAC runtime  | Not started — separate authorization required                                |
 | Slice 1 / S1.2-03C3 | Interface d'authentification Admin            | Not started — separate authorization required                                |
 | Slice 1 / S1.2-03D  | Artist API                                    | Not started                                                                  |
@@ -148,7 +148,26 @@ démarrait ni Slice 1 ni aucune exigence produit.
 
 ## Slice 1 — Audio purchase pilot
 
-Statut : **In progress — S1.2-02 closed — S1.2-03A closed and merged — S1.2-03B closed and merged — S1.2-03C1 implemented and validated locally with qualified dev supply-chain remediation and clean full/production audits, unpublished — production key provider not qualified — C2/C3 not started**
+Statut : **In progress — S1.2-02 closed — S1.2-03A closed and merged —
+S1.2-03B closed and merged — prepublication snapshot 2026-10-04:
+S1.2-03C1-R2 was the latest published head in Draft PR #50, CTO terminal review
+BLOCK, R3 validated locally and unpublished at that instant; later Git/GitHub
+state governs — production key provider not qualified — C2/C3 not started**
+
+Dans cet instantané, le dernier head publié était R2
+`59972cc0614842627c8c17717605345eaae277c4`, parent
+`efb14d1d075dac50ff081b6ef3c1cce516de01e0`, arbre
+`a4e721cf14350655c9d7a94baae28a5f4edb298d`. La Draft PR #50 totalise trois
+commits, 78 fichiers et `+15279/-641`. Infrastructure `37160117048`, Launcher
+Windows `37160117009`, Security `37160117045` et Quality Linux `37160117042`
+sont tous `pull_request`, tentative 1, `completed/success` sur ce head exact.
+Ces succès R2 restent historiques : la revue CTO terminale a ensuite bloqué
+sur six findings techniques. R3 les remédiait uniquement en local dans cet
+instantané daté ; l'état Git/GitHub postérieur fait foi. Aucune capacité C2 ou
+interface C3 n'est autorisée par ce statut. Les
+preuves finales R3 couvrent PostgreSQL A/B, 26/26 tests d'intégration réels,
+les gates Infrastructure isolés, l'API, OpenAPI 60/67/137, Contracts, tooling
+et le scanner officiel.
 
 Parcours cible :
 

@@ -1,10 +1,12 @@
 # S1.2-03C1 — Admin Auth and Session Runtime
 
-Statut : **IMPLÉMENTÉ ET VALIDÉ LOCALEMENT — REMÉDIATION SUPPLY-CHAIN DEV
-QUALIFIÉE — AUDITS COMPLET ET PRODUCTION PROPRES — NON PUBLIÉ — FOURNISSEUR DE
-CLÉS DE PRODUCTION NON QUALIFIÉ — C2/C3 NOT STARTED**
+Statut : **INSTANTANÉ LOCAL PRÉPUBLICATION R3 DU 2026-10-04 — R2 ÉTAIT LE
+DERNIER HEAD PUBLIÉ DANS LA DRAFT PR #50 NON FUSIONNÉE — REVUE CTO TERMINALE
+BLOCK — R3 VALIDÉ LOCALEMENT ET NON PUBLIÉ À CET INSTANT — APRÈS CET
+INSTANTANÉ, GIT/GITHUB FONT FOI — FOURNISSEUR DE CLÉS DE PRODUCTION NON
+QUALIFIÉ — C2/C3 NOT STARTED**
 
-Date : 2026-10-03
+Date : 2026-10-04
 
 Décisions : [ADR-025](../adr/ADR-025-admin-auth-session-audit-contexts.md) et
 contrat [S1.2-03B](SLICE_1_2_03B_ADMIN_SECURITY_CONTRACT_GATE.md).
@@ -172,9 +174,11 @@ qualification.
 
 **C1 production / KMS externe / signature de production : NON QUALIFIÉS.** Le
 choix cloud, SDK, compte et coût relève d'une décision Produit/déploiement
-distincte. Le travail est local, sans commit, push, PR, release ou déploiement.
-La prochaine étape possible est une décision CTO séparée de publication C1 ;
-C2 et C3 restent `Not started`.
+distincte. Dans l'instantané prépublication daté du 2026-10-04, R2 était publié
+dans la Draft PR #50 et le correctif R3 restait local, sans indexation, commit,
+push, changement de PR, release ou déploiement. Après cet instantané, l'état
+Git/GitHub fait foi. Une décision CTO séparée reste requise avant tout Ready,
+fusion ou déploiement ; C2 et C3 restent `Not started`.
 
 ## Validation locale
 
@@ -208,3 +212,35 @@ Les audits npm bruts complet et production terminent à zéro vulnérabilité ; 
 signatures, attestations et licences du graphe aliasé sont vérifiées.
 Le détail, les incidents intermédiaires et les limites se trouvent dans le
 [rapport QA C1](../qa/SLICE_1_2_03C1_ADMIN_AUTH_SESSION_RUNTIME_REPORT.md).
+
+## Instantané local prépublication R3 du 2026-10-04
+
+À cet instant, R2 était le dernier head publié au commit
+`59972cc0614842627c8c17717605345eaae277c4`, parent
+`efb14d1d075dac50ff081b6ef3c1cce516de01e0`, arbre
+`a4e721cf14350655c9d7a94baae28a5f4edb298d`, avec trois fichiers et
+`+96/-1`. La Draft PR #50 reste ouverte, Draft et non fusionnée ; son cumul est
+de trois commits, 78 fichiers et `+15279/-641`. Les quatre workflows R2 ont
+réussi sur ce head exact : Infrastructure `37160117048`, Launcher Windows
+`37160117009`, Security `37160117045` et Quality Linux `37160117042`.
+
+La revue CTO terminale a néanmoins conclu **BLOCK** : les attestations de
+membership ne couvraient pas `roleid`, cinq comportements Auth/audit divergeaient
+du contrat et les champs vivants n'avaient pas été réconciliés avec la
+publication. R3 borne sa correction aux deux orientations PostgreSQL, aux cinq
+findings Auth et aux documents vivants. La liaison JTI transactionnelle demeure
+une recommandation non bloquante distincte ; la pagination des sessions reste
+**NON CONCLUSIVE**. Ni l'une ni l'autre n'est présentée comme une correction R3.
+
+La politique open source reste différée. Le fournisseur de clés de production
+reste **NON QUALIFIÉ** et aucune capacité C2/C3 n'est anticipée. Les résultats
+R3 sont validés localement sur le gel des 19 fichiers autorisés : le wrapper C1
+final réussit PostgreSQL A/B et 26/26 tests HTTP/PostgreSQL/Redis, avec quatre
+refus de membership entrante ; `infra:verify` et `infra:verify-api` réussissent
+sur l'instance isolée ; lint, typecheck, 83 tests API exécutés, build, OpenAPI
+60/67/137, Contracts 7/7, tooling 403/403 et scanner officiel 384 fichiers
+passent. Les 25 tests API hors harness qui restent `skipped` sont annoncés comme
+tels. Les premières tentatives non concluantes du wrapper (22/24) et du gate
+Infrastructure ne sont pas comptées comme succès. Dans cet instantané daté, R3
+était local, non indexé, non commité et non publié. Après cet instantané, l'état
+réellement observé dans Git et GitHub fait foi.

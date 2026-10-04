@@ -1,6 +1,9 @@
 import type { AdminAuthRepository } from './admin-auth.repository';
 import { AdminAuthCrypto } from './admin-auth.crypto';
-import { TestEphemeralAdminKeyProvider } from './admin-key-provider';
+import {
+  AdminKeyProviderUnavailableError,
+  TestEphemeralAdminKeyProvider,
+} from './admin-key-provider';
 import type { AdminRateLimitService } from './admin-rate-limit.service';
 import { AdminRequestPolicy } from './admin-request-policy';
 import { AdminC1HttpError, AdminSessionService } from './admin-session.service';
@@ -52,5 +55,91 @@ describe('AdminSessionService', () => {
       retryable: false,
       status: 503,
     });
+  });
+
+  it('maps verification-key unavailability to 503 before inventing a session context', async () => {
+    const keys = new TestEphemeralAdminKeyProvider();
+    const crypto = new AdminAuthCrypto(keys);
+    const repository = { transaction: jest.fn() } as unknown as AdminAuthRepository;
+    const service = new AdminSessionService(
+      repository,
+      crypto,
+      keys,
+      {} as AdminRateLimitService,
+      new AdminRequestPolicy({ keyProvider: keys, origin: 'https://admin.example.test' }),
+    );
+    const now = 1_800_000_000;
+    const token = await crypto.issueAccessToken(
+      {
+        adminUserId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        authorizationVersion: 1,
+        role: 'SUPPORT',
+        sessionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      },
+      now,
+    );
+    const resolve = jest
+      .spyOn(keys, 'resolveJwtVerificationKey')
+      .mockRejectedValueOnce(new AdminKeyProviderUnavailableError());
+
+    try {
+      await expect(
+        service.authenticate(`Bearer ${token}`, new Date((now + 1) * 1000)),
+      ).rejects.toMatchObject({
+        auditContext: undefined,
+        code: 'SERVICE_UNAVAILABLE',
+        status: 503,
+      });
+      expect(repository.transaction).not.toHaveBeenCalled();
+    } finally {
+      resolve.mockRestore();
+    }
+  });
+
+  it('keeps unknown keys, malformed tokens, bad signatures and expiration at 401', async () => {
+    const keys = new TestEphemeralAdminKeyProvider();
+    const crypto = new AdminAuthCrypto(keys);
+    const repository = { transaction: jest.fn() } as unknown as AdminAuthRepository;
+    const service = new AdminSessionService(
+      repository,
+      crypto,
+      keys,
+      {} as AdminRateLimitService,
+      new AdminRequestPolicy({ keyProvider: keys, origin: 'https://admin.example.test' }),
+    );
+    const now = 1_800_000_000;
+    const token = await crypto.issueAccessToken(
+      {
+        adminUserId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        authorizationVersion: 1,
+        role: 'SUPPORT',
+        sessionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      },
+      now,
+      10,
+    );
+    const parts = token.split('.');
+    const signature = Buffer.from(parts[2]!, 'base64url');
+    signature[0] = (signature[0] ?? 0) ^ 1;
+    const invalidSignature = `${parts[0]}.${parts[1]}.${signature.toString('base64url')}`;
+
+    const unknownKey = jest
+      .spyOn(keys, 'resolveJwtVerificationKey')
+      .mockResolvedValueOnce(undefined);
+    await expect(
+      service.authenticate(`Bearer ${token}`, new Date((now + 1) * 1000)),
+    ).rejects.toMatchObject({ code: 'AUTH_REQUIRED', status: 401 });
+    unknownKey.mockRestore();
+
+    for (const [candidate, at] of [
+      ['x'.repeat(32), now + 1],
+      [invalidSignature, now + 1],
+      [token, now + 11],
+    ] as const) {
+      await expect(
+        service.authenticate(`Bearer ${candidate}`, new Date(at * 1000)),
+      ).rejects.toMatchObject({ auditContext: undefined, code: 'AUTH_REQUIRED', status: 401 });
+    }
+    expect(repository.transaction).not.toHaveBeenCalled();
   });
 });

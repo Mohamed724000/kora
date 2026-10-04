@@ -8,7 +8,11 @@ import {
 import { argon2id, hash as argonHash, verify as argonVerify } from 'argon2';
 import { jwtVerify, type JWTPayload } from 'jose';
 import QRCode from 'qrcode';
-import type { AdminKeyProvider, WrappedAdminDek } from './admin-key-provider';
+import {
+  AdminKeyProviderUnavailableError,
+  type AdminKeyProvider,
+  type WrappedAdminDek,
+} from './admin-key-provider';
 
 export const ADMIN_JWT_ISSUER = 'kora-plus-admin-api';
 export const ADMIN_JWT_AUDIENCE = 'kora-plus-admin';
@@ -511,7 +515,8 @@ export class AdminAuthCrypto {
         sessionId: payload.sid,
         tokenId: payload.jti,
       };
-    } catch {
+    } catch (error: unknown) {
+      if (error instanceof AdminKeyProviderUnavailableError) throw error;
       throw new AdminAuthCryptoError();
     }
   }

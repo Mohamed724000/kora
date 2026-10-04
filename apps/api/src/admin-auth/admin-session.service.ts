@@ -505,16 +505,20 @@ export class AdminSessionService {
       const actorSession = sessions.find(({ id }) => id === principal.sessionId);
       const target = sessions.find(({ id }) => id === targetSessionId);
       this.assertPrincipalBinding(actor, actorSession, principal, now);
-      await transaction.touchSession(
-        actorSession!.id,
-        now,
-        minimumDate(new Date(now.getTime() + IDLE_MILLISECONDS), actorSession!.absoluteExpiresAt!),
-      );
-      const failureContext = this.sessionAuditContext(
-        principal,
-        'ADMIN_SESSION_REVOCATION_REJECTED',
-        targetSessionId,
-      );
+      const targetIsKnown =
+        target !== undefined &&
+        targetCandidate !== undefined &&
+        target.adminUserId === targetCandidate.adminUserId;
+      const failureContext: AdminFailureAuditContext = {
+        action: 'ADMIN_SESSION_REVOCATION_REJECTED',
+        actorAdminUserId: principal.adminUserId,
+        adminSessionId: principal.sessionId,
+        entityId: targetSessionId,
+        entityType: 'AdminSession',
+        operatorReason: reason.operatorReason,
+        reasonCode: reason.reasonCode,
+        ...(targetIsKnown ? { subjectAdminUserId: target.adminUserId } : {}),
+      };
       if (targetSessionId === principal.sessionId)
         throw new AdminC1HttpError(403, 'FORBIDDEN', { auditContext: failureContext });
       if (
@@ -525,14 +529,15 @@ export class AdminSessionService {
       ) {
         throw new AdminC1HttpError(403, 'FORBIDDEN', { auditContext: failureContext });
       }
-      if (
-        target === undefined ||
-        targetCandidate === undefined ||
-        target.adminUserId !== targetCandidate.adminUserId
-      )
+      if (!targetIsKnown)
         throw new AdminC1HttpError(404, 'ADMIN_SESSION_NOT_FOUND', {
           auditContext: failureContext,
         });
+      await transaction.touchSession(
+        actorSession!.id,
+        now,
+        minimumDate(new Date(now.getTime() + IDLE_MILLISECONDS), actorSession!.absoluteExpiresAt!),
+      );
       await transaction.revokeSession(target.id, now);
       await transaction.insertAudit({
         action: 'ADMIN_SESSION_REVOKED_BY_ADMIN',
@@ -676,8 +681,10 @@ export class AdminSessionService {
       return await this.repository.transaction(callback);
     } catch (error: unknown) {
       if (error instanceof AdminC1HttpError) throw error;
+      if (error instanceof AdminWriterCommitUnknownError) {
+        throw new AdminC1HttpError(503, 'SERVICE_UNAVAILABLE', { auditRecorded: true });
+      }
       if (
-        error instanceof AdminWriterCommitUnknownError ||
         error instanceof AdminAuthCryptoError ||
         error instanceof AdminKeyProviderUnavailableError
       ) {
