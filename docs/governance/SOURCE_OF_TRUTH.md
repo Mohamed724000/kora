@@ -1,11 +1,10 @@
 # KORA+ Final — Source de vérité
 
 Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 ET S1.2-03A CLÔTURÉS ET
-FUSIONNÉS — S1.2-03B-R4 FUSIONNÉ VIA PR #48 — INSTANTANÉ LOCAL
-PRÉPUBLICATION R3 DU 2026-10-04 : R2 ÉTAIT LE DERNIER HEAD PUBLIÉ DANS LA
-DRAFT PR #50 NON FUSIONNÉE, REVUE CTO TERMINALE BLOCK, R3 VALIDÉ LOCALEMENT
-ET NON PUBLIÉ À CET INSTANT — APRÈS CET INSTANTANÉ, GIT/GITHUB FONT FOI —
-FOURNISSEUR DE CLÉS DE PRODUCTION NON QUALIFIÉ — C2/C3 NOT STARTED**
+FUSIONNÉS — S1.2-03B-R4 FUSIONNÉ VIA PR #48 — S1.2-03C1-R3 PUBLIÉ DANS LA
+DRAFT PR #50, QUATRE WORKFLOWS VERTS, PUIS REVUE CTO TERMINALE BLOCK SUR UN
+FINDING HIGH — R4 VALIDÉ DANS L'INSTANTANÉ LOCAL PRÉPUBLICATION DU 2026-10-04
+— FOURNISSEUR DE CLÉS DE PRODUCTION NON QUALIFIÉ — C2/C3 NOT STARTED**
 
 Date d’effet : 2026-07-28
 Dernière réconciliation documentaire : 2026-10-04
@@ -85,26 +84,50 @@ du seul import `fast-glob` de `@next/eslint-plugin-next@16.3.8` vers
 `tinyglobby@0.2.17`. Les audits npm bruts complet et production passent à zéro
 vulnérabilité. Cette substitution est qualifiée uniquement sans
 `settings.next.rootDir` ; le gate permanent refuse toute future apparition de
-cette propriété et impose une nouvelle qualification. Dans l'instantané local
-prépublication du 2026-10-04, R2 était le dernier head publié au commit
-`59972cc0614842627c8c17717605345eaae277c4`, parent
-`efb14d1d075dac50ff081b6ef3c1cce516de01e0`, arbre
-`a4e721cf14350655c9d7a94baae28a5f4edb298d`, dans la Draft PR #50 toujours
-ouverte et non fusionnée. Les quatre workflows R2 ont réussi sur ce head exact :
-Infrastructure `37160117048`, Launcher Windows `37160117009`, Security
-`37160117045` et Quality Linux `37160117042`.
+cette propriété et impose une nouvelle qualification.
 
-La revue CTO terminale du head R2 a conclu **BLOCK** sur six findings :
-memberships PostgreSQL entrantes, statuts Auth, rejeu de confirmation,
-attribution des échecs post-session, indisponibilité de résolution JWT et audit
-des refus de révocation. R3 traite localement ces findings dans le périmètre
-autorisé ; les gates causaux locaux concluent au succès sur le gel des 19
-fichiers autorisés. Le wrapper C1 final réussit PostgreSQL A/B et 26/26 tests
-réels ; les gates Infrastructure isolés, API, OpenAPI 60/67/137, Contracts,
-tooling et scanner officiel réussissent. Les tentatives intermédiaires non
-concluantes ne sont pas comptées comme PASS. Dans cet instantané daté, R3 était
-non indexé, non commité et non publié. Après cet instantané, l'état réellement
-observé dans Git et GitHub fait foi.
+R3 est publié au commit `b0792934aa2f9d6f6d481517f384825874d72402`, parent
+R2 `59972cc0614842627c8c17717605345eaae277c4`, arbre
+`87e41d9304820a1ebf8808fc783a5407a8c2105d`. La PR #50 reste `OPEN`, Draft et
+non fusionnée ; son cumul publié est de quatre commits, 78 fichiers et
+`+16965/-642`, et son corps inchangé porte le SHA-256
+`81f1cf58e7ed6e3f5f206785c92516bb14d6e2c651dc8156b942d68ad6e240d2`.
+Infrastructure `37190396720`, Launcher Windows `37190396716`, Security
+`37190396718` et Quality Linux `37190396709` sont tous
+`pull_request/completed/success`, tentative 1, sur ce head exact.
+
+Ces succès CI n'annulent pas le verdict CTO terminal **BLOCK** post-R3. Cinq
+findings R3 sont clos : memberships PostgreSQL entrantes, statuts Auth, rejeu
+de confirmation, indisponibilité de résolution JWT et sujet/motif des refus
+`revokeOther`. Le finding **HIGH** d'audit post-session n'était que partiellement
+corrigé : des pannes de `refresh`, `revokeCurrent` et `revokeOther` perdaient
+encore un contexte administrateur déjà prouvé et choisissaient le sink
+générique.
+
+Les preuves R4 ci-dessous constituent l'instantané local prépublication daté du
+2026-10-04. R4 conserve ce contexte par invocation, sans état mutable partagé. Le sujet de
+`revokeOther` n'est enrichi qu'après résolution serveur de la cible ; `refresh`
+ne prouve aucun contexte à partir du cookie, du hash ou du candidat seuls. Les
+erreurs déjà normalisées sans contexte sont enrichies sans remplacer un
+contexte explicite, et le COMMIT inconnu reste un 503 neutre marqué déjà audité,
+sans seconde écriture d'échec.
+
+Le wrapper C1 R4 final termine au code 0 : PostgreSQL A/B, 39 modèles, 40
+tables, quatre provisionnements réussis, cinq refus de provisionnement, quatre
+refus de membership entrante et 30/30 tests HTTP/PostgreSQL/Redis réels pour les
+douze opérations. L'API passe format, lint, typecheck, 17 suites avec 87 tests
+réussis et 29 `skipped`, puis build. OpenAPI reste à 60/67/137 et la génération
+reste inchangée. Les deux premières tentatives wrapper R4, limitées à des
+erreurs de fixtures de test, restent non concluantes et ne valent pas PASS.
+
+Les onze fichiers techniques figés pour la publication R3 incluaient les
+surfaces PostgreSQL/Infrastructure alors validées. R4 ne modifie aucune de ces
+surfaces : seuls les trois fichiers Auth/tests autorisés et les six documents
+vivants sont réconciliés. Dans cet instantané, R4 était local, non indexé, non
+commité et non publié ; après cet instantané, l'état Git/GitHub fait foi.
+L'incident matériel distinct du worktree 03A a été clos sous mandat séparé,
+avec sémantique préservée et causes historiques **NON CONCLUSIVE** ; cette
+clôture n'est pas une preuve fonctionnelle R4 et ses artefacts restent hors C1.
 Le fournisseur KMS/JWT de production reste non qualifié ; C2 et C3 restent
 `Not started`. L'architecture courante est décrite dans
 [SLICE_1_2_03C1_ADMIN_AUTH_SESSION_RUNTIME.md](../architecture/SLICE_1_2_03C1_ADMIN_AUTH_SESSION_RUNTIME.md).

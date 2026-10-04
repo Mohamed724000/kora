@@ -11,11 +11,7 @@ import {
   type AdminStepUpPurpose,
   type AdminUserRecord,
 } from './admin-auth.repository';
-import {
-  ADMIN_AUTH_CRYPTO,
-  AdminAuthCryptoError,
-  type VerifiedAdminAccessToken,
-} from './admin-auth.crypto';
+import { ADMIN_AUTH_CRYPTO, type VerifiedAdminAccessToken } from './admin-auth.crypto';
 import type { AdminAuthCrypto } from './admin-auth.crypto';
 import {
   ADMIN_KEY_PROVIDER,
@@ -307,122 +303,141 @@ export class AdminSessionService {
       throw new AdminC1HttpError(503, 'SERVICE_UNAVAILABLE');
     }
     const tokenHash = sha256(refreshToken);
+    let failureContext: AdminFailureAuditContext | undefined;
 
-    return this.runTransaction(async (transaction) => {
-      const candidate = await transaction.findRefreshTokenByHash(tokenHash);
-      if (candidate === undefined) throw new AdminC1HttpError(401, 'AUTH_REFRESH_INVALID');
-      const user = await transaction.lockAdminUser(candidate.adminUserId);
-      const session = await transaction.lockSession(candidate.adminSessionId);
-      const refresh = await transaction.lockRefreshTokenByHash(tokenHash);
-      if (
-        refresh === undefined ||
-        refresh.id !== candidate.id ||
-        refresh.adminUserId !== candidate.adminUserId ||
-        refresh.adminSessionId !== candidate.adminSessionId ||
-        refresh.consumedAt !== null ||
-        refresh.expiresAt <= now ||
-        user === undefined ||
-        session === undefined ||
-        user.status !== 'ACTIVE' ||
-        session.revokedAt !== null ||
-        session.expiresAt <= now ||
-        session.absoluteExpiresAt === null ||
-        session.absoluteExpiresAt <= now ||
-        session.authorizationVersion !== user.authorizationVersion ||
-        session.refreshTokenHash !== tokenHash
-      ) {
-        if (session !== undefined && session.revokedAt === null) {
-          await transaction.revokeSession(session.id, now);
-        }
-        if (
+    const result = await this.runTransaction(
+      async (transaction) => {
+        const candidate = await transaction.findRefreshTokenByHash(tokenHash);
+        if (candidate === undefined) throw new AdminC1HttpError(401, 'AUTH_REFRESH_INVALID');
+        const user = await transaction.lockAdminUser(candidate.adminUserId);
+        const session = await transaction.lockSession(candidate.adminSessionId);
+        const refresh = await transaction.lockRefreshTokenByHash(tokenHash);
+        const candidateContextProven =
           user !== undefined &&
           session !== undefined &&
           session.adminUserId === user.id &&
-          candidate.adminUserId === user.id
+          candidate.adminUserId === user.id &&
+          candidate.adminSessionId === session.id;
+        if (
+          refresh === undefined ||
+          refresh.id !== candidate.id ||
+          refresh.adminUserId !== candidate.adminUserId ||
+          refresh.adminSessionId !== candidate.adminSessionId ||
+          refresh.consumedAt !== null ||
+          refresh.expiresAt <= now ||
+          user === undefined ||
+          session === undefined ||
+          user.status !== 'ACTIVE' ||
+          session.revokedAt !== null ||
+          session.expiresAt <= now ||
+          session.absoluteExpiresAt === null ||
+          session.absoluteExpiresAt <= now ||
+          session.authorizationVersion !== user.authorizationVersion ||
+          session.refreshTokenHash !== tokenHash
         ) {
-          await transaction.insertAudit({
-            action: 'ADMIN_SESSION_REFRESH_REJECTED',
-            actorAdminUserId: user.id,
-            adminSessionId: session.id,
-            createdAt: now,
-            entityId: session.id,
-            entityType: 'AdminSession',
-            id: randomUUID(),
-            reasonCode: 'SECURITY_RESPONSE',
-            requestId,
-            subjectAdminUserId: user.id,
-          });
-        } else {
-          await transaction.insertSecurityEvent({
-            action: 'ADMIN_SESSION_REFRESH_REJECTED',
-            createdAt: now,
-            failureCode: 'AUTH_REFRESH_INVALID',
-            id: randomUUID(),
-            outcome: 'FAILED',
-            requestId,
-          });
+          if (candidateContextProven) {
+            failureContext = this.sessionAuditContext(
+              {
+                adminUserId: user.id,
+                authorizationVersion: user.authorizationVersion,
+                role: user.role,
+                sessionId: session.id,
+              },
+              'ADMIN_SESSION_REFRESH_REJECTED',
+            );
+          }
+          if (session !== undefined && session.revokedAt === null) {
+            await transaction.revokeSession(session.id, now);
+          }
+          if (failureContext !== undefined) {
+            await transaction.insertAudit({
+              ...failureContext,
+              createdAt: now,
+              id: randomUUID(),
+              requestId,
+            });
+          } else {
+            await transaction.insertSecurityEvent({
+              action: 'ADMIN_SESSION_REFRESH_REJECTED',
+              createdAt: now,
+              failureCode: 'AUTH_REFRESH_INVALID',
+              id: randomUUID(),
+              outcome: 'FAILED',
+              requestId,
+            });
+          }
+          return { rejected: true as const };
         }
-        return { rejected: true as const };
-      }
 
-      const newRefreshToken = this.crypto.randomOpaqueToken();
-      const csrfToken = await this.issueCsrfToken(newRefreshToken);
-      const accessToken = await this.crypto.issueAccessToken(
-        {
-          adminUserId: user.id,
-          authorizationVersion: user.authorizationVersion,
-          role: user.role,
-          sessionId: session.id,
-        },
-        Math.floor(now.getTime() / 1000),
-      );
-      const verified = await this.crypto.verifyAccessToken(
-        accessToken,
-        Math.floor(now.getTime() / 1000),
-      );
-      const idle = minimumDate(
-        new Date(now.getTime() + IDLE_MILLISECONDS),
-        session.absoluteExpiresAt,
-      );
-      await transaction.rotateRefresh({
-        accessTokenJti: verified.tokenId,
-        consumedAt: now,
-        expiresAt: idle,
-        newTokenHash: sha256(newRefreshToken),
-        newTokenId: randomUUID(),
-        previous: refresh,
-      });
-      await transaction.insertAudit({
-        action: 'ADMIN_SESSION_REFRESHED',
-        actorAdminUserId: user.id,
-        adminSessionId: session.id,
-        createdAt: now,
-        entityId: session.id,
-        entityType: 'AdminSession',
-        id: randomUUID(),
-        reasonCode: 'SECURITY_RESPONSE',
-        requestId,
-        subjectAdminUserId: user.id,
-      });
-      return {
-        delivery: {
-          absoluteExpiresAt: session.absoluteExpiresAt.toISOString(),
-          accessExpiresAt: new Date(verified.expiresAtSeconds * 1000).toISOString(),
+        failureContext = this.sessionAuditContext(
+          {
+            adminUserId: user.id,
+            authorizationVersion: user.authorizationVersion,
+            role: user.role,
+            sessionId: session.id,
+          },
+          'ADMIN_SESSION_REFRESH_REJECTED',
+        );
+        const newRefreshToken = this.crypto.randomOpaqueToken();
+        const csrfToken = await this.issueCsrfToken(newRefreshToken);
+        const accessToken = await this.crypto.issueAccessToken(
+          {
+            adminUserId: user.id,
+            authorizationVersion: user.authorizationVersion,
+            role: user.role,
+            sessionId: session.id,
+          },
+          Math.floor(now.getTime() / 1000),
+        );
+        const verified = await this.crypto.verifyAccessToken(
           accessToken,
-          authorizationVersion: user.authorizationVersion,
-          csrfToken,
-          idleExpiresAt: idle.toISOString(),
-          refreshToken: newRefreshToken,
-          role: user.role,
-          sessionId: session.id,
-        },
-        rejected: false as const,
-      };
-    }).then((result) => {
-      if (result.rejected)
-        throw new AdminC1HttpError(401, 'AUTH_REFRESH_INVALID', { auditRecorded: true });
-      return result.delivery;
-    });
+          Math.floor(now.getTime() / 1000),
+        );
+        const idle = minimumDate(
+          new Date(now.getTime() + IDLE_MILLISECONDS),
+          session.absoluteExpiresAt,
+        );
+        await transaction.rotateRefresh({
+          accessTokenJti: verified.tokenId,
+          consumedAt: now,
+          expiresAt: idle,
+          newTokenHash: sha256(newRefreshToken),
+          newTokenId: randomUUID(),
+          previous: refresh,
+        });
+        await transaction.insertAudit({
+          action: 'ADMIN_SESSION_REFRESHED',
+          actorAdminUserId: user.id,
+          adminSessionId: session.id,
+          createdAt: now,
+          entityId: session.id,
+          entityType: 'AdminSession',
+          id: randomUUID(),
+          reasonCode: 'SECURITY_RESPONSE',
+          requestId,
+          subjectAdminUserId: user.id,
+        });
+        return {
+          delivery: {
+            absoluteExpiresAt: session.absoluteExpiresAt.toISOString(),
+            accessExpiresAt: new Date(verified.expiresAtSeconds * 1000).toISOString(),
+            accessToken,
+            authorizationVersion: user.authorizationVersion,
+            csrfToken,
+            idleExpiresAt: idle.toISOString(),
+            refreshToken: newRefreshToken,
+            role: user.role,
+            sessionId: session.id,
+          },
+          rejected: false as const,
+        };
+      },
+      () => failureContext,
+    );
+    if (result.rejected) {
+      throw new AdminC1HttpError(401, 'AUTH_REFRESH_INVALID', { auditRecorded: true });
+    }
+    return result.delivery;
   }
 
   async revokeCurrent(
@@ -430,22 +445,26 @@ export class AdminSessionService {
     requestId: string,
     now = new Date(),
   ): Promise<void> {
-    await this.runTransaction(async (transaction) => {
-      const { session, user } = await this.lockPrincipal(transaction, principal, now);
-      await transaction.revokeSession(session.id, now);
-      await transaction.insertAudit({
-        action: 'ADMIN_SESSION_REVOKED',
-        actorAdminUserId: user.id,
-        adminSessionId: session.id,
-        createdAt: now,
-        entityId: session.id,
-        entityType: 'AdminSession',
-        id: randomUUID(),
-        reasonCode: 'SECURITY_RESPONSE',
-        requestId,
-        subjectAdminUserId: user.id,
-      });
-    });
+    const failureContext = this.sessionAuditContext(principal, 'ADMIN_SESSION_REVOCATION_REJECTED');
+    await this.runTransaction(
+      async (transaction) => {
+        const { session, user } = await this.lockPrincipal(transaction, principal, now);
+        await transaction.revokeSession(session.id, now);
+        await transaction.insertAudit({
+          action: 'ADMIN_SESSION_REVOKED',
+          actorAdminUserId: user.id,
+          adminSessionId: session.id,
+          createdAt: now,
+          entityId: session.id,
+          entityType: 'AdminSession',
+          id: randomUUID(),
+          reasonCode: 'SECURITY_RESPONSE',
+          requestId,
+          subjectAdminUserId: user.id,
+        });
+      },
+      () => failureContext,
+    );
   }
 
   async list(
@@ -490,69 +509,77 @@ export class AdminSessionService {
     requestId: string,
     now = new Date(),
   ): Promise<void> {
-    await this.runTransaction(async (transaction) => {
-      const sessionCandidates = await transaction.findSessions([
-        principal.sessionId,
-        targetSessionId,
-      ]);
-      const targetCandidate = sessionCandidates.find(({ id }) => id === targetSessionId);
-      const users = await transaction.lockAdminUsers([
-        principal.adminUserId,
-        ...(targetCandidate === undefined ? [] : [targetCandidate.adminUserId]),
-      ]);
-      const actor = users.find(({ id }) => id === principal.adminUserId);
-      const sessions = await transaction.lockSessions([principal.sessionId, targetSessionId]);
-      const actorSession = sessions.find(({ id }) => id === principal.sessionId);
-      const target = sessions.find(({ id }) => id === targetSessionId);
-      this.assertPrincipalBinding(actor, actorSession, principal, now);
-      const targetIsKnown =
-        target !== undefined &&
-        targetCandidate !== undefined &&
-        target.adminUserId === targetCandidate.adminUserId;
-      const failureContext: AdminFailureAuditContext = {
-        action: 'ADMIN_SESSION_REVOCATION_REJECTED',
-        actorAdminUserId: principal.adminUserId,
-        adminSessionId: principal.sessionId,
-        entityId: targetSessionId,
-        entityType: 'AdminSession',
-        operatorReason: reason.operatorReason,
-        reasonCode: reason.reasonCode,
-        ...(targetIsKnown ? { subjectAdminUserId: target.adminUserId } : {}),
-      };
-      if (targetSessionId === principal.sessionId)
-        throw new AdminC1HttpError(403, 'FORBIDDEN', { auditContext: failureContext });
-      if (
-        actor!.role !== 'SUPER_ADMIN' ||
-        actorSession!.stepUpPurpose !== 'SESSION_REVOCATION' ||
-        actorSession!.stepUpExpiresAt === null ||
-        actorSession!.stepUpExpiresAt <= now
-      ) {
-        throw new AdminC1HttpError(403, 'FORBIDDEN', { auditContext: failureContext });
-      }
-      if (!targetIsKnown)
-        throw new AdminC1HttpError(404, 'ADMIN_SESSION_NOT_FOUND', {
-          auditContext: failureContext,
+    let failureContext: AdminFailureAuditContext = {
+      action: 'ADMIN_SESSION_REVOCATION_REJECTED',
+      actorAdminUserId: principal.adminUserId,
+      adminSessionId: principal.sessionId,
+      entityId: targetSessionId,
+      entityType: 'AdminSession',
+      operatorReason: reason.operatorReason,
+      reasonCode: reason.reasonCode,
+    };
+    await this.runTransaction(
+      async (transaction) => {
+        const sessionCandidates = await transaction.findSessions([
+          principal.sessionId,
+          targetSessionId,
+        ]);
+        const targetCandidate = sessionCandidates.find(({ id }) => id === targetSessionId);
+        const users = await transaction.lockAdminUsers([
+          principal.adminUserId,
+          ...(targetCandidate === undefined ? [] : [targetCandidate.adminUserId]),
+        ]);
+        const actor = users.find(({ id }) => id === principal.adminUserId);
+        const sessions = await transaction.lockSessions([principal.sessionId, targetSessionId]);
+        const actorSession = sessions.find(({ id }) => id === principal.sessionId);
+        const target = sessions.find(({ id }) => id === targetSessionId);
+        this.assertPrincipalBinding(actor, actorSession, principal, now);
+        const targetIsKnown =
+          target !== undefined &&
+          targetCandidate !== undefined &&
+          target.adminUserId === targetCandidate.adminUserId;
+        if (targetIsKnown) {
+          failureContext = { ...failureContext, subjectAdminUserId: target.adminUserId };
+        }
+        if (targetSessionId === principal.sessionId)
+          throw new AdminC1HttpError(403, 'FORBIDDEN', { auditContext: failureContext });
+        if (
+          actor!.role !== 'SUPER_ADMIN' ||
+          actorSession!.stepUpPurpose !== 'SESSION_REVOCATION' ||
+          actorSession!.stepUpExpiresAt === null ||
+          actorSession!.stepUpExpiresAt <= now
+        ) {
+          throw new AdminC1HttpError(403, 'FORBIDDEN', { auditContext: failureContext });
+        }
+        if (!targetIsKnown)
+          throw new AdminC1HttpError(404, 'ADMIN_SESSION_NOT_FOUND', {
+            auditContext: failureContext,
+          });
+        await transaction.touchSession(
+          actorSession!.id,
+          now,
+          minimumDate(
+            new Date(now.getTime() + IDLE_MILLISECONDS),
+            actorSession!.absoluteExpiresAt!,
+          ),
+        );
+        await transaction.revokeSession(target.id, now);
+        await transaction.insertAudit({
+          action: 'ADMIN_SESSION_REVOKED_BY_ADMIN',
+          actorAdminUserId: actor!.id,
+          adminSessionId: actorSession!.id,
+          createdAt: now,
+          entityId: target.id,
+          entityType: 'AdminSession',
+          id: randomUUID(),
+          operatorReason: reason.operatorReason,
+          reasonCode: reason.reasonCode,
+          requestId,
+          subjectAdminUserId: target.adminUserId,
         });
-      await transaction.touchSession(
-        actorSession!.id,
-        now,
-        minimumDate(new Date(now.getTime() + IDLE_MILLISECONDS), actorSession!.absoluteExpiresAt!),
-      );
-      await transaction.revokeSession(target.id, now);
-      await transaction.insertAudit({
-        action: 'ADMIN_SESSION_REVOKED_BY_ADMIN',
-        actorAdminUserId: actor!.id,
-        adminSessionId: actorSession!.id,
-        createdAt: now,
-        entityId: target.id,
-        entityType: 'AdminSession',
-        id: randomUUID(),
-        operatorReason: reason.operatorReason,
-        reasonCode: reason.reasonCode,
-        requestId,
-        subjectAdminUserId: target.adminUserId,
-      });
-    });
+      },
+      () => failureContext,
+    );
   }
 
   private assertPrincipalBinding(
@@ -676,21 +703,29 @@ export class AdminSessionService {
 
   private async runTransaction<T>(
     callback: (transaction: AdminAuthTransactionRepository) => Promise<T>,
+    failureContext?: () => AdminFailureAuditContext | undefined,
   ): Promise<T> {
     try {
       return await this.repository.transaction(callback);
     } catch (error: unknown) {
-      if (error instanceof AdminC1HttpError) throw error;
       if (error instanceof AdminWriterCommitUnknownError) {
         throw new AdminC1HttpError(503, 'SERVICE_UNAVAILABLE', { auditRecorded: true });
       }
-      if (
-        error instanceof AdminAuthCryptoError ||
-        error instanceof AdminKeyProviderUnavailableError
-      ) {
-        throw new AdminC1HttpError(503, 'SERVICE_UNAVAILABLE');
-      }
-      throw new AdminC1HttpError(503, 'SERVICE_UNAVAILABLE');
+      const normalized =
+        error instanceof AdminC1HttpError
+          ? error
+          : new AdminC1HttpError(503, 'SERVICE_UNAVAILABLE');
+      const context = failureContext?.();
+      if (context === undefined || normalized.auditContext !== undefined) throw normalized;
+      throw new AdminC1HttpError(normalized.status, normalized.code, {
+        ...(normalized.auditAction === undefined ? {} : { auditAction: normalized.auditAction }),
+        auditContext: context,
+        auditRecorded: normalized.auditRecorded,
+        details: normalized.details,
+        ...(normalized.retryAfterSeconds === undefined
+          ? {}
+          : { retryAfterSeconds: normalized.retryAfterSeconds }),
+      });
     }
   }
 }

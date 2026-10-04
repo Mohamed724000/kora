@@ -3,11 +3,10 @@
 Périmètre durable couvert : **BASELINE + S0.4/S0.5/M0.1/M0.2/S0.6 ET M0.3
 FUSIONNÉS ET CLÔTURÉS + S1.1 FERMÉ + CONTRACT & DATA READINESS S1.2-01 +
 S1.2-02 CLÔTURÉ ET FUSIONNÉ + S1.2-03A CLÔTURÉ ET FUSIONNÉ + S1.2-03B-R4
-FUSIONNÉ VIA PR #48 + INSTANTANÉ PRÉPUBLICATION S1.2-03C1-R3 DU 2026-10-04 :
-R2 ÉTAIT LE DERNIER HEAD PUBLIÉ DANS LA DRAFT PR #50, REVUE CTO TERMINALE
-BLOCK, R3 VALIDÉ LOCALEMENT ET NON PUBLIÉ À CET INSTANT ; APRÈS CET
-INSTANTANÉ, GIT/GITHUB FONT FOI — KMS/JWT DE PRODUCTION NON QUALIFIÉS — C2/C3
-NOT STARTED**.
+FUSIONNÉ VIA PR #48 + S1.2-03C1-R3 PUBLIÉ DANS LA DRAFT PR #50 AVEC QUATRE
+WORKFLOWS VERTS, PUIS REVUE CTO TERMINALE BLOCK SUR UN FINDING HIGH +
+INSTANTANÉ LOCAL PRÉPUBLICATION R4 DU 2026-10-04 VALIDÉ — KMS/JWT DE PRODUCTION
+NON QUALIFIÉS — C2/C3 NOT STARTED**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
 commit, push ou changement GitHub S1.1 n’avait encore été effectué : il s’agit
@@ -27,17 +26,30 @@ atomique au plafond de trois familles et le 503 générique fail-closed. Il ajou
 les frontières PostgreSQL reader/writer, la migration et les ACL de colonnes,
 la crypto réelle du harness et un client Redis auth séparé. Il ne qualifie ni
 KMS/JWT de production, ni exploitation ou déploiement.
-Dans l'instantané local prépublication du 2026-10-04, R2 était le dernier head
-publié, `59972cc0614842627c8c17717605345eaae277c4`, de la Draft PR #50 ; ses
-quatre workflows avaient réussi. La revue CTO terminale ultérieure avait toutefois conclu
-**BLOCK** sur les memberships PostgreSQL entrantes et cinq écarts Auth/audit.
-R3 traite ces six findings localement sans étendre la surface C1.
-Les preuves finales exercent les memberships incidentes reader/writer dans les
-deux orientations sur PostgreSQL A/B, les cinq corrections Auth/audit dans
-26/26 tests d'intégration réels et les pannes Infrastructure isolées. Le
-scanner officiel avec historique passe ; aucune dépendance, surface OpenAPI,
-migration ou capacité C2/C3 n'est ajoutée. R3 était alors non publié ; après
-cet instantané, l'état réellement observé dans Git et GitHub fait foi.
+R3 est publié au head `b0792934aa2f9d6f6d481517f384825874d72402` de la Draft
+PR #50. Infrastructure `37190396720`, Launcher Windows `37190396716`, Security
+`37190396718` et Quality Linux `37190396709` réussissent en tentative 1 sur ce
+head exact, mais la revue CTO terminale maintient **BLOCK** : cinq findings sont
+clos et le finding **HIGH** d'attribution des échecs post-session reste partiel. Des
+pannes de `refresh`, `revokeCurrent` et `revokeOther` pouvaient encore perdre
+un contexte serveur déjà prouvé.
+
+R4 corrige cette cause sans étendre la surface C1 : contexte par invocation,
+sujet de révocation externe ajouté seulement après résolution serveur, aucune
+identité inventée avant preuve refresh, normalisation conservant les
+métadonnées, et priorité inchangée du COMMIT inconnu. Le wrapper final exerce
+30/30 tests réels ; les pannes avec rollback confirmé écrivent exactement le
+sink attendu, le sink indisponible n'entraîne aucun fallback trompeur et le
+COMMIT inconnu n'écrit aucun faux rejet. Aucune dépendance, surface OpenAPI,
+migration ou capacité C2/C3 n'est ajoutée.
+Ces éléments sont des preuves locales de l'instantané prépublication du
+2026-10-04, pas une qualification de production ; après cet instantané, l'état
+Git/GitHub fait foi.
+Les onze fichiers techniques R3, dont PostgreSQL/Infrastructure, restent figés
+après leurs validations ; R4 ne modifie que les trois fichiers Auth/tests et
+les six documents autorisés. La politique open source reste différée, le
+provider de clés de production non qualifié, la pagination non concluante et
+C2/C3 non démarrés.
 
 Le gate supply-chain final du 2026-10-03 retire la chaîne dev-only
 `eslint-config-next → @next/eslint-plugin-next → fast-glob → micromatch → braces`
@@ -776,30 +788,32 @@ Chaque lot affectant une frontière :
 
 ## Frontière contractuelle S1.2-03B — Admin Security
 
-| Menace                                      | Contrôle contractuel                                                                                                                                                  | Risque résiduel / lot runtime                     |
-| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| Oracle de compte au login/reset/invitation  | statuts/erreurs génériques et table de timing comparable pour inconnu/expiré/consommé/révoqué/état compte                                                             | tests statistiques et budgets en C1/C2            |
-| CSRF ou Origin contourné                    | exigences OpenAPI AND cookie pré-auth/refresh + cookie CSRF + `X-Kora-CSRF`, Origin exact et Fetch Metadata au login                                                  | middleware et tests navigateur en C1              |
-| Fuite/rejeu du seed TOTP                    | QR POST binaire unique, `no-store`, `nosniff`, HMAC-SHA-256/30 s/±1/replay refusé, secret 256 bits sous AES-256-GCM enveloppe                                         | KMS et redaction runtime en C1                    |
-| Vol ou replay refresh                       | 256 bits, cookie host-only protégé, rotation one-shot, famille révoquée au replay/course, profil 10/min                                                               | transaction et concurrence en C1                  |
-| Bruteforce codes de secours                 | sélecteur public + vérificateur 128 bits, Argon2id 64 MiB/t=3/p=1, usage atomique unique, profil 5/h                                                                  | contrainte SQL en C1                              |
-| Création de session pendant récupération    | contexte `MFA_RECOVERY` borné, seule l'inscription TOTP est autorisée                                                                                                 | machine d'état en C1                              |
-| Collusion/récupération support              | trois parties distinctes ; annulation serveur auditée sur remplacement/inéligibilité ; approbateur super-admin step-up                                                | transaction et alerting en C2/C3                  |
-| Audit attribué au mauvais acteur            | sinks succès/échec par opération, contexte non prouvé vers événement ; SYSTEM autonome/délégué, XOR et union discriminée                                              | migration, XOR SQL et trigger avant runtime C1/C2 |
-| Faux contexte recovery fourni par le client | enrollment/QR n'utilisent `ADMIN_RECOVERY` qu'après ownership, acteur, état et expiration prouvés côté serveur ; cookie/selector/id seuls insuffisants                | transactions et preuves négatives en C1           |
-| Contournement du step-up de rotation        | TOTP frais inline obligatoire, purpose `RECOVERY_CODE_ROTATION`, compteur global anti-rejeu ; preuve antérieure non substituable                                      | verrouillage et transaction en C1                 |
-| Dépassement ou course sur trois familles    | éviction LRU atomique après authentification complète sous verrou utilisateur, ordre déterministe, refresh sans nouvelle famille                                      | tests de concurrence PostgreSQL en C1             |
-| Mutation sans audit ou COMMIT ambigu        | 503 uniforme fermé avec `retryable=false`, rollback des effets non commités, aucun secret avant commit confirmé, aucun retry aveugle ni fausse preuve d'audit durable | observation neutralisée et tests de panne en C1   |
-| Lecture transversale de secrets PostgreSQL  | futur writer séparé et borné ; lecteur sur allowlist tables/colonnes ; retrait des grants globaux ; sinks audit `INSERT`-only sans `RETURNING`                        | ACL, upgrade et tests `42501` sous mandat C1      |
-| Escalade RBAC                               | deny by default, rôle rechargé, `authorizationVersion`, no self-change, dernier super-admin protégé                                                                   | middleware et verrouillage transactionnel en C2   |
-| Exfiltration d'export                       | bearer+step-up ; PII ; payload JCS UTF-8 ; signing input RFC 7515 ; JWS Ed25519 détaché avec `b64=false` interdit ; ZIP bijectif ; trust bundle ; aucune URL signée   | stockage/chiffrement/expiry en C2                 |
+| Menace                                      | Contrôle contractuel                                                                                                                                                | Risque résiduel / lot runtime                   |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Oracle de compte au login/reset/invitation  | statuts/erreurs génériques et table de timing comparable pour inconnu/expiré/consommé/révoqué/état compte                                                           | tests statistiques et budgets en C1/C2          |
+| CSRF ou Origin contourné                    | exigences OpenAPI AND cookie pré-auth/refresh + cookie CSRF + `X-Kora-CSRF`, Origin exact et Fetch Metadata au login                                                | middleware et tests navigateur en C1            |
+| Fuite/rejeu du seed TOTP                    | QR POST binaire unique, `no-store`, `nosniff`, HMAC-SHA-256/30 s/±1/replay refusé, secret 256 bits sous AES-256-GCM enveloppe                                       | KMS et redaction runtime en C1                  |
+| Vol ou replay refresh                       | 256 bits, cookie host-only protégé, rotation one-shot, famille révoquée au replay/course, profil 10/min                                                             | transaction et concurrence en C1                |
+| Bruteforce codes de secours                 | sélecteur public + vérificateur 128 bits, Argon2id 64 MiB/t=3/p=1, usage atomique unique, profil 5/h                                                                | contrainte SQL en C1                            |
+| Création de session pendant récupération    | contexte `MFA_RECOVERY` borné, seule l'inscription TOTP est autorisée                                                                                               | machine d'état en C1                            |
+| Collusion/récupération support              | trois parties distinctes ; annulation serveur auditée sur remplacement/inéligibilité ; approbateur super-admin step-up                                              | transaction et alerting en C2/C3                |
+| Audit attribué au mauvais acteur            | sinks succès/échec par opération, contexte non prouvé vers événement ; R4 conserve le contexte prouvé de refresh/révocations par invocation                         | extension runtime et alerting C2                |
+| Faux contexte recovery fourni par le client | enrollment/QR n'utilisent `ADMIN_RECOVERY` qu'après ownership, acteur, état et expiration prouvés côté serveur ; cookie/selector/id seuls insuffisants              | transactions et preuves négatives en C1         |
+| Contournement du step-up de rotation        | TOTP frais inline obligatoire, purpose `RECOVERY_CODE_ROTATION`, compteur global anti-rejeu ; preuve antérieure non substituable                                    | verrouillage et transaction en C1               |
+| Dépassement ou course sur trois familles    | éviction LRU atomique après authentification complète sous verrou utilisateur, ordre déterministe, refresh sans nouvelle famille                                    | tests de concurrence PostgreSQL en C1           |
+| Mutation sans audit ou COMMIT ambigu        | 503 uniforme fermé avec `retryable=false`, rollback confirmé avant COMMIT, sink indisponible sans fallback, COMMIT inconnu sans faux rejet ni retry aveugle         | supervision de production non qualifiée         |
+| Lecture transversale de secrets PostgreSQL  | writer C1 séparé et borné ; lecteur sur allowlist tables/colonnes ; grants globaux retirés ; sinks audit `INSERT`-only sans `RETURNING`                             | toute extension C2 exige de nouvelles ACL       |
+| Escalade RBAC                               | deny by default, rôle rechargé, `authorizationVersion`, no self-change, dernier super-admin protégé                                                                 | middleware et verrouillage transactionnel en C2 |
+| Exfiltration d'export                       | bearer+step-up ; PII ; payload JCS UTF-8 ; signing input RFC 7515 ; JWS Ed25519 détaché avec `b64=false` interdit ; ZIP bijectif ; trust bundle ; aucune URL signée | stockage/chiffrement/expiry en C2               |
 
-Les contrôles ci-dessus sont des obligations de contrat et des tests de dérive ;
-ils ne sont pas déclarés opérationnels. Tout événement futur sans contexte
-prouvé va dans `AdminSecurityEvent`. La création/livraison d'enrollment est la
-seule politique C1 désormais explicitement contextuelle : recovery prouvé vers
-`AuditLog`, sinon événement, pour succès comme échecs. Les mutations sous
-session ou récupération prouvée et leur `AuditLog` doivent être atomiques.
+Les contrôles C1 explicitement couverts par le runtime sont implémentés et
+vérifiés localement dans cet instantané, sans être déployés ; les contrôles C2/C3 restent des
+obligations de contrat et ne sont pas déclarés livrés. Un échec sans contexte
+prouvé va dans `AdminSecurityEvent`. Enrollment/QR sous recovery prouvé,
+rotation/step-up et désormais refresh/révocations sous session prouvée vont
+dans `AuditLog`; les parcours sans preuve n'inventent pas d'identité. Les
+mutations sous session ou récupération prouvée et leur `AuditLog` restent
+atomiques, sous réserve distincte du résultat COMMIT inconnu.
 Jusqu'à arbitrage légal, la
 rétention est fail-safe sans suppression. ADR-025 reste l'autorité de conception
 pour les contextes d'audit.

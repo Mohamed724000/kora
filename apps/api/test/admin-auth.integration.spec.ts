@@ -17,10 +17,7 @@ import {
   type WrappedAdminDek,
 } from '../src/admin-auth/admin-key-provider';
 import { AdminRateLimitService } from '../src/admin-auth/admin-rate-limit.service';
-import {
-  ADMIN_REQUEST_POLICY,
-  type AdminRequestPolicy,
-} from '../src/admin-auth/admin-request-policy';
+import { ADMIN_REQUEST_POLICY, AdminRequestPolicy } from '../src/admin-auth/admin-request-policy';
 import { createApplication } from '../src/app.factory';
 import type { RuntimeConfig } from '../src/config/runtime-config';
 import {
@@ -294,12 +291,29 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     revokeSupport: deterministicUuid(130),
     digestFailure: deterministicUuid(131),
     commitUnknown: deterministicUuid(132),
+    r4Current: deterministicUuid(133),
+    r4EarlyActor: deterministicUuid(134),
+    r4EarlyTarget: deterministicUuid(135),
+    r4LateActor: deterministicUuid(136),
+    r4LateTarget: deterministicUuid(137),
+    r4RefreshCsrf: deterministicUuid(138),
+    r4RefreshSignature: deterministicUuid(139),
+    r4RefreshRotation: deterministicUuid(140),
+    r4SinkCurrent: deterministicUuid(141),
+    r4SinkActor: deterministicUuid(142),
+    r4SinkTarget: deterministicUuid(143),
+    r4SinkRefresh: deterministicUuid(144),
+    r4CommitCurrent: deterministicUuid(145),
+    r4CommitActor: deterministicUuid(146),
+    r4CommitTarget: deterministicUuid(147),
+    r4CommitRefresh: deterministicUuid(148),
   } as const;
   const seeds = new Map<string, Uint8Array>();
   const keys = new TestEphemeralAdminKeyProvider();
   const faultKeys = new OperationFaultKeyProvider(keys);
   const crypto = new AdminAuthCrypto(keys);
   const accessTokens = new Map<string, string>();
+  const r4Sessions = new Map<string, Readonly<{ refreshToken?: string; sessionId: string }>>();
   const recoveryMaterials = new Map<string, Readonly<{ selector: string; verifier: string }>>();
   const owner = new Client({
     database: process.env.S1203C1_E2E_DATABASE,
@@ -340,6 +354,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     adminUserId: string,
     sequence: number,
     role: 'SUPER_ADMIN' | 'CONTENT_EDITOR' | 'FINANCE_MANAGER' | 'SUPPORT' = 'SUPER_ADMIN',
+    refreshToken = `fixture-refresh-${sequence}`,
   ): Promise<string> {
     const sessionId = deterministicUuid(1_000 + sequence);
     const now = new Date();
@@ -364,13 +379,118 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
         adminUserId,
         deterministicUuid(2_000 + sequence),
         verified.tokenId,
-        createHash('sha256').update(`fixture-refresh-${sequence}`).digest('hex'),
+        createHash('sha256').update(refreshToken).digest('hex'),
         now,
         new Date(now.getTime() + 8 * 60 * 60 * 1000),
         new Date(now.getTime() + 12 * 60 * 60 * 1000),
       ],
     );
     return accessToken;
+  }
+
+  async function insertR4Session(
+    adminUserId: string,
+    sequence: number,
+    withRefreshToken = false,
+  ): Promise<void> {
+    const refreshToken = `r4-refresh-${sequence}`.padEnd(43, 'x');
+    const accessToken = await insertSession(adminUserId, sequence, 'SUPER_ADMIN', refreshToken);
+    const sessionId = deterministicUuid(1_000 + sequence);
+    accessTokens.set(adminUserId, accessToken);
+    r4Sessions.set(adminUserId, {
+      ...(withRefreshToken ? { refreshToken } : {}),
+      sessionId,
+    });
+    if (withRefreshToken) {
+      const refreshTokenHash = createHash('sha256').update(refreshToken).digest('hex');
+      await owner.query(
+        `INSERT INTO "AdminRefreshToken"
+           ("id", "adminUserId", "adminSessionId", "previousTokenId", "tokenHash",
+            "generation", "expiresAt", "consumedAt", "createdAt")
+         VALUES ($1, $2, $3, NULL, $4, 1, $5, NULL, CURRENT_TIMESTAMP)`,
+        [
+          deterministicUuid(5_000 + sequence),
+          adminUserId,
+          sessionId,
+          refreshTokenHash,
+          new Date(Date.now() + 12 * 60 * 60 * 1000),
+        ],
+      );
+    }
+  }
+
+  async function enableR4RevocationStepUp(adminUserId: string): Promise<void> {
+    const fixture = r4Sessions.get(adminUserId);
+    if (fixture === undefined) throw new Error('Missing R4 session fixture.');
+    await owner.query(
+      `UPDATE "AdminSession"
+          SET "stepUpPurpose" = 'SESSION_REVOCATION',
+              "stepUpVerifiedAt" = CURRENT_TIMESTAMP,
+              "stepUpExpiresAt" = CURRENT_TIMESTAMP + INTERVAL '5 minutes'
+        WHERE "id" = $1`,
+      [fixture.sessionId],
+    );
+  }
+
+  async function r4RefreshCookies(adminUserId: string): Promise<BrowserCookies> {
+    const fixture = r4Sessions.get(adminUserId);
+    if (fixture?.refreshToken === undefined) throw new Error('Missing R4 refresh fixture.');
+    const csrf = await new AdminRequestPolicy({ keyProvider: keys, origin }).issueCsrfToken(
+      'REFRESH',
+      fixture.refreshToken,
+    );
+    return {
+      cookie: `__Host-kora_admin_refresh=${fixture.refreshToken}; __Host-kora_admin_csrf=${csrf}`,
+      csrf,
+    };
+  }
+
+  async function expectR4FailureAudit(
+    response: request.Response,
+    expected: Readonly<{
+      action: string;
+      actorAdminUserId: string;
+      adminSessionId: string;
+      entityId: string;
+      operatorReason: string | null;
+      reasonCode: string;
+      subjectAdminUserId: string | null;
+    }>,
+  ): Promise<void> {
+    expect(response.status).toBe(503);
+    expect(response.body.error).toEqual({
+      code: 'SERVICE_UNAVAILABLE',
+      details: {},
+      message: 'Service temporairement indisponible.',
+      retryable: false,
+    });
+    expect(response.headers['set-cookie']).toBeUndefined();
+    expect(JSON.stringify(response.body)).not.toMatch(
+      /accessToken|refreshToken|selector|verifier/iu,
+    );
+    const requestId = String(response.body.requestId);
+    const audit = await owner.query<{
+      action: string;
+      actorAdminUserId: string;
+      adminSessionId: string;
+      entityId: string;
+      entityType: string;
+      operatorReason: string | null;
+      reasonCode: string;
+      subjectAdminUserId: string | null;
+    }>(
+      `SELECT "action", "adminUserId" AS "actorAdminUserId", "adminSessionId",
+              "entityId", "entityType", "operatorReason", "reasonCode"::text,
+              "subjectAdminUserId"
+         FROM "AuditLog" WHERE "requestId" = $1`,
+      [requestId],
+    );
+    expect(audit.rows).toEqual([{ ...expected, entityType: 'AdminSession' }]);
+    const security = await owner.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM "AdminSecurityEvent" WHERE "requestId" = $1`,
+      [requestId],
+    );
+    expect(security.rows[0]!.count).toBe('0');
   }
 
   async function insertRecoveryCode(
@@ -596,6 +716,26 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
       'ACTIVE',
       true,
     );
+    for (const [id, label] of [
+      [ids.r4Current, 'current'],
+      [ids.r4EarlyActor, 'early-actor'],
+      [ids.r4EarlyTarget, 'early-target'],
+      [ids.r4LateActor, 'late-actor'],
+      [ids.r4LateTarget, 'late-target'],
+      [ids.r4RefreshCsrf, 'refresh-csrf'],
+      [ids.r4RefreshSignature, 'refresh-signature'],
+      [ids.r4RefreshRotation, 'refresh-rotation'],
+      [ids.r4SinkCurrent, 'sink-current'],
+      [ids.r4SinkActor, 'sink-actor'],
+      [ids.r4SinkTarget, 'sink-target'],
+      [ids.r4SinkRefresh, 'sink-refresh'],
+      [ids.r4CommitCurrent, 'commit-current'],
+      [ids.r4CommitActor, 'commit-actor'],
+      [ids.r4CommitTarget, 'commit-target'],
+      [ids.r4CommitRefresh, 'commit-refresh'],
+    ] as const) {
+      await insertUser(id, `r4-${label}@example.invalid`, passwordHash, 'ACTIVE', true);
+    }
     for (let index = 1; index <= 3; index += 1) await insertSession(ids.totp, index);
     for (let index = 20; index <= 22; index += 1) await insertSession(ids.concurrent, index);
     const rotateToken = await insertSession(ids.rotate, 10);
@@ -614,6 +754,25 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     accessTokens.set(ids.revokeTarget, await insertSession(ids.revokeTarget, 45));
     accessTokens.set(ids.revokeSupport, await insertSession(ids.revokeSupport, 46, 'SUPPORT'));
     accessTokens.set(ids.commitUnknown, await insertSession(ids.commitUnknown, 47));
+    await insertR4Session(ids.r4Current, 48);
+    await insertR4Session(ids.r4EarlyActor, 49);
+    await insertR4Session(ids.r4EarlyTarget, 50);
+    await insertR4Session(ids.r4LateActor, 51);
+    await insertR4Session(ids.r4LateTarget, 52);
+    await insertR4Session(ids.r4RefreshCsrf, 53, true);
+    await insertR4Session(ids.r4RefreshSignature, 54, true);
+    await insertR4Session(ids.r4RefreshRotation, 55, true);
+    await insertR4Session(ids.r4SinkCurrent, 56);
+    await insertR4Session(ids.r4SinkActor, 57);
+    await insertR4Session(ids.r4SinkTarget, 58);
+    await insertR4Session(ids.r4SinkRefresh, 59, true);
+    await insertR4Session(ids.r4CommitCurrent, 60);
+    await insertR4Session(ids.r4CommitActor, 61);
+    await insertR4Session(ids.r4CommitTarget, 62);
+    await insertR4Session(ids.r4CommitRefresh, 63, true);
+    for (const actor of [ids.r4EarlyActor, ids.r4LateActor, ids.r4SinkActor, ids.r4CommitActor]) {
+      await enableR4RevocationStepUp(actor);
+    }
     recoveryMaterials.set(ids.recovery, await insertRecoveryCode(ids.recovery, 1));
     recoveryMaterials.set(ids.binding, await insertRecoveryCode(ids.binding, 2));
     process.env.S1203C1_ROTATE_TOKEN = rotateToken;
@@ -2353,6 +2512,554 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
       stepUpExpiresAt: null,
       stepUpPurpose: null,
     });
+  });
+
+  it('preserves proven revocation context before and after target resolution with rollback', async () => {
+    const server = application.getHttpServer();
+    const writer = application.get(AdminWriterService);
+    await enableR4RevocationStepUp(ids.r4EarlyActor);
+    await enableR4RevocationStepUp(ids.r4LateActor);
+    const operations = [
+      {
+        actorId: ids.r4Current,
+        expected: {
+          action: 'ADMIN_SESSION_REVOCATION_REJECTED',
+          actorAdminUserId: ids.r4Current,
+          adminSessionId: r4Sessions.get(ids.r4Current)!.sessionId,
+          entityId: r4Sessions.get(ids.r4Current)!.sessionId,
+          operatorReason: null,
+          reasonCode: 'SECURITY_RESPONSE',
+          subjectAdminUserId: ids.r4Current,
+        },
+        invoke: () =>
+          request(server)
+            .delete('/api/v1/admin/auth/sessions/current')
+            .set('Authorization', `Bearer ${accessTokens.get(ids.r4Current)}`)
+            .set('Origin', origin),
+        mode: 'early' as const,
+        sessionIds: [r4Sessions.get(ids.r4Current)!.sessionId],
+      },
+      {
+        actorId: ids.r4EarlyActor,
+        expected: {
+          action: 'ADMIN_SESSION_REVOCATION_REJECTED',
+          actorAdminUserId: ids.r4EarlyActor,
+          adminSessionId: r4Sessions.get(ids.r4EarlyActor)!.sessionId,
+          entityId: r4Sessions.get(ids.r4EarlyTarget)!.sessionId,
+          operatorReason: 'Contexte R4 avant resolution',
+          reasonCode: 'ACCOUNT_RECOVERY',
+          subjectAdminUserId: null,
+        },
+        invoke: () =>
+          request(server)
+            .post(
+              `/api/v1/admin/auth/sessions/${r4Sessions.get(ids.r4EarlyTarget)!.sessionId}/revocations`,
+            )
+            .set('Authorization', `Bearer ${accessTokens.get(ids.r4EarlyActor)}`)
+            .set('Content-Type', 'application/json')
+            .set('Origin', origin)
+            .send({
+              operatorReason: 'Contexte R4 avant resolution',
+              reasonCode: 'ACCOUNT_RECOVERY',
+            }),
+        mode: 'early' as const,
+        sessionIds: [
+          r4Sessions.get(ids.r4EarlyActor)!.sessionId,
+          r4Sessions.get(ids.r4EarlyTarget)!.sessionId,
+        ],
+      },
+      {
+        actorId: ids.r4LateActor,
+        expected: {
+          action: 'ADMIN_SESSION_REVOCATION_REJECTED',
+          actorAdminUserId: ids.r4LateActor,
+          adminSessionId: r4Sessions.get(ids.r4LateActor)!.sessionId,
+          entityId: r4Sessions.get(ids.r4LateTarget)!.sessionId,
+          operatorReason: 'Contexte R4 apres resolution',
+          reasonCode: 'SECURITY_RESPONSE',
+          subjectAdminUserId: ids.r4LateTarget,
+        },
+        invoke: () =>
+          request(server)
+            .post(
+              `/api/v1/admin/auth/sessions/${r4Sessions.get(ids.r4LateTarget)!.sessionId}/revocations`,
+            )
+            .set('Authorization', `Bearer ${accessTokens.get(ids.r4LateActor)}`)
+            .set('Content-Type', 'application/json')
+            .set('Origin', origin)
+            .send({
+              operatorReason: 'Contexte R4 apres resolution',
+              reasonCode: 'SECURITY_RESPONSE',
+            }),
+        mode: 'after-target' as const,
+        sessionIds: [
+          r4Sessions.get(ids.r4LateActor)!.sessionId,
+          r4Sessions.get(ids.r4LateTarget)!.sessionId,
+        ],
+      },
+    ];
+
+    for (const operation of operations) {
+      const before = await owner.query<{
+        expiresAt: Date;
+        id: string;
+        lastActivityAt: Date;
+        revokedAt: Date | null;
+      }>(
+        `SELECT "id", "expiresAt", "lastActivityAt", "revokedAt"
+           FROM "AdminSession" WHERE "id" = ANY($1::text[]) ORDER BY "id"`,
+        [operation.sessionIds],
+      );
+      const originalTransaction = writer.transaction.bind(writer);
+      let transactionCalls = 0;
+      const transactionSpy = jest
+        .spyOn(writer, 'transaction')
+        .mockImplementation(
+          async <T>(callback: (transaction: AdminWriterTransaction) => Promise<T>): Promise<T> => {
+            transactionCalls += 1;
+            if (transactionCalls !== 2) return originalTransaction(callback);
+            if (operation.mode === 'early') {
+              throw new Error(`controlled ${operation.actorId} early transaction failure`);
+            }
+            return originalTransaction(async (transaction) => {
+              const failingTransaction: AdminWriterTransaction = {
+                async query<Row extends QueryResultRow>(text: string, values: readonly unknown[]) {
+                  if (
+                    /UPDATE "AdminSession" SET "revokedAt"/u.test(text) &&
+                    values[0] === operation.expected.entityId
+                  ) {
+                    throw new Error('controlled post-target revocation failure');
+                  }
+                  return transaction.query<Row>(text, values);
+                },
+              };
+              return callback(failingTransaction);
+            });
+          },
+        );
+      let response: request.Response;
+      try {
+        response = await operation.invoke();
+      } finally {
+        transactionSpy.mockRestore();
+      }
+
+      await expectR4FailureAudit(response, operation.expected);
+      const after = await owner.query<{
+        expiresAt: Date;
+        id: string;
+        lastActivityAt: Date;
+        revokedAt: Date | null;
+      }>(
+        `SELECT "id", "expiresAt", "lastActivityAt", "revokedAt"
+           FROM "AdminSession" WHERE "id" = ANY($1::text[]) ORDER BY "id"`,
+        [operation.sessionIds],
+      );
+      expect(after.rows).toEqual(before.rows);
+    }
+  });
+
+  it('routes refresh failures by proof phase and rolls back partial rotation', async () => {
+    const refreshFailures = [
+      { adminUserId: ids.r4RefreshCsrf, phase: 'csrf' as const },
+      { adminUserId: ids.r4RefreshSignature, phase: 'signature' as const },
+      { adminUserId: ids.r4RefreshRotation, phase: 'rotation' as const },
+    ];
+
+    for (const failure of refreshFailures) {
+      const fixture = r4Sessions.get(failure.adminUserId)!;
+      const cookies = await r4RefreshCookies(failure.adminUserId);
+      const selectedApplication = failure.phase === 'rotation' ? application : faultApplication;
+      const writer = selectedApplication.get(AdminWriterService);
+      const before = await owner.query<{
+        accessTokenJti: string;
+        consumedAt: Date | null;
+        expiresAt: Date;
+        generation: number;
+        id: string;
+        lastActivityAt: Date;
+        refreshTokenHash: string;
+        refreshTokenVersion: number;
+        tokenHash: string;
+      }>(
+        `SELECT session."accessTokenJti", session."refreshTokenHash",
+                session."refreshTokenVersion", session."lastActivityAt", session."expiresAt",
+                token."id", token."tokenHash", token."generation", token."consumedAt"
+           FROM "AdminSession" AS session
+           JOIN "AdminRefreshToken" AS token ON token."adminSessionId" = session."id"
+          WHERE session."id" = $1 ORDER BY token."generation"`,
+        [fixture.sessionId],
+      );
+      let transactionSpy: jest.SpiedFunction<AdminWriterService['transaction']> | undefined;
+      if (failure.phase === 'csrf') faultKeys.failKeyedDigestDomain('ADMIN_CSRF_V1', 1);
+      if (failure.phase === 'signature') faultKeys.fail('SIGN_RS256');
+      if (failure.phase === 'rotation') {
+        const originalTransaction = writer.transaction.bind(writer);
+        transactionSpy = jest
+          .spyOn(writer, 'transaction')
+          .mockImplementation(
+            async <T>(callback: (transaction: AdminWriterTransaction) => Promise<T>): Promise<T> =>
+              originalTransaction(async (transaction) => {
+                const failingTransaction: AdminWriterTransaction = {
+                  async query<Row extends QueryResultRow>(
+                    text: string,
+                    values: readonly unknown[],
+                  ) {
+                    if (/INSERT INTO "AdminRefreshToken"/u.test(text)) {
+                      throw new Error('controlled refresh-chain insertion failure');
+                    }
+                    return transaction.query<Row>(text, values);
+                  },
+                };
+                return callback(failingTransaction);
+              }),
+          );
+      }
+
+      let response: request.Response;
+      try {
+        response = await request(selectedApplication.getHttpServer())
+          .post('/api/v1/admin/auth/sessions/refresh')
+          .set('Cookie', cookies.cookie)
+          .set('Origin', origin)
+          .set('X-Kora-Csrf', cookies.csrf);
+      } finally {
+        transactionSpy?.mockRestore();
+        faultKeys.recover();
+      }
+      await expectR4FailureAudit(response, {
+        action: 'ADMIN_SESSION_REFRESH_REJECTED',
+        actorAdminUserId: failure.adminUserId,
+        adminSessionId: fixture.sessionId,
+        entityId: fixture.sessionId,
+        operatorReason: null,
+        reasonCode: 'SECURITY_RESPONSE',
+        subjectAdminUserId: failure.adminUserId,
+      });
+      const after = await owner.query<{
+        accessTokenJti: string;
+        consumedAt: Date | null;
+        expiresAt: Date;
+        generation: number;
+        id: string;
+        lastActivityAt: Date;
+        refreshTokenHash: string;
+        refreshTokenVersion: number;
+        tokenHash: string;
+      }>(
+        `SELECT session."accessTokenJti", session."refreshTokenHash",
+                session."refreshTokenVersion", session."lastActivityAt", session."expiresAt",
+                token."id", token."tokenHash", token."generation", token."consumedAt"
+           FROM "AdminSession" AS session
+           JOIN "AdminRefreshToken" AS token ON token."adminSessionId" = session."id"
+          WHERE session."id" = $1 ORDER BY token."generation"`,
+        [fixture.sessionId],
+      );
+      expect(after.rows).toEqual(before.rows);
+    }
+
+    const unknownRefresh = 'r'.repeat(43);
+    const unknownCsrf = await new AdminRequestPolicy({ keyProvider: keys, origin }).issueCsrfToken(
+      'REFRESH',
+      unknownRefresh,
+    );
+    const writer = application.get(AdminWriterService);
+    const originalTransaction = writer.transaction.bind(writer);
+    let transactionCalls = 0;
+    const transactionSpy = jest
+      .spyOn(writer, 'transaction')
+      .mockImplementation(
+        async <T>(callback: (transaction: AdminWriterTransaction) => Promise<T>): Promise<T> => {
+          transactionCalls += 1;
+          if (transactionCalls === 1) throw new Error('controlled pre-proof refresh failure');
+          return originalTransaction(callback);
+        },
+      );
+    let preProof: request.Response;
+    try {
+      preProof = await request(application.getHttpServer())
+        .post('/api/v1/admin/auth/sessions/refresh')
+        .set(
+          'Cookie',
+          `__Host-kora_admin_refresh=${unknownRefresh}; __Host-kora_admin_csrf=${unknownCsrf}`,
+        )
+        .set('Origin', origin)
+        .set('X-Kora-Csrf', unknownCsrf);
+    } finally {
+      transactionSpy.mockRestore();
+    }
+    expect(preProof.status).toBe(503);
+    expect(preProof.body.error.code).toBe('SERVICE_UNAVAILABLE');
+    expect(preProof.headers['set-cookie']).toBeUndefined();
+    const preProofRequestId = String(preProof.body.requestId);
+    const preProofAudit = await owner.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM "AuditLog" WHERE "requestId" = $1`,
+      [preProofRequestId],
+    );
+    expect(preProofAudit.rows[0]!.count).toBe('0');
+    const preProofSecurity = await owner.query<{
+      action: string;
+      adminUserId: string | null;
+      count: string;
+      subjectRefHash: string | null;
+    }>(
+      `SELECT min("action") AS "action", min("adminUserId") AS "adminUserId",
+              min("subjectRefHash") AS "subjectRefHash", count(*)::text AS count
+         FROM "AdminSecurityEvent" WHERE "requestId" = $1`,
+      [preProofRequestId],
+    );
+    expect(preProofSecurity.rows[0]).toEqual({
+      action: 'ADMIN_AUTH_REQUEST_REJECTED',
+      adminUserId: null,
+      count: '1',
+      subjectRefHash: null,
+    });
+  });
+
+  it('fails safely without fallback when the contextual AuditLog sink is unavailable', async () => {
+    await enableR4RevocationStepUp(ids.r4SinkActor);
+    const operations = [
+      {
+        invoke: () =>
+          request(application.getHttpServer())
+            .delete('/api/v1/admin/auth/sessions/current')
+            .set('Authorization', `Bearer ${accessTokens.get(ids.r4SinkCurrent)}`)
+            .set('Origin', origin),
+        sessionIds: [r4Sessions.get(ids.r4SinkCurrent)!.sessionId],
+      },
+      {
+        invoke: () =>
+          request(application.getHttpServer())
+            .post(
+              `/api/v1/admin/auth/sessions/${r4Sessions.get(ids.r4SinkTarget)!.sessionId}/revocations`,
+            )
+            .set('Authorization', `Bearer ${accessTokens.get(ids.r4SinkActor)}`)
+            .set('Content-Type', 'application/json')
+            .set('Origin', origin)
+            .send({ operatorReason: 'Sink R4 indisponible', reasonCode: 'SECURITY_RESPONSE' }),
+        sessionIds: [
+          r4Sessions.get(ids.r4SinkActor)!.sessionId,
+          r4Sessions.get(ids.r4SinkTarget)!.sessionId,
+        ],
+      },
+      {
+        invoke: async () => {
+          const cookies = await r4RefreshCookies(ids.r4SinkRefresh);
+          return request(application.getHttpServer())
+            .post('/api/v1/admin/auth/sessions/refresh')
+            .set('Cookie', cookies.cookie)
+            .set('Origin', origin)
+            .set('X-Kora-Csrf', cookies.csrf);
+        },
+        sessionIds: [r4Sessions.get(ids.r4SinkRefresh)!.sessionId],
+      },
+    ];
+
+    for (const operation of operations) {
+      const before = await owner.query<{
+        accessTokenJti: string;
+        consumedRefreshCount: string;
+        expiresAt: Date;
+        id: string;
+        lastActivityAt: Date;
+        refreshTokenCount: string;
+        refreshTokenHash: string;
+        refreshTokenVersion: number;
+        revokedAt: Date | null;
+      }>(
+        `SELECT session."id", session."accessTokenJti", session."refreshTokenHash",
+                session."refreshTokenVersion", session."lastActivityAt", session."expiresAt",
+                session."revokedAt",
+                (SELECT count(*)::text FROM "AdminRefreshToken" AS token
+                  WHERE token."adminSessionId" = session."id") AS "refreshTokenCount",
+                (SELECT count(*)::text FROM "AdminRefreshToken" AS token
+                  WHERE token."adminSessionId" = session."id" AND token."consumedAt" IS NOT NULL)
+                  AS "consumedRefreshCount"
+           FROM "AdminSession" AS session
+          WHERE session."id" = ANY($1::text[]) ORDER BY session."id"`,
+        [operation.sessionIds],
+      );
+      const writer = application.get(AdminWriterService);
+      const originalTransaction = writer.transaction.bind(writer);
+      const transactionSpy = jest
+        .spyOn(writer, 'transaction')
+        .mockImplementation(
+          async <T>(callback: (transaction: AdminWriterTransaction) => Promise<T>): Promise<T> =>
+            originalTransaction(async (transaction) => {
+              const failingTransaction: AdminWriterTransaction = {
+                async query<Row extends QueryResultRow>(text: string, values: readonly unknown[]) {
+                  if (/INSERT INTO "AuditLog"/u.test(text)) {
+                    throw new Error('controlled contextual AuditLog sink outage');
+                  }
+                  return transaction.query<Row>(text, values);
+                },
+              };
+              return callback(failingTransaction);
+            }),
+        );
+      let response: request.Response;
+      try {
+        response = await operation.invoke();
+      } finally {
+        transactionSpy.mockRestore();
+      }
+      expect(response.status).toBe(503);
+      expect(response.body.error.code).toBe('SERVICE_UNAVAILABLE');
+      expect(response.headers['set-cookie']).toBeUndefined();
+      expect(JSON.stringify(response.body)).not.toMatch(
+        /accessToken|refreshToken|selector|verifier/iu,
+      );
+      const requestId = String(response.body.requestId);
+      const sinks = await owner.query<{ auditCount: string; securityCount: string }>(
+        `SELECT
+           (SELECT count(*)::text FROM "AuditLog" WHERE "requestId" = $1) AS "auditCount",
+           (SELECT count(*)::text FROM "AdminSecurityEvent" WHERE "requestId" = $1)
+             AS "securityCount"`,
+        [requestId],
+      );
+      expect(sinks.rows[0]).toEqual({ auditCount: '0', securityCount: '0' });
+      const after = await owner.query<{
+        accessTokenJti: string;
+        consumedRefreshCount: string;
+        expiresAt: Date;
+        id: string;
+        lastActivityAt: Date;
+        refreshTokenCount: string;
+        refreshTokenHash: string;
+        refreshTokenVersion: number;
+        revokedAt: Date | null;
+      }>(
+        `SELECT session."id", session."accessTokenJti", session."refreshTokenHash",
+                session."refreshTokenVersion", session."lastActivityAt", session."expiresAt",
+                session."revokedAt",
+                (SELECT count(*)::text FROM "AdminRefreshToken" AS token
+                  WHERE token."adminSessionId" = session."id") AS "refreshTokenCount",
+                (SELECT count(*)::text FROM "AdminRefreshToken" AS token
+                  WHERE token."adminSessionId" = session."id" AND token."consumedAt" IS NOT NULL)
+                  AS "consumedRefreshCount"
+           FROM "AdminSession" AS session
+          WHERE session."id" = ANY($1::text[]) ORDER BY session."id"`,
+        [operation.sessionIds],
+      );
+      expect(after.rows).toEqual(before.rows);
+    }
+  });
+
+  it('preserves unknown-COMMIT semantics for refresh and both revocation operations', async () => {
+    await enableR4RevocationStepUp(ids.r4CommitActor);
+    const operations = [
+      {
+        action: 'ADMIN_SESSION_REVOKED',
+        businessTransaction: 2,
+        invoke: () =>
+          request(application.getHttpServer())
+            .delete('/api/v1/admin/auth/sessions/current')
+            .set('Authorization', `Bearer ${accessTokens.get(ids.r4CommitCurrent)}`)
+            .set('Origin', origin),
+        kind: 'revoke' as const,
+        targetSessionId: r4Sessions.get(ids.r4CommitCurrent)!.sessionId,
+      },
+      {
+        action: 'ADMIN_SESSION_REVOKED_BY_ADMIN',
+        businessTransaction: 2,
+        invoke: () =>
+          request(application.getHttpServer())
+            .post(
+              `/api/v1/admin/auth/sessions/${r4Sessions.get(ids.r4CommitTarget)!.sessionId}/revocations`,
+            )
+            .set('Authorization', `Bearer ${accessTokens.get(ids.r4CommitActor)}`)
+            .set('Content-Type', 'application/json')
+            .set('Origin', origin)
+            .send({ operatorReason: 'Commit R4 inconnu', reasonCode: 'SECURITY_RESPONSE' }),
+        kind: 'revoke' as const,
+        targetSessionId: r4Sessions.get(ids.r4CommitTarget)!.sessionId,
+      },
+      {
+        action: 'ADMIN_SESSION_REFRESHED',
+        businessTransaction: 1,
+        invoke: async () => {
+          const cookies = await r4RefreshCookies(ids.r4CommitRefresh);
+          return request(application.getHttpServer())
+            .post('/api/v1/admin/auth/sessions/refresh')
+            .set('Cookie', cookies.cookie)
+            .set('Origin', origin)
+            .set('X-Kora-Csrf', cookies.csrf);
+        },
+        kind: 'refresh' as const,
+        targetSessionId: r4Sessions.get(ids.r4CommitRefresh)!.sessionId,
+      },
+    ];
+
+    for (const operation of operations) {
+      const writer = application.get(AdminWriterService);
+      const originalTransaction = writer.transaction.bind(writer);
+      let transactionCalls = 0;
+      const transactionSpy = jest
+        .spyOn(writer, 'transaction')
+        .mockImplementation(
+          async <T>(callback: (transaction: AdminWriterTransaction) => Promise<T>): Promise<T> => {
+            transactionCalls += 1;
+            const result = await originalTransaction(callback);
+            if (transactionCalls === operation.businessTransaction) {
+              throw new AdminWriterCommitUnknownError(
+                new Error('controlled R4 lost COMMIT acknowledgement after callback'),
+              );
+            }
+            return result;
+          },
+        );
+      let response: request.Response;
+      try {
+        response = await operation.invoke();
+      } finally {
+        transactionSpy.mockRestore();
+      }
+      expect(response.status).toBe(503);
+      expect(response.body.error).toEqual({
+        code: 'SERVICE_UNAVAILABLE',
+        details: {},
+        message: 'Service temporairement indisponible.',
+        retryable: false,
+      });
+      expect(response.headers['set-cookie']).toBeUndefined();
+      expect(JSON.stringify(response.body)).not.toMatch(
+        /accessToken|refreshToken|selector|verifier/iu,
+      );
+      const requestId = String(response.body.requestId);
+      const sinks = await owner.query<{ action: string; securityCount: string }>(
+        `SELECT min("action") AS "action",
+                (SELECT count(*)::text FROM "AdminSecurityEvent" WHERE "requestId" = $1)
+                  AS "securityCount"
+           FROM "AuditLog" WHERE "requestId" = $1`,
+        [requestId],
+      );
+      expect(sinks.rows[0]).toEqual({ action: operation.action, securityCount: '0' });
+      const state = await owner.query<{
+        consumedRefreshCount: string;
+        refreshTokenCount: string;
+        refreshTokenVersion: number;
+        revokedAt: Date | null;
+      }>(
+        `SELECT session."revokedAt", session."refreshTokenVersion",
+                (SELECT count(*)::text FROM "AdminRefreshToken" AS token
+                  WHERE token."adminSessionId" = session."id") AS "refreshTokenCount",
+                (SELECT count(*)::text FROM "AdminRefreshToken" AS token
+                  WHERE token."adminSessionId" = session."id" AND token."consumedAt" IS NOT NULL)
+                  AS "consumedRefreshCount"
+           FROM "AdminSession" AS session WHERE session."id" = $1`,
+        [operation.targetSessionId],
+      );
+      if (operation.kind === 'revoke') {
+        expect(state.rows[0]!.revokedAt).not.toBeNull();
+      } else {
+        expect(state.rows[0]).toMatchObject({
+          consumedRefreshCount: '1',
+          refreshTokenCount: '2',
+          refreshTokenVersion: 2,
+          revokedAt: null,
+        });
+      }
+    }
   });
 
   it('does not assert a contradictory rejection when COMMIT acknowledgement is unknown', async () => {

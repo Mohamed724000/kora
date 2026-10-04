@@ -1,10 +1,9 @@
 # Rapport de validation locale S1.2-03C1 — Admin Auth Session Runtime
 
-Statut : **INSTANTANÉ LOCAL PRÉPUBLICATION R3 DU 2026-10-04 — R2 ÉTAIT LE
-DERNIER HEAD PUBLIÉ DANS LA DRAFT PR #50 AVEC QUATRE WORKFLOWS VERTS — REVUE
-CTO TERMINALE BLOCK — R3 VALIDÉ LOCALEMENT ET NON PUBLIÉ À CET INSTANT — APRÈS
-CET INSTANTANÉ, GIT/GITHUB FONT FOI — FOURNISSEUR DE CLÉS DE PRODUCTION NON
-QUALIFIÉ — C2/C3 NOT STARTED**
+Statut : **R3 PUBLIÉ AU HEAD `b0792934…` DE LA DRAFT PR #50 AVEC QUATRE
+WORKFLOWS VERTS, PUIS REVUE CTO TERMINALE BLOCK SUR UN FINDING HIGH —
+INSTANTANÉ LOCAL PRÉPUBLICATION R4 DU 2026-10-04 VALIDÉ — FOURNISSEUR DE CLÉS
+DE PRODUCTION NON QUALIFIÉ — C2/C3 NOT STARTED**
 
 Date : 2026-10-04
 
@@ -514,9 +513,10 @@ divergent, mappe en 503 neutre une panne de digest postérieure au préflight du
 provider et préserve le résultat COMMIT inconnu sans écrire un rejet durable
 contradictoire. Deux régressions réelles supplémentaires portent le wrapper de
 24 à 26 tests ; elles prouvent l'absence de cookie, secret, nouvelle mutation
-ou double sink. L'observation statique distincte sur une panne transactionnelle
-de `revokeOther`, hors des refus métier mandatés et non reproduite, n'est pas
-élargie silencieusement dans R3.
+ou double sink. Dans ce seul instantané historique R3, la panne transactionnelle
+générique de `revokeOther` restait hors des refus métier reproduits. La revue
+terminale post-publication a ensuite établi sa cause, commune à `refresh` et
+`revokeCurrent`; elle est corrigée et prouvée dans la section R4 ci-dessous.
 
 Lint et typecheck API, 17 suites API avec 83 tests exécutés et 25 `skipped`, le
 build API, OpenAPI 60 chemins/67 opérations/137 schémas, Contracts 7/7 et
@@ -535,3 +535,118 @@ LOCALEMENT**, non indexé, non commité et non publié. Après cet instantané,
 l'état Git/GitHub fait foi. La recommandation JTI et la pagination **NON
 CONCLUSIVE** restent séparées. La politique open source demeure différée, le
 fournisseur de clés de production **NON QUALIFIÉ** et C2/C3 `Not started`.
+
+## Publication R3, finding terminal HIGH et instantané local prépublication R4
+
+R3 est publié au commit
+`b0792934aa2f9d6f6d481517f384825874d72402`, parent
+`59972cc0614842627c8c17717605345eaae277c4`, arbre
+`87e41d9304820a1ebf8808fc783a5407a8c2105d`, message
+`fix(security): enforce C1 memberships and auth audit contracts`. La PR #50
+reste `OPEN`, Draft et non fusionnée. Elle totalise quatre commits, 78 fichiers
+et `+16965/-642`; son titre reste
+`feat(admin): implement S1.2-03C1 auth session runtime` et son corps inchangé
+porte le SHA-256
+`81f1cf58e7ed6e3f5f206785c92516bb14d6e2c651dc8156b942d68ad6e240d2`.
+
+Les runs Infrastructure `37190396720`, Launcher Windows `37190396716`,
+Security `37190396718` et Quality Linux `37190396709` sont tous
+`pull_request`, tentative 1, `completed/success`, sur le head R3 exact. Ils
+prouvent la publication R3, mais ne remplacent pas la revue CTO terminale
+ultérieure, qui conclut **BLOCK** sur un finding **HIGH**.
+
+Cinq findings R3 sont clos : memberships PostgreSQL entrantes, statuts Auth,
+rejeu de confirmation, indisponibilité de résolution JWT et sujet/motif des
+refus `revokeOther`. Le sixième finding, relatif au sink d'échec après contexte
+prouvé, n'était que partiellement corrigé : rotation recovery et step-up
+étaient couverts, ainsi que les refus métier `revokeOther`, mais certaines
+pannes génériques de `refresh`, `revokeCurrent` et `revokeOther` perdaient
+encore le contexte et produisaient un `AdminSecurityEvent`.
+
+Les preuves R4 qui suivent constituent l'instantané local prépublication daté
+du 2026-10-04 ; elles ne réutilisent pas la CI R3 comme preuve R4.
+
+### Correctif causal
+
+Le service conserve un contexte local à chaque invocation et le fournit à la
+normalisation transactionnelle :
+
+- `revokeCurrent` prépare acteur, session, action, entité, sujet et motif à
+  partir du principal déjà authentifié, avant la transaction métier ;
+- `revokeOther` prépare acteur, session, cible demandée et motif sans sujet,
+  puis ajoute le sujet réel seulement après cohérence du candidat et de la
+  session verrouillée ;
+- `refresh` ne prouve rien avec le cookie, le hash ou le candidat seuls. Sur le
+  parcours valide, le contexte est fixé après les vérifications serveur
+  user/session/token et avant CSRF, signature et rotation. Sur un rejet déjà
+  contextualisable, il est fixé avant toute révocation susceptible d'échouer ;
+- une `AdminC1HttpError` normalisée sans contexte est reconstruite avec le
+  contexte courant, sans perdre statut, code, message, détails, action,
+  retry-after ou `auditRecorded`. Un contexte explicite n'est jamais remplacé ;
+- `AdminWriterCommitUnknownError` reste prioritaire : 503 neutre,
+  `auditRecorded=true`, aucune seconde écriture d'échec et aucune affirmation
+  de rollback.
+
+### Matrice d'injections et résultats
+
+| Opération        | Phase injectée                                      | Sink observé                                       | État transactionnel observé                                        |
+| ---------------- | --------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------ |
+| `revokeCurrent`  | transaction métier avant première lecture           | 1 `ADMIN_SESSION_REVOCATION_REJECTED`, 0 événement | session inchangée                                                  |
+| `revokeOther`    | avant résolution de cible                           | 1 AuditLog, sujet nul, cible/motif exacts          | acteur et cible inchangés                                          |
+| `revokeOther`    | après résolution, au moment de révoquer la cible    | 1 AuditLog avec sujet serveur exact                | touch acteur et révocation cible annulés                           |
+| `refresh`        | avant toute preuve                                  | 0 AuditLog, 1 événement sans identité              | aucune mutation                                                    |
+| `refresh`        | CSRF puis signature après preuve                    | 1 `ADMIN_SESSION_REFRESH_REJECTED`, 0 événement    | aucun cookie/secret livré, session/token inchangés                 |
+| `refresh`        | insertion du nouveau refresh après consommation SQL | 1 `ADMIN_SESSION_REFRESH_REJECTED`, 0 événement    | consommation, génération, hash, JTI et version entièrement annulés |
+| trois opérations | sink AuditLog indisponible                          | 0 AuditLog, 0 fallback trompeur                    | 503 sûr et mutations non commitées annulées                        |
+| trois opérations | accusé COMMIT perdu après transaction réelle        | aucun rejet ni second sink                         | succès et mutation durables possibles et observés                  |
+
+Les tests unitaires ciblés passent 8/8 et prouvent aussi la conservation des
+métadonnées d'une erreur déjà normalisée, la priorité d'un contexte explicite,
+l'absence de contexte ajouté au COMMIT inconnu et l'isolation de deux
+révocations concurrentes.
+
+### Validation effective R4
+
+Le wrapper final termine au code 0. Il conserve 39 modèles, 40 tables, trois
+migrations et la signature A/B
+`5b2bf03fbe7fc292ff48102e7bbdd66f63a2b0a62b698e350f8122575ab88120`.
+Il exécute quatre provisionnements réussis, cinq refus de provisionnement et
+quatre refus de membership entrante. La suite réelle exécute 1/1 suite et
+30/30 tests HTTP/PostgreSQL/Redis pour les douze opérations.
+
+Deux tentatives antérieures ne sont pas des PASS : la première exécute 26/30
+tests puis expose quatre erreurs de fixtures R4 (`text[]` et longueur du token) ;
+la seconde est arrêtée pendant `beforeAll` par la garde d'atomicité du pointeur
+refresh, avec 2 réussis et 28 échecs dérivés. Les deux nettoyages ciblés
+terminent. La troisième tentative utilise des fixtures cohérentes dès
+l'insertion et passe 30/30.
+
+Sur les octets techniques finaux, format API, lint, typecheck et build passent.
+Les tests API passent 17/17 suites, avec 87 tests réussis et 29 `skipped` sur
+116 ; ces skips sont les suites réelles conditionnelles, exécutées séparément
+par le wrapper. OpenAPI reste à 60 chemins, 67 opérations et 137 schémas ; le
+contrôle de génération déclare les types courants. Le scanner officiel passe
+sur 384 fichiers avec l'historique actif, 52 sources immuables et six scripts
+d'installation qualifiés. Les preuves R3 historiques `26/26` ne sont pas
+réutilisées comme preuve R4.
+
+### Frontière et limites
+
+R3 avait figé onze fichiers techniques, dont PostgreSQL/Infrastructure, puis
+huit documents pour sa publication. Ces surfaces PostgreSQL/Infrastructure
+restent inchangées après leurs validations. R4 modifie seulement les trois
+fichiers Auth/tests et les six documents autorisés. OpenAPI, ADR-025, contrat
+généré, repository d'audit, filtre global, contrôleurs, primitives crypto,
+Prisma, migrations, provisioning, workflows, manifestes et lockfile restent
+inchangés.
+
+Dans cet instantané, R4 était local, non indexé, non commité et non publié ;
+après cet instantané, l'état Git/GitHub fait foi. Les gates Infrastructure,
+Flutter/APK, signatures, licences et audits supply-chain inchangés n'étaient
+pas répétés. L'incident matériel distinct du worktree 03A a été clos sous
+mandat séparé, avec sémantique préservée et causes **NON CONCLUSIVE** ; ses
+preuves et artefacts restent hors de ce rapport R4. La politique open source
+reste différée et non installée ; le fournisseur de clés de production reste **NON QUALIFIÉ** ; la
+liaison JTI reste une recommandation séparée, la pagination reste **NON
+CONCLUSIVE**, iOS et navigateur C3 restent **NON EXÉCUTÉS**, et C2/C3 restent
+`Not started`.

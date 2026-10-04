@@ -1,5 +1,6 @@
 import type { AdminAuthRepository } from './admin-auth.repository';
 import { AdminAuthCrypto } from './admin-auth.crypto';
+import { AdminWriterCommitUnknownError } from '../database/admin-writer.service';
 import {
   AdminKeyProviderUnavailableError,
   TestEphemeralAdminKeyProvider,
@@ -9,6 +10,24 @@ import { AdminRequestPolicy } from './admin-request-policy';
 import { AdminC1HttpError, AdminSessionService } from './admin-session.service';
 
 describe('AdminSessionService', () => {
+  const principal = {
+    adminUserId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    authorizationVersion: 1,
+    role: 'SUPER_ADMIN' as const,
+    sessionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  };
+
+  function serviceWith(repository: AdminAuthRepository): AdminSessionService {
+    const keys = new TestEphemeralAdminKeyProvider();
+    return new AdminSessionService(
+      repository,
+      new AdminAuthCrypto(keys),
+      keys,
+      {} as AdminRateLimitService,
+      new AdminRequestPolicy({ keyProvider: keys, origin: 'https://admin.example.test' }),
+    );
+  }
+
   it('prepares a real RS256 access token and opaque refresh material', async () => {
     const keys = new TestEphemeralAdminKeyProvider();
     const crypto = new AdminAuthCrypto(keys);
@@ -141,5 +160,145 @@ describe('AdminSessionService', () => {
       ).rejects.toMatchObject({ auditContext: undefined, code: 'AUTH_REQUIRED', status: 401 });
     }
     expect(repository.transaction).not.toHaveBeenCalled();
+  });
+
+  it('enriches a normalized error after proven authentication and preserves its metadata', async () => {
+    const source = new AdminC1HttpError(429, 'RATE_LIMITED', {
+      auditAction: 'SOURCE_ACTION',
+      auditRecorded: true,
+      details: { reason: 'CONTROLLED', retryAfterSeconds: 17 },
+      retryAfterSeconds: 17,
+    });
+    const repository = {
+      transaction: jest.fn().mockRejectedValue(source),
+    } as unknown as AdminAuthRepository;
+
+    await expect(
+      serviceWith(repository).revokeCurrent(principal, 'request-normalized'),
+    ).rejects.toMatchObject({
+      auditAction: 'SOURCE_ACTION',
+      auditContext: {
+        action: 'ADMIN_SESSION_REVOCATION_REJECTED',
+        actorAdminUserId: principal.adminUserId,
+        adminSessionId: principal.sessionId,
+        entityId: principal.sessionId,
+        entityType: 'AdminSession',
+        reasonCode: 'SECURITY_RESPONSE',
+        subjectAdminUserId: principal.adminUserId,
+      },
+      auditRecorded: true,
+      code: 'RATE_LIMITED',
+      details: { reason: 'CONTROLLED', retryAfterSeconds: 17 },
+      message: source.message,
+      retryAfterSeconds: 17,
+      status: 429,
+    });
+  });
+
+  it('does not replace an explicit failure context', async () => {
+    const explicitContext = {
+      action: 'ADMIN_SESSION_AUTHENTICATION_REJECTED',
+      actorAdminUserId: principal.adminUserId,
+      adminSessionId: principal.sessionId,
+      entityId: principal.sessionId,
+      entityType: 'AdminSession' as const,
+      reasonCode: 'SECURITY_RESPONSE' as const,
+      subjectAdminUserId: principal.adminUserId,
+    };
+    const source = new AdminC1HttpError(401, 'AUTH_REQUIRED', {
+      auditContext: explicitContext,
+    });
+    const repository = {
+      transaction: jest.fn().mockRejectedValue(source),
+    } as unknown as AdminAuthRepository;
+
+    let observed: unknown;
+    try {
+      await serviceWith(repository).revokeCurrent(principal, 'request-explicit');
+    } catch (error: unknown) {
+      observed = error;
+    }
+    expect(observed).toBe(source);
+    expect((observed as AdminC1HttpError).auditContext).toBe(explicitContext);
+  });
+
+  it('keeps unknown COMMIT neutral and suppresses a second failure sink', async () => {
+    const repository = {
+      transaction: jest
+        .fn()
+        .mockRejectedValue(
+          new AdminWriterCommitUnknownError(new Error('controlled acknowledgement loss')),
+        ),
+    } as unknown as AdminAuthRepository;
+
+    await expect(
+      serviceWith(repository).revokeCurrent(principal, 'request-unknown-commit'),
+    ).rejects.toMatchObject({
+      auditContext: undefined,
+      auditRecorded: true,
+      code: 'SERVICE_UNAVAILABLE',
+      details: {},
+      retryable: false,
+      status: 503,
+    });
+  });
+
+  it('isolates concurrent revocation contexts by invocation', async () => {
+    const gates: Array<() => void> = [];
+    const repository = {
+      transaction: jest.fn().mockImplementation(
+        () =>
+          new Promise((_resolve, reject) => {
+            gates.push(() => reject(new Error('controlled concurrent failure')));
+          }),
+      ),
+    } as unknown as AdminAuthRepository;
+    const service = serviceWith(repository);
+    const secondPrincipal = {
+      ...principal,
+      adminUserId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      sessionId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+    };
+
+    const first = service.revokeOther(
+      principal,
+      'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      { operatorReason: 'Premier motif controle', reasonCode: 'SECURITY_RESPONSE' },
+      'request-first',
+    );
+    const second = service.revokeOther(
+      secondPrincipal,
+      'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      { operatorReason: 'Second motif controle', reasonCode: 'ACCOUNT_RECOVERY' },
+      'request-second',
+    );
+    expect(gates).toHaveLength(2);
+    gates[1]!();
+    gates[0]!();
+
+    const results = await Promise.allSettled([first, second]);
+    expect(results).toHaveLength(2);
+    const errors = results.map((result) => {
+      expect(result.status).toBe('rejected');
+      return (result as PromiseRejectedResult).reason as AdminC1HttpError;
+    });
+    expect(errors[0]!.auditContext).toEqual({
+      action: 'ADMIN_SESSION_REVOCATION_REJECTED',
+      actorAdminUserId: principal.adminUserId,
+      adminSessionId: principal.sessionId,
+      entityId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      entityType: 'AdminSession',
+      operatorReason: 'Premier motif controle',
+      reasonCode: 'SECURITY_RESPONSE',
+    });
+    expect(errors[1]!.auditContext).toEqual({
+      action: 'ADMIN_SESSION_REVOCATION_REJECTED',
+      actorAdminUserId: secondPrincipal.adminUserId,
+      adminSessionId: secondPrincipal.sessionId,
+      entityId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      entityType: 'AdminSession',
+      operatorReason: 'Second motif controle',
+      reasonCode: 'ACCOUNT_RECOVERY',
+    });
   });
 });

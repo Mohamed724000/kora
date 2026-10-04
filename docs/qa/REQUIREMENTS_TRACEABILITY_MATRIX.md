@@ -447,16 +447,43 @@ Baseline R2 publiée, dernier head à cet instant : commit
 `37160117042` sont tous verts sur ce head ; ils précèdent le BLOCK CTO et ne
 valident pas les corrections R3.
 
-| Exigence                                      | Preuve R3 obtenue                                                                                                                                                                                                          | État                 |
-| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| SEC-ADM-C1-R3-01 Memberships incidentes       | A/B, reader/writer, ancien contournement prouvé, refus avant mutation, signature inchangée, grant tiers préservé, erreurs applicatives typées puis retour nominal                                                          | Verified locally     |
-| SEC-ADM-C1-R3-02 Statuts Auth                 | cinq surfaces exactes à 400 avec codes canoniques                                                                                                                                                                          | Verified locally     |
-| SEC-ADM-C1-R3-03 Rejeu confirmation           | rejeu exact séquentiel/concurrent et même clé avec payload divergent à 409 ; autre clé/utilisateur refusés ; aucun secret, cookie, session ou mutation supplémentaire                                                      | Verified locally     |
-| SEC-ADM-C1-R3-04 Audit post-session           | rotation/step-up, pannes disponibilité/crypto/transaction, un AuditLog attribué, aucun événement générique ni double écriture ; COMMIT inconnu sans faux rejet ; rollback/503 si sink indisponible                         | Verified locally     |
-| SEC-ADM-C1-R3-05 Provider de vérification JWT | `assertAvailable` réussi puis résolution ou digest tardif indisponible à 503 ; kid/signature/malformation/expiration à 401, aucun contexte inventé                                                                         | Verified locally     |
-| SEC-ADM-C1-R3-06 Audit `revokeOther`          | cible connue réelle et motif validé ; sujet absent si inconnu ; succès, rôle, step-up absent/expiré, auto-cible et 404 sans mutation sur refus                                                                             | Verified locally     |
-| SEC-ADM-C1-R3-07 Gouvernance et frontière     | champs vivants réconciliés ; historiques R0/R1/R2 préservés ; R3 local/non publié dans l'instantané daté ; état Git/GitHub postérieur faisant foi ; politique open source différée ; KMS non qualifié ; C2/C3 non démarrés | Reconciled locally   |
-| SEC-ADM-C1-R3-08 Points séparés               | recommandation JTI non bloquante et pagination `NON CONCLUSIVE`, sans élargissement silencieux du lot                                                                                                                      | Preserved separately |
+| Exigence                                      | Preuve R3 obtenue                                                                                                                                                                                                          | État                                |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| SEC-ADM-C1-R3-01 Memberships incidentes       | A/B, reader/writer, ancien contournement prouvé, refus avant mutation, signature inchangée, grant tiers préservé, erreurs applicatives typées puis retour nominal                                                          | Verified locally                    |
+| SEC-ADM-C1-R3-02 Statuts Auth                 | cinq surfaces exactes à 400 avec codes canoniques                                                                                                                                                                          | Verified locally                    |
+| SEC-ADM-C1-R3-03 Rejeu confirmation           | rejeu exact séquentiel/concurrent et même clé avec payload divergent à 409 ; autre clé/utilisateur refusés ; aucun secret, cookie, session ou mutation supplémentaire                                                      | Verified locally                    |
+| SEC-ADM-C1-R3-04 Audit post-session           | rotation/step-up et branches explicitement contextualisées prouvés ; le chemin générique partagé de certaines pannes `refresh`/`revokeCurrent`/`revokeOther` pouvait encore perdre un contexte serveur déjà prouvé         | Partial historically — HIGH post-R3 |
+| SEC-ADM-C1-R3-05 Provider de vérification JWT | `assertAvailable` réussi puis résolution ou digest tardif indisponible à 503 ; kid/signature/malformation/expiration à 401, aucun contexte inventé                                                                         | Verified locally                    |
+| SEC-ADM-C1-R3-06 Audit `revokeOther`          | cible connue réelle et motif validé ; sujet absent si inconnu ; succès, rôle, step-up absent/expiré, auto-cible et 404 sans mutation sur refus                                                                             | Verified locally                    |
+| SEC-ADM-C1-R3-07 Gouvernance et frontière     | champs vivants réconciliés ; historiques R0/R1/R2 préservés ; R3 local/non publié dans l'instantané daté ; état Git/GitHub postérieur faisant foi ; politique open source différée ; KMS non qualifié ; C2/C3 non démarrés | Reconciled locally                  |
+| SEC-ADM-C1-R3-08 Points séparés               | recommandation JTI non bloquante et pagination `NON CONCLUSIVE`, sans élargissement silencieux du lot                                                                                                                      | Preserved separately                |
+
+### S1.2-03C1-R4 — instantané local prépublication du 2026-10-04
+
+R3 est publié au head `b0792934aa2f9d6f6d481517f384825874d72402` de la Draft
+PR #50. Infrastructure `37190396720`, Launcher Windows `37190396716`, Security
+`37190396718` et Quality Linux `37190396709` réussissent en tentative 1. La
+revue CTO terminale ultérieure reste **BLOCK** : cinq findings R3 sont clos et
+le finding **HIGH** d'audit post-session n'était que partiellement corrigé avant R4.
+Les onze fichiers techniques R3, dont PostgreSQL/Infrastructure, restent figés
+après leurs validations ; R4 est borné aux trois fichiers Auth/tests et aux six
+documents autorisés. Les preuves ci-dessous sont celles de l'instantané local
+prépublication ; après cet instantané, l'état Git/GitHub fait foi.
+
+| Exigence                                      | Preuve R4                                                                                                                                                                                                                       | État                    |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| SEC-ADM-C1-R4-01 Contexte `revokeCurrent`     | principal serveur conservé avant transaction ; panne précoce : un `AuditLog` attribué, aucun événement générique, session non révoquée                                                                                          | Verified locally        |
+| SEC-ADM-C1-R4-02 Cible `revokeOther`          | avant résolution : sujet nul et cible/motif conservés ; après résolution : sujet serveur exact ; rollback acteur/cible                                                                                                          | Verified locally        |
+| SEC-ADM-C1-R4-03 Preuve `refresh`             | aucun acteur inventé avant preuve ; après vérification user/session/token, pannes CSRF/signature/rotation vers un `AuditLog` exact                                                                                              | Verified locally        |
+| SEC-ADM-C1-R4-04 Rotation atomique            | échec après consommation SQL de l'ancien refresh mais avant insertion du suivant ; ancien token non consommé, génération/session inchangées après rollback                                                                      | Verified locally        |
+| SEC-ADM-C1-R4-05 Normalisation et concurrence | erreur normalisée enrichie avec métadonnées intactes, contexte explicite prioritaire, deux invocations concurrentes isolées                                                                                                     | Verified locally        |
+| SEC-ADM-C1-R4-06 Sink indisponible            | `refresh`, `revokeCurrent`, `revokeOther` : 503 sûr, zéro `AuditLog`, zéro fallback `AdminSecurityEvent`, mutations non commitées annulées                                                                                      | Verified locally        |
+| SEC-ADM-C1-R4-07 COMMIT inconnu               | trois opérations : 503 neutre, aucun rejet ni second sink ; succès/audit et mutation durables acceptés sans prétendre au rollback                                                                                               | Verified locally        |
+| SEC-ADM-C1-R4-08 Régression complète          | wrapper PostgreSQL/Redis réel 30/30 ; API 17 suites, 87 réussis et 29 `skipped` ; OpenAPI 60/67/137 et génération inchangée                                                                                                     | Verified locally        |
+| SEC-ADM-C1-R4-09 Publication et limites       | R3 publié et quatre CI vertes mais finding terminal HIGH ; R4 validé dans l'instantané prépublication, neuf fichiers existants maximum ; publication distincte, KMS non qualifié, pagination non concluante, C2/C3 non démarrés | Scope preserved locally |
+
+La clôture matérielle distincte du worktree 03A, à sémantique préservée et de
+cause **NON CONCLUSIVE**, n'est ni une preuve R4 ni une extension de ce lot.
 
 ## Traçabilité S1.2-03B-R1 — Supply-chain remediation
 
