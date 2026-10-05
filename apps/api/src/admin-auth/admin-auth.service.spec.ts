@@ -1,4 +1,16 @@
-import { AdminC1HttpError } from './admin-session.service';
+import type {
+  AdminFailureAuditContext,
+  AdminAuthRepository,
+  AdminAuthTransactionRepository,
+  AdminRecoveryContextRecord,
+  AdminUserRecord,
+} from './admin-auth.repository';
+import { AdminWriterCommitUnknownError } from '../database/admin-writer.service';
+import { AdminAuthCrypto } from './admin-auth.crypto';
+import { TestEphemeralAdminKeyProvider } from './admin-key-provider';
+import type { AdminRateLimitService } from './admin-rate-limit.service';
+import { AdminRequestPolicy } from './admin-request-policy';
+import { AdminC1HttpError, type AdminSessionService } from './admin-session.service';
 import { parseReason } from './admin-auth.controller';
 import {
   AdminAuthService,
@@ -109,6 +121,151 @@ describe('AdminAuthService contract validation', () => {
       actorAdminUserId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       adminSessionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
       subjectAdminUserId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    });
+  });
+
+  it('preserves a proven recovery context on a generic post-proof enrollment failure', async () => {
+    const now = new Date('2026-10-05T10:00:00.000Z');
+    const user: AdminUserRecord = {
+      authorizationVersion: 3,
+      createdAt: now,
+      email: 'recovery@example.test',
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      lastAcceptedTotpCounter: null,
+      passwordHash: 'not-used',
+      role: 'SUPER_ADMIN',
+      status: 'PENDING_MFA',
+      totpEnabledAt: null,
+      totpSecretEncrypted: null,
+    };
+    const recovery: AdminRecoveryContextRecord = {
+      adminUserId: user.id,
+      authorizationVersion: user.authorizationVersion,
+      consumedAt: null,
+      createdAt: now,
+      expiresAt: new Date(now.getTime() + 60_000),
+      id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      recoveryCodeId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      revokedAt: null,
+      tokenHash: 'recovery-token-hash',
+    };
+    const transaction = {
+      findPreAuthByHash: jest.fn().mockResolvedValue(undefined),
+      findRecoveryContextByHash: jest.fn().mockResolvedValue(recovery),
+      lockAdminUser: jest.fn().mockResolvedValue(user),
+      lockRecoveryContextByHash: jest.fn().mockResolvedValue(recovery),
+    } as unknown as AdminAuthTransactionRepository;
+    const repository = {
+      transaction: jest.fn((callback: (value: AdminAuthTransactionRepository) => unknown) =>
+        callback(transaction),
+      ),
+    } as unknown as AdminAuthRepository;
+    const keys = new TestEphemeralAdminKeyProvider();
+    jest.spyOn(keys, 'keyedDigest').mockRejectedValueOnce(new Error('controlled post-proof'));
+    const service = new AdminAuthService(
+      repository,
+      new AdminAuthCrypto(keys),
+      keys,
+      {} as AdminRateLimitService,
+      {} as AdminSessionService,
+      new AdminRequestPolicy({ keyProvider: keys, origin: 'https://admin.example.test' }),
+    );
+
+    await expect(
+      service.createEnrollment(
+        'recovery-context-token',
+        'recovery-create-0001',
+        'request-recovery-create',
+        now,
+      ),
+    ).rejects.toMatchObject({
+      auditContext: {
+        action: 'ADMIN_TOTP_ENROLLMENT_CREATE_REJECTED',
+        actorAdminUserId: user.id,
+        adminRecoveryContextId: recovery.id,
+        entityId: recovery.id,
+        entityType: 'AdminTotpEnrollment',
+        reasonCode: 'ACCOUNT_RECOVERY',
+        subjectAdminUserId: user.id,
+      },
+      auditRecorded: false,
+      code: 'SERVICE_UNAVAILABLE',
+      details: {},
+      status: 503,
+    });
+  });
+
+  it('preserves normalized metadata and explicit contexts while keeping unknown COMMIT neutral', async () => {
+    const recoveryContext: AdminFailureAuditContext = {
+      action: 'ADMIN_TOTP_ENROLLMENT_CREATE_REJECTED',
+      actorAdminUserId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      adminRecoveryContextId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      entityId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      entityType: 'AdminTotpEnrollment',
+      reasonCode: 'ACCOUNT_RECOVERY',
+      subjectAdminUserId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    };
+    const serviceWith = (error: unknown): AdminAuthService => {
+      const keys = new TestEphemeralAdminKeyProvider();
+      return new AdminAuthService(
+        { transaction: jest.fn().mockRejectedValue(error) } as unknown as AdminAuthRepository,
+        new AdminAuthCrypto(keys),
+        keys,
+        {} as AdminRateLimitService,
+        {} as AdminSessionService,
+        new AdminRequestPolicy({ keyProvider: keys, origin: 'https://admin.example.test' }),
+      );
+    };
+    const run = (service: AdminAuthService): Promise<unknown> =>
+      (
+        service as unknown as {
+          runTransaction(
+            callback: (transaction: AdminAuthTransactionRepository) => Promise<unknown>,
+            failureContext: () => AdminFailureAuditContext,
+          ): Promise<unknown>;
+        }
+      ).runTransaction(
+        async () => undefined,
+        () => recoveryContext,
+      );
+
+    const normalized = new AdminC1HttpError(429, 'RATE_LIMITED', {
+      auditAction: 'ORIGINAL_ACTION',
+      auditRecorded: true,
+      details: { reason: 'RATE_LIMITED', retryAfterSeconds: 17 },
+      retryAfterSeconds: 17,
+    });
+    await expect(run(serviceWith(normalized))).rejects.toMatchObject({
+      auditAction: 'ORIGINAL_ACTION',
+      auditContext: recoveryContext,
+      auditRecorded: true,
+      code: 'RATE_LIMITED',
+      details: { reason: 'RATE_LIMITED', retryAfterSeconds: 17 },
+      retryAfterSeconds: 17,
+      status: 429,
+    });
+
+    const explicitContext = {
+      ...recoveryContext,
+      entityId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+    };
+    const explicit = new AdminC1HttpError(401, 'AUTH_REQUIRED', {
+      auditContext: explicitContext,
+    });
+    await expect(run(serviceWith(explicit))).rejects.toBe(explicit);
+
+    await expect(
+      run(
+        serviceWith(
+          new AdminWriterCommitUnknownError(new Error('controlled acknowledgement loss')),
+        ),
+      ),
+    ).rejects.toMatchObject({
+      auditContext: undefined,
+      auditRecorded: true,
+      code: 'SERVICE_UNAVAILABLE',
+      details: {},
+      status: 503,
     });
   });
 });

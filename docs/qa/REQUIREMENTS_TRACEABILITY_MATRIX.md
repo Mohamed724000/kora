@@ -485,6 +485,27 @@ prépublication ; après cet instantané, l'état Git/GitHub fait foi.
 La clôture matérielle distincte du worktree 03A, à sémantique préservée et de
 cause **NON CONCLUSIVE**, n'est ni une preuve R4 ni une extension de ce lot.
 
+### S1.2-03C1-R5 — publication R4 et instantané local du 2026-10-05
+
+R4 est publié au commit `cdc020caa8b06d74af816dc072e778e25e020699` et ses
+quatre workflows réussissent en tentative 1. La revue terminale conserve
+**BLOCK** sur deux findings, traités localement par R5 sans modifier le contrat.
+
+| Exigence / contrôle                         | Preuve R5                                                                                                                                                                                    | Statut                             |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| SEC-ADM-C1-R5-01 Recovery après preuve      | création, QR et confirmation sous panne post-preuve : exactement un `AuditLog` `ADMIN_RECOVERY`, aucun événement, écritures métier annulées                                                   | Verified locally                   |
+| SEC-ADM-C1-R5-02 Avant preuve / PREAUTH     | digest initial de confirmation et panne PREAUTH : zéro attribution recovery; événement de sécurité seulement                                                                                  | Verified locally                   |
+| SEC-ADM-C1-R5-03 Sink recovery indisponible | échec d'enregistrement du rejet : 503 neutre, zéro fallback, zéro mutation durable                                                                                                             | Verified locally                   |
+| SEC-ADM-C1-R5-04 Liste avant preuve         | JWT signé à JTI incompatible et panne transactionnelle pré-preuve : `AdminSecurityEvent`, zéro `AuditLog`                                                                                     | Verified locally                   |
+| SEC-ADM-C1-R5-05 Liste après preuve         | panne après le véritable UPDATE touch : rollback des horodatages et zéro sink; panne de lecture après commit d'authentification : touch durable possible et zéro sink                         | Verified locally                   |
+| SEC-ADM-C1-R5-06 COMMIT inconnu             | callback et COMMIT réels puis perte d'accusé sur création, QR, confirmation et touch liste : 503 neutre, succès durable possible, aucun rejet contradictoire, second sink ou retry automatique | Verified locally                   |
+| SEC-ADM-C1-R5-07 Régression C1              | wrapper PostgreSQL A/B + HTTP + Redis : 34/34 tests réels, douze opérations; API 17 suites, 90 réussis, 33 conditionnels `skipped`; OpenAPI 60/67/137 inchangé                                | Verified locally                   |
+| SEC-ADM-C1-R5-08 Frontière                  | six fichiers TypeScript et six documents existants; repository/filter/writer, Prisma, migrations, provisioning, wrapper, workflows, manifestes, lockfile et contrat inchangés                 | Scope preserved; local unpublished |
+
+La politique open source reste différée et non installée, le fournisseur de
+clés de production **NON QUALIFIÉ**, la recommandation JTI séparée, la
+pagination **NON CONCLUSIVE**, et C2/C3 `Not started`.
+
 ## Traçabilité S1.2-03B-R1 — Supply-chain remediation
 
 Qualification : **instantané historique local prépublication du 2026-09-29**.

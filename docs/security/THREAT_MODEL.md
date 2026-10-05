@@ -3,9 +3,9 @@
 Périmètre durable couvert : **BASELINE + S0.4/S0.5/M0.1/M0.2/S0.6 ET M0.3
 FUSIONNÉS ET CLÔTURÉS + S1.1 FERMÉ + CONTRACT & DATA READINESS S1.2-01 +
 S1.2-02 CLÔTURÉ ET FUSIONNÉ + S1.2-03A CLÔTURÉ ET FUSIONNÉ + S1.2-03B-R4
-FUSIONNÉ VIA PR #48 + S1.2-03C1-R3 PUBLIÉ DANS LA DRAFT PR #50 AVEC QUATRE
-WORKFLOWS VERTS, PUIS REVUE CTO TERMINALE BLOCK SUR UN FINDING HIGH +
-INSTANTANÉ LOCAL PRÉPUBLICATION R4 DU 2026-10-04 VALIDÉ — KMS/JWT DE PRODUCTION
+FUSIONNÉ VIA PR #48 + S1.2-03C1-R4 PUBLIÉ DANS LA DRAFT PR #50 AVEC QUATRE
+WORKFLOWS VERTS, PUIS REVUE CTO TERMINALE BLOCK SUR DEUX FINDINGS +
+INSTANTANÉ LOCAL PRÉPUBLICATION R5 DU 2026-10-05 VALIDÉ — KMS/JWT DE PRODUCTION
 NON QUALIFIÉS — C2/C3 NOT STARTED**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
@@ -50,6 +50,25 @@ après leurs validations ; R4 ne modifie que les trois fichiers Auth/tests et
 les six documents autorisés. La politique open source reste différée, le
 provider de clés de production non qualifié, la pagination non concluante et
 C2/C3 non démarrés.
+
+R4 est ensuite publié au head `cdc020caa8b06d74af816dc072e778e25e020699`;
+les quatre workflows `37242762675`, `37242762612`, `37242762666` et
+`37242762665` réussissent en tentative 1. La revue terminale suivante maintient
+**BLOCK** sur deux menaces résiduelles : perte d'attribution recovery après
+preuve complète dans les trois opérations enrollment, et choix de sink erroné
+pour la liste des sessions autour de la preuve user/session/JTI.
+
+R5 conserve uniquement des identifiants minimaux prouvés côté serveur, dans la
+portée locale de chaque invocation. Avant preuve recovery, aucune attribution
+`ADMIN_RECOVERY` n'est créée; après preuve, les pannes normalisées ou génériques
+gardent l'acteur, le contexte et l'entité. Pour `listAdminSessions`, un JWT signé
+avec JTI incompatible reste avant preuve et produit un `AdminSecurityEvent`;
+après liaison complète, une panne de touch ou de lecture suit `NONE`. Le touch,
+la fenêtre idle et le plafond absolu restent actifs. Les injections réelles
+prouvent rollback des mutations connues, absence de fallback si le sink
+recovery est indisponible, et succès durable possible sans faux rejet lorsque
+l'accusé COMMIT est perdu. Le wrapper final passe 34/34 tests réels; R5 reste
+local et ne qualifie ni KMS/JWT de production, ni déploiement, C2 ou C3.
 
 Le gate supply-chain final du 2026-10-03 retire la chaîne dev-only
 `eslint-config-next → @next/eslint-plugin-next → fast-glob → micromatch → braces`

@@ -273,99 +273,118 @@ export class AdminAuthService {
   ): Promise<AdminEnrollmentDelivery> {
     await this.requireKeys();
     const tokenHash = sha256(contextToken);
-    return this.runTransaction(async (transaction) => {
-      const resolved = await this.resolveContext(transaction, tokenHash, now, false);
-      const fingerprint = await this.digest(
-        'ADMIN_IDEMPOTENCY_CREATE_ENROLLMENT_V1',
-        `${resolved.user.id}\0${contextToken}`,
-      );
-      const existing = await transaction.findIdempotency(
-        resolved.user.id,
-        'createAdminTotpEnrollment',
-        idempotencyKey,
-      );
-      if (existing !== undefined) {
-        if (existing.requestHash !== fingerprint)
+    let failureContext: AdminFailureAuditContext | undefined;
+    return this.runTransaction(
+      async (transaction) => {
+        const resolved = await this.resolveContext(transaction, tokenHash, now, false);
+        failureContext = this.contextFailureOptions(
+          resolved,
+          'ADMIN_TOTP_ENROLLMENT_CREATE_REJECTED',
+          resolved.context.id,
+        ).auditContext;
+        const fingerprint = await this.digest(
+          'ADMIN_IDEMPOTENCY_CREATE_ENROLLMENT_V1',
+          `${resolved.user.id}\0${contextToken}`,
+        );
+        const existing = await transaction.findIdempotency(
+          resolved.user.id,
+          'createAdminTotpEnrollment',
+          idempotencyKey,
+        );
+        if (existing !== undefined) {
+          failureContext = this.contextFailureOptions(
+            resolved,
+            'ADMIN_TOTP_ENROLLMENT_CREATE_REJECTED',
+            existing.resourceId,
+          ).auditContext;
+          if (existing.requestHash !== fingerprint)
+            throw new AdminC1HttpError(
+              409,
+              'IDEMPOTENCY_CONFLICT',
+              this.contextFailureOptions(
+                resolved,
+                'ADMIN_TOTP_ENROLLMENT_CREATE_REJECTED',
+                resolved.context.id,
+              ),
+            );
+          const enrollment = await transaction.lockEnrollment(existing.resourceId);
+          if (enrollment === undefined)
+            throw new AdminC1HttpError(
+              409,
+              'IDEMPOTENCY_CONFLICT',
+              this.contextFailureOptions(
+                resolved,
+                'ADMIN_TOTP_ENROLLMENT_CREATE_REJECTED',
+                existing.resourceId,
+              ),
+            );
+          return { enrollmentId: enrollment.id, expiresAt: enrollment.expiresAt.toISOString() };
+        }
+        if (
+          (resolved.kind === 'PREAUTH' &&
+            (resolved.context.purpose !== 'FIRST_TOTP_ENROLLMENT' ||
+              resolved.user.totpEnabledAt !== null ||
+              resolved.user.status !== 'PENDING_MFA')) ||
+          (resolved.kind === 'RECOVERY' && resolved.user.status !== 'PENDING_MFA')
+        )
           throw new AdminC1HttpError(
-            409,
-            'IDEMPOTENCY_CONFLICT',
+            403,
+            'FORBIDDEN',
             this.contextFailureOptions(
               resolved,
               'ADMIN_TOTP_ENROLLMENT_CREATE_REJECTED',
               resolved.context.id,
             ),
           );
-        const enrollment = await transaction.lockEnrollment(existing.resourceId);
-        if (enrollment === undefined)
-          throw new AdminC1HttpError(
-            409,
-            'IDEMPOTENCY_CONFLICT',
-            this.contextFailureOptions(
-              resolved,
-              'ADMIN_TOTP_ENROLLMENT_CREATE_REJECTED',
-              existing.resourceId,
-            ),
-          );
-        return { enrollmentId: enrollment.id, expiresAt: enrollment.expiresAt.toISOString() };
-      }
-      if (
-        (resolved.kind === 'PREAUTH' &&
-          (resolved.context.purpose !== 'FIRST_TOTP_ENROLLMENT' ||
-            resolved.user.totpEnabledAt !== null ||
-            resolved.user.status !== 'PENDING_MFA')) ||
-        (resolved.kind === 'RECOVERY' && resolved.user.status !== 'PENDING_MFA')
-      )
-        throw new AdminC1HttpError(
-          403,
-          'FORBIDDEN',
-          this.contextFailureOptions(
-            resolved,
-            'ADMIN_TOTP_ENROLLMENT_CREATE_REJECTED',
-            resolved.context.id,
-          ),
+        const secret = this.crypto.randomTotpSecret();
+        let encrypted: string;
+        try {
+          encrypted = await this.crypto.encryptTotpSecret(secret, resolved.user.id);
+        } finally {
+          secret.fill(0);
+        }
+        const enrollmentId = randomUUID();
+        failureContext = this.contextFailureOptions(
+          resolved,
+          'ADMIN_TOTP_ENROLLMENT_CREATE_REJECTED',
+          enrollmentId,
+        ).auditContext;
+        const expiresAt = new Date(now.getTime() + CONTEXT_MILLISECONDS);
+        await transaction.insertEnrollment({
+          ...(resolved.kind === 'PREAUTH'
+            ? { adminPreAuthContextId: resolved.context.id }
+            : { adminRecoveryContextId: resolved.context.id }),
+          adminUserId: resolved.user.id,
+          authorizationVersion: resolved.user.authorizationVersion,
+          createdAt: now,
+          expiresAt,
+          id: enrollmentId,
+          secretEncrypted: encrypted,
+        });
+        await transaction.insertIdempotency({
+          adminUserId: resolved.user.id,
+          createdAt: now,
+          expiresAt: new Date(now.getTime() + IDEMPOTENCY_MILLISECONDS),
+          id: randomUUID(),
+          idempotencyKey,
+          operation: 'createAdminTotpEnrollment',
+          requestHash: fingerprint,
+          resourceId: enrollmentId,
+          resourceType: 'AdminTotpEnrollment',
+          responseCode: 201,
+        });
+        await this.recordContextAudit(
+          transaction,
+          resolved,
+          'ADMIN_TOTP_ENROLLMENT_CREATED',
+          enrollmentId,
+          requestId,
+          now,
         );
-      const secret = this.crypto.randomTotpSecret();
-      let encrypted: string;
-      try {
-        encrypted = await this.crypto.encryptTotpSecret(secret, resolved.user.id);
-      } finally {
-        secret.fill(0);
-      }
-      const enrollmentId = randomUUID();
-      const expiresAt = new Date(now.getTime() + CONTEXT_MILLISECONDS);
-      await transaction.insertEnrollment({
-        ...(resolved.kind === 'PREAUTH'
-          ? { adminPreAuthContextId: resolved.context.id }
-          : { adminRecoveryContextId: resolved.context.id }),
-        adminUserId: resolved.user.id,
-        authorizationVersion: resolved.user.authorizationVersion,
-        createdAt: now,
-        expiresAt,
-        id: enrollmentId,
-        secretEncrypted: encrypted,
-      });
-      await transaction.insertIdempotency({
-        adminUserId: resolved.user.id,
-        createdAt: now,
-        expiresAt: new Date(now.getTime() + IDEMPOTENCY_MILLISECONDS),
-        id: randomUUID(),
-        idempotencyKey,
-        operation: 'createAdminTotpEnrollment',
-        requestHash: fingerprint,
-        resourceId: enrollmentId,
-        resourceType: 'AdminTotpEnrollment',
-        responseCode: 201,
-      });
-      await this.recordContextAudit(
-        transaction,
-        resolved,
-        'ADMIN_TOTP_ENROLLMENT_CREATED',
-        enrollmentId,
-        requestId,
-        now,
-      );
-      return { enrollmentId, expiresAt: expiresAt.toISOString() };
-    });
+        return { enrollmentId, expiresAt: expiresAt.toISOString() };
+      },
+      () => failureContext,
+    );
   }
 
   async deliverQr(
@@ -376,64 +395,78 @@ export class AdminAuthService {
     now = new Date(),
   ): Promise<Buffer> {
     await this.requireKeys();
-    return this.runTransaction(async (transaction) => {
-      const resolved = await this.resolveContext(transaction, sha256(contextToken), now, false);
-      const enrollment = await transaction.lockEnrollment(enrollmentId);
-      this.assertEnrollment(
-        enrollment,
-        resolved.user,
-        resolved,
-        now,
-        'ADMIN_TOTP_QR_DELIVERY_REJECTED',
-      );
-      const existing = await transaction.findIdempotency(
-        resolved.user.id,
-        'deliverAdminTotpEnrollmentQr',
-        idempotencyKey,
-      );
-      if (existing !== undefined || enrollment!.qrDeliveredAt !== null) {
-        throw new AdminC1HttpError(
-          409,
-          'SENSITIVE_RESPONSE_ALREADY_DELIVERED',
-          this.contextFailureOptions(resolved, 'ADMIN_TOTP_QR_DELIVERY_REJECTED', enrollmentId),
+    let failureContext: AdminFailureAuditContext | undefined;
+    return this.runTransaction(
+      async (transaction) => {
+        const resolved = await this.resolveContext(transaction, sha256(contextToken), now, false);
+        failureContext = this.contextFailureOptions(
+          resolved,
+          'ADMIN_TOTP_QR_DELIVERY_REJECTED',
+          resolved.context.id,
+        ).auditContext;
+        const enrollment = await transaction.lockEnrollment(enrollmentId);
+        this.assertEnrollment(
+          enrollment,
+          resolved.user,
+          resolved,
+          now,
+          'ADMIN_TOTP_QR_DELIVERY_REJECTED',
         );
-      }
-      const decrypted = await this.crypto.decryptTotpSecret(
-        enrollment!.secretEncrypted,
-        resolved.user.id,
-      );
-      let png: Buffer;
-      try {
-        png = await this.crypto.createTotpQrPng(decrypted.secret, resolved.user.email);
-      } finally {
-        decrypted.secret.fill(0);
-      }
-      await transaction.markQrDelivered(enrollment!.id, now);
-      await transaction.insertIdempotency({
-        adminUserId: resolved.user.id,
-        createdAt: now,
-        expiresAt: new Date(now.getTime() + IDEMPOTENCY_MILLISECONDS),
-        id: randomUUID(),
-        idempotencyKey,
-        operation: 'deliverAdminTotpEnrollmentQr',
-        requestHash: await this.digest(
-          'ADMIN_IDEMPOTENCY_QR_V1',
-          `${enrollmentId}\0${contextToken}`,
-        ),
-        resourceId: enrollmentId,
-        resourceType: 'AdminTotpEnrollment',
-        responseCode: 200,
-      });
-      await this.recordContextAudit(
-        transaction,
-        resolved,
-        'ADMIN_TOTP_QR_DELIVERED',
-        enrollmentId,
-        requestId,
-        now,
-      );
-      return png;
-    });
+        failureContext = this.contextFailureOptions(
+          resolved,
+          'ADMIN_TOTP_QR_DELIVERY_REJECTED',
+          enrollment!.id,
+        ).auditContext;
+        const existing = await transaction.findIdempotency(
+          resolved.user.id,
+          'deliverAdminTotpEnrollmentQr',
+          idempotencyKey,
+        );
+        if (existing !== undefined || enrollment!.qrDeliveredAt !== null) {
+          throw new AdminC1HttpError(
+            409,
+            'SENSITIVE_RESPONSE_ALREADY_DELIVERED',
+            this.contextFailureOptions(resolved, 'ADMIN_TOTP_QR_DELIVERY_REJECTED', enrollmentId),
+          );
+        }
+        const decrypted = await this.crypto.decryptTotpSecret(
+          enrollment!.secretEncrypted,
+          resolved.user.id,
+        );
+        let png: Buffer;
+        try {
+          png = await this.crypto.createTotpQrPng(decrypted.secret, resolved.user.email);
+        } finally {
+          decrypted.secret.fill(0);
+        }
+        await transaction.markQrDelivered(enrollment!.id, now);
+        await transaction.insertIdempotency({
+          adminUserId: resolved.user.id,
+          createdAt: now,
+          expiresAt: new Date(now.getTime() + IDEMPOTENCY_MILLISECONDS),
+          id: randomUUID(),
+          idempotencyKey,
+          operation: 'deliverAdminTotpEnrollmentQr',
+          requestHash: await this.digest(
+            'ADMIN_IDEMPOTENCY_QR_V1',
+            `${enrollmentId}\0${contextToken}`,
+          ),
+          resourceId: enrollmentId,
+          resourceType: 'AdminTotpEnrollment',
+          responseCode: 200,
+        });
+        await this.recordContextAudit(
+          transaction,
+          resolved,
+          'ADMIN_TOTP_QR_DELIVERED',
+          enrollmentId,
+          requestId,
+          now,
+        );
+        return png;
+      },
+      () => failureContext,
+    );
   }
 
   async confirmEnrollment(
@@ -451,207 +484,221 @@ export class AdminAuthService {
       'ADMIN_IDEMPOTENCY_CONFIRM_V1',
       `${enrollmentId}\0${code}\0${contextToken}`,
     );
-    const result = await this.runTransaction(async (transaction) => {
-      const preauthCandidate = await transaction.findPreAuthByHash(tokenHash);
-      const recoveryCandidate =
-        preauthCandidate === undefined
-          ? await transaction.findRecoveryContextByHash(tokenHash)
-          : undefined;
-      const candidate = preauthCandidate ?? recoveryCandidate;
-      const user =
-        candidate === undefined
-          ? undefined
-          : await transaction.lockAdminUser(candidate.adminUserId);
-      const context =
-        user === undefined
-          ? undefined
-          : preauthCandidate === undefined
-            ? await transaction.lockRecoveryContextByHash(tokenHash)
-            : await transaction.lockPreAuthByHash(tokenHash);
-      const enrollment = await transaction.lockEnrollment(enrollmentId);
-      const existing =
-        user === undefined
-          ? undefined
-          : await transaction.findIdempotency(
-              user.id,
-              'confirmAdminTotpEnrollment',
-              idempotencyKey,
-            );
-      const contextBound =
-        context !== undefined &&
-        enrollment !== undefined &&
-        context.adminUserId === user?.id &&
-        enrollment.adminUserId === user.id &&
-        enrollment.authorizationVersion === context.authorizationVersion &&
-        (preauthCandidate === undefined
-          ? enrollment.adminRecoveryContextId === context.id
-          : enrollment.adminPreAuthContextId === context.id);
-      if (
-        contextBound &&
-        context!.consumedAt !== null &&
-        context!.revokedAt === null &&
-        enrollment!.confirmedAt !== null &&
-        enrollment!.revokedAt === null &&
-        existing !== undefined &&
-        existing.expiresAt > now &&
-        existing.resourceId === enrollmentId &&
-        existing.resourceType === 'AdminTotpEnrollment' &&
-        existing.responseCode === 200
-      ) {
-        throw new AdminC1HttpError(409, 'IDEMPOTENCY_CONFLICT', {
-          auditAction: 'ADMIN_TOTP_ENROLLMENT_CONFIRM_REJECTED',
-        });
-      }
-      if (!activeContext(context, user, now)) {
-        throw new AdminC1HttpError(
-          context !== undefined && context.expiresAt <= now ? 410 : 401,
-          context !== undefined && context.expiresAt <= now ? 'OTP_EXPIRED' : 'AUTH_REQUIRED',
-        );
-      }
-      const resolved = {
-        context: context!,
-        kind: preauthCandidate === undefined ? ('RECOVERY' as const) : ('PREAUTH' as const),
-        user: user!,
-      };
-      this.assertEnrollment(
-        enrollment,
-        resolved.user,
-        resolved,
-        now,
-        'ADMIN_TOTP_ENROLLMENT_CONFIRM_REJECTED',
-      );
-      if (enrollment!.qrDeliveredAt === null)
-        throw new AdminC1HttpError(
-          403,
-          'FORBIDDEN',
-          this.contextFailureOptions(
-            resolved,
-            'ADMIN_TOTP_ENROLLMENT_CONFIRM_REJECTED',
-            enrollmentId,
-          ),
-        );
-      if (existing !== undefined)
-        throw new AdminC1HttpError(
-          409,
-          'IDEMPOTENCY_CONFLICT',
-          this.contextFailureOptions(
-            resolved,
-            'ADMIN_TOTP_ENROLLMENT_CONFIRM_REJECTED',
-            enrollmentId,
-          ),
-        );
-      const decrypted = await this.crypto.decryptTotpSecret(
-        enrollment!.secretEncrypted,
-        resolved.user.id,
-      );
-      let activeEncryptedSecret = enrollment!.secretEncrypted;
-      let counter: bigint | undefined;
-      try {
-        counter = this.crypto.verifyTotp(
-          decrypted.secret,
-          code,
-          Math.floor(now.getTime() / 1000),
-          resolved.user.lastAcceptedTotpCounter,
-        );
-        if (counter !== undefined && decrypted.needsRewrap) {
-          activeEncryptedSecret = await this.crypto.encryptTotpSecret(
-            decrypted.secret,
-            resolved.user.id,
+    let failureContext: AdminFailureAuditContext | undefined;
+    const result = await this.runTransaction(
+      async (transaction) => {
+        const preauthCandidate = await transaction.findPreAuthByHash(tokenHash);
+        const recoveryCandidate =
+          preauthCandidate === undefined
+            ? await transaction.findRecoveryContextByHash(tokenHash)
+            : undefined;
+        const candidate = preauthCandidate ?? recoveryCandidate;
+        const user =
+          candidate === undefined
+            ? undefined
+            : await transaction.lockAdminUser(candidate.adminUserId);
+        const context =
+          user === undefined
+            ? undefined
+            : preauthCandidate === undefined
+              ? await transaction.lockRecoveryContextByHash(tokenHash)
+              : await transaction.lockPreAuthByHash(tokenHash);
+        const enrollment = await transaction.lockEnrollment(enrollmentId);
+        const existing =
+          user === undefined
+            ? undefined
+            : await transaction.findIdempotency(
+                user.id,
+                'confirmAdminTotpEnrollment',
+                idempotencyKey,
+              );
+        const contextBound =
+          context !== undefined &&
+          enrollment !== undefined &&
+          context.adminUserId === user?.id &&
+          enrollment.adminUserId === user.id &&
+          enrollment.authorizationVersion === context.authorizationVersion &&
+          (preauthCandidate === undefined
+            ? enrollment.adminRecoveryContextId === context.id
+            : enrollment.adminPreAuthContextId === context.id);
+        if (
+          contextBound &&
+          context!.consumedAt !== null &&
+          context!.revokedAt === null &&
+          enrollment!.confirmedAt !== null &&
+          enrollment!.revokedAt === null &&
+          existing !== undefined &&
+          existing.expiresAt > now &&
+          existing.resourceId === enrollmentId &&
+          existing.resourceType === 'AdminTotpEnrollment' &&
+          existing.responseCode === 200
+        ) {
+          throw new AdminC1HttpError(409, 'IDEMPOTENCY_CONFLICT', {
+            auditAction: 'ADMIN_TOTP_ENROLLMENT_CONFIRM_REJECTED',
+          });
+        }
+        if (!activeContext(context, user, now)) {
+          throw new AdminC1HttpError(
+            context !== undefined && context.expiresAt <= now ? 410 : 401,
+            context !== undefined && context.expiresAt <= now ? 'OTP_EXPIRED' : 'AUTH_REQUIRED',
           );
         }
-      } finally {
-        decrypted.secret.fill(0);
-      }
-      if (counter === undefined) {
-        if (resolved.kind === 'RECOVERY') {
-          await transaction.insertAudit({
-            action: 'ADMIN_TOTP_ENROLLMENT_CONFIRM_REJECTED',
-            actorAdminUserId: resolved.user.id,
-            adminRecoveryContextId: resolved.context.id,
-            createdAt: now,
-            entityId: enrollmentId,
-            entityType: 'AdminTotpEnrollment',
+        const resolved = {
+          context: context!,
+          kind: preauthCandidate === undefined ? ('RECOVERY' as const) : ('PREAUTH' as const),
+          user: user!,
+        };
+        failureContext = this.contextFailureOptions(
+          resolved,
+          'ADMIN_TOTP_ENROLLMENT_CONFIRM_REJECTED',
+          resolved.context.id,
+        ).auditContext;
+        this.assertEnrollment(
+          enrollment,
+          resolved.user,
+          resolved,
+          now,
+          'ADMIN_TOTP_ENROLLMENT_CONFIRM_REJECTED',
+        );
+        failureContext = this.contextFailureOptions(
+          resolved,
+          'ADMIN_TOTP_ENROLLMENT_CONFIRM_REJECTED',
+          enrollment!.id,
+        ).auditContext;
+        if (enrollment!.qrDeliveredAt === null)
+          throw new AdminC1HttpError(
+            403,
+            'FORBIDDEN',
+            this.contextFailureOptions(
+              resolved,
+              'ADMIN_TOTP_ENROLLMENT_CONFIRM_REJECTED',
+              enrollmentId,
+            ),
+          );
+        if (existing !== undefined)
+          throw new AdminC1HttpError(
+            409,
+            'IDEMPOTENCY_CONFLICT',
+            this.contextFailureOptions(
+              resolved,
+              'ADMIN_TOTP_ENROLLMENT_CONFIRM_REJECTED',
+              enrollmentId,
+            ),
+          );
+        const decrypted = await this.crypto.decryptTotpSecret(
+          enrollment!.secretEncrypted,
+          resolved.user.id,
+        );
+        let activeEncryptedSecret = enrollment!.secretEncrypted;
+        let counter: bigint | undefined;
+        try {
+          counter = this.crypto.verifyTotp(
+            decrypted.secret,
+            code,
+            Math.floor(now.getTime() / 1000),
+            resolved.user.lastAcceptedTotpCounter,
+          );
+          if (counter !== undefined && decrypted.needsRewrap) {
+            activeEncryptedSecret = await this.crypto.encryptTotpSecret(
+              decrypted.secret,
+              resolved.user.id,
+            );
+          }
+        } finally {
+          decrypted.secret.fill(0);
+        }
+        if (counter === undefined) {
+          if (resolved.kind === 'RECOVERY') {
+            await transaction.insertAudit({
+              action: 'ADMIN_TOTP_ENROLLMENT_CONFIRM_REJECTED',
+              actorAdminUserId: resolved.user.id,
+              adminRecoveryContextId: resolved.context.id,
+              createdAt: now,
+              entityId: enrollmentId,
+              entityType: 'AdminTotpEnrollment',
+              id: randomUUID(),
+              reasonCode: 'ACCOUNT_RECOVERY',
+              requestId: execution.requestId,
+              subjectAdminUserId: resolved.user.id,
+            });
+          } else {
+            await transaction.insertSecurityEvent({
+              action: 'ADMIN_TOTP_ENROLLMENT_CONFIRM',
+              adminUserId: resolved.user.id,
+              createdAt: now,
+              failureCode: 'OTP_INVALID',
+              id: randomUUID(),
+              outcome: 'FAILED',
+              requestId: execution.requestId,
+            });
+          }
+          return { rejected: true as const };
+        }
+        const nextVersion = resolved.user.authorizationVersion + 1;
+        await transaction.updateTotpFactor({
+          adminUserId: resolved.user.id,
+          authorizationVersion: nextVersion,
+          counter,
+          encryptedSecret: activeEncryptedSecret,
+          status: 'ACTIVE',
+          verifiedAt: now,
+        });
+        if (resolved.kind === 'PREAUTH') await transaction.consumePreAuth(resolved.context.id, now);
+        else await transaction.consumeRecoveryContext(resolved.context.id, now);
+        await transaction.markEnrollmentConfirmed(enrollment!.id, now);
+        const codes = this.crypto.generateRecoveryCodes();
+        const stored: NewRecoveryCodeInput[] = [];
+        for (const recoveryCode of codes) {
+          stored.push({
+            codeHash: await this.crypto.hashRecoveryCode(recoveryCode),
             id: randomUUID(),
-            reasonCode: 'ACCOUNT_RECOVERY',
-            requestId: execution.requestId,
-            subjectAdminUserId: resolved.user.id,
-          });
-        } else {
-          await transaction.insertSecurityEvent({
-            action: 'ADMIN_TOTP_ENROLLMENT_CONFIRM',
-            adminUserId: resolved.user.id,
-            createdAt: now,
-            failureCode: 'OTP_INVALID',
-            id: randomUUID(),
-            outcome: 'FAILED',
-            requestId: execution.requestId,
+            selector: recoveryCode.selector,
           });
         }
-        return { rejected: true as const };
-      }
-      const nextVersion = resolved.user.authorizationVersion + 1;
-      await transaction.updateTotpFactor({
-        adminUserId: resolved.user.id,
-        authorizationVersion: nextVersion,
-        counter,
-        encryptedSecret: activeEncryptedSecret,
-        status: 'ACTIVE',
-        verifiedAt: now,
-      });
-      if (resolved.kind === 'PREAUTH') await transaction.consumePreAuth(resolved.context.id, now);
-      else await transaction.consumeRecoveryContext(resolved.context.id, now);
-      await transaction.markEnrollmentConfirmed(enrollment!.id, now);
-      const codes = this.crypto.generateRecoveryCodes();
-      const stored: NewRecoveryCodeInput[] = [];
-      for (const recoveryCode of codes) {
-        stored.push({
-          codeHash: await this.crypto.hashRecoveryCode(recoveryCode),
-          id: randomUUID(),
-          selector: recoveryCode.selector,
+        await transaction.replaceRecoveryCodes({
+          adminUserId: resolved.user.id,
+          batchId: randomUUID(),
+          codes: stored,
+          createdAt: now,
         });
-      }
-      await transaction.replaceRecoveryCodes({
-        adminUserId: resolved.user.id,
-        batchId: randomUUID(),
-        codes: stored,
-        createdAt: now,
-      });
-      const activeUser = {
-        ...resolved.user,
-        authorizationVersion: nextVersion,
-        status: 'ACTIVE' as const,
-      };
-      const prepared = await this.sessions.prepareSession(activeUser, now);
-      await this.sessions.commitPreparedSession(transaction, prepared);
-      await transaction.insertIdempotency({
-        adminUserId: resolved.user.id,
-        createdAt: now,
-        expiresAt: new Date(now.getTime() + IDEMPOTENCY_MILLISECONDS),
-        id: randomUUID(),
-        idempotencyKey,
-        operation: 'confirmAdminTotpEnrollment',
-        requestHash,
-        resourceId: enrollmentId,
-        resourceType: 'AdminTotpEnrollment',
-        responseCode: 200,
-      });
-      await transaction.insertAudit({
-        action: 'ADMIN_TOTP_ENROLLMENT_CONFIRMED',
-        actorAdminUserId: resolved.user.id,
-        adminSessionId: prepared.sessionId,
-        createdAt: now,
-        entityId: enrollmentId,
-        entityType: 'AdminTotpEnrollment',
-        id: randomUUID(),
-        reasonCode: 'SECURITY_RESPONSE',
-        requestId: execution.requestId,
-        subjectAdminUserId: resolved.user.id,
-      });
-      return {
-        rejected: false as const,
-        value: { codes, session: this.sessions.delivery(prepared) },
-      };
-    });
+        const activeUser = {
+          ...resolved.user,
+          authorizationVersion: nextVersion,
+          status: 'ACTIVE' as const,
+        };
+        const prepared = await this.sessions.prepareSession(activeUser, now);
+        await this.sessions.commitPreparedSession(transaction, prepared);
+        await transaction.insertIdempotency({
+          adminUserId: resolved.user.id,
+          createdAt: now,
+          expiresAt: new Date(now.getTime() + IDEMPOTENCY_MILLISECONDS),
+          id: randomUUID(),
+          idempotencyKey,
+          operation: 'confirmAdminTotpEnrollment',
+          requestHash,
+          resourceId: enrollmentId,
+          resourceType: 'AdminTotpEnrollment',
+          responseCode: 200,
+        });
+        await transaction.insertAudit({
+          action: 'ADMIN_TOTP_ENROLLMENT_CONFIRMED',
+          actorAdminUserId: resolved.user.id,
+          adminSessionId: prepared.sessionId,
+          createdAt: now,
+          entityId: enrollmentId,
+          entityType: 'AdminTotpEnrollment',
+          id: randomUUID(),
+          reasonCode: 'SECURITY_RESPONSE',
+          requestId: execution.requestId,
+          subjectAdminUserId: resolved.user.id,
+        });
+        return {
+          rejected: false as const,
+          value: { codes, session: this.sessions.delivery(prepared) },
+        };
+      },
+      () => failureContext,
+    );
     if (result.rejected) throw new AdminC1HttpError(400, 'OTP_INVALID', { auditRecorded: true });
     return result.value;
   }
@@ -1216,21 +1263,32 @@ export class AdminAuthService {
 
   private async runTransaction<T>(
     callback: (transaction: AdminAuthTransactionRepository) => Promise<T>,
+    failureContext?: () => AdminFailureAuditContext | undefined,
   ): Promise<T> {
     try {
       return await this.repository.transaction(callback);
     } catch (error: unknown) {
-      if (error instanceof AdminC1HttpError) throw error;
       if (error instanceof AdminWriterCommitUnknownError) {
         throw new AdminC1HttpError(503, 'SERVICE_UNAVAILABLE', { auditRecorded: true });
       }
-      if (
-        error instanceof AdminAuthCryptoError ||
-        error instanceof AdminKeyProviderUnavailableError
-      ) {
-        throw new AdminC1HttpError(503, 'SERVICE_UNAVAILABLE');
-      }
-      throw new AdminC1HttpError(503, 'SERVICE_UNAVAILABLE');
+      const normalized =
+        error instanceof AdminC1HttpError
+          ? error
+          : error instanceof AdminAuthCryptoError ||
+              error instanceof AdminKeyProviderUnavailableError
+            ? new AdminC1HttpError(503, 'SERVICE_UNAVAILABLE')
+            : new AdminC1HttpError(503, 'SERVICE_UNAVAILABLE');
+      const context = failureContext?.();
+      if (context === undefined || normalized.auditContext !== undefined) throw normalized;
+      throw new AdminC1HttpError(normalized.status, normalized.code, {
+        ...(normalized.auditAction === undefined ? {} : { auditAction: normalized.auditAction }),
+        auditContext: context,
+        auditRecorded: normalized.auditRecorded,
+        details: normalized.details,
+        ...(normalized.retryAfterSeconds === undefined
+          ? {}
+          : { retryAfterSeconds: normalized.retryAfterSeconds }),
+      });
     }
   }
 }

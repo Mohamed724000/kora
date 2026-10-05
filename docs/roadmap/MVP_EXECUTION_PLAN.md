@@ -29,7 +29,7 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 | Slice 1 / S1.2-02   | Baseline PostgreSQL et contraintes SQL        | Closed and merged — PR #43                                                     |
 | Slice 1 / S1.2-03A  | Frontière PostgreSQL runtime en lecture seule | Closed and merged — PR #45                                                     |
 | Slice 1 / S1.2-03B  | Admin Security Contract Gate, sans runtime    | Closed and merged — PR #48, merge `c97992ca2c82bc4f22f9222ea98ed53714fede4c`   |
-| Slice 1 / S1.2-03C1 | Auth admin, TOTP et sessions runtime          | R3 published; terminal HIGH BLOCK; R4 local prepublication snapshot 2026-10-04 |
+| Slice 1 / S1.2-03C1 | Auth admin, TOTP et sessions runtime          | R4 published; terminal BLOCK on two findings; R5 local snapshot 2026-10-05     |
 | Slice 1 / S1.2-03C2 | Recovery, audit, invitations et RBAC runtime  | Not started — separate authorization required                                  |
 | Slice 1 / S1.2-03C3 | Interface d'authentification Admin            | Not started — separate authorization required                                  |
 | Slice 1 / S1.2-03D  | Artist API                                    | Not started                                                                    |
@@ -149,9 +149,9 @@ démarrait ni Slice 1 ni aucune exigence produit.
 ## Slice 1 — Audio purchase pilot
 
 Statut : **In progress — S1.2-02 closed — S1.2-03A closed and merged —
-S1.2-03B closed and merged — S1.2-03C1-R3 published in Draft PR #50 with four
-green workflows, then CTO terminal review BLOCK on a HIGH finding — R4 local
-prepublication snapshot validated on 2026-10-04 — production key provider not
+S1.2-03B closed and merged — S1.2-03C1-R4 published in Draft PR #50 with four
+green workflows, then CTO terminal review BLOCK on two findings — R5 local
+prepublication snapshot validated on 2026-10-05 — production key provider not
 qualified — C2/C3 not started**
 
 R3 est publié au head `b0792934aa2f9d6f6d481517f384825874d72402`, parent R2
@@ -177,6 +177,23 @@ instantané, l'état Git/GitHub fait foi. La clôture séparée de l'incident
 matériel 03A, à sémantique préservée et de cause **NON CONCLUSIVE**, ne modifie
 ni la roadmap ni l'ordre de C2/C3. Aucune capacité C2 ni interface C3 n'est
 autorisée par ce statut.
+
+R4 est publié au head `cdc020caa8b06d74af816dc072e778e25e020699`; ses quatre
+workflows `37242762675`, `37242762612`, `37242762666` et `37242762665`
+réussissent en tentative 1. La revue terminale suivante maintient **BLOCK** sur
+deux findings de routage d'audit : perte de contexte recovery après preuve sur
+les trois opérations enrollment, et sink erroné de la liste des sessions avant
+ou après la liaison user/session/JTI complète.
+
+R5 ferme localement ces deux findings. Le wrapper final passe 34/34 tests réels
+sur les douze opérations avec PostgreSQL A/B et Redis. Les contrôles API passent
+avec 90 tests réussis et 33 conditionnels `skipped`, puis build; OpenAPI reste
+à 60/67/137 et les audits npm frais restent à zéro vulnérabilité. R5 ne change
+ni roadmap, modèle, migration, dépendance, workflow, contrat ni critères
+d'acceptation. Il reste non indexé, non commité et non publié; la PR #50 reste
+Draft. La politique open source est différée et non installée, le fournisseur
+de clés de production **NON QUALIFIÉ**, la recommandation JTI séparée, la
+pagination **NON CONCLUSIVE**, et C2/C3 `Not started`.
 
 Parcours cible :
 

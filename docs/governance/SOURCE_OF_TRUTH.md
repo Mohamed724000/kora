@@ -1,13 +1,13 @@
 # KORA+ Final — Source de vérité
 
 Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 ET S1.2-03A CLÔTURÉS ET
-FUSIONNÉS — S1.2-03B-R4 FUSIONNÉ VIA PR #48 — S1.2-03C1-R3 PUBLIÉ DANS LA
-DRAFT PR #50, QUATRE WORKFLOWS VERTS, PUIS REVUE CTO TERMINALE BLOCK SUR UN
-FINDING HIGH — R4 VALIDÉ DANS L'INSTANTANÉ LOCAL PRÉPUBLICATION DU 2026-10-04
+FUSIONNÉS — S1.2-03B-R4 FUSIONNÉ VIA PR #48 — S1.2-03C1-R4 PUBLIÉ DANS LA
+DRAFT PR #50, QUATRE WORKFLOWS VERTS, PUIS REVUE CTO TERMINALE BLOCK SUR DEUX
+FINDINGS — R5 VALIDÉ DANS L'INSTANTANÉ LOCAL PRÉPUBLICATION DU 2026-10-05
 — FOURNISSEUR DE CLÉS DE PRODUCTION NON QUALIFIÉ — C2/C3 NOT STARTED**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-10-04
+Dernière réconciliation documentaire : 2026-10-05
 
 ## Hiérarchie normative
 
@@ -131,6 +131,41 @@ clôture n'est pas une preuve fonctionnelle R4 et ses artefacts restent hors C1.
 Le fournisseur KMS/JWT de production reste non qualifié ; C2 et C3 restent
 `Not started`. L'architecture courante est décrite dans
 [SLICE_1_2_03C1_ADMIN_AUTH_SESSION_RUNTIME.md](../architecture/SLICE_1_2_03C1_ADMIN_AUTH_SESSION_RUNTIME.md).
+
+R4 est ensuite publié au commit
+`cdc020caa8b06d74af816dc072e778e25e020699`, parent R3
+`b0792934aa2f9d6f6d481517f384825874d72402`, arbre
+`86dc270dd29e22cb75b4b11c9c7d7574457ba62a`. La PR #50 reste `OPEN`, Draft et
+non fusionnée, avec cinq commits, 78 fichiers et `+18069/-645`; son corps
+inchangé de 17 976 octets porte le SHA-256
+`e9214bc3a8f00ddbca895263df8ebcedc4c584841e9449b59b79e5befe95e647`.
+Infrastructure `37242762675`, Launcher Windows `37242762612`, Security
+`37242762666` et Quality Linux `37242762665` sont tous
+`pull_request/completed/success`, tentative 1, sur ce head exact.
+
+La revue terminale R4 maintient **BLOCK** sur deux findings. Premièrement, les
+trois opérations d'enrollment sous contexte recovery perdaient encore
+l'attribution `ADMIN_RECOVERY` sur certaines pannes génériques après preuve
+serveur. Deuxièmement, `listAdminSessions` confondait certaines liaisons JTI
+rejetées avec une preuve complète et pouvait attribuer un sink d'audit après
+une panne du touch, alors que le contrat impose `AdminSecurityEvent` avant
+preuve et `NONE` après liaison user/session/JTI complète.
+
+L'instantané local R5 du 2026-10-05 ferme ces deux findings sans étendre C1.
+Le contexte recovery est minimal, local à l'invocation et activé uniquement
+après `resolveContext` réussi, ou après `activeContext` réussi pour la
+confirmation. La liste applique une politique interne non commandable par le
+client : avant preuve complète, événement de sécurité; après preuve, les
+pannes du touch ou de lecture inhibent les deux sinks. Le COMMIT inconnu reste
+prioritaire, neutre et sans second sink. Le wrapper final passe 34/34 tests
+réels avec PostgreSQL A/B et Redis; l'API passe 17 suites, 90 tests réussis et
+33 conditionnels `skipped`, ainsi que format, lint, typecheck et build.
+OpenAPI reste à 60/67/137, les audits npm complet et production restent à zéro
+vulnérabilité et le scanner officiel passe sur 384 fichiers avec historique.
+R5 est local, non indexé, non commité et non publié; aucun succès CI R5 futur
+n'est affirmé. La politique open source demeure différée et non installée, le
+fournisseur de clés de production **NON QUALIFIÉ**, la recommandation JTI
+séparée, la pagination **NON CONCLUSIVE**, et C2/C3 `Not started`.
 
 Le complément Infrastructure du 2026-10-03 a rendu les scripts génériques
 isolables sans modifier leurs valeurs locales par défaut, puis a exécuté

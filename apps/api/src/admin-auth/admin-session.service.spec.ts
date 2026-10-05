@@ -162,6 +162,107 @@ describe('AdminSessionService', () => {
     expect(repository.transaction).not.toHaveBeenCalled();
   });
 
+  it('routes a signed list token with a mismatched JTI to the pre-proof security sink', async () => {
+    const keys = new TestEphemeralAdminKeyProvider();
+    const crypto = new AdminAuthCrypto(keys);
+    const nowSeconds = 1_800_000_000;
+    const now = new Date((nowSeconds + 1) * 1000);
+    const token = await crypto.issueAccessToken(
+      {
+        adminUserId: principal.adminUserId,
+        authorizationVersion: principal.authorizationVersion,
+        role: principal.role,
+        sessionId: principal.sessionId,
+      },
+      nowSeconds,
+    );
+    const user = {
+      authorizationVersion: principal.authorizationVersion,
+      createdAt: now,
+      email: 'admin@example.test',
+      id: principal.adminUserId,
+      lastAcceptedTotpCounter: null,
+      passwordHash: 'not-used',
+      role: principal.role,
+      status: 'ACTIVE' as const,
+      totpEnabledAt: now,
+      totpSecretEncrypted: 'not-used',
+    };
+    const session = {
+      absoluteExpiresAt: new Date(now.getTime() + 60_000),
+      accessTokenJti: 'different-jti',
+      adminUserId: principal.adminUserId,
+      authorizationVersion: principal.authorizationVersion,
+      createdAt: now,
+      expiresAt: new Date(now.getTime() + 60_000),
+      id: principal.sessionId,
+      lastActivityAt: now,
+      lastTwoFactorAt: now,
+      refreshTokenHash: 'not-used',
+      refreshTokenVersion: 1,
+      revokedAt: null,
+      stepUpExpiresAt: null,
+      stepUpPurpose: null,
+      stepUpVerifiedAt: null,
+      tokenFamilyId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      updatedAt: now,
+    };
+    const repository = {
+      transaction: jest.fn(
+        (callback: (transaction: Record<string, jest.Mock>) => unknown): unknown =>
+          callback({
+            lockAdminUser: jest.fn().mockResolvedValue(user),
+            lockSession: jest.fn().mockResolvedValue(session),
+          }),
+      ),
+    } as unknown as AdminAuthRepository;
+    const service = new AdminSessionService(
+      repository,
+      crypto,
+      keys,
+      {} as AdminRateLimitService,
+      new AdminRequestPolicy({ keyProvider: keys, origin: 'https://admin.example.test' }),
+    );
+
+    await expect(
+      (
+        service as unknown as {
+          authenticateForSessionList(authorization: string, at: Date): Promise<typeof principal>;
+        }
+      ).authenticateForSessionList(`Bearer ${token}`, now),
+    ).rejects.toMatchObject({
+      auditAction: 'ADMIN_SESSION_AUTHENTICATION_REJECTED',
+      auditContext: undefined,
+      auditRecorded: false,
+      code: 'AUTH_REQUIRED',
+      status: 401,
+    });
+
+    const normalizedBeforeProof = new AdminC1HttpError(503, 'SERVICE_UNAVAILABLE', {
+      auditRecorded: true,
+      details: { phase: 'BEFORE_BINDING' },
+    });
+    const preProofService = new AdminSessionService(
+      {
+        transaction: jest.fn().mockRejectedValue(normalizedBeforeProof),
+      } as unknown as AdminAuthRepository,
+      crypto,
+      keys,
+      {} as AdminRateLimitService,
+      new AdminRequestPolicy({ keyProvider: keys, origin: 'https://admin.example.test' }),
+    );
+    await expect(
+      preProofService.authenticateForSessionList(`Bearer ${token}`, now),
+    ).rejects.toMatchObject({
+      auditAction: 'ADMIN_SESSION_AUTHENTICATION_REJECTED',
+      auditContext: undefined,
+      auditRecorded: false,
+      code: 'SERVICE_UNAVAILABLE',
+      details: { phase: 'BEFORE_BINDING' },
+      status: 503,
+    });
+  });
+
   it('enriches a normalized error after proven authentication and preserves its metadata', async () => {
     const source = new AdminC1HttpError(429, 'RATE_LIMITED', {
       auditAction: 'SOURCE_ACTION',

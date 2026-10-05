@@ -261,6 +261,65 @@ export class AdminSessionService {
     });
   }
 
+  async authenticateForSessionList(
+    authorization: string | undefined,
+    now = new Date(),
+  ): Promise<AdminPrincipal> {
+    const token = bearerToken(authorization);
+    let claims: VerifiedAdminAccessToken;
+    try {
+      await this.keyProvider.assertAvailable();
+      claims = await this.crypto.verifyAccessToken(token, Math.floor(now.getTime() / 1000));
+    } catch (error: unknown) {
+      if (error instanceof AdminKeyProviderUnavailableError) {
+        throw new AdminC1HttpError(503, 'SERVICE_UNAVAILABLE');
+      }
+      throw new AdminC1HttpError(401, 'AUTH_REQUIRED');
+    }
+
+    let bindingProven = false;
+    try {
+      return await this.repository.transaction(async (transaction) => {
+        const user = await transaction.lockAdminUser(claims.adminUserId);
+        const session = await transaction.lockSession(claims.sessionId);
+        this.assertActiveBinding(user, session, claims, now);
+        bindingProven = true;
+        const absolute = session!.absoluteExpiresAt!;
+        await transaction.touchSession(
+          session!.id,
+          now,
+          minimumDate(new Date(now.getTime() + IDLE_MILLISECONDS), absolute),
+        );
+        return {
+          adminUserId: user!.id,
+          authorizationVersion: user!.authorizationVersion,
+          role: user!.role,
+          sessionId: session!.id,
+        };
+      });
+    } catch (error: unknown) {
+      if (error instanceof AdminWriterCommitUnknownError) {
+        throw new AdminC1HttpError(503, 'SERVICE_UNAVAILABLE', { auditRecorded: true });
+      }
+      const normalized =
+        error instanceof AdminC1HttpError
+          ? error
+          : new AdminC1HttpError(503, 'SERVICE_UNAVAILABLE');
+      throw new AdminC1HttpError(normalized.status, normalized.code, {
+        ...(bindingProven
+          ? {}
+          : {
+              auditAction: normalized.auditAction ?? 'ADMIN_SESSION_AUTHENTICATION_REJECTED',
+            }),
+        auditRecorded: bindingProven,
+        details: normalized.details,
+        ...(normalized.retryAfterSeconds === undefined
+          ? {}
+          : { retryAfterSeconds: normalized.retryAfterSeconds }),
+      });
+    }
+  }
+
   async lockPrincipal(
     transaction: AdminAuthTransactionRepository,
     principal: AdminPrincipal,

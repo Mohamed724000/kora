@@ -650,3 +650,89 @@ reste différée et non installée ; le fournisseur de clés de production reste
 liaison JTI reste une recommandation séparée, la pagination reste **NON
 CONCLUSIVE**, iOS et navigateur C3 restent **NON EXÉCUTÉS**, et C2/C3 restent
 `Not started`.
+
+## Publication R4, revue CTO terminale et instantané local prépublication R5 — 2026-10-05
+
+R4 est publié au commit
+`cdc020caa8b06d74af816dc072e778e25e020699`, parent R3
+`b0792934aa2f9d6f481517f384825874d72402`, arbre
+`86dc270dd29e22cb75b4b11c9c7d7574457ba62a`, message
+`fix(security): preserve proven audit context on session failures`. La PR #50
+reste `OPEN`, Draft et non fusionnée, avec cinq commits, 78 fichiers et
+`+18069/-645`; son corps inchangé de 17 976 octets porte le SHA-256
+`e9214bc3a8f00ddbca895263df8ebcedc4c584841e9449b59b79e5befe95e647`.
+Infrastructure `37242762675`, Launcher Windows `37242762612`, Security
+`37242762666` et Quality Linux `37242762665` sont tous
+`pull_request/completed/success`, tentative 1, sur ce head exact.
+
+La revue CTO terminale suivante conclut **BLOCK** sur deux findings. Les
+chemins `createEnrollment`, `deliverQr` et `confirmEnrollment` perdaient le
+contexte `ADMIN_RECOVERY` sur certaines pannes génériques après preuve serveur.
+Le chemin `listAdminSessions` pouvait traiter une liaison JTI rejetée comme une
+preuve complète et router une panne du touch vers `AuditLog`, alors que le
+contrat exige `AdminSecurityEvent` avant preuve et `NONE` après liaison
+user/session/JTI complète.
+
+### Correctif causal R5
+
+Chaque opération recovery conserve un `AdminFailureAuditContext` minimal dans
+la portée de l'invocation. Il n'est défini qu'après `resolveContext` réussi
+pour création/QR, ou après `activeContext` réussi et résolution du contexte
+pour confirmation. Il ne capture ni cookie, ni code, ni objet utilisateur
+complet. La normalisation préserve statut, code, message, détails,
+retry-after, `auditAction`, `auditRecorded` et tout contexte explicite.
+`AdminWriterCommitUnknownError` reste traité en premier comme 503 neutre déjà
+inhibé, sans nouveau rejet.
+
+La liste appelle une authentification interne dédiée, non commandable par le
+client. Avant liaison complète, les échecs restent des événements de sécurité,
+y compris le JWT signé à JTI incompatible. Après validation de l'utilisateur,
+de la session et du JTI, une panne du véritable touch ou de la lecture suit
+`NONE`; l'inhibition du filtre n'est pas présentée comme un audit durable. Le
+touch, la fenêtre idle et le plafond absolu ne sont pas supprimés.
+
+### Preuves causales R5
+
+Les deux tests ajoutés avant le runtime échouent d'abord exactement sur R4 :
+contexte recovery absent et méthode/politique de liste absente. Après correctif,
+les deux suites unitaires ciblées passent 15/15.
+
+| Scénario réel                                      | Phase effectivement atteinte                                      | Résultat observé                                                                 |
+| -------------------------------------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| création recovery                                  | lecture idempotence après `resolveContext`                        | 1 rejet `AuditLog`, 0 événement, aucun enrollment/idempotency durable            |
+| livraison QR recovery                              | génération PNG après contexte et enrollment prouvés               | 1 rejet `AuditLog`, 0 événement, aucun PNG, marqueur/idempotency annulés          |
+| confirmation recovery                              | véritable UPDATE TOTP exécuté puis exception dans la transaction  | 1 rejet `AuditLog`, 0 événement, user/contexte/enrollment/session/codes annulés  |
+| PREAUTH et digest initial                          | respectivement après preuve PREAUTH et avant preuve recovery      | 0 `AuditLog` recovery, 1 événement de sécurité                                   |
+| sink de rejet recovery indisponible                | panne métier post-preuve puis échec du véritable INSERT AuditLog  | 503 neutre, 0 fallback, 0 mutation durable                                       |
+| liste, JTI incompatible / panne pré-preuve         | signature valide puis liaison rejetée / première lecture SQL      | 0 `AuditLog`, 1 événement                                                        |
+| liste, panne après UPDATE touch                    | UPDATE réel exécuté puis exception                                | timestamps annulés, 0 entrée dans les deux sinks                                 |
+| liste, lecture après authentification committée    | touch committé puis `listSessions` en échec                       | 0 sink; aucune affirmation de rollback du touch                                  |
+| création/QR/confirmation/touch, accusé COMMIT perdu | callback et COMMIT réels, exception typée après retour transaction | succès durable possible, 503 neutre, aucun rejet contradictoire ni second sink   |
+
+Le wrapper final termine au code 0 avec PostgreSQL A/B, 39 modèles, 40 tables,
+trois migrations, quatre provisionnements réussis, cinq refus et quatre refus
+de membership entrante. La suite réelle passe 34/34 tests sur les douze
+opérations avec HTTP et Redis réels. Une première tentative 32/34 reste
+non concluante : un fixture R5 tentait de reculer un timestamp protégé par la
+contrainte monotone et un contrôle historique ultérieur a subi un timeout de
+lecture; le nettoyage ciblé a supprimé toutes les ressources. Deux exécutions
+suivantes sur isolations neuves passent 34/34, dont la finale après ajout des
+assertions PREAUTH/pré-preuve.
+
+Format ciblé, lint, typecheck et build API passent. Les suites API passent
+17/17, avec 90 tests réussis et 33 conditionnels `skipped`; ces parcours réels
+sont exécutés par le wrapper. OpenAPI passe à 60 chemins, 67 opérations et 137
+schémas, sans diff des surfaces protégées. Les audits npm frais complet et
+production rapportent chacun zéro vulnérabilité. Le scanner officiel passe sur
+384 fichiers avec historique, 52 sources immuables et six scripts
+d'installation qualifiés.
+
+R5 modifie uniquement six fichiers TypeScript et ces six documents existants,
+sans ajout ni changement de mode. OpenAPI, contrat généré, ADR-025,
+repository/filter/writer, Prisma, migrations, provisioning, wrapper,
+workflows, manifestes et lockfile restent inchangés. R5 est local, non indexé,
+non commité et non publié; aucun SHA, Run ID ou succès CI R5 futur n'est
+affirmé. La PR #50 reste Draft. La politique open source reste différée et non
+installée, le fournisseur de clés de production **NON QUALIFIÉ**, la
+recommandation JTI séparée, la pagination **NON CONCLUSIVE**, et C2/C3
+`Not started`.

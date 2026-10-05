@@ -454,7 +454,9 @@ export class AdminAuthController {
 
   @Get('sessions')
   async list(@Headers() headers: HeadersMap): Promise<unknown> {
-    const principal = await this.sessions.authenticate(oneHeader(headers, 'authorization'));
+    const principal = await this.sessions.authenticateForSessionList(
+      oneHeader(headers, 'authorization'),
+    );
     return {
       data: await this.sessions.list(principal),
       meta: { hasMore: false, nextCursor: null },

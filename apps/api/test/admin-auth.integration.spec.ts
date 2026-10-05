@@ -7,6 +7,7 @@ import Redis from 'ioredis';
 import pg, { type QueryResultRow } from 'pg';
 import request from 'supertest';
 import { AdminAuthController } from '../src/admin-auth/admin-auth.controller';
+import { AdminAuthRepository } from '../src/admin-auth/admin-auth.repository';
 import { ADMIN_AUTH_CRYPTO, AdminAuthCrypto } from '../src/admin-auth/admin-auth.crypto';
 import {
   AdminKeyProviderUnavailableError,
@@ -307,6 +308,14 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     r4CommitActor: deterministicUuid(146),
     r4CommitTarget: deterministicUuid(147),
     r4CommitRefresh: deterministicUuid(148),
+    r5RecoveryCreate: deterministicUuid(149),
+    r5RecoveryQr: deterministicUuid(150),
+    r5RecoveryConfirm: deterministicUuid(151),
+    r5RecoverySink: deterministicUuid(152),
+    r5CommitCreate: deterministicUuid(153),
+    r5CommitQr: deterministicUuid(154),
+    r5CommitConfirm: deterministicUuid(155),
+    r5List: deterministicUuid(156),
   } as const;
   const seeds = new Map<string, Uint8Array>();
   const keys = new TestEphemeralAdminKeyProvider();
@@ -545,6 +554,78 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     return extractBrowserCookies(response.headers);
   }
 
+  async function beginRecoveryJourney(
+    adminUserId: string,
+    email: string,
+  ): Promise<Readonly<{ cookies: BrowserCookies; recoveryContextId: string }>> {
+    const material = recoveryMaterials.get(adminUserId);
+    if (material === undefined) throw new Error('Missing R5 recovery fixture material.');
+    const loginCookies = await loginBrowser(application.getHttpServer(), email);
+    const recovery = await request(application.getHttpServer())
+      .post('/api/v1/admin/auth/recovery-codes/verify')
+      .set('Content-Type', 'application/json')
+      .set('Cookie', loginCookies.cookie)
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', loginCookies.csrf)
+      .send(material);
+    expect(recovery.status).toBe(200);
+    return {
+      cookies: extractBrowserCookies(recovery.headers),
+      recoveryContextId: String(recovery.body.data.recoveryContextId),
+    };
+  }
+
+  async function expectR5RecoveryFailureAudit(
+    response: request.Response,
+    expected: Readonly<{
+      action: string;
+      actorAdminUserId: string;
+      adminRecoveryContextId: string;
+      entityId: string;
+    }>,
+  ): Promise<void> {
+    expect(response.status).toBe(503);
+    expect(response.body.error).toEqual({
+      code: 'SERVICE_UNAVAILABLE',
+      details: {},
+      message: 'Service temporairement indisponible.',
+      retryable: false,
+    });
+    expect(response.headers['set-cookie']).toBeUndefined();
+    expect(JSON.stringify(response.body)).not.toMatch(
+      /accessToken|refreshToken|recoveryCodes|selector|verifier/iu,
+    );
+    const sinks = await owner.query<{
+      action: string;
+      actorAdminUserId: string;
+      adminRecoveryContextId: string;
+      auditCount: string;
+      entityId: string;
+      entityType: string;
+      reasonCode: string;
+      securityCount: string;
+      subjectAdminUserId: string;
+    }>(
+      `SELECT min("action") AS "action", min("adminUserId") AS "actorAdminUserId",
+              min("adminRecoveryContextId") AS "adminRecoveryContextId",
+              count(*)::text AS "auditCount", min("entityId") AS "entityId",
+              min("entityType") AS "entityType", min("reasonCode"::text) AS "reasonCode",
+              min("subjectAdminUserId") AS "subjectAdminUserId",
+              (SELECT count(*)::text FROM "AdminSecurityEvent" WHERE "requestId" = $1)
+                AS "securityCount"
+         FROM "AuditLog" WHERE "requestId" = $1`,
+      [String(response.body.requestId)],
+    );
+    expect(sinks.rows[0]).toEqual({
+      ...expected,
+      auditCount: '1',
+      entityType: 'AdminTotpEnrollment',
+      reasonCode: 'ACCOUNT_RECOVERY',
+      securityCount: '0',
+      subjectAdminUserId: expected.actorAdminUserId,
+    });
+  }
+
   function cookieValue(cookies: BrowserCookies, name: string): string {
     const pair = cookies.cookie.split('; ').find((candidate) => candidate.startsWith(`${name}=`));
     if (pair === undefined) throw new Error(`Missing fixture cookie ${name}.`);
@@ -736,6 +817,18 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     ] as const) {
       await insertUser(id, `r4-${label}@example.invalid`, passwordHash, 'ACTIVE', true);
     }
+    for (const [id, label] of [
+      [ids.r5RecoveryCreate, 'recovery-create'],
+      [ids.r5RecoveryQr, 'recovery-qr'],
+      [ids.r5RecoveryConfirm, 'recovery-confirm'],
+      [ids.r5RecoverySink, 'recovery-sink'],
+      [ids.r5CommitCreate, 'commit-create'],
+      [ids.r5CommitQr, 'commit-qr'],
+      [ids.r5CommitConfirm, 'commit-confirm'],
+      [ids.r5List, 'list'],
+    ] as const) {
+      await insertUser(id, `r5-${label}@example.invalid`, passwordHash, 'ACTIVE', true);
+    }
     for (let index = 1; index <= 3; index += 1) await insertSession(ids.totp, index);
     for (let index = 20; index <= 22; index += 1) await insertSession(ids.concurrent, index);
     const rotateToken = await insertSession(ids.rotate, 10);
@@ -770,11 +863,23 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     await insertR4Session(ids.r4CommitActor, 61);
     await insertR4Session(ids.r4CommitTarget, 62);
     await insertR4Session(ids.r4CommitRefresh, 63, true);
+    accessTokens.set(ids.r5List, await insertSession(ids.r5List, 64));
     for (const actor of [ids.r4EarlyActor, ids.r4LateActor, ids.r4SinkActor, ids.r4CommitActor]) {
       await enableR4RevocationStepUp(actor);
     }
     recoveryMaterials.set(ids.recovery, await insertRecoveryCode(ids.recovery, 1));
     recoveryMaterials.set(ids.binding, await insertRecoveryCode(ids.binding, 2));
+    for (const [index, adminUserId] of [
+      ids.r5RecoveryCreate,
+      ids.r5RecoveryQr,
+      ids.r5RecoveryConfirm,
+      ids.r5RecoverySink,
+      ids.r5CommitCreate,
+      ids.r5CommitQr,
+      ids.r5CommitConfirm,
+    ].entries()) {
+      recoveryMaterials.set(adminUserId, await insertRecoveryCode(adminUserId, index + 3));
+    }
     process.env.S1203C1_ROTATE_TOKEN = rotateToken;
     process.env.S1203C1_STEP_UP_TOKEN = stepUpToken;
     process.env.S1203C1_TARGET_TOKEN = targetToken;
@@ -2227,6 +2332,14 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
       idempotencyCount: '0',
       sessionCount: '0',
     });
+    const preProofSinks = await owner.query<{ auditCount: string; securityCount: string }>(
+      `SELECT
+         (SELECT count(*)::text FROM "AuditLog" WHERE "requestId" = $1) AS "auditCount",
+         (SELECT count(*)::text FROM "AdminSecurityEvent" WHERE "requestId" = $1)
+           AS "securityCount"`,
+      [String(failedConfirmation.body.requestId)],
+    );
+    expect(preProofSinks.rows[0]).toEqual({ auditCount: '0', securityCount: '1' });
   });
 
   it('rolls back TOTP state and audit atomically when RS256 signing fails', async () => {
@@ -2346,6 +2459,14 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
       idempotencyCount: '0',
       qrDeliveredAt: null,
     });
+    const preauthSinks = await owner.query<{ auditCount: string; securityCount: string }>(
+      `SELECT
+         (SELECT count(*)::text FROM "AuditLog" WHERE "requestId" = $1) AS "auditCount",
+         (SELECT count(*)::text FROM "AdminSecurityEvent" WHERE "requestId" = $1)
+           AS "securityCount"`,
+      [String(failed.body.requestId)],
+    );
+    expect(preauthSinks.rows[0]).toEqual({ auditCount: '0', securityCount: '1' });
 
     const retried = await request(server)
       .post(`/api/v1/admin/auth/totp/enrollments/${enrollmentId}/qr`)
@@ -2376,6 +2497,732 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
       retryable: false,
     });
     expect(JSON.stringify(response.body)).not.toMatch(/adminUserId|sessionId/iu);
+  });
+
+  it('preserves proven recovery audit context across create, QR and confirmation failures', async () => {
+    const writer = application.get(AdminWriterService);
+
+    const createJourney = await beginRecoveryJourney(
+      ids.r5RecoveryCreate,
+      'r5-recovery-create@example.invalid',
+    );
+    const originalCreateTransaction = writer.transaction.bind(writer);
+    let createPhaseReached = false;
+    const createSpy = jest
+      .spyOn(writer, 'transaction')
+      .mockImplementation(
+        async <T>(callback: (transaction: AdminWriterTransaction) => Promise<T>): Promise<T> =>
+          originalCreateTransaction(async (transaction) =>
+            callback({
+              async query<Row extends QueryResultRow>(text: string, values: readonly unknown[]) {
+                if (
+                  !createPhaseReached &&
+                  /FROM "AdminIdempotencyRecord"/u.test(text) &&
+                  values[1] === 'createAdminTotpEnrollment'
+                ) {
+                  createPhaseReached = true;
+                  throw new Error('controlled R5 recovery create post-proof failure');
+                }
+                return transaction.query<Row>(text, values);
+              },
+            }),
+          ),
+      );
+    let failedCreate: request.Response;
+    try {
+      failedCreate = await request(application.getHttpServer())
+        .post('/api/v1/admin/auth/totp/enrollments')
+        .set('Cookie', createJourney.cookies.cookie)
+        .set('Idempotency-Key', 'r5-recovery-create-0001')
+        .set('Origin', origin)
+        .set('X-Kora-Csrf', createJourney.cookies.csrf);
+    } finally {
+      createSpy.mockRestore();
+    }
+    expect(createPhaseReached).toBe(true);
+    await expectR5RecoveryFailureAudit(failedCreate, {
+      action: 'ADMIN_TOTP_ENROLLMENT_CREATE_REJECTED',
+      actorAdminUserId: ids.r5RecoveryCreate,
+      adminRecoveryContextId: createJourney.recoveryContextId,
+      entityId: createJourney.recoveryContextId,
+    });
+    const createRollback = await owner.query<{ enrollmentCount: string; idempotencyCount: string }>(
+      `SELECT
+         (SELECT count(*)::text FROM "AdminTotpEnrollment" WHERE "adminUserId" = $1)
+           AS "enrollmentCount",
+         (SELECT count(*)::text FROM "AdminIdempotencyRecord" WHERE "adminUserId" = $1)
+           AS "idempotencyCount"`,
+      [ids.r5RecoveryCreate],
+    );
+    expect(createRollback.rows[0]).toEqual({ enrollmentCount: '0', idempotencyCount: '0' });
+    const createRetry = await request(application.getHttpServer())
+      .post('/api/v1/admin/auth/totp/enrollments')
+      .set('Cookie', createJourney.cookies.cookie)
+      .set('Idempotency-Key', 'r5-recovery-create-0001')
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', createJourney.cookies.csrf);
+    expect(createRetry.status).toBe(201);
+
+    const qrJourney = await beginRecoveryJourney(
+      ids.r5RecoveryQr,
+      'r5-recovery-qr@example.invalid',
+    );
+    const qrEnrollment = await request(application.getHttpServer())
+      .post('/api/v1/admin/auth/totp/enrollments')
+      .set('Cookie', qrJourney.cookies.cookie)
+      .set('Idempotency-Key', 'r5-recovery-qr-create-0001')
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', qrJourney.cookies.csrf);
+    expect(qrEnrollment.status).toBe(201);
+    const qrEnrollmentId = String(qrEnrollment.body.data.enrollmentId);
+    const applicationCrypto = application.get<AdminAuthCrypto>(ADMIN_AUTH_CRYPTO);
+    const qrFailure = jest
+      .spyOn(applicationCrypto, 'createTotpQrPng')
+      .mockRejectedValueOnce(new Error('controlled R5 recovery QR post-proof failure'));
+    let failedQr: request.Response;
+    try {
+      failedQr = await request(application.getHttpServer())
+        .post(`/api/v1/admin/auth/totp/enrollments/${qrEnrollmentId}/qr`)
+        .set('Cookie', qrJourney.cookies.cookie)
+        .set('Idempotency-Key', 'r5-recovery-qr-delivery-0001')
+        .set('Origin', origin)
+        .set('X-Kora-Csrf', qrJourney.cookies.csrf);
+    } finally {
+      qrFailure.mockRestore();
+    }
+    await expectR5RecoveryFailureAudit(failedQr, {
+      action: 'ADMIN_TOTP_QR_DELIVERY_REJECTED',
+      actorAdminUserId: ids.r5RecoveryQr,
+      adminRecoveryContextId: qrJourney.recoveryContextId,
+      entityId: qrEnrollmentId,
+    });
+    expect(failedQr.headers['content-type']).not.toMatch(/^image\/png/u);
+    const qrRollback = await owner.query<{ idempotencyCount: string; qrDeliveredAt: Date | null }>(
+      `SELECT enrollment."qrDeliveredAt",
+              (SELECT count(*)::text FROM "AdminIdempotencyRecord"
+                WHERE "resourceId" = enrollment."id"
+                  AND "operation" = 'deliverAdminTotpEnrollmentQr') AS "idempotencyCount"
+         FROM "AdminTotpEnrollment" AS enrollment WHERE enrollment."id" = $1`,
+      [qrEnrollmentId],
+    );
+    expect(qrRollback.rows[0]).toEqual({ idempotencyCount: '0', qrDeliveredAt: null });
+    const qrRetry = await request(application.getHttpServer())
+      .post(`/api/v1/admin/auth/totp/enrollments/${qrEnrollmentId}/qr`)
+      .set('Cookie', qrJourney.cookies.cookie)
+      .set('Idempotency-Key', 'r5-recovery-qr-delivery-0001')
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', qrJourney.cookies.csrf);
+    expect(qrRetry.status).toBe(200);
+    expect(qrRetry.headers['content-type']).toMatch(/^image\/png/u);
+    const qrReplay = await request(application.getHttpServer())
+      .post(`/api/v1/admin/auth/totp/enrollments/${qrEnrollmentId}/qr`)
+      .set('Cookie', qrJourney.cookies.cookie)
+      .set('Idempotency-Key', 'r5-recovery-qr-delivery-0001')
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', qrJourney.cookies.csrf);
+    expect(qrReplay.status).toBe(409);
+    expect(qrReplay.headers['content-type']).not.toMatch(/^image\/png/u);
+
+    const confirmJourney = await beginRecoveryJourney(
+      ids.r5RecoveryConfirm,
+      'r5-recovery-confirm@example.invalid',
+    );
+    const confirmEnrollment = await request(application.getHttpServer())
+      .post('/api/v1/admin/auth/totp/enrollments')
+      .set('Cookie', confirmJourney.cookies.cookie)
+      .set('Idempotency-Key', 'r5-recovery-confirm-create-0001')
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', confirmJourney.cookies.csrf);
+    expect(confirmEnrollment.status).toBe(201);
+    const confirmEnrollmentId = String(confirmEnrollment.body.data.enrollmentId);
+    await request(application.getHttpServer())
+      .post(`/api/v1/admin/auth/totp/enrollments/${confirmEnrollmentId}/qr`)
+      .set('Cookie', confirmJourney.cookies.cookie)
+      .set('Idempotency-Key', 'r5-recovery-confirm-qr-0001')
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', confirmJourney.cookies.csrf)
+      .expect(200);
+    const storedSecret = await owner.query<{ secretEncrypted: string }>(
+      `SELECT "secretEncrypted" FROM "AdminTotpEnrollment" WHERE "id" = $1`,
+      [confirmEnrollmentId],
+    );
+    const decrypted = await crypto.decryptTotpSecret(
+      storedSecret.rows[0]!.secretEncrypted,
+      ids.r5RecoveryConfirm,
+    );
+    const confirmCode = crypto.generateTotpCode(
+      decrypted.secret,
+      BigInt(Math.floor(Date.now() / 30_000)),
+    );
+    decrypted.secret.fill(0);
+    const beforeConfirm = await owner.query<{
+      authorizationVersion: number;
+      batchCount: string;
+      confirmedAt: Date | null;
+      consumedAt: Date | null;
+      idempotencyCount: string;
+      lastAcceptedTotpCounter: string | null;
+      sessionCount: string;
+      status: string;
+    }>(
+      `SELECT user_record."status"::text AS "status",
+              user_record."authorizationVersion", user_record."lastAcceptedTotpCounter"::text,
+              context."consumedAt", enrollment."confirmedAt",
+              (SELECT count(*)::text FROM "AdminRecoveryCodeBatch" WHERE "adminUserId" = $1)
+                AS "batchCount",
+              (SELECT count(*)::text FROM "AdminSession" WHERE "adminUserId" = $1)
+                AS "sessionCount",
+              (SELECT count(*)::text FROM "AdminIdempotencyRecord"
+                WHERE "adminUserId" = $1 AND "operation" = 'confirmAdminTotpEnrollment')
+                AS "idempotencyCount"
+         FROM "AdminUser" AS user_record
+         JOIN "AdminRecoveryContext" AS context ON context."id" = $2
+         JOIN "AdminTotpEnrollment" AS enrollment ON enrollment."id" = $3
+        WHERE user_record."id" = $1`,
+      [ids.r5RecoveryConfirm, confirmJourney.recoveryContextId, confirmEnrollmentId],
+    );
+    const originalConfirmTransaction = writer.transaction.bind(writer);
+    let confirmMutationReached = false;
+    const confirmSpy = jest
+      .spyOn(writer, 'transaction')
+      .mockImplementation(
+        async <T>(callback: (transaction: AdminWriterTransaction) => Promise<T>): Promise<T> =>
+          originalConfirmTransaction(async (transaction) =>
+            callback({
+              async query<Row extends QueryResultRow>(text: string, values: readonly unknown[]) {
+                const result = await transaction.query<Row>(text, values);
+                if (
+                  !confirmMutationReached &&
+                  /UPDATE "AdminUser"[\s\S]*"totpSecretEncrypted"/u.test(text)
+                ) {
+                  confirmMutationReached = true;
+                  throw new Error('controlled R5 recovery confirmation post-mutation failure');
+                }
+                return result;
+              },
+            }),
+          ),
+      );
+    let failedConfirm: request.Response;
+    try {
+      failedConfirm = await request(application.getHttpServer())
+        .post(`/api/v1/admin/auth/totp/enrollments/${confirmEnrollmentId}/confirm`)
+        .set('Content-Type', 'application/json')
+        .set('Cookie', confirmJourney.cookies.cookie)
+        .set('Idempotency-Key', 'r5-recovery-confirm-finish-0001')
+        .set('Origin', origin)
+        .set('X-Kora-Csrf', confirmJourney.cookies.csrf)
+        .send({ code: confirmCode });
+    } finally {
+      confirmSpy.mockRestore();
+    }
+    expect(confirmMutationReached).toBe(true);
+    await expectR5RecoveryFailureAudit(failedConfirm, {
+      action: 'ADMIN_TOTP_ENROLLMENT_CONFIRM_REJECTED',
+      actorAdminUserId: ids.r5RecoveryConfirm,
+      adminRecoveryContextId: confirmJourney.recoveryContextId,
+      entityId: confirmEnrollmentId,
+    });
+    const afterConfirm = await owner.query<{
+      authorizationVersion: number;
+      batchCount: string;
+      confirmedAt: Date | null;
+      consumedAt: Date | null;
+      idempotencyCount: string;
+      lastAcceptedTotpCounter: string | null;
+      sessionCount: string;
+      status: string;
+    }>(
+      `SELECT user_record."status"::text AS "status",
+              user_record."authorizationVersion", user_record."lastAcceptedTotpCounter"::text,
+              context."consumedAt", enrollment."confirmedAt",
+              (SELECT count(*)::text FROM "AdminRecoveryCodeBatch" WHERE "adminUserId" = $1)
+                AS "batchCount",
+              (SELECT count(*)::text FROM "AdminSession" WHERE "adminUserId" = $1)
+                AS "sessionCount",
+              (SELECT count(*)::text FROM "AdminIdempotencyRecord"
+                WHERE "adminUserId" = $1 AND "operation" = 'confirmAdminTotpEnrollment')
+                AS "idempotencyCount"
+         FROM "AdminUser" AS user_record
+         JOIN "AdminRecoveryContext" AS context ON context."id" = $2
+         JOIN "AdminTotpEnrollment" AS enrollment ON enrollment."id" = $3
+        WHERE user_record."id" = $1`,
+      [ids.r5RecoveryConfirm, confirmJourney.recoveryContextId, confirmEnrollmentId],
+    );
+    expect(afterConfirm.rows).toEqual(beforeConfirm.rows);
+    const confirmRetry = await request(application.getHttpServer())
+      .post(`/api/v1/admin/auth/totp/enrollments/${confirmEnrollmentId}/confirm`)
+      .set('Content-Type', 'application/json')
+      .set('Cookie', confirmJourney.cookies.cookie)
+      .set('Idempotency-Key', 'r5-recovery-confirm-finish-0001')
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', confirmJourney.cookies.csrf)
+      .send({ code: confirmCode });
+    expect(confirmRetry.status).toBe(200);
+    expect(confirmRetry.body.data.recoveryCodes.codes).toHaveLength(10);
+  });
+
+  it('returns a neutral 503 without fallback when the recovery failure AuditLog sink is down', async () => {
+    const journey = await beginRecoveryJourney(
+      ids.r5RecoverySink,
+      'r5-recovery-sink@example.invalid',
+    );
+    const writer = application.get(AdminWriterService);
+    const originalTransaction = writer.transaction.bind(writer);
+    let businessFailureReached = false;
+    let failureSinkReached = false;
+    const transactionSpy = jest
+      .spyOn(writer, 'transaction')
+      .mockImplementation(
+        async <T>(callback: (transaction: AdminWriterTransaction) => Promise<T>): Promise<T> =>
+          originalTransaction(async (transaction) =>
+            callback({
+              async query<Row extends QueryResultRow>(text: string, values: readonly unknown[]) {
+                if (
+                  !businessFailureReached &&
+                  /FROM "AdminIdempotencyRecord"/u.test(text) &&
+                  values[1] === 'createAdminTotpEnrollment'
+                ) {
+                  businessFailureReached = true;
+                  throw new Error('controlled R5 recovery post-proof failure');
+                }
+                if (businessFailureReached && /INSERT INTO "AuditLog"/u.test(text)) {
+                  failureSinkReached = true;
+                  throw new Error('controlled R5 recovery failure sink outage');
+                }
+                return transaction.query<Row>(text, values);
+              },
+            }),
+          ),
+      );
+    let response: request.Response;
+    try {
+      response = await request(application.getHttpServer())
+        .post('/api/v1/admin/auth/totp/enrollments')
+        .set('Cookie', journey.cookies.cookie)
+        .set('Idempotency-Key', 'r5-recovery-sink-0001')
+        .set('Origin', origin)
+        .set('X-Kora-Csrf', journey.cookies.csrf);
+    } finally {
+      transactionSpy.mockRestore();
+    }
+    expect(businessFailureReached).toBe(true);
+    expect(failureSinkReached).toBe(true);
+    expect(response.status).toBe(503);
+    expect(response.body.error.code).toBe('SERVICE_UNAVAILABLE');
+    expect(response.headers['set-cookie']).toBeUndefined();
+    const state = await owner.query<{
+      auditCount: string;
+      enrollmentCount: string;
+      idempotencyCount: string;
+      securityCount: string;
+    }>(
+      `SELECT
+         (SELECT count(*)::text FROM "AuditLog" WHERE "requestId" = $1) AS "auditCount",
+         (SELECT count(*)::text FROM "AdminSecurityEvent" WHERE "requestId" = $1)
+           AS "securityCount",
+         (SELECT count(*)::text FROM "AdminTotpEnrollment" WHERE "adminUserId" = $2)
+           AS "enrollmentCount",
+         (SELECT count(*)::text FROM "AdminIdempotencyRecord" WHERE "adminUserId" = $2)
+           AS "idempotencyCount"`,
+      [String(response.body.requestId), ids.r5RecoverySink],
+    );
+    expect(state.rows[0]).toEqual({
+      auditCount: '0',
+      enrollmentCount: '0',
+      idempotencyCount: '0',
+      securityCount: '0',
+    });
+  });
+
+  it('enforces the list sink boundary before proof, after touch and after committed authentication', async () => {
+    const token = accessTokens.get(ids.r5List)!;
+    const fixtureSessionId = deterministicUuid(1_064);
+    const writer = application.get(AdminWriterService);
+
+    const mismatchedJtiToken = await crypto.issueAccessToken(
+      {
+        adminUserId: ids.r5List,
+        authorizationVersion: 1,
+        role: 'SUPER_ADMIN',
+        sessionId: fixtureSessionId,
+      },
+      Math.floor(Date.now() / 1000),
+    );
+    const jtiMismatch = await request(application.getHttpServer())
+      .get('/api/v1/admin/auth/sessions')
+      .set('Authorization', `Bearer ${mismatchedJtiToken}`);
+    expect(jtiMismatch.status).toBe(401);
+    expect(jtiMismatch.body.error.code).toBe('AUTH_REQUIRED');
+    const mismatchSinks = await owner.query<{
+      action: string;
+      auditCount: string;
+      securityCount: string;
+    }>(
+      `SELECT
+         (SELECT count(*)::text FROM "AuditLog" WHERE "requestId" = $1) AS "auditCount",
+         min("action") AS "action", count(*)::text AS "securityCount"
+         FROM "AdminSecurityEvent" WHERE "requestId" = $1`,
+      [String(jtiMismatch.body.requestId)],
+    );
+    expect(mismatchSinks.rows[0]).toEqual({
+      action: 'ADMIN_SESSION_AUTHENTICATION_REJECTED',
+      auditCount: '0',
+      securityCount: '1',
+    });
+
+    const originalPreProofTransaction = writer.transaction.bind(writer);
+    let preProofReached = false;
+    const preProofSpy = jest
+      .spyOn(writer, 'transaction')
+      .mockImplementation(
+        async <T>(callback: (transaction: AdminWriterTransaction) => Promise<T>): Promise<T> =>
+          originalPreProofTransaction(async (transaction) =>
+            callback({
+              async query<Row extends QueryResultRow>(text: string, values: readonly unknown[]) {
+                if (!preProofReached) {
+                  preProofReached = true;
+                  throw new Error('controlled R5 list pre-proof failure');
+                }
+                return transaction.query<Row>(text, values);
+              },
+            }),
+          ),
+      );
+    let preProofFailure: request.Response;
+    try {
+      preProofFailure = await request(application.getHttpServer())
+        .get('/api/v1/admin/auth/sessions')
+        .set('Authorization', `Bearer ${token}`);
+    } finally {
+      preProofSpy.mockRestore();
+    }
+    expect(preProofReached).toBe(true);
+    expect(preProofFailure.status).toBe(503);
+    const preProofSinks = await owner.query<{
+      action: string;
+      auditCount: string;
+      securityCount: string;
+    }>(
+      `SELECT
+         (SELECT count(*)::text FROM "AuditLog" WHERE "requestId" = $1) AS "auditCount",
+         min("action") AS "action", count(*)::text AS "securityCount"
+         FROM "AdminSecurityEvent" WHERE "requestId" = $1`,
+      [String(preProofFailure.body.requestId)],
+    );
+    expect(preProofSinks.rows[0]).toEqual({
+      action: 'ADMIN_SESSION_AUTHENTICATION_REJECTED',
+      auditCount: '0',
+      securityCount: '1',
+    });
+
+    const beforeTouchFailure = await owner.query<{ expiresAt: Date; lastActivityAt: Date }>(
+      `SELECT "lastActivityAt", "expiresAt" FROM "AdminSession" WHERE "id" = $1`,
+      [fixtureSessionId],
+    );
+    const originalTouchTransaction = writer.transaction.bind(writer);
+    let touchUpdateReached = false;
+    const touchSpy = jest
+      .spyOn(writer, 'transaction')
+      .mockImplementation(
+        async <T>(callback: (transaction: AdminWriterTransaction) => Promise<T>): Promise<T> =>
+          originalTouchTransaction(async (transaction) =>
+            callback({
+              async query<Row extends QueryResultRow>(text: string, values: readonly unknown[]) {
+                const result = await transaction.query<Row>(text, values);
+                if (
+                  !touchUpdateReached &&
+                  /UPDATE "AdminSession"[\s\S]*"lastActivityAt"/u.test(text)
+                ) {
+                  touchUpdateReached = true;
+                  throw new Error('controlled R5 failure after real touch UPDATE');
+                }
+                return result;
+              },
+            }),
+          ),
+      );
+    let touchFailure: request.Response;
+    try {
+      touchFailure = await request(application.getHttpServer())
+        .get('/api/v1/admin/auth/sessions')
+        .set('Authorization', `Bearer ${token}`);
+    } finally {
+      touchSpy.mockRestore();
+    }
+    expect(touchUpdateReached).toBe(true);
+    expect(touchFailure.status).toBe(503);
+    const afterTouchFailure = await owner.query<{ expiresAt: Date; lastActivityAt: Date }>(
+      `SELECT "lastActivityAt", "expiresAt" FROM "AdminSession" WHERE "id" = $1`,
+      [fixtureSessionId],
+    );
+    expect(afterTouchFailure.rows).toEqual(beforeTouchFailure.rows);
+    const touchFailureSinks = await owner.query<{ auditCount: string; securityCount: string }>(
+      `SELECT
+         (SELECT count(*)::text FROM "AuditLog" WHERE "requestId" = $1) AS "auditCount",
+         (SELECT count(*)::text FROM "AdminSecurityEvent" WHERE "requestId" = $1)
+           AS "securityCount"`,
+      [String(touchFailure.body.requestId)],
+    );
+    expect(touchFailureSinks.rows[0]).toEqual({ auditCount: '0', securityCount: '0' });
+
+    const repository = application.get(AdminAuthRepository);
+    const listSpy = jest
+      .spyOn(repository, 'listSessions')
+      .mockRejectedValueOnce(new Error('controlled R5 post-authentication list failure'));
+    let listFailure: request.Response;
+    try {
+      listFailure = await request(application.getHttpServer())
+        .get('/api/v1/admin/auth/sessions')
+        .set('Authorization', `Bearer ${token}`);
+    } finally {
+      listSpy.mockRestore();
+    }
+    expect(listFailure.status).toBe(503);
+    const afterCommittedAuthentication = await owner.query<{
+      expiresAt: Date;
+      lastActivityAt: Date;
+    }>(`SELECT "lastActivityAt", "expiresAt" FROM "AdminSession" WHERE "id" = $1`, [
+      fixtureSessionId,
+    ]);
+    expect(afterCommittedAuthentication.rows[0]!.lastActivityAt.getTime()).toBeGreaterThan(
+      beforeTouchFailure.rows[0]!.lastActivityAt.getTime(),
+    );
+    const listFailureSinks = await owner.query<{ auditCount: string; securityCount: string }>(
+      `SELECT
+         (SELECT count(*)::text FROM "AuditLog" WHERE "requestId" = $1) AS "auditCount",
+         (SELECT count(*)::text FROM "AdminSecurityEvent" WHERE "requestId" = $1)
+           AS "securityCount"`,
+      [String(listFailure.body.requestId)],
+    );
+    expect(listFailureSinks.rows[0]).toEqual({ auditCount: '0', securityCount: '0' });
+
+    const invalidAuthorization = await request(application.getHttpServer())
+      .get('/api/v1/admin/auth/sessions')
+      .set('Authorization', `Bearer ${'x'.repeat(32)}`);
+    expect(invalidAuthorization.status).toBe(401);
+    const invalidAuthorizationSinks = await owner.query<{
+      auditCount: string;
+      securityCount: string;
+    }>(
+      `SELECT
+         (SELECT count(*)::text FROM "AuditLog" WHERE "requestId" = $1) AS "auditCount",
+         (SELECT count(*)::text FROM "AdminSecurityEvent" WHERE "requestId" = $1)
+           AS "securityCount"`,
+      [String(invalidAuthorization.body.requestId)],
+    );
+    expect(invalidAuthorizationSinks.rows[0]).toEqual({
+      auditCount: '0',
+      securityCount: '1',
+    });
+
+    const success = await request(application.getHttpServer())
+      .get('/api/v1/admin/auth/sessions')
+      .set('Authorization', `Bearer ${token}`);
+    expect(success.status).toBe(200);
+    expect(success.body.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ current: true, sessionId: fixtureSessionId }),
+      ]),
+    );
+    const afterSuccess = await owner.query<{
+      absoluteExpiresAt: Date;
+      expiresAt: Date;
+      lastActivityAt: Date;
+    }>(
+      `SELECT "absoluteExpiresAt", "expiresAt", "lastActivityAt"
+         FROM "AdminSession" WHERE "id" = $1`,
+      [fixtureSessionId],
+    );
+    expect(afterSuccess.rows[0]!.lastActivityAt.getTime()).toBeGreaterThan(
+      afterCommittedAuthentication.rows[0]!.lastActivityAt.getTime(),
+    );
+    expect(afterSuccess.rows[0]!.expiresAt.getTime()).toBeLessThanOrEqual(
+      afterSuccess.rows[0]!.absoluteExpiresAt.getTime(),
+    );
+  });
+
+  it('keeps real committed success neutral when acknowledgement is lost on R5 paths', async () => {
+    const writer = application.get(AdminWriterService);
+    const withLostCommit = async (
+      invoke: () => Promise<request.Response>,
+    ): Promise<request.Response> => {
+      const originalTransaction = writer.transaction.bind(writer);
+      let callbackCommitted = false;
+      const transactionSpy = jest
+        .spyOn(writer, 'transaction')
+        .mockImplementation(
+          async <T>(callback: (transaction: AdminWriterTransaction) => Promise<T>): Promise<T> => {
+            await originalTransaction(callback);
+            callbackCommitted = true;
+            throw new AdminWriterCommitUnknownError(
+              new Error('controlled R5 lost COMMIT acknowledgement after real COMMIT'),
+            );
+          },
+        );
+      try {
+        const response = await invoke();
+        expect(callbackCommitted).toBe(true);
+        return response;
+      } finally {
+        transactionSpy.mockRestore();
+      }
+    };
+    const expectNeutralCommittedSuccess = async (
+      response: request.Response,
+      successAction: string,
+    ): Promise<void> => {
+      expect(response.status).toBe(503);
+      expect(response.body.error.code).toBe('SERVICE_UNAVAILABLE');
+      expect(response.headers['set-cookie']).toBeUndefined();
+      expect(JSON.stringify(response.body)).not.toMatch(
+        /accessToken|refreshToken|recoveryCodes|selector|verifier/iu,
+      );
+      const sinks = await owner.query<{
+        action: string;
+        auditCount: string;
+        securityCount: string;
+      }>(
+        `SELECT min("action") AS "action", count(*)::text AS "auditCount",
+                (SELECT count(*)::text FROM "AdminSecurityEvent" WHERE "requestId" = $1)
+                  AS "securityCount"
+           FROM "AuditLog" WHERE "requestId" = $1`,
+        [String(response.body.requestId)],
+      );
+      expect(sinks.rows[0]).toEqual({
+        action: successAction,
+        auditCount: '1',
+        securityCount: '0',
+      });
+    };
+
+    const createJourney = await beginRecoveryJourney(
+      ids.r5CommitCreate,
+      'r5-commit-create@example.invalid',
+    );
+    const create = await withLostCommit(() =>
+      request(application.getHttpServer())
+        .post('/api/v1/admin/auth/totp/enrollments')
+        .set('Cookie', createJourney.cookies.cookie)
+        .set('Idempotency-Key', 'r5-commit-create-0001')
+        .set('Origin', origin)
+        .set('X-Kora-Csrf', createJourney.cookies.csrf),
+    );
+    await expectNeutralCommittedSuccess(create, 'ADMIN_TOTP_ENROLLMENT_CREATED');
+    const durableCreate = await owner.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM "AdminTotpEnrollment" WHERE "adminUserId" = $1`,
+      [ids.r5CommitCreate],
+    );
+    expect(durableCreate.rows[0]!.count).toBe('1');
+
+    const qrJourney = await beginRecoveryJourney(ids.r5CommitQr, 'r5-commit-qr@example.invalid');
+    const qrEnrollment = await request(application.getHttpServer())
+      .post('/api/v1/admin/auth/totp/enrollments')
+      .set('Cookie', qrJourney.cookies.cookie)
+      .set('Idempotency-Key', 'r5-commit-qr-create-0001')
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', qrJourney.cookies.csrf);
+    const qrEnrollmentId = String(qrEnrollment.body.data.enrollmentId);
+    const qr = await withLostCommit(() =>
+      request(application.getHttpServer())
+        .post(`/api/v1/admin/auth/totp/enrollments/${qrEnrollmentId}/qr`)
+        .set('Cookie', qrJourney.cookies.cookie)
+        .set('Idempotency-Key', 'r5-commit-qr-delivery-0001')
+        .set('Origin', origin)
+        .set('X-Kora-Csrf', qrJourney.cookies.csrf),
+    );
+    await expectNeutralCommittedSuccess(qr, 'ADMIN_TOTP_QR_DELIVERED');
+    expect(qr.headers['content-type']).not.toMatch(/^image\/png/u);
+    const durableQr = await owner.query<{ qrDeliveredAt: Date | null }>(
+      `SELECT "qrDeliveredAt" FROM "AdminTotpEnrollment" WHERE "id" = $1`,
+      [qrEnrollmentId],
+    );
+    expect(durableQr.rows[0]!.qrDeliveredAt).not.toBeNull();
+
+    const confirmJourney = await beginRecoveryJourney(
+      ids.r5CommitConfirm,
+      'r5-commit-confirm@example.invalid',
+    );
+    const confirmEnrollment = await request(application.getHttpServer())
+      .post('/api/v1/admin/auth/totp/enrollments')
+      .set('Cookie', confirmJourney.cookies.cookie)
+      .set('Idempotency-Key', 'r5-commit-confirm-create-0001')
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', confirmJourney.cookies.csrf);
+    const confirmEnrollmentId = String(confirmEnrollment.body.data.enrollmentId);
+    await request(application.getHttpServer())
+      .post(`/api/v1/admin/auth/totp/enrollments/${confirmEnrollmentId}/qr`)
+      .set('Cookie', confirmJourney.cookies.cookie)
+      .set('Idempotency-Key', 'r5-commit-confirm-qr-0001')
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', confirmJourney.cookies.csrf)
+      .expect(200);
+    const secret = await owner.query<{ secretEncrypted: string }>(
+      `SELECT "secretEncrypted" FROM "AdminTotpEnrollment" WHERE "id" = $1`,
+      [confirmEnrollmentId],
+    );
+    const decrypted = await crypto.decryptTotpSecret(
+      secret.rows[0]!.secretEncrypted,
+      ids.r5CommitConfirm,
+    );
+    const code = crypto.generateTotpCode(decrypted.secret, BigInt(Math.floor(Date.now() / 30_000)));
+    decrypted.secret.fill(0);
+    const confirmation = await withLostCommit(() =>
+      request(application.getHttpServer())
+        .post(`/api/v1/admin/auth/totp/enrollments/${confirmEnrollmentId}/confirm`)
+        .set('Content-Type', 'application/json')
+        .set('Cookie', confirmJourney.cookies.cookie)
+        .set('Idempotency-Key', 'r5-commit-confirm-finish-0001')
+        .set('Origin', origin)
+        .set('X-Kora-Csrf', confirmJourney.cookies.csrf)
+        .send({ code }),
+    );
+    await expectNeutralCommittedSuccess(confirmation, 'ADMIN_TOTP_ENROLLMENT_CONFIRMED');
+    const durableConfirmation = await owner.query<{
+      batchCount: string;
+      confirmedAt: Date | null;
+      sessionCount: string;
+    }>(
+      `SELECT enrollment."confirmedAt",
+              (SELECT count(*)::text FROM "AdminRecoveryCodeBatch" WHERE "adminUserId" = $1)
+                AS "batchCount",
+              (SELECT count(*)::text FROM "AdminSession" WHERE "adminUserId" = $1)
+                AS "sessionCount"
+         FROM "AdminTotpEnrollment" AS enrollment WHERE enrollment."id" = $2`,
+      [ids.r5CommitConfirm, confirmEnrollmentId],
+    );
+    expect(durableConfirmation.rows[0]).toMatchObject({
+      batchCount: '2',
+      confirmedAt: expect.any(Date),
+      sessionCount: '1',
+    });
+
+    const listSessionId = deterministicUuid(1_064);
+    const beforeList = await owner.query<{ lastActivityAt: Date }>(
+      `SELECT "lastActivityAt" FROM "AdminSession" WHERE "id" = $1`,
+      [listSessionId],
+    );
+    const list = await withLostCommit(() =>
+      request(application.getHttpServer())
+        .get('/api/v1/admin/auth/sessions')
+        .set('Authorization', `Bearer ${accessTokens.get(ids.r5List)}`),
+    );
+    expect(list.status).toBe(503);
+    const listSinks = await owner.query<{ auditCount: string; securityCount: string }>(
+      `SELECT
+         (SELECT count(*)::text FROM "AuditLog" WHERE "requestId" = $1) AS "auditCount",
+         (SELECT count(*)::text FROM "AdminSecurityEvent" WHERE "requestId" = $1)
+           AS "securityCount"`,
+      [String(list.body.requestId)],
+    );
+    expect(listSinks.rows[0]).toEqual({ auditCount: '0', securityCount: '0' });
+    const afterList = await owner.query<{ lastActivityAt: Date }>(
+      `SELECT "lastActivityAt" FROM "AdminSession" WHERE "id" = $1`,
+      [listSessionId],
+    );
+    expect(afterList.rows[0]!.lastActivityAt.getTime()).toBeGreaterThanOrEqual(
+      beforeList.rows[0]!.lastActivityAt.getTime(),
+    );
   });
 
   it('records exactly one contextual AuditLog for post-session availability, crypto and transaction failures', async () => {
