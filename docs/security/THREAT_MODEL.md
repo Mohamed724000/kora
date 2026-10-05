@@ -3,10 +3,9 @@
 Périmètre durable couvert : **BASELINE + S0.4/S0.5/M0.1/M0.2/S0.6 ET M0.3
 FUSIONNÉS ET CLÔTURÉS + S1.1 FERMÉ + CONTRACT & DATA READINESS S1.2-01 +
 S1.2-02 CLÔTURÉ ET FUSIONNÉ + S1.2-03A CLÔTURÉ ET FUSIONNÉ + S1.2-03B-R4
-FUSIONNÉ VIA PR #48 + S1.2-03C1-R4 PUBLIÉ DANS LA DRAFT PR #50 AVEC QUATRE
-WORKFLOWS VERTS, PUIS REVUE CTO TERMINALE BLOCK SUR DEUX FINDINGS +
-INSTANTANÉ LOCAL PRÉPUBLICATION R5 DU 2026-10-05 VALIDÉ — KMS/JWT DE PRODUCTION
-NON QUALIFIÉS — C2/C3 NOT STARTED**.
+FUSIONNÉ VIA PR #48 + S1.2-03C1-R5 PUBLIÉ DANS LA DRAFT PR #50 AVEC QUATRE
+WORKFLOWS VERTS + INSTANTANÉ LOCAL PRÉPUBLICATION R6 DU 2026-10-05 VALIDÉ —
+KMS/JWT DE PRODUCTION NON QUALIFIÉS — C2/C3 NOT STARTED**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
 commit, push ou changement GitHub S1.1 n’avait encore été effectué : il s’agit
@@ -67,8 +66,15 @@ après liaison complète, une panne de touch ou de lecture suit `NONE`. Le touch
 la fenêtre idle et le plafond absolu restent actifs. Les injections réelles
 prouvent rollback des mutations connues, absence de fallback si le sink
 recovery est indisponible, et succès durable possible sans faux rejet lorsque
-l'accusé COMMIT est perdu. Le wrapper final passe 34/34 tests réels; R5 reste
-local et ne qualifie ni KMS/JWT de production, ni déploiement, C2 ou C3.
+l'accusé COMMIT est perdu. Le wrapper final passe 34/34 tests réels. R5 est
+ensuite publié au head `89323beb1ebbae9a488456db5d1dc2cb19215dd6`, avec les
+quatre workflows en succès sur ce head exact.
+
+R6 ferme localement la réutilisation possible d'un client après callback
+rejeté et rollback non confirmé. La libération unique détruit ce client, tout
+en préservant l'`AggregateError`, l'absence de retry et la sémantique COMMIT
+inconnu. Le wrapper final passe 36/36 tests réels; R6 ne qualifie ni KMS/JWT de
+production, ni timeout réseau réel, déploiement, C2 ou C3.
 
 Le gate supply-chain final du 2026-10-03 retire la chaîne dev-only
 `eslint-config-next → @next/eslint-plugin-next → fast-glob → micromatch → braces`
@@ -93,7 +99,7 @@ les alias ou parents divergents et la désactivation des règles Next témoins.
 | Course sur familles/sessions        | verrou utilisateur, plafond trois et LRU déterministe ; refresh winner unique                                                                                                  | preuve locale seulement, pas de charge production                |
 | Oracle d'existence                  | réponses publiques uniformes, travail Argon2 comparable et observations randomisées                                                                                            | échantillon local limité ; aucune déclaration d'absence d'oracle |
 | Fuite logs/Sentry                   | sanitation traversante testée sur callbacks et erreurs                                                                                                                         | aucune télémétrie Sentry réseau exercée en test                  |
-| Dépendance indisponible             | rollback des mutations non commitées et 503 C1 constant sans secret                                                                                                            | résultat COMMIT inconnu reste explicitement non retryable        |
+| Dépendance indisponible             | rollback des mutations non commitées; client détruit si rollback non confirmé; 503 C1 constant sans secret                                                                     | résultat COMMIT inconnu reste explicitement non retryable        |
 
 ## Actifs
 
@@ -175,21 +181,21 @@ métier ou runtime.
 
 ## Menaces et mesures attendues
 
-| Domaine      | Menaces principales                                                                            | Mesures attendues / autorités                                                                                                                                         | État                                                                                                              |
-| ------------ | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Identité/OTP | Brute force, interception, replay, enumeration                                                 | Rate limits, OTP court et haché, rotation session, logs masqués ; ADR-010                                                                                             | Contract/target model S1.1 — runtime not implemented                                                              |
-| Admin        | Vol de session, MFA contournée, récupération abusive                                           | TOTP RFC 6238, codes Argon2id, cookies httpOnly, rotation/replay, step-up, révocation ; ADR-002/005/008                                                               | Contract/data target S1.2-01 — runtime not implemented                                                            |
-| RBAC         | Escalade verticale/horizontale, champs sensibles                                               | Contrôle serveur route/action/champ, moindre privilège ; ADR-020                                                                                                      | Not implemented                                                                                                   |
-| Paiement     | Double débit, faux webhook, replay, ordre inversé                                              | Signature, idempotence, Inbox/Outbox, PaymentAttempts immuables ; ADR-012/015                                                                                         | Sandbox contract/target model S1.1 — runtime not implemented                                                      |
-| Ledger       | Altération, déséquilibre, double comptage                                                      | Append-only, groupes équilibrés, compensation, reconciliation ; ADR-013/014                                                                                           | SQL integrity S1.2-02 validated in the 2026-09-15 prepublication proof — runtime orchestration not implemented    |
-| Droits       | Accès sans achat, révocation excessive                                                         | Entitlement permanent ciblé, checks serveur ; ADR-016                                                                                                                 | SQL grant immutability S1.2-02 validated in the 2026-09-15 prepublication proof — runtime checks not implemented  |
-| Média        | URL brute, faux callback/replay, partage, scraping, logs sensibles                             | Stockage privé, représentation contrôlée, Inbox Mux signée/chiffrée/dédupliquée, descriptor court ; ADR-011/015/017                                                   | Contract/target model S1.2-01 — runtime not implemented                                                           |
-| Offline      | Extraction clé/fichier, replay licence, copie appareil                                         | AES-256-GCM, clé non exportable, licence renouvelable ; ADR-018                                                                                                       | Not implemented                                                                                                   |
-| Audit        | Suppression, falsification ou attribution au mauvais acteur/session                            | Écriture transactionnelle, liaison composite acteur/session, `Restrict`, blocage UPDATE/DELETE ; ADR-019                                                              | SQL immutability S1.2-02 validated in the 2026-09-15 prepublication proof — transactional runtime not implemented |
-| Capture      | Enregistrement écran et dispositif externe                                                     | `FLAG_SECURE`, détection/pause iOS, protections en couches sans promesse absolue ; ADR-024                                                                            | Not implemented                                                                                                   |
-| Données/logs | Fuite PII, token ou secret                                                                     | Redaction des champs et messages, `msg` catégoriel, minimisation, contrôle accès, rétention et tests                                                                  | Foundation validated locally by S0.6 — no business PII flow                                                       |
-| Supply chain | Package compromis, licence incompatible, épuisement de pile, SSRF ou déni de service transitif | Versions verrouillées, revue, audit, provenance, scripts qualifiés, parents exacts, gates de graphe, sorties Next reproductibles et exceptions de licence nominatives | M0.3 publié et vert ; S1.1-R2 et R3 publiés dans la Draft PR #36, R3 au head `7d23f146…`                          |
-| CI/CD        | Secret exposé, artefact altéré, déploiement non autorisé                                       | Permissions lecture seule, actions épinglées, scans, timeouts et rollback                                                                                             | Workflows M0.3 #45 verts ; quatre workflows S1.1-R3 verts sur le head publié exact                                |
+| Domaine      | Menaces principales                                                                            | Mesures attendues / autorités                                                                                                                                         | État                                                                                                             |
+| ------------ | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Identité/OTP | Brute force, interception, replay, enumeration                                                 | Rate limits, OTP court et haché, rotation session, logs masqués ; ADR-010                                                                                             | Contract/target model S1.1 — runtime not implemented                                                             |
+| Admin        | Vol de session, MFA contournée, récupération abusive                                           | TOTP RFC 6238, codes Argon2id, cookies httpOnly, rotation/replay, step-up, révocation ; ADR-002/005/008                                                               | Auth/session/TOTP C1 validé localement, non déployé ; recovery support/RBAC C2 non implémentés                   |
+| RBAC         | Escalade verticale/horizontale, champs sensibles                                               | Contrôle serveur route/action/champ, moindre privilège ; ADR-020                                                                                                      | Not implemented                                                                                                  |
+| Paiement     | Double débit, faux webhook, replay, ordre inversé                                              | Signature, idempotence, Inbox/Outbox, PaymentAttempts immuables ; ADR-012/015                                                                                         | Sandbox contract/target model S1.1 — runtime not implemented                                                     |
+| Ledger       | Altération, déséquilibre, double comptage                                                      | Append-only, groupes équilibrés, compensation, reconciliation ; ADR-013/014                                                                                           | SQL integrity S1.2-02 validated in the 2026-09-15 prepublication proof — runtime orchestration not implemented   |
+| Droits       | Accès sans achat, révocation excessive                                                         | Entitlement permanent ciblé, checks serveur ; ADR-016                                                                                                                 | SQL grant immutability S1.2-02 validated in the 2026-09-15 prepublication proof — runtime checks not implemented |
+| Média        | URL brute, faux callback/replay, partage, scraping, logs sensibles                             | Stockage privé, représentation contrôlée, Inbox Mux signée/chiffrée/dédupliquée, descriptor court ; ADR-011/015/017                                                   | Contract/target model S1.2-01 — runtime not implemented                                                          |
+| Offline      | Extraction clé/fichier, replay licence, copie appareil                                         | AES-256-GCM, clé non exportable, licence renouvelable ; ADR-018                                                                                                       | Not implemented                                                                                                  |
+| Audit        | Suppression, falsification ou attribution au mauvais acteur/session                            | Écriture transactionnelle, liaison composite acteur/session, `Restrict`, blocage UPDATE/DELETE ; ADR-019                                                              | Audit transactionnel Admin C1 validé localement, non déployé ; couverture produit C2+ non implémentée            |
+| Capture      | Enregistrement écran et dispositif externe                                                     | `FLAG_SECURE`, détection/pause iOS, protections en couches sans promesse absolue ; ADR-024                                                                            | Not implemented                                                                                                  |
+| Données/logs | Fuite PII, token ou secret                                                                     | Redaction des champs et messages, `msg` catégoriel, minimisation, contrôle accès, rétention et tests                                                                  | Foundation validated locally by S0.6 — no business PII flow                                                      |
+| Supply chain | Package compromis, licence incompatible, épuisement de pile, SSRF ou déni de service transitif | Versions verrouillées, revue, audit, provenance, scripts qualifiés, parents exacts, gates de graphe, sorties Next reproductibles et exceptions de licence nominatives | M0.3 publié et vert ; S1.1-R2 et R3 publiés dans la Draft PR #36, R3 au head `7d23f146…`                         |
+| CI/CD        | Secret exposé, artefact altéré, déploiement non autorisé                                       | Permissions lecture seule, actions épinglées, scans, timeouts et rollback                                                                                             | Workflows M0.3 #45 verts ; quatre workflows S1.1-R3 verts sur le head publié exact                               |
 
 ## Risques ouverts et gates
 
@@ -820,7 +826,7 @@ Chaque lot affectant une frontière :
 | Faux contexte recovery fourni par le client | enrollment/QR n'utilisent `ADMIN_RECOVERY` qu'après ownership, acteur, état et expiration prouvés côté serveur ; cookie/selector/id seuls insuffisants              | transactions et preuves négatives en C1         |
 | Contournement du step-up de rotation        | TOTP frais inline obligatoire, purpose `RECOVERY_CODE_ROTATION`, compteur global anti-rejeu ; preuve antérieure non substituable                                    | verrouillage et transaction en C1               |
 | Dépassement ou course sur trois familles    | éviction LRU atomique après authentification complète sous verrou utilisateur, ordre déterministe, refresh sans nouvelle famille                                    | tests de concurrence PostgreSQL en C1           |
-| Mutation sans audit ou COMMIT ambigu        | 503 uniforme fermé avec `retryable=false`, rollback confirmé avant COMMIT, sink indisponible sans fallback, COMMIT inconnu sans faux rejet ni retry aveugle         | supervision de production non qualifiée         |
+| Mutation sans audit ou transaction ambiguë  | 503 uniforme fermé avec `retryable=false`; rollback confirmé avant réutilisation, client détruit si rollback non confirmé; COMMIT inconnu sans faux rejet ni retry  | supervision de production non qualifiée         |
 | Lecture transversale de secrets PostgreSQL  | writer C1 séparé et borné ; lecteur sur allowlist tables/colonnes ; grants globaux retirés ; sinks audit `INSERT`-only sans `RETURNING`                             | toute extension C2 exige de nouvelles ACL       |
 | Escalade RBAC                               | deny by default, rôle rechargé, `authorizationVersion`, no self-change, dernier super-admin protégé                                                                 | middleware et verrouillage transactionnel en C2 |
 | Exfiltration d'export                       | bearer+step-up ; PII ; payload JCS UTF-8 ; signing input RFC 7515 ; JWS Ed25519 détaché avec `b64=false` interdit ; ZIP bijectif ; trust bundle ; aucune URL signée | stockage/chiffrement/expiry en C2               |
@@ -836,6 +842,36 @@ atomiques, sous réserve distincte du résultat COMMIT inconnu.
 Jusqu'à arbitrage légal, la
 rétention est fail-safe sans suppression. ADR-025 reste l'autorité de conception
 pour les contextes d'audit.
+
+### Renforcement transactionnel local S1.2-03C1-R6
+
+R5 est publié au commit `89323beb1ebbae9a488456db5d1dc2cb19215dd6` avec
+quatre workflows `pull_request/completed/success`. Le finding post-R5 portait
+sur une fenêtre précise : callback rejeté avant COMMIT, accusé `ROLLBACK`
+absent, puis client rendu au pool sans destruction. La menace est une
+réutilisation sous transaction active ou avortée, susceptible de contaminer la
+mutation et l'audit suivants.
+
+R6 détruit le client dans ce cas via `release(true)`, exactement une fois. Il
+conserve l'erreur métier et l'erreur de rollback dans l'`AggregateError`, ne
+réessaie aucune écriture et ne reclasse pas ce cas pré-COMMIT en résultat COMMIT
+inconnu. Les chemins COMMIT confirmé, rollback confirmé et COMMIT inconnu
+gardent leurs sémantiques antérieures.
+
+La preuve PostgreSQL réelle observe une transaction ouverte après mutation,
+puis un backend retiré et remplacé dans un pool dédié à une connexion. La
+mutation abandonnée est absente, l'opération suivante est persistée sur le
+backend sain et l'ancien PID n'est plus actif. L'injection qui rejette l'appel
+`ROLLBACK` est contrôlée au niveau de la fixture et ne constitue pas une preuve
+de timeout réseau réel. Le parcours HTTP séparé confirme un 503 neutre, un seul
+rejet `AuditLog` contextuel sur connexion saine, aucun succès durable, aucun
+événement de fallback et aucun double sink.
+
+Le risque résiduel relève de la qualification et de la supervision de
+production : fournisseur de clés **NON QUALIFIÉ**, réseau réel et télémétrie de
+pool non qualifiés par cette injection locale. La politique open source reste
+différée et non installée, le JTI transactionnel reste une recommandation
+séparée, la pagination **NON CONCLUSIVE**, et C2/C3 `Not started`.
 
 ## Instantané historique local prépublication S1.2-03B-R1
 

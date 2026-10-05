@@ -1,10 +1,10 @@
 # KORA+ Final — Source de vérité
 
 Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 ET S1.2-03A CLÔTURÉS ET
-FUSIONNÉS — S1.2-03B-R4 FUSIONNÉ VIA PR #48 — S1.2-03C1-R4 PUBLIÉ DANS LA
-DRAFT PR #50, QUATRE WORKFLOWS VERTS, PUIS REVUE CTO TERMINALE BLOCK SUR DEUX
-FINDINGS — R5 VALIDÉ DANS L'INSTANTANÉ LOCAL PRÉPUBLICATION DU 2026-10-05
-— FOURNISSEUR DE CLÉS DE PRODUCTION NON QUALIFIÉ — C2/C3 NOT STARTED**
+FUSIONNÉS — S1.2-03B-R4 FUSIONNÉ VIA PR #48 — S1.2-03C1-R5 PUBLIÉ DANS LA
+DRAFT PR #50 AVEC QUATRE WORKFLOWS VERTS — R6 VALIDÉ DANS L'INSTANTANÉ LOCAL
+PRÉPUBLICATION DU 2026-10-05 — FOURNISSEUR DE CLÉS DE PRODUCTION NON QUALIFIÉ
+— C2/C3 NOT STARTED**
 
 Date d’effet : 2026-07-28
 Dernière réconciliation documentaire : 2026-10-05
@@ -166,6 +166,45 @@ R5 est local, non indexé, non commité et non publié; aucun succès CI R5 futu
 n'est affirmé. La politique open source demeure différée et non installée, le
 fournisseur de clés de production **NON QUALIFIÉ**, la recommandation JTI
 séparée, la pagination **NON CONCLUSIVE**, et C2/C3 `Not started`.
+
+R5 est ensuite publié au commit
+`89323beb1ebbae9a488456db5d1dc2cb19215dd6`, parent R4
+`cdc020caa8b06d74af816dc072e778e25e020699`, arbre
+`43b4448ed68f4093dc3e6c636257dae100d4d755`. La PR #50 reste `OPEN`, Draft,
+`CLEAN/MERGEABLE` et non fusionnée, avec six commits, 78 fichiers et
+`+19481/-645`. Son corps de 25 862 octets porte le SHA-256
+`d17b14a763c16a5ee256b9d06a84ef811d3e6c0ca7d9addbbdefa4a46ddd7079`.
+Infrastructure `37317920495`, Launcher Windows `37317920363`, Security
+`37317920190` et Quality Linux `37317920587` sont tous
+`pull_request/completed/success`, tentative 1, sur ce head exact.
+
+La revue post-R5 identifie un finding transactionnel : après échec du callback
+avant COMMIT, un `ROLLBACK` rejeté laissait le client réutilisable dans le pool.
+R6 détruit désormais ce client lors de son unique libération, conserve
+l'`AggregateError` et ses deux erreurs, n'ajoute aucun retry et ne confond pas
+ce cas avec `AdminWriterCommitUnknownError`. Le succès, le rollback confirmé et
+la destruction après résultat COMMIT inconnu restent inchangés.
+
+La preuve réelle R6 utilise le writer de production et un pool `pg` dédié
+`max=1`. Après mutation effective et rejet contrôlé de `ROLLBACK`, elle observe
+la transaction encore ouverte, le retrait du backend, son remplacement par une
+connexion saine, l'absence durable de la mutation abandonnée et la persistance
+de l'opération suivante. Cette injection contrôlée ne qualifie pas un timeout
+réseau réel. Le scénario HTTP distinct confirme la mutation intermédiaire puis
+son rollback, une réponse 503 neutre, exactement un `AuditLog` de rejet
+contextuel sur connexion saine, aucun succès contradictoire et aucun double
+sink.
+
+Le wrapper final passe PostgreSQL A/B et 36/36 parcours réels avec Redis. Le
+writer passe 13/13 tests; l'API passe 17 suites, 93 tests réussis et 35
+conditionnels `skipped`, ainsi que format ciblé, lint, typecheck et build. Les
+audits npm brut complet et production rapportent zéro vulnérabilité et le
+scanner officiel passe sur 384 fichiers, historique inclus. R6 reste limité à
+neuf fichiers existants, local, non indexé, non commité et non publié; aucun
+SHA, Run ID ou succès CI R6 futur n'est affirmé. La PR #50 reste Draft. Les
+limites R5 demeurent : politique open source différée et non installée,
+fournisseur de clés de production **NON QUALIFIÉ**, recommandation JTI séparée,
+pagination **NON CONCLUSIVE**, C2/C3 `Not started`.
 
 Le complément Infrastructure du 2026-10-03 a rendu les scripts génériques
 isolables sans modifier leurs valeurs locales par défaut, puis a exécuté

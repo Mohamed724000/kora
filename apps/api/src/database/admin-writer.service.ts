@@ -617,6 +617,7 @@ export class AdminWriterService implements AdminWriterRuntimeBoundary, OnModuleD
     const client = await this.pool.connect();
     let commitAttempted = false;
     let commitConfirmed = false;
+    let destroyClient = false;
     try {
       await client.query('BEGIN');
       const transaction: AdminWriterTransaction = {
@@ -636,6 +637,7 @@ export class AdminWriterService implements AdminWriterRuntimeBoundary, OnModuleD
         try {
           await client.query('ROLLBACK');
         } catch (rollbackError: unknown) {
+          destroyClient = true;
           throw new AggregateError(
             [error, rollbackError],
             'Admin writer transaction and rollback failed.',
@@ -644,7 +646,7 @@ export class AdminWriterService implements AdminWriterRuntimeBoundary, OnModuleD
       }
       throw error;
     } finally {
-      client.release(commitAttempted && !commitConfirmed);
+      client.release(destroyClient || (commitAttempted && !commitConfirmed));
     }
   }
 

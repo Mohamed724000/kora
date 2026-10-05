@@ -1,11 +1,10 @@
 # Rapport de validation locale S1.2-03C1 — Admin Auth Session Runtime
 
-Statut : **R3 PUBLIÉ AU HEAD `b0792934…` DE LA DRAFT PR #50 AVEC QUATRE
-WORKFLOWS VERTS, PUIS REVUE CTO TERMINALE BLOCK SUR UN FINDING HIGH —
-INSTANTANÉ LOCAL PRÉPUBLICATION R4 DU 2026-10-04 VALIDÉ — FOURNISSEUR DE CLÉS
-DE PRODUCTION NON QUALIFIÉ — C2/C3 NOT STARTED**
+Statut : **R5 PUBLIÉ AU HEAD `89323beb…` DE LA DRAFT PR #50 AVEC QUATRE
+WORKFLOWS VERTS — INSTANTANÉ LOCAL PRÉPUBLICATION R6 DU 2026-10-05 VALIDÉ —
+FOURNISSEUR DE CLÉS DE PRODUCTION NON QUALIFIÉ — C2/C3 NOT STARTED**
 
-Date : 2026-10-04
+Date : 2026-10-05
 
 ## Périmètre et préflight historiques C1 initial
 
@@ -697,17 +696,17 @@ Les deux tests ajoutés avant le runtime échouent d'abord exactement sur R4 :
 contexte recovery absent et méthode/politique de liste absente. Après correctif,
 les deux suites unitaires ciblées passent 15/15.
 
-| Scénario réel                                      | Phase effectivement atteinte                                      | Résultat observé                                                                 |
-| -------------------------------------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| création recovery                                  | lecture idempotence après `resolveContext`                        | 1 rejet `AuditLog`, 0 événement, aucun enrollment/idempotency durable            |
-| livraison QR recovery                              | génération PNG après contexte et enrollment prouvés               | 1 rejet `AuditLog`, 0 événement, aucun PNG, marqueur/idempotency annulés          |
-| confirmation recovery                              | véritable UPDATE TOTP exécuté puis exception dans la transaction  | 1 rejet `AuditLog`, 0 événement, user/contexte/enrollment/session/codes annulés  |
-| PREAUTH et digest initial                          | respectivement après preuve PREAUTH et avant preuve recovery      | 0 `AuditLog` recovery, 1 événement de sécurité                                   |
-| sink de rejet recovery indisponible                | panne métier post-preuve puis échec du véritable INSERT AuditLog  | 503 neutre, 0 fallback, 0 mutation durable                                       |
-| liste, JTI incompatible / panne pré-preuve         | signature valide puis liaison rejetée / première lecture SQL      | 0 `AuditLog`, 1 événement                                                        |
-| liste, panne après UPDATE touch                    | UPDATE réel exécuté puis exception                                | timestamps annulés, 0 entrée dans les deux sinks                                 |
-| liste, lecture après authentification committée    | touch committé puis `listSessions` en échec                       | 0 sink; aucune affirmation de rollback du touch                                  |
-| création/QR/confirmation/touch, accusé COMMIT perdu | callback et COMMIT réels, exception typée après retour transaction | succès durable possible, 503 neutre, aucun rejet contradictoire ni second sink   |
+| Scénario réel                                       | Phase effectivement atteinte                                       | Résultat observé                                                                |
+| --------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| création recovery                                   | lecture idempotence après `resolveContext`                         | 1 rejet `AuditLog`, 0 événement, aucun enrollment/idempotency durable           |
+| livraison QR recovery                               | génération PNG après contexte et enrollment prouvés                | 1 rejet `AuditLog`, 0 événement, aucun PNG, marqueur/idempotency annulés        |
+| confirmation recovery                               | véritable UPDATE TOTP exécuté puis exception dans la transaction   | 1 rejet `AuditLog`, 0 événement, user/contexte/enrollment/session/codes annulés |
+| PREAUTH et digest initial                           | respectivement après preuve PREAUTH et avant preuve recovery       | 0 `AuditLog` recovery, 1 événement de sécurité                                  |
+| sink de rejet recovery indisponible                 | panne métier post-preuve puis échec du véritable INSERT AuditLog   | 503 neutre, 0 fallback, 0 mutation durable                                      |
+| liste, JTI incompatible / panne pré-preuve          | signature valide puis liaison rejetée / première lecture SQL       | 0 `AuditLog`, 1 événement                                                       |
+| liste, panne après UPDATE touch                     | UPDATE réel exécuté puis exception                                 | timestamps annulés, 0 entrée dans les deux sinks                                |
+| liste, lecture après authentification committée     | touch committé puis `listSessions` en échec                        | 0 sink; aucune affirmation de rollback du touch                                 |
+| création/QR/confirmation/touch, accusé COMMIT perdu | callback et COMMIT réels, exception typée après retour transaction | succès durable possible, 503 neutre, aucun rejet contradictoire ni second sink  |
 
 Le wrapper final termine au code 0 avec PostgreSQL A/B, 39 modèles, 40 tables,
 trois migrations, quatre provisionnements réussis, cinq refus et quatre refus
@@ -736,3 +735,110 @@ affirmé. La PR #50 reste Draft. La politique open source reste différée et no
 installée, le fournisseur de clés de production **NON QUALIFIÉ**, la
 recommandation JTI séparée, la pagination **NON CONCLUSIVE**, et C2/C3
 `Not started`.
+
+## Publication R5 et instantané local prépublication S1.2-03C1-R6 — 2026-10-05
+
+R5 est publié au commit
+`89323beb1ebbae9a488456db5d1dc2cb19215dd6`, parent R4
+`cdc020caa8b06d74af816dc072e778e25e020699`, arbre
+`43b4448ed68f4093dc3e6c636257dae100d4d755`. La PR #50 reste `OPEN`, Draft,
+`CLEAN/MERGEABLE` et non fusionnée, avec six commits, 78 fichiers et
+`+19481/-645`. Son titre reste
+`feat(admin): implement S1.2-03C1 auth session runtime`; son corps de 25 862
+octets porte le SHA-256
+`d17b14a763c16a5ee256b9d06a84ef811d3e6c0ca7d9addbbdefa4a46ddd7079`.
+Infrastructure `37317920495`, Launcher Windows `37317920363`, Security
+`37317920190` et Quality Linux `37317920587` sont tous
+`pull_request/completed/success`, tentative 1, sur ce head exact. Le manifeste
+R5 d'entrée contient 12 lignes et 1 322 octets, agrégat
+`06bfdc2a318cf5428f8dca6bfa0120db2d691150b95c2c10389d173ca84f6ee4`; le
+lockfile inchangé porte
+`51a4a23fe87cbf7b441e464b2b066e501f8f66748d355077a3241ee4933f6b37`.
+
+### Finding et correctif causal R6
+
+Le finding post-R5 est confirmé : si le callback rejetait avant COMMIT et que
+`ROLLBACK` rejetait à son tour, le writer levait correctement un
+`AggregateError` mais appelait `client.release(false)`. Le client pouvait ainsi
+revenir dans le pool avec une transaction active ou avortée. La reproduction
+ajoutée avant le correctif échoue exactement sur ce point : une suite en échec,
+10 tests passants, attente `release(true)` contre valeur reçue `false`.
+
+Le correctif ajoute un état local `destroyClient`, activé uniquement lorsque
+l'accusé de rollback manque. Le `finally` libère toujours exactement une fois,
+avec destruction dans ce cas ou après tentative COMMIT non confirmée. Les
+invariants suivants restent explicites :
+
+- `BEGIN`, callback puis `COMMIT` sur succès ;
+- `ROLLBACK` sans COMMIT après échec du callback ;
+- erreur métier conservée si le rollback est confirmé ;
+- `AggregateError` ordonné `[erreur métier ou BEGIN, erreur rollback]` si le
+  rollback n'est pas confirmé ;
+- aucune assimilation pré-COMMIT à `AdminWriterCommitUnknownError` ;
+- aucune nouvelle tentative automatique ;
+- aucun changement de timeout ou de configuration de pool de production.
+
+### Preuves unitaires et PostgreSQL réelles
+
+La suite writer finale passe 13/13. Elle couvre le succès avec COMMIT confirmé,
+le callback rejeté avec rollback confirmé ou rejeté, BEGIN rejeté avec rollback
+confirmé ou rejeté et COMMIT inconnu sans rollback. Chaque branche vérifie les
+commandes, la cause ou les deux erreurs, la destruction attendue et une seule
+libération.
+
+La preuve réelle utilise `AdminWriterService` et la bibliothèque `pg` de
+production avec un pool dédié `max=1`. Une fixture remplace uniquement l'appel
+`ROLLBACK` par un rejet contrôlé, puis restaure l'appel en `finally`; elle ne
+simule ni ne revendique un timeout réseau réel. La connexion exécute réellement
+`BEGIN` et un `INSERT AdminSecurityEvent`. Une connexion indépendante observe
+le backend en état `idle in transaction` avant l'échec du callback. Le rollback
+non confirmé produit l'`AggregateError`, détruit le client, et l'opération
+suivante reçoit un couple PID/`backend_start` différent. Après fermeture des
+pools, la mutation abandonnée vaut zéro, l'événement sain suivant vaut un et
+l'ancien PID n'existe plus dans `pg_stat_activity`.
+
+### Preuve HTTP contextuelle
+
+Le parcours recovery exécute réellement les trois écritures de création :
+enrollment, idempotence et `ADMIN_TOTP_ENROLLMENT_CREATED`, chacune avec une
+ligne affectée dans la transaction. Une exception contrôlée après ces mutations
+force leur rollback. La réponse est un 503 neutre, sans cookie ni secret;
+exactement un `ADMIN_TOTP_ENROLLMENT_CREATE_REJECTED` est écrit dans `AuditLog`
+sur une connexion saine avec acteur, contexte recovery et entity exacts. La
+connexion indépendante observe zéro enrollment, zéro idempotence et zéro audit
+de succès pour la requête, ainsi que zéro `AdminSecurityEvent` : aucun succès
+contradictoire, fallback ou double sink.
+
+### Résultats effectifs et essais non conclusifs
+
+Le wrapper final termine au code 0 : PostgreSQL A/B, 39 modèles, 40 tables,
+trois migrations, quatre provisionnements réussis, cinq refus et quatre refus
+de membership entrante; la suite réelle passe 36/36 tests sur les douze
+opérations avec HTTP et Redis réels. Les ressources ciblées — base, conteneurs,
+volume et secrets — sont supprimées.
+
+Trois itérations antérieures ne sont pas comptées comme PASS. Le premier test
+combiné atteint son timeout et entraîne quatre échecs secondaires, soit 30/35
+tests passants. Isolé, il laisse 34/35 passants mais atteint encore son timeout.
+Après séparation des preuves, une observation comparait un timestamp
+PostgreSQL tronqué à la milliseconde et une autre tentait un `SELECT` avec le
+rôle writer volontairement borné : 34/36 passent. Chaque wrapper a néanmoins
+confirmé son nettoyage ciblé. Les observateurs ont été corrigés sans modifier
+les ACL ni le comportement de production.
+
+Prettier ciblé, lint, typecheck et build API passent. Les suites API passent
+17/17, avec 93 tests réussis et 35 conditionnels `skipped`; les 36 parcours
+réels sont exécutés séparément par le wrapper. Les audits npm bruts complet et
+production rapportent chacun zéro vulnérabilité. Le scanner officiel passe sur
+384 fichiers avec historique, 52 sources immuables et six scripts
+d'installation qualifiés.
+
+R6 modifie exactement trois fichiers techniques et ces six documents existants,
+sans ajout, suppression, renommage ni changement de mode. Services Auth/session,
+repository/filter, OpenAPI, contrat généré, ADR-025, Prisma, migrations,
+provisioning, ACL, wrapper, dépendances, lockfile, workflows et manifestes
+restent inchangés. R6 est local, non indexé, non commité et non publié; aucun
+SHA, Run ID ou succès CI R6 futur n'est affirmé. La PR #50 reste Draft. La
+politique open source reste différée et non installée, le fournisseur de clés
+de production **NON QUALIFIÉ**, la recommandation JTI transactionnelle séparée,
+la pagination **NON CONCLUSIVE**, et C2/C3 `Not started`.

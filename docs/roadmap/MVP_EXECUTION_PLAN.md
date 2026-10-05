@@ -10,38 +10,38 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 
 ## État des gates et lots
 
-| Gate ou lot         | Objectif                                      | Statut                                                                         |
-| ------------------- | --------------------------------------------- | ------------------------------------------------------------------------------ |
-| Gate 0              | Sources approuvées et readiness clean room    | Completed                                                                      |
-| Lot 00              | Preflight read-only                           | Completed                                                                      |
-| Lot 00B             | Remédiation documentaire                      | Completed                                                                      |
-| Lot 00C             | Canonicalisation AdminLTE                     | Completed                                                                      |
-| S0.1                | Gouvernance et Git                            | Completed                                                                      |
-| S0.2                | Contrat monorepo et versions                  | Completed                                                                      |
-| S0.3                | Fondations applicatives                       | Closed and merged                                                              |
-| S0.4                | Infrastructure locale                         | Closed and merged                                                              |
-| S0.5                | CI, sécurité et observabilité                 | Closed and merged                                                              |
-| M0.1                | Dependency Governance                         | Closed and merged                                                              |
-| M0.2                | Supply-chain Security Hotfix                  | Closed and merged                                                              |
-| S0.6                | Foundation Gate                               | Closed and merged                                                              |
-| Slice 1 / S1.1      | Contrats, données cibles et expérience audio  | Closed and merged                                                              |
-| Slice 1 / S1.2-01   | Contract & Data Readiness Gate                | Closed and merged                                                              |
-| Slice 1 / S1.2-02   | Baseline PostgreSQL et contraintes SQL        | Closed and merged — PR #43                                                     |
-| Slice 1 / S1.2-03A  | Frontière PostgreSQL runtime en lecture seule | Closed and merged — PR #45                                                     |
-| Slice 1 / S1.2-03B  | Admin Security Contract Gate, sans runtime    | Closed and merged — PR #48, merge `c97992ca2c82bc4f22f9222ea98ed53714fede4c`   |
-| Slice 1 / S1.2-03C1 | Auth admin, TOTP et sessions runtime          | R4 published; terminal BLOCK on two findings; R5 local snapshot 2026-10-05     |
-| Slice 1 / S1.2-03C2 | Recovery, audit, invitations et RBAC runtime  | Not started — separate authorization required                                  |
-| Slice 1 / S1.2-03C3 | Interface d'authentification Admin            | Not started — separate authorization required                                  |
-| Slice 1 / S1.2-03D  | Artist API                                    | Not started                                                                    |
-| Slice 1 / S1.2-03E  | Artist Admin UI                               | Not started                                                                    |
-| Slice 1 / S1.2-03F  | Audio Draft API                               | Not started                                                                    |
-| Slice 1 / S1.2-03G  | Audio Draft Admin UI                          | Not started                                                                    |
-| Slice 1 / S1.2-03H  | Controlled Upload                             | Not started                                                                    |
-| Slice 1 / S1.2-03I  | Mux, Inbox et Outbox                          | Not started                                                                    |
-| Slice 1 / S1.2-03J  | Publication et archivage                      | Not started                                                                    |
-| Slice 1 / S1.2-03K  | Catalogue public et détail                    | Not started                                                                    |
-| Slice 1 / seed      | Seed/licences distinct                        | Not started                                                                    |
-| Slices suivantes    | Fonctionnalités produit ultérieures           | Not started                                                                    |
+| Gate ou lot         | Objectif                                      | Statut                                                                       |
+| ------------------- | --------------------------------------------- | ---------------------------------------------------------------------------- |
+| Gate 0              | Sources approuvées et readiness clean room    | Completed                                                                    |
+| Lot 00              | Preflight read-only                           | Completed                                                                    |
+| Lot 00B             | Remédiation documentaire                      | Completed                                                                    |
+| Lot 00C             | Canonicalisation AdminLTE                     | Completed                                                                    |
+| S0.1                | Gouvernance et Git                            | Completed                                                                    |
+| S0.2                | Contrat monorepo et versions                  | Completed                                                                    |
+| S0.3                | Fondations applicatives                       | Closed and merged                                                            |
+| S0.4                | Infrastructure locale                         | Closed and merged                                                            |
+| S0.5                | CI, sécurité et observabilité                 | Closed and merged                                                            |
+| M0.1                | Dependency Governance                         | Closed and merged                                                            |
+| M0.2                | Supply-chain Security Hotfix                  | Closed and merged                                                            |
+| S0.6                | Foundation Gate                               | Closed and merged                                                            |
+| Slice 1 / S1.1      | Contrats, données cibles et expérience audio  | Closed and merged                                                            |
+| Slice 1 / S1.2-01   | Contract & Data Readiness Gate                | Closed and merged                                                            |
+| Slice 1 / S1.2-02   | Baseline PostgreSQL et contraintes SQL        | Closed and merged — PR #43                                                   |
+| Slice 1 / S1.2-03A  | Frontière PostgreSQL runtime en lecture seule | Closed and merged — PR #45                                                   |
+| Slice 1 / S1.2-03B  | Admin Security Contract Gate, sans runtime    | Closed and merged — PR #48, merge `c97992ca2c82bc4f22f9222ea98ed53714fede4c` |
+| Slice 1 / S1.2-03C1 | Auth admin, TOTP et sessions runtime          | R5 published in Draft PR #50; R6 local snapshot validated 2026-10-05         |
+| Slice 1 / S1.2-03C2 | Recovery, audit, invitations et RBAC runtime  | Not started — separate authorization required                                |
+| Slice 1 / S1.2-03C3 | Interface d'authentification Admin            | Not started — separate authorization required                                |
+| Slice 1 / S1.2-03D  | Artist API                                    | Not started                                                                  |
+| Slice 1 / S1.2-03E  | Artist Admin UI                               | Not started                                                                  |
+| Slice 1 / S1.2-03F  | Audio Draft API                               | Not started                                                                  |
+| Slice 1 / S1.2-03G  | Audio Draft Admin UI                          | Not started                                                                  |
+| Slice 1 / S1.2-03H  | Controlled Upload                             | Not started                                                                  |
+| Slice 1 / S1.2-03I  | Mux, Inbox et Outbox                          | Not started                                                                  |
+| Slice 1 / S1.2-03J  | Publication et archivage                      | Not started                                                                  |
+| Slice 1 / S1.2-03K  | Catalogue public et détail                    | Not started                                                                  |
+| Slice 1 / seed      | Seed/licences distinct                        | Not started                                                                  |
+| Slices suivantes    | Fonctionnalités produit ultérieures           | Not started                                                                  |
 
 ## Sprint 0 — Clean-room foundation
 
@@ -149,10 +149,9 @@ démarrait ni Slice 1 ni aucune exigence produit.
 ## Slice 1 — Audio purchase pilot
 
 Statut : **In progress — S1.2-02 closed — S1.2-03A closed and merged —
-S1.2-03B closed and merged — S1.2-03C1-R4 published in Draft PR #50 with four
-green workflows, then CTO terminal review BLOCK on two findings — R5 local
-prepublication snapshot validated on 2026-10-05 — production key provider not
-qualified — C2/C3 not started**
+S1.2-03B closed and merged — S1.2-03C1-R5 published in Draft PR #50 with four
+green workflows — R6 local prepublication snapshot validated on 2026-10-05 —
+production key provider not qualified — C2/C3 not started**
 
 R3 est publié au head `b0792934aa2f9d6f6d481517f384825874d72402`, parent R2
 `59972cc0614842627c8c17717605345eaae277c4`, arbre
@@ -193,6 +192,31 @@ ni roadmap, modèle, migration, dépendance, workflow, contrat ni critères
 d'acceptation. Il reste non indexé, non commité et non publié; la PR #50 reste
 Draft. La politique open source est différée et non installée, le fournisseur
 de clés de production **NON QUALIFIÉ**, la recommandation JTI séparée, la
+pagination **NON CONCLUSIVE**, et C2/C3 `Not started`.
+
+R5 est ensuite publié au head `89323beb1ebbae9a488456db5d1dc2cb19215dd6`,
+arbre `43b4448ed68f4093dc3e6c636257dae100d4d755`. Ses quatre workflows
+`37317920495`, `37317920363`, `37317920190` et `37317920587` réussissent en
+tentative 1. La PR #50 reste `OPEN`, Draft, `CLEAN/MERGEABLE` et non fusionnée,
+avec six commits et 78 fichiers.
+
+R6 ferme localement le finding de réutilisation d'une connexion après échec
+pré-COMMIT suivi d'un rollback non confirmé. Le client est détruit lors de son
+unique libération; les deux erreurs restent agrégées, sans retry ni changement
+de la sémantique COMMIT inconnu. Un pool PostgreSQL réel dédié `max=1` prouve le
+retrait et le remplacement du backend, l'absence de la mutation abandonnée et
+la réussite saine suivante. Le parcours HTTP distinct prouve 503 neutre,
+rollback métier, un seul rejet contextuel et aucun succès contradictoire.
+
+La validation finale couvre 13/13 tests writer, 36/36 parcours réels dans le
+wrapper et 17 suites API avec 93 tests réussis et 35 conditionnels `skipped`,
+plus lint, typecheck, build, audits npm à zéro et scanner officiel sur 384
+fichiers. R6 ne change ni roadmap, contrat, service Auth/session, modèle,
+migration, ACL, provisioning, wrapper, dépendance, lockfile, workflow ni
+critère d'acceptation. Il reste local, non indexé, non commité et non publié;
+la décision de publication R6 puis la revue terminale C1 restent distinctes.
+La politique open source demeure différée et non installée, le fournisseur de
+clés de production **NON QUALIFIÉ**, la recommandation JTI séparée, la
 pagination **NON CONCLUSIVE**, et C2/C3 `Not started`.
 
 Parcours cible :

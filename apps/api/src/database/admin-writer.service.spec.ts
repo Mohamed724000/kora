@@ -201,39 +201,118 @@ describe('AdminWriterService', () => {
       'SELECT $1::text AS id',
       'COMMIT',
     ]);
+    expect(client.release).toHaveBeenCalledTimes(1);
     expect(client.release).toHaveBeenCalledWith(false);
   });
 
   it('rollback un échec confirmé avant COMMIT', async () => {
+    const businessError = new Error('business failure');
     const client = { query: jest.fn().mockResolvedValue({ rows: [] }), release: jest.fn() };
     pool.connect.mockResolvedValue(client);
     const service = new AdminWriterService(configService());
 
     await expect(
       service.transaction(async () => {
-        throw new Error('business failure');
+        throw businessError;
       }),
-    ).rejects.toThrow('business failure');
+    ).rejects.toBe(businessError);
 
     expect(client.query.mock.calls.map(([sql]) => sql)).toEqual(['BEGIN', 'ROLLBACK']);
+    expect(client.release).toHaveBeenCalledTimes(1);
     expect(client.release).toHaveBeenCalledWith(false);
   });
 
-  it('distingue un COMMIT inconnu et détruit la connexion', async () => {
+  it('détruit le client quand le rollback reste non confirmé', async () => {
+    const businessError = new Error('business failure');
+    const rollbackError = new Error('rollback connection lost');
     const client = {
-      query: jest
-        .fn()
-        .mockResolvedValueOnce({ rows: [] })
-        .mockRejectedValueOnce(new Error('connection lost')),
+      query: jest.fn().mockResolvedValueOnce({ rows: [] }).mockRejectedValueOnce(rollbackError),
       release: jest.fn(),
     };
     pool.connect.mockResolvedValue(client);
     const service = new AdminWriterService(configService());
 
-    await expect(service.transaction(async () => 'result')).rejects.toBeInstanceOf(
-      AdminWriterCommitUnknownError,
-    );
+    let rejection: unknown;
+    try {
+      await service.transaction(async () => {
+        throw businessError;
+      });
+    } catch (error: unknown) {
+      rejection = error;
+    }
+
+    expect(rejection).toBeInstanceOf(AggregateError);
+    expect((rejection as AggregateError).errors).toEqual([businessError, rollbackError]);
+    expect(client.query.mock.calls.map(([sql]) => sql)).toEqual(['BEGIN', 'ROLLBACK']);
+    expect(client.release).toHaveBeenCalledTimes(1);
+    expect(client.release).toHaveBeenCalledWith(true);
+  });
+
+  it('conserve un échec BEGIN après un rollback confirmé', async () => {
+    const beginError = new Error('begin failed');
+    const callback = jest.fn();
+    const client = {
+      query: jest.fn().mockRejectedValueOnce(beginError).mockResolvedValueOnce({ rows: [] }),
+      release: jest.fn(),
+    };
+    pool.connect.mockResolvedValue(client);
+    const service = new AdminWriterService(configService());
+
+    await expect(service.transaction(callback)).rejects.toBe(beginError);
+
+    expect(callback).not.toHaveBeenCalled();
+    expect(client.query.mock.calls.map(([sql]) => sql)).toEqual(['BEGIN', 'ROLLBACK']);
+    expect(client.release).toHaveBeenCalledTimes(1);
+    expect(client.release).toHaveBeenCalledWith(false);
+  });
+
+  it('agrège les échecs BEGIN et rollback puis détruit le client', async () => {
+    const beginError = new Error('begin failed');
+    const rollbackError = new Error('rollback connection lost');
+    const callback = jest.fn();
+    const client = {
+      query: jest.fn().mockRejectedValueOnce(beginError).mockRejectedValueOnce(rollbackError),
+      release: jest.fn(),
+    };
+    pool.connect.mockResolvedValue(client);
+    const service = new AdminWriterService(configService());
+
+    let rejection: unknown;
+    try {
+      await service.transaction(callback);
+    } catch (error: unknown) {
+      rejection = error;
+    }
+
+    expect(callback).not.toHaveBeenCalled();
+    expect(rejection).toBeInstanceOf(AggregateError);
+    expect(rejection).not.toBeInstanceOf(AdminWriterCommitUnknownError);
+    expect((rejection as AggregateError).errors).toEqual([beginError, rollbackError]);
+    expect(client.query.mock.calls.map(([sql]) => sql)).toEqual(['BEGIN', 'ROLLBACK']);
+    expect(client.release).toHaveBeenCalledTimes(1);
+    expect(client.release).toHaveBeenCalledWith(true);
+  });
+
+  it('distingue un COMMIT inconnu et détruit la connexion', async () => {
+    const commitError = new Error('connection lost');
+    const client = {
+      query: jest.fn().mockResolvedValueOnce({ rows: [] }).mockRejectedValueOnce(commitError),
+      release: jest.fn(),
+    };
+    pool.connect.mockResolvedValue(client);
+    const service = new AdminWriterService(configService());
+
+    let rejection: unknown;
+    try {
+      await service.transaction(async () => 'result');
+    } catch (error: unknown) {
+      rejection = error;
+    }
+
+    expect(rejection).toBeInstanceOf(AdminWriterCommitUnknownError);
+    expect((rejection as Error).cause).toBe(commitError);
     expect(client.query.mock.calls.map(([sql]) => sql)).toEqual(['BEGIN', 'COMMIT']);
+    expect(client.release).toHaveBeenCalledTimes(1);
     expect(client.release).toHaveBeenCalledWith(true);
   });
 

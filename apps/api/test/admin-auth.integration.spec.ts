@@ -4,7 +4,12 @@ import { ConfigService } from '@nestjs/config';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomInt, type KeyObject } from 'node:crypto';
 import Redis from 'ioredis';
-import pg, { type QueryResultRow } from 'pg';
+import pg, {
+  type Pool as PgPool,
+  type PoolClient,
+  type QueryResult,
+  type QueryResultRow,
+} from 'pg';
 import request from 'supertest';
 import { AdminAuthController } from '../src/admin-auth/admin-auth.controller';
 import { AdminAuthRepository } from '../src/admin-auth/admin-auth.repository';
@@ -33,7 +38,7 @@ import {
 } from '../src/database/postgresql-runtime-boundary';
 import { PrismaService } from '../src/database/prisma.service';
 
-const { Client } = pg;
+const { Client, Pool } = pg;
 
 describe('Admin C1 route inventory', () => {
   it('registers exactly the twelve contract operations', () => {
@@ -150,6 +155,20 @@ interface BrowserCookies {
   cookie: string;
   csrf: string;
 }
+
+interface AdminWriterPoolFixture {
+  pool: PgPool;
+}
+
+interface BackendIdentity extends QueryResultRow {
+  backendStart: Date;
+  pid: number;
+}
+
+type TestClientQuery = <Row extends QueryResultRow = QueryResultRow>(
+  text: string,
+  values?: readonly unknown[],
+) => Promise<QueryResult<Row>>;
 
 function extractBrowserCookies(
   headers: Readonly<Record<string, string | readonly string[] | undefined>>,
@@ -316,6 +335,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     r5CommitQr: deterministicUuid(154),
     r5CommitConfirm: deterministicUuid(155),
     r5List: deterministicUuid(156),
+    r6Rollback: deterministicUuid(157),
   } as const;
   const seeds = new Map<string, Uint8Array>();
   const keys = new TestEphemeralAdminKeyProvider();
@@ -829,6 +849,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     ] as const) {
       await insertUser(id, `r5-${label}@example.invalid`, passwordHash, 'ACTIVE', true);
     }
+    await insertUser(ids.r6Rollback, 'r6-rollback@example.invalid', passwordHash, 'ACTIVE', true);
     for (let index = 1; index <= 3; index += 1) await insertSession(ids.totp, index);
     for (let index = 20; index <= 22; index += 1) await insertSession(ids.concurrent, index);
     const rotateToken = await insertSession(ids.rotate, 10);
@@ -880,6 +901,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     ].entries()) {
       recoveryMaterials.set(adminUserId, await insertRecoveryCode(adminUserId, index + 3));
     }
+    recoveryMaterials.set(ids.r6Rollback, await insertRecoveryCode(ids.r6Rollback, 10));
     process.env.S1203C1_ROTATE_TOKEN = rotateToken;
     process.env.S1203C1_STEP_UP_TOKEN = stepUpToken;
     process.env.S1203C1_TARGET_TOKEN = targetToken;
@@ -3223,6 +3245,257 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     expect(afterList.rows[0]!.lastActivityAt.getTime()).toBeGreaterThanOrEqual(
       beforeList.rows[0]!.lastActivityAt.getTime(),
     );
+  });
+
+  it('destroys a real PostgreSQL backend after an unconfirmed rollback', async () => {
+    const config = application.get<ConfigService<RuntimeConfig, true>>(ConfigService);
+    const writer = new AdminWriterService(config as unknown as ConfigService);
+    const writerFixture = writer as unknown as AdminWriterPoolFixture;
+    const originalPool = writerFixture.pool;
+    const dedicatedPool = new Pool({
+      application_name: 'kora-plus-api-admin-writer-r6-test',
+      connectionTimeoutMillis: 5_000,
+      database: process.env.S1203C1_E2E_DATABASE,
+      host: '127.0.0.1',
+      max: 1,
+      password: process.env.S1203C1_E2E_WRITER_PASSWORD,
+      port: Number(process.env.S1203C1_E2E_POSTGRES_PORT),
+      query_timeout: 5_000,
+      statement_timeout: 5_000,
+      user: process.env.S1203C1_E2E_WRITER_USER,
+    });
+    dedicatedPool.on('error', () => undefined);
+    const businessError = new Error('controlled R6 business failure');
+    const rollbackError = new Error('controlled R6 rollback acknowledgement failure');
+    const abandonedEventId = deterministicUuid(9_001);
+    const healthyEventId = deterministicUuid(9_002);
+    let healthyBackendIdentity: BackendIdentity | undefined;
+    let poisonedBackendIdentity: BackendIdentity | undefined;
+    let poisonedBackendState: string | undefined;
+    let rejectRollback = false;
+    let rollbackRejectionCount = 0;
+    let rejection: unknown;
+
+    const poisonedClient: PoolClient = await dedicatedPool.connect();
+    const originalQuery = poisonedClient.query;
+    const executeOriginal = originalQuery.bind(poisonedClient) as unknown as TestClientQuery;
+    const injectedQuery: TestClientQuery = async <Row extends QueryResultRow>(
+      text: string,
+      values?: readonly unknown[],
+    ): Promise<QueryResult<Row>> => {
+      if (text === 'ROLLBACK' && rejectRollback) {
+        rejectRollback = false;
+        rollbackRejectionCount += 1;
+        throw rollbackError;
+      }
+      return executeOriginal<Row>(text, values);
+    };
+    Object.defineProperty(poisonedClient, 'query', {
+      configurable: true,
+      value: injectedQuery,
+      writable: true,
+    });
+    poisonedClient.release();
+    writerFixture.pool = dedicatedPool;
+    try {
+      try {
+        await writer.transaction(async (transaction) => {
+          const identity = await transaction.query<BackendIdentity>(
+            `SELECT pg_backend_pid()::integer AS "pid", "backend_start" AS "backendStart"
+             FROM pg_catalog.pg_stat_activity WHERE "pid" = pg_backend_pid()`,
+            [],
+          );
+          poisonedBackendIdentity = identity.rows[0];
+          await transaction.query(
+            `INSERT INTO "AdminSecurityEvent"
+               ("id", "adminUserId", "eventClass", "action", "outcome", "failureCode",
+                "requestId", "subjectRefHash", "createdAt")
+             VALUES ($1, $2, 'LOGIN', 'ADMIN_AUTH_R6_ABANDONED', 'FAILED',
+                     'CONTROLLED_R6', $3, NULL, $4)`,
+            [abandonedEventId, ids.r6Rollback, 'r6-pool-abandoned', new Date()],
+          );
+          const activity = await owner.query<{ state: string }>(
+            `SELECT "state" FROM pg_catalog.pg_stat_activity
+              WHERE "pid" = $1`,
+            [poisonedBackendIdentity!.pid],
+          );
+          poisonedBackendState = activity.rows[0]?.state;
+          rejectRollback = true;
+          throw businessError;
+        });
+      } catch (error) {
+        rejection = error;
+      }
+
+      await writer.transaction(async (transaction) => {
+        const identity = await transaction.query<BackendIdentity>(
+          `SELECT pg_backend_pid()::integer AS "pid", "backend_start" AS "backendStart"
+             FROM pg_catalog.pg_stat_activity WHERE "pid" = pg_backend_pid()`,
+          [],
+        );
+        healthyBackendIdentity = identity.rows[0];
+        await transaction.query(
+          `INSERT INTO "AdminSecurityEvent"
+             ("id", "adminUserId", "eventClass", "action", "outcome", "failureCode",
+              "requestId", "subjectRefHash", "createdAt")
+           VALUES ($1, $2, 'LOGIN', 'ADMIN_AUTH_R6_HEALTHY', 'SUCCEEDED', NULL, $3, NULL, $4)`,
+          [healthyEventId, ids.r6Rollback, 'r6-pool-healthy', new Date()],
+        );
+      });
+    } finally {
+      writerFixture.pool = originalPool;
+      Object.defineProperty(poisonedClient, 'query', {
+        configurable: true,
+        value: originalQuery,
+        writable: true,
+      });
+      try {
+        await dedicatedPool.end();
+      } finally {
+        await writer.onModuleDestroy();
+      }
+    }
+
+    expect(rejection).toBeInstanceOf(AggregateError);
+    expect((rejection as AggregateError).errors).toEqual([businessError, rollbackError]);
+    expect(poisonedBackendState).toBe('idle in transaction');
+    expect(rollbackRejectionCount).toBe(1);
+    expect(poisonedBackendIdentity).toBeDefined();
+    expect(healthyBackendIdentity).toBeDefined();
+    expect([
+      healthyBackendIdentity!.pid,
+      healthyBackendIdentity!.backendStart.toISOString(),
+    ]).not.toEqual([
+      poisonedBackendIdentity!.pid,
+      poisonedBackendIdentity!.backendStart.toISOString(),
+    ]);
+    const durableState = await owner.query<{
+      abandonedCount: string;
+      healthyCount: string;
+      retiredBackendCount: string;
+    }>(
+      `SELECT
+         (SELECT count(*)::text FROM "AdminSecurityEvent" WHERE "id" = $1)
+           AS "abandonedCount",
+         (SELECT count(*)::text FROM "AdminSecurityEvent" WHERE "id" = $2)
+           AS "healthyCount",
+         (SELECT count(*)::text FROM pg_catalog.pg_stat_activity
+           WHERE "pid" = $3)
+           AS "retiredBackendCount"`,
+      [abandonedEventId, healthyEventId, poisonedBackendIdentity!.pid],
+    );
+    expect(durableState.rows[0]).toEqual({
+      abandonedCount: '0',
+      healthyCount: '1',
+      retiredBackendCount: '0',
+    });
+  });
+
+  it('records one contextual HTTP failure after rolling back the abandoned mutation', async () => {
+    const journey = await beginRecoveryJourney(ids.r6Rollback, 'r6-rollback@example.invalid');
+    const writer = application.get(AdminWriterService);
+    const originalTransaction = writer.transaction.bind(writer);
+    const callbackError = new Error('controlled R6 post-mutation HTTP failure');
+    let capturedEnrollmentId: string | undefined;
+    let failureInjected = false;
+    let enrollmentRows = 0;
+    let idempotencyRows = 0;
+    let successAuditRows = 0;
+    let insideTransactionState:
+      | Readonly<{
+          enrollmentCount: string;
+          idempotencyCount: string;
+          successAuditCount: string;
+        }>
+      | undefined;
+    const transactionSpy = jest
+      .spyOn(writer, 'transaction')
+      .mockImplementation(
+        async <T>(callback: (transaction: AdminWriterTransaction) => Promise<T>): Promise<T> =>
+          originalTransaction(async (transaction) =>
+            callback({
+              async query<Row extends QueryResultRow>(text: string, values: readonly unknown[]) {
+                const result = await transaction.query<Row>(text, values);
+                if (
+                  /INSERT INTO "AdminTotpEnrollment"/u.test(text) &&
+                  values[1] === ids.r6Rollback
+                ) {
+                  capturedEnrollmentId = String(values[0]);
+                  enrollmentRows = result.rowCount ?? 0;
+                }
+                if (
+                  /INSERT INTO "AdminIdempotencyRecord"/u.test(text) &&
+                  values[1] === ids.r6Rollback &&
+                  values[2] === 'createAdminTotpEnrollment'
+                ) {
+                  idempotencyRows = result.rowCount ?? 0;
+                }
+                if (
+                  !failureInjected &&
+                  /INSERT INTO "AuditLog"/u.test(text) &&
+                  values[7] === 'ADMIN_TOTP_ENROLLMENT_CREATED'
+                ) {
+                  failureInjected = true;
+                  successAuditRows = result.rowCount ?? 0;
+                  insideTransactionState = {
+                    enrollmentCount: String(enrollmentRows),
+                    idempotencyCount: String(idempotencyRows),
+                    successAuditCount: String(successAuditRows),
+                  };
+                  throw callbackError;
+                }
+                return result;
+              },
+            }),
+          ),
+      );
+    let response!: request.Response;
+    try {
+      response = await request(application.getHttpServer())
+        .post('/api/v1/admin/auth/totp/enrollments')
+        .set('Cookie', journey.cookies.cookie)
+        .set('Idempotency-Key', 'r6-rollback-create-0001')
+        .set('Origin', origin)
+        .set('X-Kora-Csrf', journey.cookies.csrf);
+    } finally {
+      transactionSpy.mockRestore();
+    }
+
+    expect(failureInjected).toBe(true);
+    expect(insideTransactionState).toEqual({
+      enrollmentCount: '1',
+      idempotencyCount: '1',
+      successAuditCount: '1',
+    });
+    expect(capturedEnrollmentId).toBeDefined();
+    await expectR5RecoveryFailureAudit(response, {
+      action: 'ADMIN_TOTP_ENROLLMENT_CREATE_REJECTED',
+      actorAdminUserId: ids.r6Rollback,
+      adminRecoveryContextId: journey.recoveryContextId,
+      entityId: capturedEnrollmentId!,
+    });
+    const durableState = await owner.query<{
+      enrollmentCount: string;
+      idempotencyCount: string;
+      successAuditCount: string;
+    }>(
+      `SELECT
+         (SELECT count(*)::text FROM "AdminTotpEnrollment" WHERE "adminUserId" = $1)
+           AS "enrollmentCount",
+         (SELECT count(*)::text FROM "AdminIdempotencyRecord"
+           WHERE "adminUserId" = $1 AND "operation" = 'createAdminTotpEnrollment')
+           AS "idempotencyCount",
+         (SELECT count(*)::text FROM "AuditLog"
+           WHERE "requestId" = $2 AND "action" = 'ADMIN_TOTP_ENROLLMENT_CREATED')
+           AS "successAuditCount"`,
+      [ids.r6Rollback, String(response.body.requestId)],
+    );
+    expect(durableState.rows[0]).toEqual({
+      enrollmentCount: '0',
+      idempotencyCount: '0',
+      successAuditCount: '0',
+    });
+    await expect(writer.selectOne()).resolves.toBeUndefined();
   });
 
   it('records exactly one contextual AuditLog for post-session availability, crypto and transaction failures', async () => {
