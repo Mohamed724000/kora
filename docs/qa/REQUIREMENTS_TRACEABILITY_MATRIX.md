@@ -528,6 +528,28 @@ source reste différée et non installée, le JTI transactionnel reste une
 recommandation séparée, la pagination reste **NON CONCLUSIVE**, et C2/C3
 restent `Not started`.
 
+### S1.2-03C1-R7 — publication R6 et diagnostic causal local du 2026-10-06
+
+R6 est publié au commit `bc907192075df1ccd68ec8a0378c9eae53e1ce23`.
+Trois workflows réussissent; Infrastructure `37390492450` échoue sur l'ancien
+oracle concurrent après 35/36 tests. Le statut exact de la réponse historique
+n'est pas présent dans le log et n'est pas reconstruit comme un fait.
+
+| Exigence / contrôle                         | Preuve R7                                                                                                                                                                                                | Statut                              |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| SEC-ADM-C1-R7-01 Provenance CI bornée       | checkout du merge synthétique du head R6 exact; PostgreSQL A/B passe; échec historique en 258 ms car statut hors `{200,401}`; statut, corps et ordre absents du log                                      | Verified; historical limit explicit |
+| SEC-ADM-C1-R7-02 Ordre `n → n+1`            | deux réponses 200; compteur durable `n+1`; deux PREAUTH consommés; deux audits corrélés; deux nouvelles sessions; deux victimes LRU exactes; trois familles actives                                      | Verified locally                    |
+| SEC-ADM-C1-R7-03 Ordre `n+1 → n`            | 200 puis 400 `OTP_INVALID` au message neutre; aucun cookie/secret au rejet; PREAUTH rejeté non consommé; un audit de succès, un événement `ADMIN_TOTP_VERIFY/FAILED/OTP_INVALID`; une seule éviction LRU | Verified locally                    |
+| SEC-ADM-C1-R7-04 Concurrence réelle         | deux requêtes HTTP avec PREAUTH distincts, deux writers observés bloqués dans PostgreSQL, au moins un directement par la fixture; deux répétitions `200/200`; maximum observé de trois familles actives  | Verified locally                    |
+| SEC-ADM-C1-R7-05 Régression et répétabilité | deux wrappers frais : PostgreSQL A/B et 37/37 à chaque fois, HTTP/PostgreSQL/Redis réels et nettoyage ciblé; API lint/typecheck, 17/17 suites, 93 réussis et 36 conditionnels `skipped`                  | Verified locally                    |
+| SEC-ADM-C1-R7-06 Essais non conclusifs      | scénario original local 36/36 sans ordre inverse forcé; première correction 36/37 sur observateur ne comptant que les blocages directs; tentative Docker sandbox refusée avant exécution fonctionnelle   | Recorded, not counted as PASS       |
+| SEC-ADM-C1-R7-07 Frontière                  | un test et six documents existants; aucun runtime, contrat, ADR, Prisma, migration, ACL, provisioning, wrapper, dépendance, lockfile, workflow ou manifeste modifié; aucun changement GitHub             | Scope preserved; local unpublished  |
+
+Le fournisseur de clés de production reste **NON QUALIFIÉ**, la politique open
+source reste différée et non installée, le JTI transactionnel reste une
+recommandation séparée, la pagination reste **NON CONCLUSIVE**, et C2/C3
+restent `Not started`.
+
 ## Traçabilité S1.2-03B-R1 — Supply-chain remediation
 
 Qualification : **instantané historique local prépublication du 2026-09-29**.
@@ -605,3 +627,28 @@ non publié. Aucun SHA, arbre, Run ID ou succès CI R4 futur n'y était anticip�
 après cet instantané, l'état de publication et de CI fait foi dans Git et
 GitHub. Les résultats de validation locale sont consignés dans le rapport du
 gate.
+
+## Traçabilité locale S1.2-03C1-R10 — 2026-10-07
+
+| ID        | Exigence vérifiée                                                | Preuve locale R10                                                                                                                    | Statut           |
+| --------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------- |
+| C1-R10-01 | Adopter le candidat R9 sans dépendre du prototype après adoption | Frontière finale de 23 chemins techniques ; prototype et preuves R9 inchangés                                                        | Verified locally |
+| C1-R10-02 | Reproduire le graphe supply-chain                                | Deux installations fraîches avec scripts ignorés ; graphe SHA-256 `d015a1fbf88a052ef55e3fdd9bcc640fcd61602a8a2156a5d5bf2667c022fe73` | Verified locally |
+| C1-R10-03 | Qualifier vulnérabilités, signatures et licences                 | Audits complet/production zéro ; signatures manquantes/invalides vides ; licences 933/0/0                                            | Verified locally |
+| C1-R10-04 | Gérer strictement une suppression suivie                         | `apps/api/jest.config.cjs` seul est omis ; toute autre erreur de lecture reste bloquante                                             | Verified locally |
+| C1-R10-05 | Composer strictement `qs` et `proxy-addr`                        | Ensemble exact sous `express@5.2.1`, versions exactes, parents/lock/singletons vérifiés ; 107/107 tests scanner                      | Verified locally |
+| C1-R10-06 | Préserver le contrôle global du dépôt                            | 419/419 tests tooling ; scanner officiel avec historique sur 385 fichiers, 52 immuables et six scripts qualifiés                     | Verified locally |
+| C1-R10-07 | Requalifier l'API et les consommateurs                           | API format/lint/typecheck/OpenAPI/tests/build ; Web/Admin/UI tests/typechecks/builds ; smoke Sharp                                   | Verified locally |
+| C1-R10-08 | Rejouer le runtime réel deux fois                                | Deux répétitions fraîches PostgreSQL A/B et 37/37 HTTP/PostgreSQL/Redis, nettoyage complet                                           | Verified locally |
+| C1-R10-09 | Reproduire le gel technique                                      | Deux manifestes byte-identiques, 385 lignes, SHA-256 `627aada7638656ef510c3f767f6a8b641c29f204f9c041f229834b3a23557337`              | Verified locally |
+| C1-R10-10 | Préserver la frontière de publication                            | Instantané prépublication : 29 chemins non indexés, aucune mutation Git/GitHub, PR #50 au head R6 ; état ultérieur dans Git/GitHub   | Scope preserved  |
+
+Les deux NON-PASS scanner intermédiaires et les incidents environnementaux sont
+conservés dans le rapport de validation ; aucun résultat non exécuté ou échoué
+n'est renommé en PASS. Le fournisseur de clés de production reste **NON
+QUALIFIÉ**, la politique open source différée n'est pas installée, la pagination
+reste **NON CONCLUSIVE** et C2/C3 restent `Not started`.
+
+Les mentions R10 ci-dessus décrivent l'instantané local antérieur à toute
+publication. Elles ne prédisent aucun SHA, Run ID ou succès CI ; l'état courant
+ultérieur fait foi dans Git et GitHub.

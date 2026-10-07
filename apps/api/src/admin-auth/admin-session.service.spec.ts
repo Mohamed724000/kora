@@ -1,4 +1,5 @@
 import type { AdminAuthRepository } from './admin-auth.repository';
+import type { Mock } from 'vitest';
 import { AdminAuthCrypto } from './admin-auth.crypto';
 import { AdminWriterCommitUnknownError } from '../database/admin-writer.service';
 import {
@@ -79,7 +80,7 @@ describe('AdminSessionService', () => {
   it('maps verification-key unavailability to 503 before inventing a session context', async () => {
     const keys = new TestEphemeralAdminKeyProvider();
     const crypto = new AdminAuthCrypto(keys);
-    const repository = { transaction: jest.fn() } as unknown as AdminAuthRepository;
+    const repository = { transaction: vi.fn() } as unknown as AdminAuthRepository;
     const service = new AdminSessionService(
       repository,
       crypto,
@@ -97,7 +98,7 @@ describe('AdminSessionService', () => {
       },
       now,
     );
-    const resolve = jest
+    const resolve = vi
       .spyOn(keys, 'resolveJwtVerificationKey')
       .mockRejectedValueOnce(new AdminKeyProviderUnavailableError());
 
@@ -118,7 +119,7 @@ describe('AdminSessionService', () => {
   it('keeps unknown keys, malformed tokens, bad signatures and expiration at 401', async () => {
     const keys = new TestEphemeralAdminKeyProvider();
     const crypto = new AdminAuthCrypto(keys);
-    const repository = { transaction: jest.fn() } as unknown as AdminAuthRepository;
+    const repository = { transaction: vi.fn() } as unknown as AdminAuthRepository;
     const service = new AdminSessionService(
       repository,
       crypto,
@@ -142,9 +143,7 @@ describe('AdminSessionService', () => {
     signature[0] = (signature[0] ?? 0) ^ 1;
     const invalidSignature = `${parts[0]}.${parts[1]}.${signature.toString('base64url')}`;
 
-    const unknownKey = jest
-      .spyOn(keys, 'resolveJwtVerificationKey')
-      .mockResolvedValueOnce(undefined);
+    const unknownKey = vi.spyOn(keys, 'resolveJwtVerificationKey').mockResolvedValueOnce(undefined);
     await expect(
       service.authenticate(`Bearer ${token}`, new Date((now + 1) * 1000)),
     ).rejects.toMatchObject({ code: 'AUTH_REQUIRED', status: 401 });
@@ -208,12 +207,11 @@ describe('AdminSessionService', () => {
       updatedAt: now,
     };
     const repository = {
-      transaction: jest.fn(
-        (callback: (transaction: Record<string, jest.Mock>) => unknown): unknown =>
-          callback({
-            lockAdminUser: jest.fn().mockResolvedValue(user),
-            lockSession: jest.fn().mockResolvedValue(session),
-          }),
+      transaction: vi.fn((callback: (transaction: Record<string, Mock>) => unknown): unknown =>
+        callback({
+          lockAdminUser: vi.fn().mockResolvedValue(user),
+          lockSession: vi.fn().mockResolvedValue(session),
+        }),
       ),
     } as unknown as AdminAuthRepository;
     const service = new AdminSessionService(
@@ -244,7 +242,7 @@ describe('AdminSessionService', () => {
     });
     const preProofService = new AdminSessionService(
       {
-        transaction: jest.fn().mockRejectedValue(normalizedBeforeProof),
+        transaction: vi.fn().mockRejectedValue(normalizedBeforeProof),
       } as unknown as AdminAuthRepository,
       crypto,
       keys,
@@ -271,7 +269,7 @@ describe('AdminSessionService', () => {
       retryAfterSeconds: 17,
     });
     const repository = {
-      transaction: jest.fn().mockRejectedValue(source),
+      transaction: vi.fn().mockRejectedValue(source),
     } as unknown as AdminAuthRepository;
 
     await expect(
@@ -310,7 +308,7 @@ describe('AdminSessionService', () => {
       auditContext: explicitContext,
     });
     const repository = {
-      transaction: jest.fn().mockRejectedValue(source),
+      transaction: vi.fn().mockRejectedValue(source),
     } as unknown as AdminAuthRepository;
 
     let observed: unknown;
@@ -325,7 +323,7 @@ describe('AdminSessionService', () => {
 
   it('keeps unknown COMMIT neutral and suppresses a second failure sink', async () => {
     const repository = {
-      transaction: jest
+      transaction: vi
         .fn()
         .mockRejectedValue(
           new AdminWriterCommitUnknownError(new Error('controlled acknowledgement loss')),
@@ -347,7 +345,7 @@ describe('AdminSessionService', () => {
   it('isolates concurrent revocation contexts by invocation', async () => {
     const gates: Array<() => void> = [];
     const repository = {
-      transaction: jest.fn().mockImplementation(
+      transaction: vi.fn().mockImplementation(
         () =>
           new Promise((_resolve, reject) => {
             gates.push(() => reject(new Error('controlled concurrent failure')));

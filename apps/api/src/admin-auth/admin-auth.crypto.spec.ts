@@ -222,7 +222,7 @@ describe('AdminAuthCrypto', () => {
       now,
     );
     const unavailable = new AdminKeyProviderUnavailableError();
-    const resolve = jest
+    const resolve = vi
       .spyOn(provider, 'resolveJwtVerificationKey')
       .mockRejectedValueOnce(unavailable);
 

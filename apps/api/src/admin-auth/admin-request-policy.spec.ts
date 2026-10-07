@@ -96,7 +96,7 @@ describe('AdminRequestPolicy', () => {
 
   it('traduit une panne de digest CSRF en indisponibilite fermee', async () => {
     const provider = new TestEphemeralAdminKeyProvider();
-    jest.spyOn(provider, 'keyedDigest').mockRejectedValueOnce(new Error('controlled key failure'));
+    vi.spyOn(provider, 'keyedDigest').mockRejectedValueOnce(new Error('controlled key failure'));
     const failingPolicy = new AdminRequestPolicy({ keyProvider: provider, origin });
 
     await expect(failingPolicy.issueCsrfToken('PREAUTH', 'A'.repeat(43))).rejects.toMatchObject({

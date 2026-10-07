@@ -1,13 +1,14 @@
 # KORA+ Final — Source de vérité
 
 Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 ET S1.2-03A CLÔTURÉS ET
-FUSIONNÉS — S1.2-03B-R4 FUSIONNÉ VIA PR #48 — S1.2-03C1-R5 PUBLIÉ DANS LA
-DRAFT PR #50 AVEC QUATRE WORKFLOWS VERTS — R6 VALIDÉ DANS L'INSTANTANÉ LOCAL
-PRÉPUBLICATION DU 2026-10-05 — FOURNISSEUR DE CLÉS DE PRODUCTION NON QUALIFIÉ
-— C2/C3 NOT STARTED**
+FUSIONNÉS — S1.2-03B-R4 FUSIONNÉ VIA PR #48 — S1.2-03C1-R6 PUBLIÉ DANS LA
+DRAFT PR #50, TROIS WORKFLOWS VERTS ET INFRASTRUCTURE EN ÉCHEC — CANDIDAT R9
+ADOPTÉ ET QUALIFICATION LOCALE PRÉPUBLICATION R10 ACHEVÉE LE 2026-10-07 — ÉTAT
+DE PUBLICATION COURANT À CONSTATER DANS GIT/GITHUB — FOURNISSEUR DE CLÉS DE
+PRODUCTION NON QUALIFIÉ — C2/C3 NOT STARTED**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-10-05
+Dernière réconciliation documentaire : 2026-10-07
 
 ## Hiérarchie normative
 
@@ -205,6 +206,48 @@ SHA, Run ID ou succès CI R6 futur n'est affirmé. La PR #50 reste Draft. Les
 limites R5 demeurent : politique open source différée et non installée,
 fournisseur de clés de production **NON QUALIFIÉ**, recommandation JTI séparée,
 pagination **NON CONCLUSIVE**, C2/C3 `Not started`.
+
+R6 est ensuite publié au commit
+`bc907192075df1ccd68ec8a0378c9eae53e1ce23`, parent R5
+`89323beb1ebbae9a488456db5d1dc2cb19215dd6`, arbre
+`fa9e70f913d554978c04bb609fb3d6eed6bed041`, avec neuf fichiers et
+`+697/-106`. La PR #50 reste `OPEN`, Draft et non fusionnée, avec sept commits,
+78 fichiers et `+20087/-660`; son corps inchangé de 25 862 octets porte le
+SHA-256 `d17b14a763c16a5ee256b9d06a84ef811d3e6c0ca7d9addbbdefa4a46ddd7079`.
+Launcher Windows `37390491683`, Security `37390492725` et Quality Linux
+`37390491796` réussissent en tentative 1. Infrastructure `37390492450` échoue
+en tentative 1 sur ce même head.
+
+Le log Infrastructure prouve PostgreSQL A/B et les contrôles ACL avant
+l'échec, puis 35/36 tests. Le scénario historique de concurrence échoue en
+258 ms parce qu'au moins une réponse n'appartient pas à l'ancien oracle
+`{200,401}`. Le log ne contient ni son statut exact, ni son corps, ni l'ordre
+d'acquisition, ni les états durables; aucune réponse historique 400 ne peut
+donc être affirmée comme directement observée. Le nettoyage ciblé réussit. La
+préparation Compose, son cycle de vie et la santé API sont ignorés; l'échec
+ultérieur de l'arrêt Compose, faute de fichiers `.local`, est secondaire.
+
+R7 démontre causalement que l'oracle était incomplet, sans finding runtime. Le
+verrou `AdminUser ... FOR UPDATE` sérialise les vérifications et le compteur
+TOTP est strictement croissant. Pour les compteurs adjacents `n` puis `n+1`,
+les deux réponses sont 200. Pour `n+1` puis `n`, la première est 200 et la
+seconde exactement 400 `OTP_INVALID`, message neutre, sans cookie ni secret.
+Le compteur durable vaut `n+1`; seul le PREAUTH gagnant est consommé; chaque
+succès possède exactement son audit et sa nouvelle session; le rejet possède
+exactement son événement de sécurité et aucun audit. L'éviction LRU des seules
+familles actives est exacte et le plafond reste trois.
+
+Deux isolations fraîches passent chacune PostgreSQL A/B et 37/37 parcours
+HTTP/PostgreSQL/Redis. Elles observent en concurrence réelle deux writers
+bloqués, au moins un directement par la transaction témoin, puis `200/200`,
+avec au plus trois familles actives. L'API passe lint, typecheck et 17/17 suites
+avec 93 tests réussis et 36 conditionnels `skipped`. R7 ne modifie qu'un test
+d'intégration et les six documents vivants autorisés; runtime Auth/session,
+OpenAPI, contrat, ADR-025, Prisma, migrations, ACL, provisioning, wrapper,
+dépendances, lockfile, workflows et manifestes restent inchangés. R7 demeure
+local, non indexé, non commité et non publié; aucun changement GitHub ou rerun
+n'est effectué. La publication R7 et la revue terminale C1 exigent des
+décisions séparées.
 
 Le complément Infrastructure du 2026-10-03 a rendu les scripts génériques
 isolables sans modifier leurs valeurs locales par défaut, puis a exécuté
@@ -682,3 +725,51 @@ officiel avec historique, allowlist et `git diff --check` passent. Les audits
 npm complet et production frais terminent au code 0 avec zéro vulnérabilité.
 Les signatures, licences, builds applicatifs, Flutter et PostgreSQL ne sont pas
 rejoués, leurs fichiers techniques étant inchangés par R4.
+
+## Instantané local prépublication S1.2-03C1-R10 — 2026-10-07
+
+R10 avait adopté localement le candidat supply-chain R9 isolé, sans relire son
+arbre comme source après adoption. Le prototype et son répertoire de preuves
+restaient immuables. La frontière de cet instantané comportait exactement 29
+chemins : 23 chemins techniques hérités ou autorisés par R10 (20 modifiés, deux
+ajoutés et un supprimé), puis les six documents vivants réconciliés. L'index Git
+était vide.
+
+Le lockfile adopté porte le SHA-256
+`a1b9744d0b132e6a2f20809c606b7b7525a17230c147dc6155ec05b5ba4aa2f3`.
+Deux installations fraîches avec scripts ignorés aboutissent au même graphe de
+dépendances. Les audits npm complet et production signalent zéro vulnérabilité,
+les signatures de registre n'ont aucun élément manquant ou invalide et le
+contrôle de licences classe 933 composants, sans inconnu ni interdit. La
+politique open source différée n'est pas installée.
+
+Deux NON-PASS officiels restent distinctement consignés. Le premier scanner
+échoue sur le chemin suivi mais supprimé `apps/api/jest.config.cjs`; le correctif
+autorisé exclut uniquement cette suppression suivie, sans ignorer les autres
+erreurs de lecture. Le second révèle une contradiction entre le validateur
+historique de `qs` et l'override frère `proxy-addr` du candidat R9. La composition
+finale autorise exactement ces deux clés sous `express@5.2.1`, avec les versions
+exactes `qs@6.16.0` et `proxy-addr@2.0.8`, et conserve les validateurs de parent,
+lockfile, singleton et absence de troisième clé. Le scanner final passe 107/107
+tests ciblés et 419/419 tests tooling, puis scanne 385 fichiers avec historique,
+52 sources immuables et six scripts d'installation qualifiés ; le seul chemin
+omis est la suppression suivie explicitement déclarée.
+
+L'API passe format, lint, typecheck, OpenAPI 60/67/137, 17 fichiers Vitest avec
+93 réussites et 36 tests conditionnels ignorés, puis build. Web, Admin et UI
+passent leurs tests, typechecks et builds ; le smoke test Sharp produit un PNG
+2×2 valide. Deux exécutions fraîches du wrapper réel passent chacune PostgreSQL
+A/B et 37/37 parcours HTTP/PostgreSQL/Redis, y compris les deux ordres TOTP et
+la concurrence contrôlée, sans dépasser trois familles actives. Les ressources
+ciblées sont supprimées après chaque exécution et Docker est rendu arrêté.
+
+Le manifeste technique R10 est reproduit byte à byte par deux implémentations :
+385 lignes, 44 492 octets et SHA-256
+`627aada7638656ef510c3f767f6a8b641c29f204f9c041f229834b3a23557337`.
+Il diffère du manifeste R9 uniquement sur le test d'intégration et les deux
+fichiers du scanner autorisés. Dans cet instantané local prépublication, aucun
+commit, push, changement de PR, rerun, passage Ready, approval, merge, tag,
+release ou déploiement R10 n'avait été effectué, et la PR #50 restait au head R6
+publié `bc907192075df1ccd68ec8a0378c9eae53e1ce23`. Toute publication ultérieure
+fait foi dans Git et GitHub. Le fournisseur de clés de production reste **NON
+QUALIFIÉ**, et C2/C3 restent `Not started`.

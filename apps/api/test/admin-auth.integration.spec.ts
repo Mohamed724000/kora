@@ -11,6 +11,7 @@ import pg, {
   type QueryResultRow,
 } from 'pg';
 import request from 'supertest';
+import type { MockInstance } from 'vitest';
 import { AdminAuthController } from '../src/admin-auth/admin-auth.controller';
 import { AdminAuthRepository } from '../src/admin-auth/admin-auth.repository';
 import { ADMIN_AUTH_CRYPTO, AdminAuthCrypto } from '../src/admin-auth/admin-auth.crypto';
@@ -80,9 +81,7 @@ describe('Admin C1 route inventory', () => {
 
 const realRedis = process.env.S1203C1_REAL_REDIS === '1' ? describe : describe.skip;
 
-realRedis('Admin C1 real Redis durability', () => {
-  jest.setTimeout(30_000);
-
+realRedis('Admin C1 real Redis durability', { timeout: 30_000 }, () => {
   it('applies the concurrent refresh limit and observes the persisted counter on reconnect', async () => {
     const port = Number(process.env.S1203C1_REDIS_PORT);
     if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) {
@@ -275,9 +274,7 @@ class OperationFaultKeyProvider implements AdminKeyProvider {
   }
 }
 
-realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
-  jest.setTimeout(300_000);
-
+realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', { timeout: 300_000 }, () => {
   const origin = 'https://admin.kora.invalid';
   const password = 'correct-horse-battery-staple';
   const ids = {
@@ -336,6 +333,8 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     r5CommitConfirm: deterministicUuid(155),
     r5List: deterministicUuid(156),
     r6Rollback: deterministicUuid(157),
+    concurrentForward: deterministicUuid(158),
+    concurrentReverse: deterministicUuid(159),
   } as const;
   const seeds = new Map<string, Uint8Array>();
   const keys = new TestEphemeralAdminKeyProvider();
@@ -384,9 +383,10 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     sequence: number,
     role: 'SUPER_ADMIN' | 'CONTENT_EDITOR' | 'FINANCE_MANAGER' | 'SUPPORT' = 'SUPER_ADMIN',
     refreshToken = `fixture-refresh-${sequence}`,
+    createdAt = new Date(),
   ): Promise<string> {
     const sessionId = deterministicUuid(1_000 + sequence);
-    const now = new Date();
+    const now = createdAt;
     const accessToken = await crypto.issueAccessToken(
       {
         adminUserId,
@@ -665,6 +665,181 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     return crypto.generateTotpCode(seed, counter);
   }
 
+  async function stableTotpPair(adminUserId: string): Promise<
+    Readonly<{
+      counter: bigint;
+      currentCode: string;
+      nextCode: string;
+    }>
+  > {
+    const periodMilliseconds = 30_000;
+    const minimumRemainingMilliseconds = 10_000;
+    const remaining = periodMilliseconds - (Date.now() % periodMilliseconds);
+    if (remaining < minimumRemainingMilliseconds) {
+      await new Promise<void>((resolve) => setTimeout(resolve, remaining + 25));
+    }
+    const counter = BigInt(Math.floor(Date.now() / periodMilliseconds));
+    const seed = seeds.get(adminUserId);
+    if (seed === undefined) throw new Error('Missing ordered fixture TOTP seed.');
+    const currentCode = crypto.generateTotpCode(seed, counter);
+    const nextCode = crypto.generateTotpCode(seed, counter + 1n);
+    if (currentCode === nextCode) {
+      throw new Error('Adjacent TOTP fixture counters produced an ambiguous code.');
+    }
+    return { counter, currentCode, nextCode };
+  }
+
+  function totpVerification(
+    server: Parameters<typeof request>[0],
+    cookies: BrowserCookies,
+    code: string,
+  ): request.Test {
+    return request(server)
+      .post('/api/v1/admin/auth/totp/verify')
+      .set('Content-Type', 'application/json')
+      .set('Cookie', cookies.cookie)
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', cookies.csrf)
+      .send({ code });
+  }
+
+  async function expectTotpOrderState(input: {
+    adminUserId: string;
+    counter: bigint;
+    initialFamilyIds: readonly string[];
+    outcomes: readonly Readonly<{
+      cookies: BrowserCookies;
+      response: request.Response;
+      slot: 'n' | 'n+1';
+    }>[];
+  }): Promise<void> {
+    const successful = input.outcomes.filter(({ response }) => response.status === 200);
+    const rejected = input.outcomes.filter(({ response }) => response.status !== 200);
+
+    for (const { response } of successful) {
+      expect(response.status).toBe(200);
+      expect(response.body.meta.requestId).toEqual(expect.any(String));
+      expect(response.body.data.sessionId).toEqual(expect.any(String));
+    }
+    for (const { response } of rejected) {
+      expect(response.status).toBe(400);
+      expect(response.body.error).toEqual({
+        code: 'OTP_INVALID',
+        details: {},
+        message: 'Code de vérification invalide.',
+        retryable: false,
+      });
+      expect(response.body.requestId).toEqual(expect.any(String));
+      expect(response.headers['set-cookie']).toBeUndefined();
+      expect(JSON.stringify(response.body)).not.toMatch(/accessToken|refreshToken|cookie|seed/iu);
+    }
+
+    const userState = await owner.query<{ lastAcceptedTotpCounter: string }>(
+      `SELECT "lastAcceptedTotpCounter"::text AS "lastAcceptedTotpCounter"
+         FROM "AdminUser" WHERE "id" = $1`,
+      [input.adminUserId],
+    );
+    expect(userState.rows).toEqual([{ lastAcceptedTotpCounter: (input.counter + 1n).toString() }]);
+
+    const preauthHashes = input.outcomes.map(({ cookies }) =>
+      createHash('sha256').update(cookieValue(cookies, '__Host-kora_admin_preauth')).digest('hex'),
+    );
+    const preauthState = await owner.query<{ consumed: boolean; tokenHash: string }>(
+      `SELECT "tokenHash", "consumedAt" IS NOT NULL AS consumed
+         FROM "AdminPreAuthContext" WHERE "tokenHash" = ANY($1::text[])`,
+      [preauthHashes],
+    );
+    const consumedByHash = new Map(
+      preauthState.rows.map(({ consumed, tokenHash }) => [tokenHash, consumed]),
+    );
+    expect(consumedByHash.size).toBe(input.outcomes.length);
+    for (const [index, { response }] of input.outcomes.entries()) {
+      expect(consumedByHash.get(preauthHashes[index]!)).toBe(response.status === 200);
+    }
+
+    const familyState = await owner.query<{ active: boolean; id: string; revokedAt: Date | null }>(
+      `SELECT "id", "revokedAt",
+              ("revokedAt" IS NULL AND "expiresAt" > CURRENT_TIMESTAMP
+               AND "absoluteExpiresAt" > CURRENT_TIMESTAMP) AS active
+         FROM "AdminSession" WHERE "adminUserId" = $1`,
+      [input.adminUserId],
+    );
+    const successfulSessionIds = successful.map(({ response }) =>
+      String(response.body.data.sessionId),
+    );
+    const expectedActiveIds = [
+      ...input.initialFamilyIds.slice(successful.length),
+      ...successfulSessionIds,
+    ].sort();
+    expect(
+      familyState.rows
+        .filter(({ active }) => active)
+        .map(({ id }) => id)
+        .sort(),
+    ).toEqual(expectedActiveIds);
+    expect(
+      familyState.rows
+        .filter(({ revokedAt, id }) => revokedAt !== null && input.initialFamilyIds.includes(id))
+        .map(({ id }) => id)
+        .sort(),
+    ).toEqual(input.initialFamilyIds.slice(0, successful.length).sort());
+    expect(expectedActiveIds).toHaveLength(3);
+
+    for (const { response } of successful) {
+      const requestId = String(response.body.meta.requestId);
+      const audit = await owner.query<{
+        action: string;
+        adminSessionId: string;
+        entityId: string;
+      }>(
+        `SELECT "action", "adminSessionId", "entityId"
+           FROM "AuditLog" WHERE "requestId" = $1`,
+        [requestId],
+      );
+      expect(audit.rows).toEqual([
+        {
+          action: 'ADMIN_TOTP_VERIFIED',
+          adminSessionId: String(response.body.data.sessionId),
+          entityId: String(response.body.data.sessionId),
+        },
+      ]);
+      const security = await owner.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM "AdminSecurityEvent" WHERE "requestId" = $1`,
+        [requestId],
+      );
+      expect(security.rows[0]!.count).toBe('0');
+    }
+
+    for (const { response } of rejected) {
+      const requestId = String(response.body.requestId);
+      const audit = await owner.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM "AuditLog" WHERE "requestId" = $1`,
+        [requestId],
+      );
+      expect(audit.rows[0]!.count).toBe('0');
+      const security = await owner.query<{
+        action: string;
+        adminUserId: string;
+        failureCode: string;
+        outcome: string;
+      }>(
+        `SELECT "action", "adminUserId", "failureCode", "outcome"
+           FROM "AdminSecurityEvent" WHERE "requestId" = $1`,
+        [requestId],
+      );
+      expect(security.rows).toEqual([
+        {
+          action: 'ADMIN_TOTP_VERIFY',
+          adminUserId: input.adminUserId,
+          failureCode: 'OTP_INVALID',
+          outcome: 'FAILED',
+        },
+      ]);
+    }
+
+    expect(BigInt(Math.floor(Date.now() / 30_000))).toBeLessThanOrEqual(input.counter + 1n);
+  }
+
   function invalidTotp(adminUserId: string): string {
     const seed = seeds.get(adminUserId);
     if (seed === undefined) throw new Error('Missing fixture TOTP seed.');
@@ -850,8 +1025,38 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
       await insertUser(id, `r5-${label}@example.invalid`, passwordHash, 'ACTIVE', true);
     }
     await insertUser(ids.r6Rollback, 'r6-rollback@example.invalid', passwordHash, 'ACTIVE', true);
+    await insertUser(
+      ids.concurrentForward,
+      'concurrent-forward@example.invalid',
+      passwordHash,
+      'ACTIVE',
+      true,
+    );
+    await insertUser(
+      ids.concurrentReverse,
+      'concurrent-reverse@example.invalid',
+      passwordHash,
+      'ACTIVE',
+      true,
+    );
     for (let index = 1; index <= 3; index += 1) await insertSession(ids.totp, index);
-    for (let index = 20; index <= 22; index += 1) await insertSession(ids.concurrent, index);
+    for (const [adminUserId, firstSequence] of [
+      [ids.concurrent, 20],
+      [ids.concurrentForward, 65],
+      [ids.concurrentReverse, 68],
+    ] as const) {
+      const baseline = Date.now() - 60_000;
+      for (let offset = 0; offset < 3; offset += 1) {
+        const sequence = firstSequence + offset;
+        await insertSession(
+          adminUserId,
+          sequence,
+          'SUPER_ADMIN',
+          `fixture-refresh-${sequence}`,
+          new Date(baseline + offset * 1_000),
+        );
+      }
+    }
     const rotateToken = await insertSession(ids.rotate, 10);
     const stepUpToken = await insertSession(ids.stepUp, 11);
     const targetToken = await insertSession(ids.target, 12);
@@ -950,13 +1155,13 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
       retryStrategy: () => null,
     });
     await rateLimitRedis.connect();
-  });
+  }, 300_000);
 
   beforeEach(async () => {
     await rateLimitRedis.flushdb();
     faultKeys.recover();
     keys.recover();
-  });
+  }, 300_000);
 
   afterAll(async () => {
     rateLimitRedis?.disconnect(false);
@@ -967,7 +1172,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     delete process.env.S1203C1_ROTATE_TOKEN;
     delete process.env.S1203C1_STEP_UP_TOKEN;
     delete process.env.S1203C1_TARGET_TOKEN;
-  });
+  }, 300_000);
 
   it('executes all twelve C1 operations with real dependencies and durable security state', async () => {
     const server = application.getHttpServer();
@@ -1497,54 +1702,183 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     expect(state.rows[0]!.lastAcceptedTotpCounter).not.toBeNull();
   });
 
-  it('keeps at most three active families while concurrent verifications request a fourth', async () => {
+  it('proves both serialized TOTP counter orders with exact durable outcomes', async () => {
+    const server = application.getHttpServer();
+    for (const scenario of [
+      {
+        adminUserId: ids.concurrentForward,
+        email: 'concurrent-forward@example.invalid',
+        firstSequence: 65,
+        order: ['n', 'n+1'] as const,
+      },
+      {
+        adminUserId: ids.concurrentReverse,
+        email: 'concurrent-reverse@example.invalid',
+        firstSequence: 68,
+        order: ['n+1', 'n'] as const,
+      },
+    ]) {
+      const first = await loginBrowser(server, scenario.email);
+      const second = await loginBrowser(server, scenario.email);
+      const pair = await stableTotpPair(scenario.adminUserId);
+      const cookies = [first, second] as const;
+      const codes = { n: pair.currentCode, 'n+1': pair.nextCode } as const;
+      const outcomes: Array<{
+        cookies: BrowserCookies;
+        response: request.Response;
+        slot: 'n' | 'n+1';
+      }> = [];
+      for (const [index, slot] of scenario.order.entries()) {
+        outcomes.push({
+          cookies: cookies[index]!,
+          response: await totpVerification(server, cookies[index]!, codes[slot]),
+          slot,
+        });
+      }
+      expect(outcomes.map(({ response }) => response.status)).toEqual(
+        scenario.order[0] === 'n' ? [200, 200] : [200, 400],
+      );
+      await expectTotpOrderState({
+        adminUserId: scenario.adminUserId,
+        counter: pair.counter,
+        initialFamilyIds: [0, 1, 2].map((offset) =>
+          deterministicUuid(1_000 + scenario.firstSequence + offset),
+        ),
+        outcomes,
+      });
+      process.stdout.write(
+        `C1_R7_CONTROLLED_ORDER_PASS ${JSON.stringify({
+          order: scenario.order,
+          responses: outcomes.map(({ response, slot }) => ({
+            code: response.body.error?.code ?? null,
+            message: response.body.error?.message ?? null,
+            slot,
+            status: response.status,
+          })),
+        })}\n`,
+      );
+    }
+  });
+
+  it('keeps exact LRU state while real concurrent verifications request a fourth family', async () => {
     const server = application.getHttpServer();
     const first = await loginBrowser(server, 'concurrent@example.invalid');
     const second = await loginBrowser(server, 'concurrent@example.invalid');
-    const seed = seeds.get(ids.concurrent);
-    if (seed === undefined) throw new Error('Missing concurrent fixture TOTP seed.');
-    const counter = BigInt(Math.floor(Date.now() / 30_000));
-    const requests = Promise.all([
-      request(server)
-        .post('/api/v1/admin/auth/totp/verify')
-        .set('Content-Type', 'application/json')
-        .set('Cookie', first.cookie)
-        .set('Origin', origin)
-        .set('X-Kora-Csrf', first.csrf)
-        .send({ code: crypto.generateTotpCode(seed, counter) }),
-      request(server)
-        .post('/api/v1/admin/auth/totp/verify')
-        .set('Content-Type', 'application/json')
-        .set('Cookie', second.cookie)
-        .set('Origin', origin)
-        .set('X-Kora-Csrf', second.csrf)
-        .send({ code: crypto.generateTotpCode(seed, counter + 1n) }),
-    ]);
-    let settled = false;
-    void requests.finally(() => {
-      settled = true;
+    const pair = await stableTotpPair(ids.concurrent);
+    const blocker = new Client({
+      database: process.env.S1203C1_E2E_DATABASE,
+      host: '127.0.0.1',
+      password: process.env.S1203C1_E2E_OWNER_PASSWORD,
+      port: Number(process.env.S1203C1_E2E_POSTGRES_PORT),
+      user: process.env.S1203C1_E2E_OWNER_USER,
     });
+    const observer = new Client({
+      database: process.env.S1203C1_E2E_DATABASE,
+      host: '127.0.0.1',
+      password: process.env.S1203C1_E2E_OWNER_PASSWORD,
+      port: Number(process.env.S1203C1_E2E_POSTGRES_PORT),
+      user: process.env.S1203C1_E2E_OWNER_USER,
+    });
+    await Promise.all([blocker.connect(), observer.connect()]);
+    let transactionOpen = false;
+    let stopObserving = false;
     let maximumObserved = 0;
-    while (!settled) {
-      const observed = await owner.query<{ count: string }>(
-        `SELECT count(*)::text AS count FROM "AdminSession"
-          WHERE "adminUserId" = $1 AND "revokedAt" IS NULL`,
-        [ids.concurrent],
+    let observation: Promise<void> | undefined;
+    let requestResults: Promise<PromiseSettledResult<request.Response>[]> | undefined;
+    const responses: request.Response[] = [];
+    try {
+      await blocker.query('BEGIN');
+      transactionOpen = true;
+      const blockerState = await blocker.query<{ pid: number }>(
+        'SELECT pg_backend_pid()::int AS pid',
       );
-      maximumObserved = Math.max(maximumObserved, Number(observed.rows[0]!.count));
-      await new Promise<void>((resolve) => setTimeout(resolve, 1));
+      const blockerPid = blockerState.rows[0]!.pid;
+      await blocker.query('SELECT "id" FROM "AdminUser" WHERE "id" = $1 FOR UPDATE', [
+        ids.concurrent,
+      ]);
+      requestResults = Promise.allSettled([
+        totpVerification(server, first, pair.currentCode),
+        totpVerification(server, second, pair.nextCode),
+      ]);
+
+      const deadline = Date.now() + 5_000;
+      let blockedWriterCount = 0;
+      let directlyBlockedWriterCount = 0;
+      while (blockedWriterCount < 2 && Date.now() < deadline) {
+        const blocked = await observer.query<{ count: string; directCount: string }>(
+          `SELECT count(*)::text AS count,
+                  count(*) FILTER (
+                    WHERE $1::int = ANY(pg_blocking_pids(pid))
+                  )::text AS "directCount"
+             FROM pg_stat_activity
+            WHERE cardinality(pg_blocking_pids(pid)) > 0
+              AND query LIKE '%FROM "AdminUser" WHERE "id" = $1 FOR UPDATE%'`,
+          [blockerPid],
+        );
+        blockedWriterCount = Number(blocked.rows[0]!.count);
+        directlyBlockedWriterCount = Number(blocked.rows[0]!.directCount);
+        if (blockedWriterCount < 2) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 10));
+        }
+      }
+      expect(blockedWriterCount).toBe(2);
+      expect(directlyBlockedWriterCount).toBeGreaterThanOrEqual(1);
+
+      observation = (async () => {
+        const deadline = Date.now() + 10_000;
+        while (!stopObserving && Date.now() < deadline) {
+          const state = await observer.query<{ count: string }>(
+            `SELECT count(*)::text AS count FROM "AdminSession"
+              WHERE "adminUserId" = $1 AND "revokedAt" IS NULL
+                AND "expiresAt" > CURRENT_TIMESTAMP
+                AND "absoluteExpiresAt" > CURRENT_TIMESTAMP`,
+            [ids.concurrent],
+          );
+          maximumObserved = Math.max(maximumObserved, Number(state.rows[0]!.count));
+          await new Promise<void>((resolve) => setTimeout(resolve, 1));
+        }
+        if (!stopObserving) throw new Error('Bounded family observer exceeded its deadline.');
+      })();
+
+      await blocker.query('COMMIT');
+      transactionOpen = false;
+      const settled = await requestResults;
+      for (const result of settled) {
+        if (result.status === 'rejected') throw result.reason;
+        responses.push(result.value);
+      }
+    } finally {
+      if (transactionOpen) await blocker.query('ROLLBACK');
+      stopObserving = true;
+      if (requestResults !== undefined) await requestResults;
+      if (observation !== undefined) await observation;
+      await Promise.all([blocker.end(), observer.end()]);
     }
-    const responses = await requests;
-    const finalState = await owner.query<{ count: string }>(
-      `SELECT count(*)::text AS count FROM "AdminSession"
-        WHERE "adminUserId" = $1 AND "revokedAt" IS NULL`,
-      [ids.concurrent],
-    );
-    maximumObserved = Math.max(maximumObserved, Number(finalState.rows[0]!.count));
-    expect(responses.filter(({ status }) => status === 200).length).toBeGreaterThanOrEqual(1);
-    expect(responses.every(({ status }) => status === 200 || status === 401)).toBe(true);
+
+    expect(responses[1]!.status).toBe(200);
+    expect([200, 400]).toContain(responses[0]!.status);
+    const outcomes = [
+      { cookies: first, response: responses[0]!, slot: 'n' as const },
+      { cookies: second, response: responses[1]!, slot: 'n+1' as const },
+    ];
+    await expectTotpOrderState({
+      adminUserId: ids.concurrent,
+      counter: pair.counter,
+      initialFamilyIds: [20, 21, 22].map((sequence) => deterministicUuid(1_000 + sequence)),
+      outcomes,
+    });
     expect(maximumObserved).toBeLessThanOrEqual(3);
-    expect(Number(finalState.rows[0]!.count)).toBeLessThanOrEqual(3);
+    process.stdout.write(
+      `C1_R7_CONCURRENT_ORDER_PASS ${JSON.stringify({
+        maximumObservedActiveFamilies: maximumObserved,
+        responses: outcomes.map(({ response, slot }) => ({
+          code: response.body.error?.code ?? null,
+          message: response.body.error?.message ?? null,
+          slot,
+          status: response.status,
+        })),
+      })}\n`,
+    );
   });
 
   it('enforces recovery-code single use, pre-auth expiry and user binding', async () => {
@@ -2442,7 +2776,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
       .set('X-Kora-Csrf', cookies.csrf);
     expect(enrollment.status).toBe(201);
     const enrollmentId = String(enrollment.body.data.enrollmentId);
-    const qrSpy = jest
+    const qrSpy = vi
       .spyOn(applicationCrypto, 'createTotpQrPng')
       .mockRejectedValueOnce(new Error('controlled QR generation failure'));
     let failed: request.Response;
@@ -2530,7 +2864,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     );
     const originalCreateTransaction = writer.transaction.bind(writer);
     let createPhaseReached = false;
-    const createSpy = jest
+    const createSpy = vi
       .spyOn(writer, 'transaction')
       .mockImplementation(
         async <T>(callback: (transaction: AdminWriterTransaction) => Promise<T>): Promise<T> =>
@@ -2598,7 +2932,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     expect(qrEnrollment.status).toBe(201);
     const qrEnrollmentId = String(qrEnrollment.body.data.enrollmentId);
     const applicationCrypto = application.get<AdminAuthCrypto>(ADMIN_AUTH_CRYPTO);
-    const qrFailure = jest
+    const qrFailure = vi
       .spyOn(applicationCrypto, 'createTotpQrPng')
       .mockRejectedValueOnce(new Error('controlled R5 recovery QR post-proof failure'));
     let failedQr: request.Response;
@@ -2705,7 +3039,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     );
     const originalConfirmTransaction = writer.transaction.bind(writer);
     let confirmMutationReached = false;
-    const confirmSpy = jest
+    const confirmSpy = vi
       .spyOn(writer, 'transaction')
       .mockImplementation(
         async <T>(callback: (transaction: AdminWriterTransaction) => Promise<T>): Promise<T> =>
@@ -2793,7 +3127,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     const originalTransaction = writer.transaction.bind(writer);
     let businessFailureReached = false;
     let failureSinkReached = false;
-    const transactionSpy = jest
+    const transactionSpy = vi
       .spyOn(writer, 'transaction')
       .mockImplementation(
         async <T>(callback: (transaction: AdminWriterTransaction) => Promise<T>): Promise<T> =>
@@ -2895,7 +3229,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
 
     const originalPreProofTransaction = writer.transaction.bind(writer);
     let preProofReached = false;
-    const preProofSpy = jest
+    const preProofSpy = vi
       .spyOn(writer, 'transaction')
       .mockImplementation(
         async <T>(callback: (transaction: AdminWriterTransaction) => Promise<T>): Promise<T> =>
@@ -2944,7 +3278,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     );
     const originalTouchTransaction = writer.transaction.bind(writer);
     let touchUpdateReached = false;
-    const touchSpy = jest
+    const touchSpy = vi
       .spyOn(writer, 'transaction')
       .mockImplementation(
         async <T>(callback: (transaction: AdminWriterTransaction) => Promise<T>): Promise<T> =>
@@ -2989,7 +3323,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     expect(touchFailureSinks.rows[0]).toEqual({ auditCount: '0', securityCount: '0' });
 
     const repository = application.get(AdminAuthRepository);
-    const listSpy = jest
+    const listSpy = vi
       .spyOn(repository, 'listSessions')
       .mockRejectedValueOnce(new Error('controlled R5 post-authentication list failure'));
     let listFailure: request.Response;
@@ -3071,7 +3405,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     ): Promise<request.Response> => {
       const originalTransaction = writer.transaction.bind(writer);
       let callbackCommitted = false;
-      const transactionSpy = jest
+      const transactionSpy = vi
         .spyOn(writer, 'transaction')
         .mockImplementation(
           async <T>(callback: (transaction: AdminWriterTransaction) => Promise<T>): Promise<T> => {
@@ -3408,7 +3742,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
           successAuditCount: string;
         }>
       | undefined;
-    const transactionSpy = jest
+    const transactionSpy = vi
       .spyOn(writer, 'transaction')
       .mockImplementation(
         async <T>(callback: (transaction: AdminWriterTransaction) => Promise<T>): Promise<T> =>
@@ -3536,14 +3870,14 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
       );
       for (const failure of failures) {
         await rateLimitRedis.flushdb();
-        let transactionSpy: jest.SpiedFunction<AdminWriterService['transaction']> | undefined;
+        let transactionSpy: MockInstance<AdminWriterService['transaction']> | undefined;
         if (failure === 'availability') faultKeys.failAssertAvailableAfter(1);
         if (failure === 'crypto') faultKeys.fail('UNWRAP_DEK');
         if (failure === 'transaction') {
           const writer = faultApplication.get(AdminWriterService);
           const originalTransaction = writer.transaction.bind(writer);
           let transactionCalls = 0;
-          transactionSpy = jest
+          transactionSpy = vi
             .spyOn(writer, 'transaction')
             .mockImplementation(
               async <T>(
@@ -3732,7 +4066,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
       );
       const originalTransaction = writer.transaction.bind(writer);
       let transactionCalls = 0;
-      const transactionSpy = jest
+      const transactionSpy = vi
         .spyOn(writer, 'transaction')
         .mockImplementation(
           async <T>(callback: (transaction: AdminWriterTransaction) => Promise<T>): Promise<T> => {
@@ -3810,12 +4144,12 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
           WHERE session."id" = $1 ORDER BY token."generation"`,
         [fixture.sessionId],
       );
-      let transactionSpy: jest.SpiedFunction<AdminWriterService['transaction']> | undefined;
+      let transactionSpy: MockInstance<AdminWriterService['transaction']> | undefined;
       if (failure.phase === 'csrf') faultKeys.failKeyedDigestDomain('ADMIN_CSRF_V1', 1);
       if (failure.phase === 'signature') faultKeys.fail('SIGN_RS256');
       if (failure.phase === 'rotation') {
         const originalTransaction = writer.transaction.bind(writer);
-        transactionSpy = jest
+        transactionSpy = vi
           .spyOn(writer, 'transaction')
           .mockImplementation(
             async <T>(callback: (transaction: AdminWriterTransaction) => Promise<T>): Promise<T> =>
@@ -3886,7 +4220,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     const writer = application.get(AdminWriterService);
     const originalTransaction = writer.transaction.bind(writer);
     let transactionCalls = 0;
-    const transactionSpy = jest
+    const transactionSpy = vi
       .spyOn(writer, 'transaction')
       .mockImplementation(
         async <T>(callback: (transaction: AdminWriterTransaction) => Promise<T>): Promise<T> => {
@@ -4001,7 +4335,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
       );
       const writer = application.get(AdminWriterService);
       const originalTransaction = writer.transaction.bind(writer);
-      const transactionSpy = jest
+      const transactionSpy = vi
         .spyOn(writer, 'transaction')
         .mockImplementation(
           async <T>(callback: (transaction: AdminWriterTransaction) => Promise<T>): Promise<T> =>
@@ -4114,7 +4448,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
       const writer = application.get(AdminWriterService);
       const originalTransaction = writer.transaction.bind(writer);
       let transactionCalls = 0;
-      const transactionSpy = jest
+      const transactionSpy = vi
         .spyOn(writer, 'transaction')
         .mockImplementation(
           async <T>(callback: (transaction: AdminWriterTransaction) => Promise<T>): Promise<T> => {
@@ -4187,7 +4521,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     const writer = application.get(AdminWriterService);
     const originalTransaction = writer.transaction.bind(writer);
     let transactionCalls = 0;
-    const transactionSpy = jest
+    const transactionSpy = vi
       .spyOn(writer, 'transaction')
       .mockImplementation(
         async <T>(callback: (transaction: AdminWriterTransaction) => Promise<T>): Promise<T> => {
@@ -4258,7 +4592,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     const server = application.getHttpServer();
     const writer = application.get(AdminWriterService);
     const originalTransaction = writer.transaction.bind(writer);
-    const transactionSpy = jest
+    const transactionSpy = vi
       .spyOn(writer, 'transaction')
       .mockImplementation(
         async <T>(callback: (transaction: AdminWriterTransaction) => Promise<T>): Promise<T> =>
@@ -4356,7 +4690,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', () => {
     expect(unavailableDatabase.body.error.code).toBe('SERVICE_UNAVAILABLE');
     expect(Date.now() - databaseStarted).toBeLessThan(2_000);
 
-    const unknownCommit = jest
+    const unknownCommit = vi
       .spyOn(writer, 'transaction')
       .mockRejectedValueOnce(
         new AdminWriterCommitUnknownError(new Error('controlled lost COMMIT acknowledgement')),

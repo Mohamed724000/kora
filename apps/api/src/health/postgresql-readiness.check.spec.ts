@@ -4,13 +4,13 @@ import { PostgresqlReadinessCheck } from './postgresql-readiness.check';
 
 function createPrismaService(): PrismaService {
   return {
-    selectOne: jest.fn<Promise<void>, []>().mockResolvedValue(undefined),
+    selectOne: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
   } as unknown as PrismaService;
 }
 
 function createAdminWriterService(): AdminWriterService {
   return {
-    selectOne: jest.fn<Promise<void>, []>().mockResolvedValue(undefined),
+    selectOne: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
   } as unknown as AdminWriterService;
 }
 
@@ -20,7 +20,7 @@ describe('PostgresqlReadinessCheck', () => {
   let readinessCheck: PostgresqlReadinessCheck;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     prisma = createPrismaService();
     writer = createAdminWriterService();
     readinessCheck = new PostgresqlReadinessCheck(prisma, writer);
@@ -36,14 +36,14 @@ describe('PostgresqlReadinessCheck', () => {
 
   it('propage toujours un échec de requête au mécanisme de readiness', async () => {
     const queryError = new Error('controlled query failure');
-    jest.mocked(prisma.selectOne).mockRejectedValue(queryError);
+    vi.mocked(prisma.selectOne).mockRejectedValue(queryError);
 
     await expect(readinessCheck.check()).rejects.toBe(queryError);
   });
 
   it('propage un échec du writer sous la dépendance PostgreSQL existante', async () => {
     const queryError = new Error('controlled writer failure');
-    jest.mocked(writer.selectOne).mockRejectedValue(queryError);
+    vi.mocked(writer.selectOne).mockRejectedValue(queryError);
     await expect(readinessCheck.check()).rejects.toBe(queryError);
   });
 });

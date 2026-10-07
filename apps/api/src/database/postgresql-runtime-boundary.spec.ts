@@ -49,7 +49,7 @@ function validSnapshot(): RuntimeBoundarySnapshot {
 
 function createConfig(): ConfigService<RuntimeConfig, true> {
   return {
-    get: jest.fn((key: string) => {
+    get: vi.fn((key: string) => {
       if (key === 'postgresql') {
         return { user: SAFE_RUNTIME_USER };
       }
@@ -60,17 +60,17 @@ function createConfig(): ConfigService<RuntimeConfig, true> {
 
 function createPrisma(snapshot: RuntimeBoundarySnapshot): PrismaService {
   return {
-    runtimeBoundarySnapshot: jest
-      .fn<Promise<RuntimeBoundarySnapshot>, []>()
+    runtimeBoundarySnapshot: vi
+      .fn<() => Promise<RuntimeBoundarySnapshot>>()
       .mockResolvedValue(snapshot),
-    selectOne: jest.fn<Promise<void>, []>().mockResolvedValue(undefined),
-    selectCustomerProbe: jest.fn<Promise<void>, []>().mockResolvedValue(undefined),
+    selectOne: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    selectCustomerProbe: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
   } as unknown as PrismaService;
 }
 
 function createWriter(): AdminWriterService {
   return {
-    assertLeastPrivilege: jest.fn<Promise<void>, []>().mockResolvedValue(undefined),
+    assertLeastPrivilege: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
   } as unknown as AdminWriterService;
 }
 

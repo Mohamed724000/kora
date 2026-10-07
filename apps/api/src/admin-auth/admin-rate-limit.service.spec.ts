@@ -131,23 +131,26 @@ describe('AdminRateLimitService', () => {
   });
 
   it.each([
-    ['connect', undefined],
-    ['eval', undefined],
-    ['waitaof', undefined],
-    [undefined, [0, 0]],
-    [undefined, ['malformed']],
-  ] as const)('échoue fermé sur panne %s ou réponse WAITAOF %p', async (throwAt, waitResult) => {
-    const fake = new FakeRedis();
-    if (throwAt !== undefined) {
-      fake.throwAt = throwAt;
-    }
-    if (waitResult !== undefined) {
-      fake.waitAofResult = waitResult;
-    }
-    const { service } = createService(fake);
+    ['connect', 'undefined', undefined],
+    ['eval', 'undefined', undefined],
+    ['waitaof', 'undefined', undefined],
+    [undefined, '[0, 0]', [0, 0]],
+    [undefined, '["malformed"]', ['malformed']],
+  ] as const)(
+    'échoue fermé sur panne %s ou réponse WAITAOF %s',
+    async (throwAt, _waitResultLabel, waitResult) => {
+      const fake = new FakeRedis();
+      if (throwAt !== undefined) {
+        fake.throwAt = throwAt;
+      }
+      if (waitResult !== undefined) {
+        fake.waitAofResult = waitResult;
+      }
+      const { service } = createService(fake);
 
-    await expect(service.consume('REFRESH', '203.0.113.1', 'selector')).rejects.toEqual(
-      new AdminRateLimitUnavailableError(),
-    );
-  });
+      await expect(service.consume('REFRESH', '203.0.113.1', 'selector')).rejects.toEqual(
+        new AdminRateLimitUnavailableError(),
+      );
+    },
+  );
 });

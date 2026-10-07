@@ -29,7 +29,7 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 | Slice 1 / S1.2-02   | Baseline PostgreSQL et contraintes SQL        | Closed and merged — PR #43                                                   |
 | Slice 1 / S1.2-03A  | Frontière PostgreSQL runtime en lecture seule | Closed and merged — PR #45                                                   |
 | Slice 1 / S1.2-03B  | Admin Security Contract Gate, sans runtime    | Closed and merged — PR #48, merge `c97992ca2c82bc4f22f9222ea98ed53714fede4c` |
-| Slice 1 / S1.2-03C1 | Auth admin, TOTP et sessions runtime          | R5 published in Draft PR #50; R6 local snapshot validated 2026-10-05         |
+| Slice 1 / S1.2-03C1 | Auth admin, TOTP et sessions runtime          | R10 locally qualified; publication state tracked in Git/GitHub               |
 | Slice 1 / S1.2-03C2 | Recovery, audit, invitations et RBAC runtime  | Not started — separate authorization required                                |
 | Slice 1 / S1.2-03C3 | Interface d'authentification Admin            | Not started — separate authorization required                                |
 | Slice 1 / S1.2-03D  | Artist API                                    | Not started                                                                  |
@@ -149,9 +149,11 @@ démarrait ni Slice 1 ni aucune exigence produit.
 ## Slice 1 — Audio purchase pilot
 
 Statut : **In progress — S1.2-02 closed — S1.2-03A closed and merged —
-S1.2-03B closed and merged — S1.2-03C1-R5 published in Draft PR #50 with four
-green workflows — R6 local prepublication snapshot validated on 2026-10-05 —
-production key provider not qualified — C2/C3 not started**
+S1.2-03B closed and merged — S1.2-03C1-R6 published in Draft PR #50 with three
+green workflows and Infrastructure failed — R9 candidate adopted and R10
+local prepublication qualification completed on 2026-10-07 — current
+publication state tracked in Git/GitHub — production key provider not qualified
+— C2/C3 not started**
 
 R3 est publié au head `b0792934aa2f9d6f6d481517f384825874d72402`, parent R2
 `59972cc0614842627c8c17717605345eaae277c4`, arbre
@@ -218,6 +220,30 @@ la décision de publication R6 puis la revue terminale C1 restent distinctes.
 La politique open source demeure différée et non installée, le fournisseur de
 clés de production **NON QUALIFIÉ**, la recommandation JTI séparée, la
 pagination **NON CONCLUSIVE**, et C2/C3 `Not started`.
+
+R6 est ensuite publié au head `bc907192075df1ccd68ec8a0378c9eae53e1ce23`,
+arbre `fa9e70f913d554978c04bb609fb3d6eed6bed041`, avec neuf fichiers et
+`+697/-106`. Launcher Windows `37390491683`, Security `37390492725` et Quality
+Linux `37390491796` réussissent; Infrastructure `37390492450` échoue après
+PostgreSQL A/B et 35/36 tests. Le log ne permet pas d'affirmer le statut exact
+de la réponse concurrente historique; il prouve seulement un statut hors de
+l'oracle `{200,401}`.
+
+R7 corrige uniquement cet oracle de test après preuve causale. Sous
+sérialisation par verrou utilisateur, `n → n+1` produit deux succès, tandis que
+`n+1 → n` produit 200 puis 400 `OTP_INVALID`; les compteurs, PREAUTH, audits,
+événements, sessions actives et victimes LRU sont vérifiés durablement. Deux
+isolations fraîches passent chacune 37/37 avec PostgreSQL/Redis réels; la
+concurrence effective bloque deux writers et le plafond observé reste trois.
+L'API passe lint, typecheck et 17 suites avec 93 tests réussis et 36
+conditionnels `skipped`.
+
+R7 ne modifie qu'un test et six documents existants. Runtime, contrats,
+ADR-025, Prisma, migrations, ACL, provisioning, wrapper, dépendances, lockfile,
+workflows et manifestes restent gelés. R7 demeure local, non indexé, non
+commité et non publié, sans action GitHub. Une décision de publication R7 puis
+la revue terminale C1 restent nécessaires avant toute progression; C2/C3 ne
+sont pas démarrés.
 
 Parcours cible :
 
@@ -694,3 +720,30 @@ documentation, scanner officiel avec historique, allowlist et whitespace sont
 vertes. Les audits npm complet et production frais terminent au code 0 avec
 zéro vulnérabilité. Signatures, licences, builds applicatifs, Flutter et
 PostgreSQL ne sont pas rejoués pour les surfaces inchangées.
+
+## Instantané local S1.2-03C1-R10 — adoption R9 et qualification finale
+
+R10 adopte le candidat supply-chain R9 isolé dans la frontière C1, puis ferme
+deux contradictions du scanner sans élargir sa politique : traitement strict
+de l'unique suppression suivie `apps/api/jest.config.cjs`, puis composition
+exacte des overrides `qs@6.16.0` et `proxy-addr@2.0.8` sous `express@5.2.1`.
+Les deux NON-PASS officiels restent consignés ; le scanner final passe 107/107
+tests ciblés, 419/419 tests tooling et le scan avec historique sur 385 fichiers.
+
+Les contrôles supply-chain passent sur deux installations fraîches avec scripts
+ignorés : audits complet/production à zéro, aucune signature manquante ou
+invalide, 933 licences classées sans inconnu ni interdit et graphe reproductible.
+L'API, Web, Admin et UI passent leurs tests, typechecks et builds applicables.
+Deux répétitions fraîches du wrapper réel passent chacune PostgreSQL A/B et
+37/37 parcours HTTP/PostgreSQL/Redis ; le nettoyage est complet et Docker est
+rendu arrêté.
+
+Dans cet instantané local prépublication, la frontière finale contenait 23
+chemins techniques et six documents vivants, soit 29 chemins non indexés. Le
+manifeste technique dérivé, reproduit par deux implémentations, porte le SHA-256
+`627aada7638656ef510c3f767f6a8b641c29f204f9c041f229834b3a23557337` et ne
+différait de R9 que sur les trois chemins expressément corrigés en R10. Aucun
+commit, push, changement GitHub, rerun, Ready, approval, merge, tag, release ou
+déploiement R10 n'avait été effectué. Toute publication ultérieure fait foi dans
+Git et GitHub ; le fournisseur de clés de production demeure **NON QUALIFIÉ**
+et C2/C3 restent `Not started`.

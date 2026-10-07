@@ -1,10 +1,11 @@
 # Rapport de validation locale S1.2-03C1 — Admin Auth Session Runtime
 
-Statut : **R5 PUBLIÉ AU HEAD `89323beb…` DE LA DRAFT PR #50 AVEC QUATRE
-WORKFLOWS VERTS — INSTANTANÉ LOCAL PRÉPUBLICATION R6 DU 2026-10-05 VALIDÉ —
-FOURNISSEUR DE CLÉS DE PRODUCTION NON QUALIFIÉ — C2/C3 NOT STARTED**
+Statut : **R6 PUBLIÉ AU HEAD `bc907192…` DE LA DRAFT PR #50 — CANDIDAT R9
+ADOPTÉ ET QUALIFICATION LOCALE PRÉPUBLICATION R10 ACHEVÉE LE 2026-10-07 — ÉTAT
+DE PUBLICATION COURANT À CONSTATER DANS GIT/GITHUB — FOURNISSEUR DE CLÉS DE
+PRODUCTION NON QUALIFIÉ — C2/C3 NOT STARTED**
 
-Date : 2026-10-05
+Date : 2026-10-07
 
 ## Périmètre et préflight historiques C1 initial
 
@@ -842,3 +843,215 @@ SHA, Run ID ou succès CI R6 futur n'est affirmé. La PR #50 reste Draft. La
 politique open source reste différée et non installée, le fournisseur de clés
 de production **NON QUALIFIÉ**, la recommandation JTI transactionnelle séparée,
 la pagination **NON CONCLUSIVE**, et C2/C3 `Not started`.
+
+## Publication R6 et diagnostic causal local S1.2-03C1-R7 — 2026-10-06
+
+### Baseline et provenance GitHub
+
+R6 est publié au commit
+`bc907192075df1ccd68ec8a0378c9eae53e1ce23`, parent R5
+`89323beb1ebbae9a488456db5d1dc2cb19215dd6`, arbre
+`fa9e70f913d554978c04bb609fb3d6eed6bed041`, avec neuf fichiers et
+`+697/-106`. Son manifeste à neuf lignes contient 972 octets et porte
+l'agrégat
+`8efbe4207f5c27e3dcc662113135595727e337f2dd736253111687801a63b9b4`.
+Le lockfile inchangé reste à
+`51a4a23fe87cbf7b441e464b2b066e501f8f66748d355077a3241ee4933f6b37`.
+
+La PR #50 reste `OPEN`, Draft et non fusionnée, titre
+`feat(admin): implement S1.2-03C1 auth session runtime`, avec sept commits,
+78 fichiers et `+20087/-660`. Son corps inchangé de 25 862 octets porte le
+SHA-256 `d17b14a763c16a5ee256b9d06a84ef811d3e6c0ca7d9addbbdefa4a46ddd7079`.
+Launcher Windows `37390491683`, Security `37390492725` et Quality Linux
+`37390491796` sont `pull_request/completed/success`; Infrastructure
+`37390492450` est `pull_request/completed/failure`, tous en tentative 1 sur le
+head R6 exact.
+
+### Faits directs du log Infrastructure et limite historique
+
+Le checkout CI construit un merge synthétique du `main`
+`c97992ca2c82bc4f22f9222ea98ed53714fede4c` et du head R6 exact; l'arbre R6
+reste celui publié ci-dessus. PostgreSQL A/B termine par : 2 bases, 39 modèles,
+40 tables, quatre provisionnements réussis, cinq refus et quatre refus de
+membership entrante.
+
+La suite échoue à 35/36 sur l'ancien scénario
+`keeps at most three active families while concurrent verifications request a
+fourth`, en 258 ms. La seule information de réponse démontrée par le log est
+qu'au moins un statut sortait de l'ensemble attendu `{200,401}`. Le statut, le
+code, le message, le corps, l'ordre d'acquisition, les compteurs, les PREAUTH,
+les audits et les familles ne sont pas imprimés. Une réponse historique
+`400 OTP_INVALID` est donc une inférence compatible avec le contrat et le
+runtime, mais **pas** un fait observé dans ce run.
+
+Les deux nouveaux tests R6 et les cinq nettoyages ciblés passent. Préparation
+Compose, cycle de vie et santé API sont `skipped`. L'étape d'arrêt Compose
+échoue secondairement parce que les fichiers `.local` n'existent pas, puisque
+la préparation a été ignorée; elle n'est pas la cause du test en échec et ne
+prouve aucune fuite.
+
+### Diagnostic contractuel et causal
+
+Le contrat `verifyAdminTotp` autorise notamment 400 `OTP_INVALID`, 401, 410,
+429 et 503. Le runtime verrouille la ligne `AdminUser ... FOR UPDATE`, puis
+compare le candidat au compteur `lastAcceptedTotpCounter`, strictement
+croissant. Deux codes adjacents valides ont donc exactement deux ordres :
+
+- `n → n+1` : 200 puis 200;
+- `n+1 → n` : 200 puis 400 `OTP_INVALID`, car `n` devient un rejeu.
+
+L'ancien oracle `{200,401}` n'exprimait aucun de ces deux contrats complets.
+Le 401 n'est pas l'issue normale de deux PREAUTH distincts encore actifs et le
+400 du second ordre était refusé par le test. Le finding est donc un défaut de
+test. Aucun défaut runtime, transactionnel, de plafond, d'anti-rejeu ou de
+routage d'audit n'est établi.
+
+### Remédiation de test et preuves durables
+
+Le test utilise trois utilisateurs isolés. Deux scénarios séquentiels forcent
+chaque ordre avec des codes adjacents distincts dans une fenêtre TOTP bornée.
+La preuve concurrente ouvre une transaction témoin qui verrouille l'utilisateur
+avant de lancer les deux requêtes HTTP. `pg_stat_activity` doit observer deux
+writers bloqués — directement ou par chaîne — et au moins un blocage direct
+par la fixture avant de libérer le verrou. L'observation est bornée à cinq
+secondes, puis le suivi du plafond à dix secondes; tous les résultats de
+promesse sont consommés.
+
+Pour chaque ordre, les assertions couvrent : statut, code, message, absence de
+cookie et de secret au rejet; compteur durable exact `n+1`; consommation du
+seul PREAUTH ayant réussi; identité exacte des sessions actives; révocation des
+victimes LRU les plus anciennes selon l'ordre explicite des fixtures; exactement
+trois familles actives; un unique `ADMIN_TOTP_VERIFIED` par succès, aucun
+événement de sécurité associé; aucun audit au rejet et exactement un
+`ADMIN_TOTP_VERIFY/FAILED/OTP_INVALID`. Les traces ajoutées n'impriment que
+l'ordre logique, les statuts, le code/message d'erreur et le maximum de
+familles, sans token, cookie, code TOTP, seed, DSN ou URL média.
+
+Les deux isolations fraîches donnent chacune :
+
+- ordre contrôlé `n → n+1` : `200`, `200`;
+- ordre contrôlé `n+1 → n` : `200`, puis `400 OTP_INVALID` avec
+  `Code de vérification invalide.`;
+- concurrence réelle : `n=200`, `n+1=200`, maximum observé de trois familles;
+- PostgreSQL A/B, ACL et refus : PASS;
+- suite HTTP/PostgreSQL/Redis : 37/37 PASS;
+- nettoyage ciblé de la base, des conteneurs, du volume et des secrets : PASS.
+
+### Essais non conclusifs et validations finales
+
+La reproduction locale originale, avant correction, passe 36/36 mais ne force
+pas l'ordre inverse et ne produit donc aucune preuve causale suffisante. Une
+première version corrigée passe 36/37 : les deux ordres contrôlés et leurs états
+durables sont déjà prouvés, mais l'observateur concurrent exige à tort que les
+deux writers soient directement bloqués par la fixture. PostgreSQL construit
+en réalité une chaîne : un writer attend la fixture et l'autre peut attendre
+le premier. L'observateur final exige toujours deux writers bloqués et au moins
+un blocage direct. Une tentative sous sandbox échoue avant tout test, sur
+l'accès au pipe Docker; elle n'est pas comptée comme validation.
+
+Avant le gel, un premier contrôle Prettier ciblé a demandé le formatage du test
+et une première passe lint a relevé une liaison `responses` pouvant être
+constante. Ces deux contrôles initiaux ne sont pas comptés comme PASS; après les
+corrections mécaniques, leurs commandes finales réussissent.
+
+Prettier ciblé, lint et typecheck API passent. La suite API complète passe
+17/17 suites avec 93 tests réussis et 36 conditionnels `skipped`, 129 au total.
+R7 modifie exactement ce test d'intégration et les six documents vivants de
+l'allowlist, sans ajout, suppression, renommage ni changement de mode. Runtime
+Auth/session, repository/filter/writer, OpenAPI, contrat généré, ADR-025,
+Prisma, migrations, ACL, provisioning, wrapper, dépendances, lockfile,
+workflows et manifestes restent inchangés.
+
+R7 reste local, non indexé, non commité et non publié. Aucun rerun GitHub,
+changement de PR, Ready, approval, merge, tag, release ou déploiement n'est
+effectué. La politique open source reste différée et non installée, le
+fournisseur de clés de production **NON QUALIFIÉ**, la recommandation JTI
+transactionnelle séparée, la pagination **NON CONCLUSIVE**, et C2/C3
+`Not started`. Une décision de publication R7 puis la revue terminale C1 sont
+des étapes distinctes.
+
+## Adoption locale du candidat R9 et qualification S1.2-03C1-R10 — 2026-10-07
+
+### Provenance et frontière
+
+Le candidat R9 a été produit dans un prototype isolé puis adopté localement par
+R10. Après adoption, aucun fichier du prototype n'a été consulté comme source
+d'exécution ; ses artefacts et preuves demeurent immuables. Le diff final R10
+porte exactement sur 29 chemins : 26 modifications, deux ajouts et la
+suppression suivie de `apps/api/jest.config.cjs`. Les 23 chemins techniques se
+répartissent en 20 modifications, deux ajouts et une suppression ; les six
+autres chemins sont les documents vivants requis. Aucun chemin n'est indexé.
+
+Le lockfile adopté porte le SHA-256
+`a1b9744d0b132e6a2f20809c606b7b7525a17230c147dc6155ec05b5ba4aa2f3` et le
+`package.json` racine adopté
+`758531e0bf6f2a5883743371d2da5868336bbc95a7bc741c0d1d1fbe1953e321`.
+Le graphe npm frais est stable sur deux installations avec scripts ignorés :
+368 253 octets, SHA-256
+`d015a1fbf88a052ef55e3fdd9bcc640fcd61602a8a2156a5d5bf2667c022fe73`, sept
+extraneous optionnels historiques et aucun paquet invalide ou manquant. Les
+audits complet et production sont à zéro vulnérabilité ; signatures manquantes
+et invalides sont vides ; le rapport licences classe 933 composants, zéro
+inconnu et zéro interdit.
+
+### Incidents scanner conservés et remèdes stricts
+
+| Étape                                    | Résultat observé                                      | Qualification                                                                                                                                                                                                                          |
+| ---------------------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Scanner officiel après adoption          | **NON-PASS** `ENOENT` sur `apps/api/jest.config.cjs`  | La suppression suivie était absente du disque mais encore énumérée par Git. Le remède autorisé omet uniquement un chemin simultanément suivi et supprimé ; toute autre erreur de lecture demeure bloquante.                            |
+| Scanner officiel après le premier remède | **NON-PASS** sur l'override `qs` sous `express@5.2.1` | Le validateur historique exigeait `qs` seul alors que le candidat R9 qualifiait aussi `proxy-addr`. Aucun autre validateur manifeste/lockfile n'a signalé d'anomalie.                                                                  |
+| Composition finale                       | **PASS**                                              | Sous `express@5.2.1`, l'ensemble exact est `{qs, proxy-addr}` avec `qs@6.16.0` et `proxy-addr@2.0.8`. Les autres parents gardent `qs` seul ; valeurs inexactes, parent incorrect, lock drift, clé manquante ou troisième clé échouent. |
+
+Les deux fichiers scanner finaux portent les SHA-256
+`121f817abdd9ef472ab4c64a8038094eb4707bbd43cdb167eef83f44797305cd` et
+`1273c841d81262ef71f5c3f08668ef002aebdfbd85e51401878d1486ddf8d1b3`.
+Syntaxe et Prettier passent, puis les suites ciblée et tooling passent 107/107
+et 419/419. Le scanner officiel passe sur 385 fichiers, avec historique actif,
+52 sources immuables, six scripts d'installation qualifiés et une unique
+suppression suivie omise explicitement.
+
+### Gates applicatifs et intégration réelle
+
+| Gate                               | Résultat final                                                                                                                                        |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API                                | format, lint, typecheck et build **PASS** ; OpenAPI 60 chemins, 67 opérations, 137 schémas ; Vitest 17 fichiers, 93 réussis, 36 conditionnels ignorés |
+| Web                                | quatre fichiers et dix tests **PASS** ; typecheck et build **PASS**                                                                                   |
+| Admin                              | cinq fichiers et treize tests **PASS** ; typecheck et build **PASS** ; avertissement non bloquant de sourcemap `adminlte.css.map` absent              |
+| UI                                 | deux fichiers et onze tests **PASS** ; typecheck et build **PASS**                                                                                    |
+| Sharp                              | `sharp@0.35.5` charge et génère un PNG 2×2 de 94 octets                                                                                               |
+| Wrapper réel, répétition 1         | PostgreSQL A/B et 37/37 tests HTTP/PostgreSQL/Redis **PASS**                                                                                          |
+| Wrapper réel, répétition 2 fraîche | PostgreSQL A/B et 37/37 tests HTTP/PostgreSQL/Redis **PASS**                                                                                          |
+
+Chaque wrapper valide 39 modèles, 40 tables, trois migrations immuables, les
+contraintes négatives, les ACL et memberships dans les deux orientations, le
+writer, la readiness et les douze opérations. L'ordre `n → n+1` retourne
+`200/200`; l'ordre `n+1 → n` retourne `200`, puis exactement `400 OTP_INVALID`.
+La concurrence contrôlée retourne `200/200` et n'observe jamais plus de trois
+familles actives. Les deux répétitions nettoient bases, conteneurs, volumes,
+secrets et clés éphémères ciblés. Les inventaires avant/après sont identiques,
+aucun résidu ciblé ne subsiste et Docker Desktop est finalement arrêté.
+
+La première tentative de format API dans le sandbox échoue sur un cache Prisma
+utilisateur avec `EPERM`; la relance autorisée hors sandbox passe et ne révèle
+aucun défaut du dépôt. Une première commande Node de reproduction du manifeste
+traite par erreur `\n` comme texte littéral et échoue avec `ENAMETOOLONG` avant
+d'écrire sa cible ; la version corrigée produit un fichier byte-identique au
+manifeste PowerShell. Ces événements ne sont pas présentés comme des PASS.
+
+### Gel probatoire et limites
+
+Le manifeste technique dérivé est reproduit par PowerShell et Node avec 385
+lignes, 44 492 octets et le SHA-256
+`627aada7638656ef510c3f767f6a8b641c29f204f9c041f229834b3a23557337`.
+Face au manifeste R9 immuable, seules trois empreintes diffèrent :
+`apps/api/test/admin-auth.integration.spec.ts` et les deux fichiers du scanner.
+
+Dans cet instantané local prépublication, R10 était non indexé, non commité et
+non publié. Aucun commit, push, changement de PR, rerun GitHub, Ready, approval,
+merge, tag, release ou déploiement n'avait été effectué. La PR #50 demeurait
+`OPEN`, Draft et non fusionnée au head R6
+`bc907192075df1ccd68ec8a0378c9eae53e1ce23`, avec son corps historique inchangé.
+Toute publication ultérieure fait foi dans Git et GitHub. Le fournisseur de clés
+de production est **NON QUALIFIÉ**, la politique open source reste différée et
+non installée, la recommandation JTI transactionnelle et la pagination restent
+hors de ce remède, et C2/C3 restent `Not started`.

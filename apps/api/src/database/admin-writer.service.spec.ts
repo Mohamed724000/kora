@@ -1,5 +1,6 @@
 import type { ConfigService } from '@nestjs/config';
 import { Pool } from 'pg';
+import type { Mock } from 'vitest';
 import {
   ADMIN_WRITER_COLUMN_PRIVILEGES,
   AdminWriterBoundaryError,
@@ -11,7 +12,7 @@ import {
   type AdminWriterPostgresqlConfig,
 } from './admin-writer.service';
 
-jest.mock('pg', () => ({ Pool: jest.fn() }));
+vi.mock('pg', () => ({ Pool: vi.fn() }));
 
 const reader: AdminWriterPostgresqlConfig = {
   database: 'kora',
@@ -66,7 +67,7 @@ function validSnapshot(): AdminWriterBoundarySnapshot {
 
 function configService(): ConfigService {
   return {
-    getOrThrow: jest.fn((key: string) => {
+    getOrThrow: vi.fn((key: string) => {
       if (key === 'postgresql') return reader;
       if (key === 'adminAuth') return { postgresql: writer };
       if (key === 'readiness') return { timeoutMs: 1_000 };
@@ -77,15 +78,17 @@ function configService(): ConfigService {
 
 describe('AdminWriterService', () => {
   const pool = {
-    connect: jest.fn(),
-    end: jest.fn(),
-    on: jest.fn(),
-    query: jest.fn(),
+    connect: vi.fn(),
+    end: vi.fn(),
+    on: vi.fn(),
+    query: vi.fn(),
   };
 
   beforeEach(() => {
-    jest.clearAllMocks();
-    (Pool as unknown as jest.Mock).mockImplementation(() => pool);
+    vi.clearAllMocks();
+    (Pool as unknown as Mock).mockImplementation(function MockPool() {
+      return pool;
+    });
   });
 
   it('exige une identité et un secret distincts sur la même base', () => {
@@ -166,7 +169,7 @@ describe('AdminWriterService', () => {
 
   it('refuse une configuration partagée sans journaliser les secrets', () => {
     const config = configService();
-    (config.getOrThrow as jest.Mock).mockImplementation((key: string) => {
+    (config.getOrThrow as Mock).mockImplementation((key: string) => {
       if (key === 'postgresql') return reader;
       if (key === 'adminAuth') return { postgresql: { ...writer, password: reader.password } };
       if (key === 'readiness') return { timeoutMs: 1_000 };
@@ -184,8 +187,8 @@ describe('AdminWriterService', () => {
 
   it('commit une transaction paramétrée et rend le client au pool', async () => {
     const client = {
-      query: jest.fn().mockResolvedValue({ rows: [{ id: 'ok' }] }),
-      release: jest.fn(),
+      query: vi.fn().mockResolvedValue({ rows: [{ id: 'ok' }] }),
+      release: vi.fn(),
     };
     pool.connect.mockResolvedValue(client);
     const service = new AdminWriterService(configService());
@@ -207,7 +210,7 @@ describe('AdminWriterService', () => {
 
   it('rollback un échec confirmé avant COMMIT', async () => {
     const businessError = new Error('business failure');
-    const client = { query: jest.fn().mockResolvedValue({ rows: [] }), release: jest.fn() };
+    const client = { query: vi.fn().mockResolvedValue({ rows: [] }), release: vi.fn() };
     pool.connect.mockResolvedValue(client);
     const service = new AdminWriterService(configService());
 
@@ -226,8 +229,8 @@ describe('AdminWriterService', () => {
     const businessError = new Error('business failure');
     const rollbackError = new Error('rollback connection lost');
     const client = {
-      query: jest.fn().mockResolvedValueOnce({ rows: [] }).mockRejectedValueOnce(rollbackError),
-      release: jest.fn(),
+      query: vi.fn().mockResolvedValueOnce({ rows: [] }).mockRejectedValueOnce(rollbackError),
+      release: vi.fn(),
     };
     pool.connect.mockResolvedValue(client);
     const service = new AdminWriterService(configService());
@@ -250,10 +253,10 @@ describe('AdminWriterService', () => {
 
   it('conserve un échec BEGIN après un rollback confirmé', async () => {
     const beginError = new Error('begin failed');
-    const callback = jest.fn();
+    const callback = vi.fn();
     const client = {
-      query: jest.fn().mockRejectedValueOnce(beginError).mockResolvedValueOnce({ rows: [] }),
-      release: jest.fn(),
+      query: vi.fn().mockRejectedValueOnce(beginError).mockResolvedValueOnce({ rows: [] }),
+      release: vi.fn(),
     };
     pool.connect.mockResolvedValue(client);
     const service = new AdminWriterService(configService());
@@ -269,10 +272,10 @@ describe('AdminWriterService', () => {
   it('agrège les échecs BEGIN et rollback puis détruit le client', async () => {
     const beginError = new Error('begin failed');
     const rollbackError = new Error('rollback connection lost');
-    const callback = jest.fn();
+    const callback = vi.fn();
     const client = {
-      query: jest.fn().mockRejectedValueOnce(beginError).mockRejectedValueOnce(rollbackError),
-      release: jest.fn(),
+      query: vi.fn().mockRejectedValueOnce(beginError).mockRejectedValueOnce(rollbackError),
+      release: vi.fn(),
     };
     pool.connect.mockResolvedValue(client);
     const service = new AdminWriterService(configService());
@@ -296,8 +299,8 @@ describe('AdminWriterService', () => {
   it('distingue un COMMIT inconnu et détruit la connexion', async () => {
     const commitError = new Error('connection lost');
     const client = {
-      query: jest.fn().mockResolvedValueOnce({ rows: [] }).mockRejectedValueOnce(commitError),
-      release: jest.fn(),
+      query: vi.fn().mockResolvedValueOnce({ rows: [] }).mockRejectedValueOnce(commitError),
+      release: vi.fn(),
     };
     pool.connect.mockResolvedValue(client);
     const service = new AdminWriterService(configService());

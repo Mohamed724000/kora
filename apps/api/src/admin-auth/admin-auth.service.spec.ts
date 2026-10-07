@@ -150,18 +150,18 @@ describe('AdminAuthService contract validation', () => {
       tokenHash: 'recovery-token-hash',
     };
     const transaction = {
-      findPreAuthByHash: jest.fn().mockResolvedValue(undefined),
-      findRecoveryContextByHash: jest.fn().mockResolvedValue(recovery),
-      lockAdminUser: jest.fn().mockResolvedValue(user),
-      lockRecoveryContextByHash: jest.fn().mockResolvedValue(recovery),
+      findPreAuthByHash: vi.fn().mockResolvedValue(undefined),
+      findRecoveryContextByHash: vi.fn().mockResolvedValue(recovery),
+      lockAdminUser: vi.fn().mockResolvedValue(user),
+      lockRecoveryContextByHash: vi.fn().mockResolvedValue(recovery),
     } as unknown as AdminAuthTransactionRepository;
     const repository = {
-      transaction: jest.fn((callback: (value: AdminAuthTransactionRepository) => unknown) =>
+      transaction: vi.fn((callback: (value: AdminAuthTransactionRepository) => unknown) =>
         callback(transaction),
       ),
     } as unknown as AdminAuthRepository;
     const keys = new TestEphemeralAdminKeyProvider();
-    jest.spyOn(keys, 'keyedDigest').mockRejectedValueOnce(new Error('controlled post-proof'));
+    vi.spyOn(keys, 'keyedDigest').mockRejectedValueOnce(new Error('controlled post-proof'));
     const service = new AdminAuthService(
       repository,
       new AdminAuthCrypto(keys),
@@ -208,7 +208,7 @@ describe('AdminAuthService contract validation', () => {
     const serviceWith = (error: unknown): AdminAuthService => {
       const keys = new TestEphemeralAdminKeyProvider();
       return new AdminAuthService(
-        { transaction: jest.fn().mockRejectedValue(error) } as unknown as AdminAuthRepository,
+        { transaction: vi.fn().mockRejectedValue(error) } as unknown as AdminAuthRepository,
         new AdminAuthCrypto(keys),
         keys,
         {} as AdminRateLimitService,

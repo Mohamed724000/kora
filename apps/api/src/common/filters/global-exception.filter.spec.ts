@@ -11,7 +11,7 @@ describe('GlobalExceptionFilter', () => {
       end(payload: string): void {
         body = payload;
       },
-      setHeader: jest.fn(),
+      setHeader: vi.fn(),
       statusCode: 0,
     } as unknown as ServerResponse;
     const host = {
@@ -24,7 +24,7 @@ describe('GlobalExceptionFilter', () => {
         getResponse: () => response,
       }),
     } as ArgumentsHost;
-    const reportException = jest.fn();
+    const reportException = vi.fn();
     const filter = new GlobalExceptionFilter(createStructuredLogger('silent'), reportException);
 
     filter.catch(new Error('private internal detail'), host);
@@ -54,7 +54,7 @@ describe('GlobalExceptionFilter', () => {
       end(payload: string): void {
         body = payload;
       },
-      setHeader: jest.fn(),
+      setHeader: vi.fn(),
       statusCode: 0,
     } as unknown as ServerResponse;
     const host = {
@@ -67,7 +67,7 @@ describe('GlobalExceptionFilter', () => {
         getResponse: () => response,
       }),
     } as ArgumentsHost;
-    const reportException = jest.fn();
+    const reportException = vi.fn();
 
     new GlobalExceptionFilter(createStructuredLogger('silent'), reportException).catch(
       new AdminC1HttpError(503, 'SERVICE_UNAVAILABLE'),
@@ -92,8 +92,8 @@ describe('GlobalExceptionFilter', () => {
 
   it('ajoute Retry-After uniquement depuis une erreur C1 born\u00e9e', () => {
     const response = {
-      end: jest.fn(),
-      setHeader: jest.fn(),
+      end: vi.fn(),
+      setHeader: vi.fn(),
       statusCode: 0,
     } as unknown as ServerResponse;
     const host = {
@@ -117,7 +117,7 @@ describe('GlobalExceptionFilter', () => {
       end(payload: string): void {
         body = payload;
       },
-      setHeader: jest.fn(),
+      setHeader: vi.fn(),
       statusCode: 0,
     } as unknown as ServerResponse;
     const host = {
@@ -126,7 +126,7 @@ describe('GlobalExceptionFilter', () => {
         getResponse: () => response,
       }),
     } as ArgumentsHost;
-    const recorder = jest.fn().mockResolvedValue(undefined);
+    const recorder = vi.fn().mockResolvedValue(undefined);
     const filter = new GlobalExceptionFilter(createStructuredLogger('silent'), undefined, recorder);
 
     await filter.catch(new AdminC1HttpError(401, 'AUTH_REQUIRED'), host);

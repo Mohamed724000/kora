@@ -3,9 +3,11 @@
 Périmètre durable couvert : **BASELINE + S0.4/S0.5/M0.1/M0.2/S0.6 ET M0.3
 FUSIONNÉS ET CLÔTURÉS + S1.1 FERMÉ + CONTRACT & DATA READINESS S1.2-01 +
 S1.2-02 CLÔTURÉ ET FUSIONNÉ + S1.2-03A CLÔTURÉ ET FUSIONNÉ + S1.2-03B-R4
-FUSIONNÉ VIA PR #48 + S1.2-03C1-R5 PUBLIÉ DANS LA DRAFT PR #50 AVEC QUATRE
-WORKFLOWS VERTS + INSTANTANÉ LOCAL PRÉPUBLICATION R6 DU 2026-10-05 VALIDÉ —
-KMS/JWT DE PRODUCTION NON QUALIFIÉS — C2/C3 NOT STARTED**.
+FUSIONNÉ VIA PR #48 + S1.2-03C1-R6 PUBLIÉ DANS LA DRAFT PR #50 AVEC TROIS
+WORKFLOWS VERTS ET INFRASTRUCTURE EN ÉCHEC + CANDIDAT R9 ADOPTÉ ET QUALIFICATION
+LOCALE PRÉPUBLICATION R10 ACHEVÉE LE 2026-10-07 — ÉTAT DE PUBLICATION COURANT À
+CONSTATER DANS GIT/GITHUB — KMS/JWT DE PRODUCTION NON QUALIFIÉS — C2/C3 NOT
+STARTED**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
 commit, push ou changement GitHub S1.1 n’avait encore été effectué : il s’agit
@@ -75,6 +77,28 @@ rejeté et rollback non confirmé. La libération unique détruit ce client, tou
 en préservant l'`AggregateError`, l'absence de retry et la sémantique COMMIT
 inconnu. Le wrapper final passe 36/36 tests réels; R6 ne qualifie ni KMS/JWT de
 production, ni timeout réseau réel, déploiement, C2 ou C3.
+
+R6 est publié au head `bc907192075df1ccd68ec8a0378c9eae53e1ce23`. Trois
+workflows réussissent, mais Infrastructure `37390492450` échoue sur l'ancien
+oracle du test concurrent après 35/36 tests. Son log ne contient pas le statut,
+le corps ni l'ordre exacts de la réponse fautive; une réponse historique 400
+n'est donc pas traitée comme une observation.
+
+R7 qualifie les deux ordres TOTP adjacents sans modifier le runtime. Avec le
+verrou utilisateur et le compteur global strict, `n → n+1` produit deux succès;
+`n+1 → n` produit un succès puis un 400 `OTP_INVALID`. Le rejet ne consomme pas
+son PREAUTH, ne crée ni session ni audit de succès et écrit exactement un
+événement de sécurité; le succès consomme son PREAUTH et produit exactement la
+session et l'audit attendus. Dans les deux cas, le compteur durable vaut `n+1`,
+l'éviction LRU porte uniquement sur les familles actives et leur nombre reste
+trois. La preuve concurrente réelle observe deux writers bloqués et un maximum
+de trois familles actives. Deux isolations fraîches passent chacune 37/37.
+
+La menace de dépassement concurrent, d'anti-rejeu contourné, de double sink ou
+de PREAUTH indûment consommé n'est pas reproduite. Le finding est limité à
+l'oracle de test historique, désormais remplacé par des assertions exactes et
+des traces expurgées. R7 reste local et ne qualifie toujours ni provider de
+clés de production, ni déploiement, pagination, JTI transactionnel, C2 ou C3.
 
 Le gate supply-chain final du 2026-10-03 retire la chaîne dev-only
 `eslint-config-next → @next/eslint-plugin-next → fast-glob → micromatch → braces`
@@ -1010,3 +1034,39 @@ complet et production frais terminent au code 0 avec zéro vulnérabilité. Aucu
 audit de signature de registre, licence, build applicatif, Flutter ou test
 PostgreSQL n'est rejoué pour les surfaces inchangées ; cette non-répétition ne
 transforme aucune preuve historique en preuve R4.
+
+## Qualification locale supply-chain et runtime S1.2-03C1-R10
+
+R10 adopte le candidat R9 sans réutiliser son prototype comme source après
+l'adoption. Le lockfile reste lié à l'empreinte
+`a1b9744d0b132e6a2f20809c606b7b7525a17230c147dc6155ec05b5ba4aa2f3` et son
+graphe est reproduit par deux installations fraîches avec scripts ignorés. Les
+audits complet et production sont à zéro vulnérabilité ; aucune signature n'est
+manquante ou invalide ; 933 composants ont une licence classée, sans inconnu ni
+interdit.
+
+Le scanner traite une suppression suivie uniquement lorsqu'elle est confirmée
+par l'état Git et refuse toujours les lectures absentes inattendues. Pour
+`express@5.2.1`, l'override autorisé est l'ensemble exact `{qs, proxy-addr}` avec
+`qs@6.16.0` et `proxy-addr@2.0.8`. Toute clé manquante, valeur non exacte,
+troisième clé, mauvais parent ou dérive du lockfile reste bloquante. Les règles
+strictes `body-parser`, `superagent`, de singleton et d'intégrité du lockfile
+restent actives. Les deux échecs officiels ayant révélé ces contradictions sont
+conservés séparément dans le rapport R10 ; la qualification finale passe
+107/107 tests scanner, 419/419 tests tooling et le scan avec historique sur 385
+fichiers, 52 sources immuables et six scripts d'installation qualifiés.
+
+Deux répétitions fraîches sur PostgreSQL et Redis réels passent chacune 37/37
+parcours, couvrent les contraintes et ACL, les deux ordres TOTP et la
+concurrence contrôlée. L'ordre décroissant refuse l'ancien code par exactement
+`400 OTP_INVALID`; la concurrence reste à trois familles actives au maximum.
+Les ressources et secrets de test ciblés sont supprimés et Docker est rendu
+arrêté. Ces preuves ne qualifient ni KMS/JWT de production, ni réseau ou
+déploiement de production, ni C2/C3.
+
+Dans cet instantané local prépublication, la frontière R10 comportait 23 chemins
+techniques et six documents vivants, non indexés et non publiés. Aucun commit,
+push, changement de PR, rerun, Ready, approval, merge, tag, release ou
+déploiement n'avait été réalisé. Toute publication ultérieure fait foi dans Git
+et GitHub. La politique open source différée n'est pas installée et aucun secret,
+DSN, jeton ou URL média brute n'est ajouté au dépôt ou aux preuves.

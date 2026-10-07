@@ -18,9 +18,9 @@ modify the upstream compatibility data.
 
 ## Sharp/libvips Linux x64 binaries
 
-The Linux x64 installation of `sharp@0.35.4` can select the optional native
-packages `@img/sharp-libvips-linux-x64@1.3.3` (glibc) or
-`@img/sharp-libvips-linuxmusl-x64@1.3.3` (musl). Their package manifests declare
+The Linux x64 installation of `sharp@0.35.5` can select the optional native
+packages `@img/sharp-libvips-linux-x64@1.3.4` (glibc) or
+`@img/sharp-libvips-linuxmusl-x64@1.3.4` (musl). Their package manifests declare
 `LGPL-3.0-or-later`. KORA+ does not modify these third-party libraries.
 
 The upstream image-processing library is [libvips](https://github.com/libvips/libvips),

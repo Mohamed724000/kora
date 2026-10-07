@@ -1,11 +1,27 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
+import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 
 import { deepmerge } from "deepmerge-ts";
 
 import {
+  assertRequiredRepositoryFiles,
+  classifyRepositoryPaths,
   findSecretTypes,
+  parseNulSeparatedPaths,
+  scanHistory,
+  scanTrackedFiles,
+  snapshotRepositoryFiles,
   validateAdminAuthSupplyChain,
   validateBraceExpansionOverride,
   validateDependabotPolicy,
@@ -21,9 +37,272 @@ import {
   validatePrismaMysqlOverride,
   validateQsOverrides,
   validateReactTypesSingleton,
+  validateR9SupplyChainRemediation,
   validateSharpOverride,
   validateVitestSupplyChain,
+  verifyRepositoryFileSnapshot,
 } from "./scan-repository.mjs";
+
+const requiredRepositoryFiles = [
+  ".github/dependabot.yml",
+  "apps/admin/package.json",
+  "apps/api/package.json",
+  "apps/mobile/pubspec.lock",
+  "apps/web/package.json",
+  "docs/governance/SOURCE_BASELINE_MANIFEST.sha256",
+  "package-lock.json",
+  "package.json",
+  "packages/config/package.json",
+  "packages/contracts/package.json",
+  "packages/ui/package.json",
+];
+
+function withTemporaryDirectory(prefix, operation) {
+  const directory = mkdtempSync(join(tmpdir(), prefix));
+  try {
+    return operation(directory);
+  } finally {
+    rmSync(directory, { force: true, recursive: true });
+  }
+}
+
+function writeFixtureFile(root, relativePath, content = "fixture\n") {
+  const path = join(root, relativePath);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, content);
+}
+
+function git(root, arguments_) {
+  return execFileSync("git", arguments_, {
+    cwd: root,
+    encoding: "utf8",
+  });
+}
+
+function withGitDeletionFixture(operation) {
+  return withTemporaryDirectory("kora-scanner-git-", (root) => {
+    git(root, ["init", "--quiet"]);
+    writeFixtureFile(root, "tracked-present.txt", "safe tracked content\n");
+    writeFixtureFile(
+      root,
+      "tracked-secret.txt",
+      `credential=${"AKIA"}${"A".repeat(16)}\n`,
+    );
+    writeFixtureFile(
+      root,
+      "deleted-history-secret.txt",
+      `credential=${"AKIA"}${"B".repeat(16)}\n`,
+    );
+    git(root, ["add", "--", "."]);
+    git(root, [
+      "-c",
+      "user.name=KORA Scanner Fixture",
+      "-c",
+      "user.email=scanner-fixture@example.invalid",
+      "commit",
+      "--quiet",
+      "-m",
+      "scanner fixture",
+    ]);
+    rmSync(join(root, "deleted-history-secret.txt"));
+    writeFixtureFile(
+      root,
+      "untracked-present.txt",
+      `token=${"ghp_"}${"C".repeat(36)}\n`,
+    );
+    writeFixtureFile(root, "untracked-forbidden.pem", "fixture\n");
+    return operation(root);
+  });
+}
+
+function fileSystemError(code) {
+  return Object.assign(new Error(`controlled ${code}`), { code });
+}
+
+function fakeStat(symbolicLink = false) {
+  return {
+    ctimeNs: 6n,
+    dev: 1n,
+    ino: 2n,
+    isSymbolicLink: () => symbolicLink,
+    mode: 3n,
+    mtimeNs: 5n,
+    size: 4n,
+  };
+}
+
+function frozenGitOperations(snapshot) {
+  return {
+    execFileSync(_command, arguments_) {
+      const paths = arguments_.includes("--deleted")
+        ? snapshot.deletedFiles
+        : snapshot.listedFiles;
+      return paths.length === 0 ? "" : `${paths.join("\0")}\0`;
+    },
+    lstatSync,
+    statSync,
+  };
+}
+
+test("Git path parsing preserves NUL-delimited names exactly", () => {
+  assert.deepEqual(
+    parseNulSeparatedPaths("alpha file\0dir/file\nname\0", "fixture"),
+    ["alpha file", "dir/file\nname"],
+  );
+  assert.deepEqual(parseNulSeparatedPaths("", "fixture"), []);
+});
+
+test("Git path parsing rejects unterminated and duplicate output", () => {
+  assert.throws(
+    () => parseNulSeparatedPaths("unterminated", "fixture"),
+    /fixture is not NUL-terminated/u,
+  );
+  assert.throws(
+    () => parseNulSeparatedPaths("same\0same\0", "fixture"),
+    /fixture contains duplicate paths/u,
+  );
+});
+
+test("a real Git fixture omits only its unstaged tracked deletion", () => {
+  withGitDeletionFixture((root) => {
+    const snapshot = snapshotRepositoryFiles(root);
+    assert.deepEqual(snapshot.deletedFiles, ["deleted-history-secret.txt"]);
+    assert.deepEqual(snapshot.omittedPaths, ["deleted-history-secret.txt"]);
+    assert.ok(snapshot.files.includes("tracked-present.txt"));
+    assert.ok(snapshot.files.includes("untracked-present.txt"));
+    assert.equal(
+      snapshot.listedFiles.length,
+      snapshot.files.length + snapshot.omittedPaths.length,
+    );
+
+    const errors = [];
+    scanTrackedFiles(root, snapshot.files, errors);
+    assert.ok(
+      errors.includes(
+        "high-confidence aws-access-key in tracked file tracked-secret.txt",
+      ),
+    );
+    assert.ok(
+      errors.includes(
+        "high-confidence github-token in tracked file untracked-present.txt",
+      ),
+    );
+    assert.ok(
+      errors.includes("forbidden tracked file: untracked-forbidden.pem"),
+    );
+
+    const historyErrors = [];
+    scanHistory(root, historyErrors);
+    assert.deepEqual(historyErrors, [
+      "high-confidence aws-access-key in Git history",
+    ]);
+    verifyRepositoryFileSnapshot(root, snapshot);
+  });
+});
+
+test("an absent path without Git deletion proof remains blocking", () => {
+  withTemporaryDirectory("kora-scanner-absent-", (root) => {
+    assert.throws(
+      () => classifyRepositoryPaths(root, ["missing.txt"], []),
+      /repository path is absent without a Git deletion: missing\.txt/u,
+    );
+  });
+});
+
+test("file-system errors other than ENOENT remain blocking", () => {
+  const controlledError = fileSystemError("EPERM");
+  assert.throws(
+    () =>
+      classifyRepositoryPaths("fixture", ["denied.txt"], [], {
+        lstatSync() {
+          throw controlledError;
+        },
+        statSync,
+      }),
+    (error) => error === controlledError,
+  );
+});
+
+test("broken final and parent symbolic links remain blocking", () => {
+  const missingTarget = fileSystemError("ENOENT");
+  assert.throws(
+    () =>
+      classifyRepositoryPaths("fixture", ["broken-link"], [], {
+        lstatSync: () => fakeStat(true),
+        statSync() {
+          throw missingTarget;
+        },
+      }),
+    /broken symbolic link: broken-link/u,
+  );
+  assert.throws(
+    () =>
+      classifyRepositoryPaths("fixture", ["broken-parent/file.txt"], [], {
+        lstatSync: () => fakeStat(true),
+        statSync() {
+          throw missingTarget;
+        },
+      }),
+    /broken parent symbolic link: broken-parent\/file\.txt/u,
+  );
+});
+
+test("a retained path disappearing after selection remains blocking", () => {
+  withTemporaryDirectory("kora-scanner-disappear-", (root) => {
+    writeFixtureFile(root, "present.txt");
+    const snapshot = classifyRepositoryPaths(root, ["present.txt"], []);
+    rmSync(join(root, "present.txt"));
+    assert.throws(
+      () =>
+        verifyRepositoryFileSnapshot(
+          root,
+          snapshot,
+          frozenGitOperations(snapshot),
+        ),
+      (error) => error?.code === "ENOENT",
+    );
+  });
+});
+
+test("an omitted tracked deletion reappearing before postflight blocks", () => {
+  withTemporaryDirectory("kora-scanner-reappear-", (root) => {
+    const snapshot = classifyRepositoryPaths(
+      root,
+      ["deleted.txt"],
+      ["deleted.txt"],
+    );
+    writeFixtureFile(root, "deleted.txt");
+    assert.throws(
+      () =>
+        verifyRepositoryFileSnapshot(
+          root,
+          snapshot,
+          frozenGitOperations(snapshot),
+        ),
+      /tracked deletion reappeared: deleted\.txt/u,
+    );
+  });
+});
+
+test("required manifests and lockfile remain blocking when Git-deleted", () => {
+  for (const missingPath of ["package.json", "package-lock.json"]) {
+    withTemporaryDirectory("kora-scanner-required-", (root) => {
+      for (const relativePath of requiredRepositoryFiles) {
+        if (relativePath !== missingPath) {
+          writeFixtureFile(root, relativePath, "{}\n");
+        }
+      }
+      const snapshot = classifyRepositoryPaths(root, requiredRepositoryFiles, [
+        missingPath,
+      ]);
+      assert.deepEqual(snapshot.omittedPaths, [missingPath]);
+      assert.throws(
+        () => assertRequiredRepositoryFiles(snapshot.files),
+        new RegExp(`required repository file is absent: ${missingPath}`, "u"),
+      );
+    });
+  }
+});
 
 const validDependabotPolicy = `version: 2
 updates:
@@ -1110,7 +1389,7 @@ const validQsManifests = {
   "": {
     overrides: {
       "body-parser@2.3.0": { qs: "6.16.0" },
-      "express@5.2.1": { qs: "6.16.0" },
+      "express@5.2.1": { "proxy-addr": "2.0.8", qs: "6.16.0" },
       "superagent@10.3.0": { qs: "6.16.0" },
     },
   },
@@ -1444,9 +1723,12 @@ const validR2Manifests = {
         "fast-glob": "npm:tinyglobby@0.2.17",
       },
       "@nestjs/platform-express@11.1.28": { multer: "2.4.0" },
-      "js-yaml@3.15.0": "3.15.2",
+      "body-parser@2.3.0": { qs: "6.16.0" },
+      "express@5.2.1": { "proxy-addr": "2.0.8", qs: "6.16.0" },
       "js-yaml@4.3.0": "4.3.2",
-      sharp: "0.35.4",
+      sharp: "0.35.5",
+      "source-map-js": "1.2.2",
+      "superagent@10.3.0": { qs: "6.16.0" },
     },
   },
   "apps/admin": {
@@ -1458,6 +1740,10 @@ const validR2Manifests = {
   },
   "apps/api": {
     dependencies: { "@nestjs/platform-express": "11.1.28" },
+    devDependencies: {
+      "@vitest/coverage-v8": "4.1.11",
+      vitest: "4.1.11",
+    },
   },
   "apps/web": {
     dependencies: { next: "16.3.8" },
@@ -1480,13 +1766,6 @@ const validR2Lock = {
       dependencies: { "js-yaml": "^4.3.0" },
       version: "3.3.6",
     },
-    "node_modules/@istanbuljs/load-nyc-config": {
-      dependencies: { "js-yaml": "^3.13.1" },
-      version: "1.1.0",
-    },
-    "node_modules/@istanbuljs/load-nyc-config/node_modules/js-yaml": {
-      version: "3.15.2",
-    },
     "node_modules/@nestjs/platform-express": {
       dependencies: { multer: "2.2.0" },
       version: "11.1.28",
@@ -1505,9 +1784,21 @@ const validR2Lock = {
     "node_modules/@next/swc-win32-arm64-msvc": { version: "16.3.8" },
     "node_modules/@next/swc-win32-x64-msvc": { version: "16.3.8" },
     "node_modules/@vitest/mocker": { version: "4.1.11" },
+    "node_modules/@vitest/coverage-v8": {
+      peerDependencies: { vitest: "4.1.11" },
+      version: "4.1.11",
+    },
+    "node_modules/body-parser": {
+      dependencies: { qs: "^6.15.2" },
+      version: "2.3.0",
+    },
     "node_modules/cosmiconfig": {
       dependencies: { "js-yaml": "^4.1.0" },
       version: "8.3.6",
+    },
+    "node_modules/css-tree": {
+      dependencies: { "source-map-js": "^1.2.1" },
+      version: "3.2.1",
     },
     "node_modules/eslint-config-next": {
       dependencies: { "@next/eslint-plugin-next": "16.3.8" },
@@ -1524,6 +1815,10 @@ const validR2Lock = {
       version: "0.2.17",
     },
     "node_modules/js-yaml": { version: "4.3.2" },
+    "node_modules/magicast": {
+      dependencies: { "source-map-js": "^1.2.1" },
+      version: "0.5.5",
+    },
     "node_modules/multer": { version: "2.4.0" },
     "node_modules/next": {
       dependencies: { "@next/env": "16.3.8" },
@@ -1540,15 +1835,77 @@ const validR2Lock = {
       },
       version: "16.3.8",
     },
-    "node_modules/sharp": { version: "0.35.4" },
+    "node_modules/express": {
+      dependencies: { "proxy-addr": "^2.0.7", qs: "^6.14.0" },
+      version: "5.2.1",
+    },
+    "node_modules/postcss": {
+      dependencies: { "source-map-js": "^1.2.1" },
+      version: "8.5.24",
+    },
+    "node_modules/proxy-addr": { version: "2.0.8" },
+    "node_modules/qs": { version: "6.16.0" },
+    "node_modules/sharp": {
+      optionalDependencies: {
+        "@img/sharp-darwin-arm64": "0.35.5",
+        "@img/sharp-darwin-x64": "0.35.5",
+        "@img/sharp-freebsd-wasm32": "0.35.5",
+        "@img/sharp-libvips-darwin-arm64": "1.3.4",
+        "@img/sharp-libvips-darwin-x64": "1.3.4",
+        "@img/sharp-libvips-linux-arm": "1.3.4",
+        "@img/sharp-libvips-linux-arm64": "1.3.4",
+        "@img/sharp-libvips-linux-ppc64": "1.3.4",
+        "@img/sharp-libvips-linux-riscv64": "1.3.4",
+        "@img/sharp-libvips-linux-s390x": "1.3.4",
+        "@img/sharp-libvips-linux-x64": "1.3.4",
+        "@img/sharp-libvips-linuxmusl-arm64": "1.3.4",
+        "@img/sharp-libvips-linuxmusl-x64": "1.3.4",
+        "@img/sharp-linux-arm": "0.35.5",
+        "@img/sharp-linux-arm64": "0.35.5",
+        "@img/sharp-linux-ppc64": "0.35.5",
+        "@img/sharp-linux-riscv64": "0.35.5",
+        "@img/sharp-linux-s390x": "0.35.5",
+        "@img/sharp-linux-x64": "0.35.5",
+        "@img/sharp-linuxmusl-arm64": "0.35.5",
+        "@img/sharp-linuxmusl-x64": "0.35.5",
+        "@img/sharp-webcontainers-wasm32": "0.35.5",
+        "@img/sharp-win32-arm64": "0.35.5",
+        "@img/sharp-win32-ia32": "0.35.5",
+        "@img/sharp-win32-x64": "0.35.5",
+      },
+      version: "0.35.5",
+    },
+    "node_modules/source-map-js": { version: "1.2.2" },
+    "node_modules/superagent": {
+      dependencies: { qs: "^6.14.1" },
+      version: "10.3.0",
+    },
     "node_modules/vitest": {
       dependencies: { "@vitest/mocker": "4.1.11" },
+      peerDependencies: { "@vitest/coverage-v8": "4.1.11" },
       version: "4.1.11",
     },
   },
 };
 
-test("accepts the exact S1.1-R2 supply-chain graph", () => {
+for (const [packageName, version] of Object.entries(
+  validR2Lock.packages["node_modules/sharp"].optionalDependencies,
+)) {
+  validR2Lock.packages[`node_modules/${packageName}`] = {
+    license: packageName.startsWith("@img/sharp-libvips-")
+      ? "LGPL-3.0-or-later"
+      : packageName.startsWith("@img/sharp-win32-")
+        ? "Apache-2.0 AND LGPL-3.0-or-later"
+        : "Apache-2.0",
+    version,
+  };
+}
+validR2Lock.packages["node_modules/@img/sharp-wasm32"] = {
+  license: "Apache-2.0 AND LGPL-3.0-or-later AND MIT",
+  version: "0.35.5",
+};
+
+test("accepts the exact R9 supply-chain graph", () => {
   assert.deepEqual(validateNextToolchain(validR2Manifests, validR2Lock), []);
   assert.deepEqual(
     validateNextLintGlobOverride(validR2Manifests, validR2Lock),
@@ -1559,11 +1916,123 @@ test("accepts the exact S1.1-R2 supply-chain graph", () => {
     [],
   );
   assert.deepEqual(validateJsYamlOverrides(validR2Manifests, validR2Lock), []);
+  assert.deepEqual(validateQsOverrides(validR2Manifests, validR2Lock), []);
+  assert.deepEqual(
+    validateR9SupplyChainRemediation(validR2Manifests, validR2Lock),
+    [],
+  );
   assert.deepEqual(validateSharpOverride(validR2Manifests, validR2Lock), []);
   assert.deepEqual(
     validateNestMulterOverride(validR2Manifests, validR2Lock),
     [],
   );
+});
+
+function validateIntegratedQsProxyComposition(manifests, lockfile) {
+  return [
+    ...validateQsOverrides(manifests, lockfile),
+    ...validateR9SupplyChainRemediation(manifests, lockfile),
+  ];
+}
+
+test("accepts exact qs and proxy-addr composition in either key order", () => {
+  assert.deepEqual(
+    validateIntegratedQsProxyComposition(validR2Manifests, validR2Lock),
+    [],
+  );
+
+  const reversed = structuredClone(validR2Manifests);
+  reversed[""].overrides["express@5.2.1"] = {
+    qs: "6.16.0",
+    "proxy-addr": "2.0.8",
+  };
+  assert.deepEqual(
+    validateIntegratedQsProxyComposition(reversed, validR2Lock),
+    [],
+  );
+});
+
+test("rejects one-axis qs and proxy-addr composition drift", () => {
+  for (const mutate of [
+    (manifests) => {
+      delete manifests[""].overrides["express@5.2.1"].qs;
+    },
+    (manifests) => {
+      delete manifests[""].overrides["express@5.2.1"]["proxy-addr"];
+    },
+    (manifests) => {
+      manifests[""].overrides["express@5.2.1"].qs = "^6.16.0";
+    },
+    (manifests) => {
+      manifests[""].overrides["express@5.2.1"].qs = "6.16.1";
+    },
+    (manifests) => {
+      manifests[""].overrides["express@5.2.1"]["proxy-addr"] = "^2.0.8";
+    },
+    (manifests) => {
+      manifests[""].overrides["express@5.2.1"]["proxy-addr"] = "2.0.7";
+    },
+    (manifests) => {
+      manifests[""].overrides["express@5.2.1"].example = "1.0.0";
+    },
+  ]) {
+    const manifests = structuredClone(validR2Manifests);
+    mutate(manifests);
+    assert.ok(
+      validateIntegratedQsProxyComposition(manifests, validR2Lock).length > 0,
+    );
+  }
+});
+
+test("rejects wrong qs or proxy-addr placement with one-axis mutations", () => {
+  const wrongQsParent = structuredClone(validR2Manifests);
+  wrongQsParent[""].overrides["example@1.0.0"] = { qs: "6.16.0" };
+  assert.ok(
+    validateIntegratedQsProxyComposition(wrongQsParent, validR2Lock).some(
+      (error) => error.includes("qs security override is forbidden"),
+    ),
+  );
+
+  const wrongProxyParent = structuredClone(validR2Manifests);
+  wrongProxyParent[""].overrides.example = { "proxy-addr": "2.0.8" };
+  assert.ok(
+    validateIntegratedQsProxyComposition(wrongProxyParent, validR2Lock).some(
+      (error) => error.includes("proxy-addr security override is forbidden"),
+    ),
+  );
+});
+
+test("rejects lock drift with a correct qs and proxy-addr manifest", () => {
+  const qsLockDrift = structuredClone(validR2Lock);
+  qsLockDrift.packages["node_modules/express"].dependencies.qs = "6.16.0";
+  assert.ok(
+    validateIntegratedQsProxyComposition(
+      validR2Manifests,
+      qsLockDrift,
+    ).includes(
+      "express@5.2.1 lock metadata must retain its audited qs ^6.14.0 dependency",
+    ),
+  );
+
+  const proxyLockDrift = structuredClone(validR2Lock);
+  proxyLockDrift.packages["node_modules/proxy-addr"].version = "2.0.7";
+  assert.ok(
+    validateIntegratedQsProxyComposition(validR2Manifests, proxyLockDrift).some(
+      (error) => error.startsWith("proxy-addr must have one physical"),
+    ),
+  );
+});
+
+test("preserves strict qs composition for body-parser and superagent", () => {
+  for (const selector of ["body-parser@2.3.0", "superagent@10.3.0"]) {
+    const manifests = structuredClone(validR2Manifests);
+    manifests[""].overrides[selector].example = "1.0.0";
+    assert.ok(
+      validateQsOverrides(manifests, validR2Lock).includes(
+        `${selector} must override qs to exact version 6.16.0`,
+      ),
+    );
+  }
 });
 
 test("rejects every Next lint glob override scope and alias identity drift", () => {
@@ -1859,10 +2328,90 @@ test("rejects js-yaml unapproved parents and physical variants", () => {
   );
 });
 
+test("rejects reintroduction of the removed Jest Istanbul vulnerable chain", () => {
+  const manifests = structuredClone(validR2Manifests);
+  manifests["apps/api"].devDependencies.jest = "30.4.2";
+  const lockfile = structuredClone(validR2Lock);
+  lockfile.packages["node_modules/@istanbuljs/load-nyc-config"] = {
+    dependencies: { "js-yaml": "^3.13.1" },
+    version: "1.1.0",
+  };
+  lockfile.packages[
+    "node_modules/@istanbuljs/load-nyc-config/node_modules/js-yaml"
+  ] = { version: "3.15.2" };
+  lockfile.packages["node_modules/example/node_modules/argparse"] = {
+    version: "1.0.10",
+  };
+  lockfile.packages["node_modules/sprintf-js"] = { version: "1.0.3" };
+
+  const jsYamlErrors = validateJsYamlOverrides(manifests, lockfile);
+  assert.ok(
+    jsYamlErrors.some((error) =>
+      error.startsWith(
+        "js-yaml must have only the approved physical installations",
+      ),
+    ),
+  );
+  const errors = validateR9SupplyChainRemediation(manifests, lockfile);
+  assert.ok(
+    errors.includes("apps/api must not declare removed Jest package jest"),
+  );
+  assert.ok(
+    errors.some((error) =>
+      error.startsWith(
+        "@istanbuljs/load-nyc-config must have no physical installation",
+      ),
+    ),
+  );
+  assert.ok(
+    errors.some((error) =>
+      error.startsWith("sprintf-js must have no physical installation"),
+    ),
+  );
+  assert.ok(
+    errors.some((error) =>
+      error.startsWith("argparse 1.x must have no physical installation"),
+    ),
+  );
+});
+
+test("rejects proxy-addr and source-map-js remediation drift", () => {
+  const manifests = structuredClone(validR2Manifests);
+  manifests[""].overrides["express@5.2.1"]["proxy-addr"] = "^2.0.8";
+  manifests[""].overrides["source-map-js"] = "^1.2.2";
+  manifests[""].overrides.example = { "proxy-addr": "2.0.8" };
+  const lockfile = structuredClone(validR2Lock);
+  lockfile.packages["node_modules/proxy-addr"].version = "2.0.7";
+  lockfile.packages["node_modules/source-map-js"].version = "1.2.1";
+  lockfile.packages["node_modules/example"] = {
+    dependencies: { "source-map-js": "^1.2.1" },
+  };
+
+  const errors = validateR9SupplyChainRemediation(manifests, lockfile);
+  assert.ok(
+    errors.includes(
+      "express@5.2.1 must override proxy-addr to exact version 2.0.8",
+    ),
+  );
+  assert.ok(
+    errors.includes(
+      "proxy-addr security override is forbidden at path: example > proxy-addr",
+    ),
+  );
+  assert.ok(
+    errors.includes("source-map-js must be overridden to exact version 1.2.2"),
+  );
+  assert.ok(
+    errors.includes(
+      "source-map-js has an unapproved lock parent: node_modules/example",
+    ),
+  );
+});
+
 test("rejects Sharp override, parent and physical installation drift", () => {
   const manifests = structuredClone(validR2Manifests);
-  manifests[""].overrides.sharp = "^0.35.4";
-  manifests[""].overrides["next@16.3.8"] = { sharp: "0.35.4" };
+  manifests[""].overrides.sharp = "^0.35.5";
+  manifests[""].overrides["next@16.3.8"] = { sharp: "0.35.5" };
   const lockfile = structuredClone(validR2Lock);
   lockfile.packages["node_modules/next"].optionalDependencies.sharp = "^0.35.3";
   lockfile.packages["node_modules/example/node_modules/sharp"] = {
@@ -1870,7 +2419,7 @@ test("rejects Sharp override, parent and physical installation drift", () => {
   };
   const errors = validateSharpOverride(manifests, lockfile);
   assert.ok(
-    errors.includes("sharp must be overridden to exact version 0.35.4"),
+    errors.includes("sharp must be overridden to exact version 0.35.5"),
   );
   assert.ok(
     errors.includes(
@@ -1885,7 +2434,7 @@ test("rejects Sharp override, parent and physical installation drift", () => {
   assert.ok(
     errors.some((error) =>
       error.startsWith(
-        "sharp must have one physical installation at node_modules/sharp@0.35.4",
+        "sharp must have one physical installation at node_modules/sharp@0.35.5",
       ),
     ),
   );

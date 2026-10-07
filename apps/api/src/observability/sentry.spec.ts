@@ -8,12 +8,12 @@ import {
 
 function adapter(): SentryAdapter {
   return {
-    captureException: jest.fn((exception: unknown, hint?: EventHint) => {
+    captureException: vi.fn((exception: unknown, hint?: EventHint) => {
       void exception;
       void hint;
       return 'event-id';
     }),
-    init: jest.fn((options: NodeOptions) => {
+    init: vi.fn((options: NodeOptions) => {
       void options;
     }),
   };
@@ -53,7 +53,7 @@ describe('Sentry API', () => {
         tracesSampleRate: 0,
       }),
     );
-    const initializedOptions = jest.mocked(sdk.init).mock.calls[0]?.[0];
+    const initializedOptions = vi.mocked(sdk.init).mock.calls[0]?.[0];
     expect(initializedOptions?.beforeSend).toEqual(expect.any(Function));
     const sanitized = await initializedOptions!.beforeSend!(
       {
