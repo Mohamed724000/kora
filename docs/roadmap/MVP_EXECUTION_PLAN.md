@@ -29,7 +29,7 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 | Slice 1 / S1.2-02   | Baseline PostgreSQL et contraintes SQL        | Closed and merged — PR #43                                                   |
 | Slice 1 / S1.2-03A  | Frontière PostgreSQL runtime en lecture seule | Closed and merged — PR #45                                                   |
 | Slice 1 / S1.2-03B  | Admin Security Contract Gate, sans runtime    | Closed and merged — PR #48, merge `c97992ca2c82bc4f22f9222ea98ed53714fede4c` |
-| Slice 1 / S1.2-03C1 | Auth admin, TOTP et sessions runtime          | R10 locally qualified; publication state tracked in Git/GitHub               |
+| Slice 1 / S1.2-03C1 | Auth admin, TOTP et sessions runtime          | R10 published; terminal BLOCK F1/F2; R11 prepublication snapshot validated   |
 | Slice 1 / S1.2-03C2 | Recovery, audit, invitations et RBAC runtime  | Not started — separate authorization required                                |
 | Slice 1 / S1.2-03C3 | Interface d'authentification Admin            | Not started — separate authorization required                                |
 | Slice 1 / S1.2-03D  | Artist API                                    | Not started                                                                  |
@@ -149,11 +149,9 @@ démarrait ni Slice 1 ni aucune exigence produit.
 ## Slice 1 — Audio purchase pilot
 
 Statut : **In progress — S1.2-02 closed — S1.2-03A closed and merged —
-S1.2-03B closed and merged — S1.2-03C1-R6 published in Draft PR #50 with three
-green workflows and Infrastructure failed — R9 candidate adopted and R10
-local prepublication qualification completed on 2026-10-07 — current
-publication state tracked in Git/GitHub — production key provider not qualified
-— C2/C3 not started**
+S1.2-03B closed and merged — S1.2-03C1-R10 published in Draft PR #50 with four
+green workflows — terminal review BLOCK F1/F2 — R11 prepublication snapshot
+locally validated — production key provider not qualified — C2/C3 not started**
 
 R3 est publié au head `b0792934aa2f9d6f6d481517f384825874d72402`, parent R2
 `59972cc0614842627c8c17717605345eaae277c4`, arbre
@@ -747,3 +745,33 @@ commit, push, changement GitHub, rerun, Ready, approval, merge, tag, release ou
 déploiement R10 n'avait été effectué. Toute publication ultérieure fait foi dans
 Git et GitHub ; le fournisseur de clés de production demeure **NON QUALIFIÉ**
 et C2/C3 restent `Not started`.
+
+## S1.2-03C1-R11 — instantané prépublication de la remédiation F1/F2
+
+R10 est publié au head source
+`153b6ca1ef861a9fc09f3c290cb4d8cb54e9802d` de la Draft PR #50. Les quatre
+workflows R10 sont verts, mais la revue terminale ultérieure maintient
+**BLOCK** : le préflight PostgreSQL ne couvrait pas `member=runtime`, et cinq
+opérations omettaient `VALIDATION_ERROR` dans leur liste contractuelle.
+
+Erratum : R3 à R10 avaient préparé seulement `GRANT <target> TO <probe>`, donc
+`roleid=target`. L'orientation `GRANT <probe> TO <target>`, donc
+`member=target`, n'avait pas été exercée. Une postcondition saine après
+nettoyage n'était pas une preuve de refus sans mutation.
+
+R11 complète le prédicat PostgreSQL et prouve deux fois, sur A/B, les huit cas
+reader/writer × `roleid`/`member`, avec signature et options de grant inchangées.
+Il ajoute `VALIDATION_ERROR` uniquement aux cinq opérations concernées, avec
+cinq mutations adversariales et cinq régressions HTTP réelles à 400 sans
+mutation métier. Le QR reste explicitement hors de cet ensemble. Les deux
+wrappers passent chacun 42/42; OpenAPI reste 60/67/137, la génération reste
+byte-identique, l'API passe 93 tests avec 41 conditionnels ignorés, tooling
+426/426 et le scanner officiel passe avec historique.
+
+Dans cet instantané local prépublication, R11 était non indexé, non commité et
+non publié. Il ne démarrait ni C2 ni C3. Aucun audit/signature/licence ou build
+Web/Admin/Flutter/APK inchangé n'était rejoué. Toute publication ultérieure fait
+foi dans Git et GitHub. Fournisseur de clés de production **NON QUALIFIÉ**,
+politique OSS différée non installée, JTI transactionnel séparé, pagination
+**NON CONCLUSIVE**, couverture V8 et iOS non exécutées. Une revue terminale C1
+reste requise avant toute décision de fusion.

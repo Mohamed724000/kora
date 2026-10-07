@@ -1,11 +1,10 @@
 # KORA+ Final — Source de vérité
 
 Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 ET S1.2-03A CLÔTURÉS ET
-FUSIONNÉS — S1.2-03B-R4 FUSIONNÉ VIA PR #48 — S1.2-03C1-R6 PUBLIÉ DANS LA
-DRAFT PR #50, TROIS WORKFLOWS VERTS ET INFRASTRUCTURE EN ÉCHEC — CANDIDAT R9
-ADOPTÉ ET QUALIFICATION LOCALE PRÉPUBLICATION R10 ACHEVÉE LE 2026-10-07 — ÉTAT
-DE PUBLICATION COURANT À CONSTATER DANS GIT/GITHUB — FOURNISSEUR DE CLÉS DE
-PRODUCTION NON QUALIFIÉ — C2/C3 NOT STARTED**
+FUSIONNÉS — S1.2-03B-R4 FUSIONNÉ VIA PR #48 — S1.2-03C1-R10 PUBLIÉ AU HEAD
+`153b6ca1…` DE LA DRAFT PR #50 AVEC QUATRE WORKFLOWS VERTS — REVUE TERMINALE
+BLOCK F1/F2 — INSTANTANÉ PRÉPUBLICATION R11 VALIDÉ —
+FOURNISSEUR DE CLÉS DE PRODUCTION NON QUALIFIÉ — C2/C3 NOT STARTED**
 
 Date d’effet : 2026-07-28
 Dernière réconciliation documentaire : 2026-10-07
@@ -773,3 +772,65 @@ release ou déploiement R10 n'avait été effectué, et la PR #50 restait au hea
 publié `bc907192075df1ccd68ec8a0378c9eae53e1ce23`. Toute publication ultérieure
 fait foi dans Git et GitHub. Le fournisseur de clés de production reste **NON
 QUALIFIÉ**, et C2/C3 restent `Not started`.
+
+## R10 publié, BLOCK terminal F1/F2 et instantané prépublication S1.2-03C1-R11 — 2026-10-07
+
+R10 est publié au commit source
+`153b6ca1ef861a9fc09f3c290cb4d8cb54e9802d`, parent
+`bc907192075df1ccd68ec8a0378c9eae53e1ce23`, arbre
+`d61ca1388c44e68bc8b7287ef18bfc0f92e01bcf`. La PR #50 reste `OPEN`, Draft,
+`CLEAN/MERGEABLE` et non fusionnée. Infrastructure `37657618058`, Launcher
+Windows `37657618156`, Security `37657618168` et Quality Linux `37657618092`
+sont `pull_request/completed/success`, tentative 1, avec ce head source. Les
+jobs ont utilisé la ref de merge synthétique distincte
+`509575edb2f918f519906dedbd78dcb203b91a19`.
+
+La revue terminale post-R10 maintient **BLOCK** sur deux findings **HIGH**. F1
+est l'absence du prédicat `membership.member = runtime_role.oid` dans le
+préflight PostgreSQL. F2 est l'absence de `VALIDATION_ERROR` dans les listes
+contractuelles de cinq opérations qui renvoient déjà ce code. Les quatre
+workflows R10 précèdent ces constats et ne prouvent pas R11.
+
+Erratum : les preuves R3 à R10 qualifiées de bidirectionnelles avaient préparé
+uniquement `GRANT <target> TO <probe>`, soit
+`pg_auth_members.roleid=<target>`. Elles n'avaient pas exercé
+`GRANT <probe> TO <target>`, soit `member=<target>`. La postcondition saine
+après retrait/nettoyage prouvait l'absence finale de membership, pas un refus
+sans mutation pour l'orientation manquante.
+
+R11 ajoute ce prédicat sans retirer les trois autres. Deux wrappers frais
+prouvent chacun, sur PostgreSQL A/B, la matrice reader/writer × `roleid`/`member`
+de huit refus sans mutation : grant et options brutes préalables présents,
+signature reader/writer/probe strictement identique, grant tiers préservé et
+nettoyage ciblé vérifié. Chaque exécution conserve aussi quatre
+provisionnements positifs/idempotents et le refus writer/ACL distinct, soit
+neuf refus au total.
+
+Le contrat ajoute `VALIDATION_ERROR` uniquement à
+`confirmAdminTotpEnrollment`, `verifyAdminTotp`,
+`verifyAdminRecoveryCode`, `rotateAdminRecoveryCodes` et
+`stepUpAdminSession`. Cinq mutations adversariales nommées et cinq parcours
+HTTP réels prouvent respectivement le gate et exactement 400 avec l'enveloppe
+contractuelle, le sink existant et aucune mutation métier. Le QR reste à son
+remapping `403 FORBIDDEN`. OpenAPI reste 60/67/137 et le contrat généré reste
+byte-identique, SHA-256
+`d53665d89388e399d1a7dbf782739b836bb652d8cfd281e3679621c86377b697`.
+
+Les validations observées sont : syntaxe shell/Node et Prettier ciblé PASS;
+OpenAPI adversarial 299/299 et boundary 7/7; API lint/typecheck PASS, 17 fichiers
+Vitest, 93 réussites et 41 conditionnels ignorés; tooling 426/426; scanner 385
+fichiers, historique actif, 52 sources immuables et six scripts qualifiés; deux
+wrappers frais à 42/42 tests réels chacun. La première tentative lint, arrêtée
+sur une constante de test inutilisée, reste NON-PASS; la correction bornée et
+la reprise passent. Les inventaires Docker avant/après sont identiques et
+Docker est rendu arrêté.
+
+Dans cet instantané local prépublication, R11 était non indexé, non commité et
+non publié. Aucun add, commit, push, rerun CI, changement de PR, Ready,
+approval, merge, tag, release ou déploiement n'avait été effectué. Audits,
+signatures, licences, Web/Admin/Flutter/APK, couverture V8 et iOS n'étaient pas
+rejoués. Toute publication ultérieure fait foi dans Git et GitHub. La politique
+OSS différée n'est pas installée,
+le fournisseur de clés de production reste **NON QUALIFIÉ**, la recommandation
+JTI reste séparée, la pagination reste **NON CONCLUSIVE**, et C2/C3 restent
+`Not started`.

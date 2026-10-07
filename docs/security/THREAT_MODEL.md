@@ -3,10 +3,9 @@
 Périmètre durable couvert : **BASELINE + S0.4/S0.5/M0.1/M0.2/S0.6 ET M0.3
 FUSIONNÉS ET CLÔTURÉS + S1.1 FERMÉ + CONTRACT & DATA READINESS S1.2-01 +
 S1.2-02 CLÔTURÉ ET FUSIONNÉ + S1.2-03A CLÔTURÉ ET FUSIONNÉ + S1.2-03B-R4
-FUSIONNÉ VIA PR #48 + S1.2-03C1-R6 PUBLIÉ DANS LA DRAFT PR #50 AVEC TROIS
-WORKFLOWS VERTS ET INFRASTRUCTURE EN ÉCHEC + CANDIDAT R9 ADOPTÉ ET QUALIFICATION
-LOCALE PRÉPUBLICATION R10 ACHEVÉE LE 2026-10-07 — ÉTAT DE PUBLICATION COURANT À
-CONSTATER DANS GIT/GITHUB — KMS/JWT DE PRODUCTION NON QUALIFIÉS — C2/C3 NOT
+FUSIONNÉ VIA PR #48 + S1.2-03C1-R10 PUBLIÉ DANS LA DRAFT PR #50 AVEC QUATRE
+WORKFLOWS VERTS + REVUE TERMINALE BLOCK F1/F2 + INSTANTANÉ PRÉPUBLICATION R11
+VALIDÉ — KMS/JWT DE PRODUCTION NON QUALIFIÉS — C2/C3 NOT
 STARTED**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
@@ -114,16 +113,16 @@ les alias ou parents divergents et la désactivation des règles Next témoins.
 
 ### Frontière runtime locale S1.2-03C1
 
-| Menace                              | Contrôle local C1                                                                                                                                                              | Limite résiduelle                                                |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
-| Compte, session ou version obsolète | rechargement serveur du statut, rôle, session et `authorizationVersion`                                                                                                        | aucun déploiement ou runbook production qualifié                 |
-| Rejeu TOTP/recovery/refresh         | compteur TOTP strict, codes one-shot Argon2id, refresh à usage unique et révocation de famille                                                                                 | `WAITAOF` n'est pas une transaction distribuée                   |
-| Vol ou altération de secret         | AES-256-GCM avec AAD/tag/version, enveloppe et rewrap après preuve ; cookies `__Host-*`                                                                                        | KMS externe et clés JWT de production non qualifiés              |
-| Escalade PostgreSQL                 | lecteur/writer séparés, ACL de colonnes, sinks insert-only, memberships incidentes contrôlées dans les deux orientations avant mutation, avant COMMIT et sur connexion fraîche | opérations C2 volontairement absentes                            |
-| Course sur familles/sessions        | verrou utilisateur, plafond trois et LRU déterministe ; refresh winner unique                                                                                                  | preuve locale seulement, pas de charge production                |
-| Oracle d'existence                  | réponses publiques uniformes, travail Argon2 comparable et observations randomisées                                                                                            | échantillon local limité ; aucune déclaration d'absence d'oracle |
-| Fuite logs/Sentry                   | sanitation traversante testée sur callbacks et erreurs                                                                                                                         | aucune télémétrie Sentry réseau exercée en test                  |
-| Dépendance indisponible             | rollback des mutations non commitées; client détruit si rollback non confirmé; 503 C1 constant sans secret                                                                     | résultat COMMIT inconnu reste explicitement non retryable        |
+| Menace                              | Contrôle local C1                                                                                                                                                                                                        | Limite résiduelle                                                          |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| Compte, session ou version obsolète | rechargement serveur du statut, rôle, session et `authorizationVersion`                                                                                                                                                  | aucun déploiement ou runbook production qualifié                           |
+| Rejeu TOTP/recovery/refresh         | compteur TOTP strict, codes one-shot Argon2id, refresh à usage unique et révocation de famille                                                                                                                           | `WAITAOF` n'est pas une transaction distribuée                             |
+| Vol ou altération de secret         | AES-256-GCM avec AAD/tag/version, enveloppe et rewrap après preuve ; cookies `__Host-*`                                                                                                                                  | KMS externe et clés JWT de production non qualifiés                        |
+| Escalade PostgreSQL                 | lecteur/writer séparés, ACL de colonnes, sinks insert-only; R11 contrôle réellement sur A/B reader/writer dans les orientations `roleid=target` et `member=target` avant mutation, avant COMMIT et sur connexion fraîche | preuve R3–R10 historique limitée à `roleid=target`; opérations C2 absentes |
+| Course sur familles/sessions        | verrou utilisateur, plafond trois et LRU déterministe ; refresh winner unique                                                                                                                                            | preuve locale seulement, pas de charge production                          |
+| Oracle d'existence                  | réponses publiques uniformes, travail Argon2 comparable et observations randomisées                                                                                                                                      | échantillon local limité ; aucune déclaration d'absence d'oracle           |
+| Fuite logs/Sentry                   | sanitation traversante testée sur callbacks et erreurs                                                                                                                                                                   | aucune télémétrie Sentry réseau exercée en test                            |
+| Dépendance indisponible             | rollback des mutations non commitées; client détruit si rollback non confirmé; 503 C1 constant sans secret                                                                                                               | résultat COMMIT inconnu reste explicitement non retryable                  |
 
 ## Actifs
 
@@ -1070,3 +1069,42 @@ push, changement de PR, rerun, Ready, approval, merge, tag, release ou
 déploiement n'avait été réalisé. Toute publication ultérieure fait foi dans Git
 et GitHub. La politique open source différée n'est pas installée et aucun secret,
 DSN, jeton ou URL média brute n'est ajouté au dépôt ou aux preuves.
+
+## Menaces F1/F2 et contrôles locaux S1.2-03C1-R11
+
+R10 est publié au head source
+`153b6ca1ef861a9fc09f3c290cb4d8cb54e9802d` de la Draft PR #50 avec quatre
+workflows verts. La revue terminale postérieure établit deux findings **HIGH**,
+qui maintiennent **BLOCK** jusqu'à la remédiation R11 :
+
+| Menace                                  | Cause R10                                                                                                                        | Contrôle local R11                                                                                                                                                        | Limite résiduelle                                                          |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Révocation silencieuse d'un grant tiers | le préflight omettait `membership.member = runtime_role.oid`; `GRANT probe TO reader` pouvait atteindre les `REVOKE` historiques | quatrième prédicat ajouté; deux wrappers prouvent chacun A/B × reader/writer × `roleid`/`member`, huit refus avant mutation, options et signatures strictement inchangées | preuve locale éphémère; exploitation production non qualifiée              |
+| Contrat d'erreur incomplet              | cinq opérations renvoyaient `VALIDATION_ERROR` sans le déclarer                                                                  | code ajouté seulement aux cinq listes; cinq mutations adversariales et cinq parcours HTTP réels à exactement 400, enveloppe et sink exacts, zéro mutation métier          | aucun nouveau mapping runtime; consommateurs futurs doivent garder le gate |
+| Élargissement involontaire du QR        | ajouter le code à toutes les routes TOTP aurait contredit le remapping existant                                                  | mutation négative distincte : `deliverAdminTotpEnrollmentQr` reste sans `VALIDATION_ERROR` et remappe vers `403 FORBIDDEN`                                                | politique QR inchangée                                                     |
+
+Erratum de preuve : R3 à R10 avaient préparé uniquement
+`GRANT <target> TO <probe>`, donc `roleid=target`. Ils n'avaient pas préparé
+`GRANT <probe> TO <target>`, donc `member=target`. L'absence finale de
+membership après retrait/nettoyage était une postcondition saine, pas la preuve
+d'un refus sans mutation pour cette seconde orientation.
+
+Chaque wrapper R11 conserve 39 modèles, 40 tables, quatre provisionnements
+positifs/idempotents, le refus writer/ACL distinct, les scénarios auth/audit,
+rollback, COMMIT inconnu, ordres TOTP et concurrence. Il passe 42/42 tests
+HTTP/PostgreSQL/Redis. Les signatures reader/writer/probe et les options brutes
+des grants restent identiques. L'inventaire Docker est restauré après chaque
+isolation et Docker est rendu arrêté.
+
+Le contrat conserve 60 chemins, 67 opérations et 137 schémas; le contrat
+généré est byte-identique. Les contrôles OpenAPI adversariaux passent 299/299,
+boundary 7/7, API 93 réussites avec 41 conditionnels ignorés, tooling 426/426 et
+scanner 385 fichiers avec historique, 52 immuables et six scripts. Les audits,
+signatures, licences et builds de surfaces inchangées ne sont pas rejoués.
+
+Dans cet instantané local prépublication, R11 était non indexé, non commité et
+non publié. Toute publication ultérieure fait foi dans Git et GitHub. Le
+fournisseur de clés de production reste **NON QUALIFIÉ**, la politique OSS
+différée n'est pas installée, le JTI transactionnel reste séparé, la pagination
+reste **NON CONCLUSIVE**, la couverture V8 et iOS ne sont pas exécutées, et
+C2/C3 restent `Not started`.

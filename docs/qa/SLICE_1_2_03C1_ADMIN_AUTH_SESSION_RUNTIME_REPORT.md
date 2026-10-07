@@ -1,9 +1,9 @@
 # Rapport de validation locale S1.2-03C1 — Admin Auth Session Runtime
 
-Statut : **R6 PUBLIÉ AU HEAD `bc907192…` DE LA DRAFT PR #50 — CANDIDAT R9
-ADOPTÉ ET QUALIFICATION LOCALE PRÉPUBLICATION R10 ACHEVÉE LE 2026-10-07 — ÉTAT
-DE PUBLICATION COURANT À CONSTATER DANS GIT/GITHUB — FOURNISSEUR DE CLÉS DE
-PRODUCTION NON QUALIFIÉ — C2/C3 NOT STARTED**
+Statut : **R10 PUBLIÉ AU HEAD `153b6ca1…` DE LA DRAFT PR #50 AVEC QUATRE
+WORKFLOWS VERTS — REVUE TERMINALE BLOCK F1/F2 — INSTANTANÉ PRÉPUBLICATION R11
+VALIDÉ — FOURNISSEUR DE CLÉS DE PRODUCTION NON
+QUALIFIÉ — C2/C3 NOT STARTED**
 
 Date : 2026-10-07
 
@@ -1055,3 +1055,132 @@ Toute publication ultérieure fait foi dans Git et GitHub. Le fournisseur de cl�
 de production est **NON QUALIFIÉ**, la politique open source reste différée et
 non installée, la recommandation JTI transactionnelle et la pagination restent
 hors de ce remède, et C2/C3 restent `Not started`.
+
+## Publication R10, BLOCK terminal et instantané prépublication S1.2-03C1-R11 — 2026-10-07
+
+### Baseline publiée et findings
+
+Le préflight R11 retrouve la branche
+`feat/s1-2-03c1-admin-auth-session-runtime` au head, upstream, tracking, distant
+et head PR exact `153b6ca1ef861a9fc09f3c290cb4d8cb54e9802d`, parent
+`bc907192075df1ccd68ec8a0378c9eae53e1ce23` et arbre
+`d61ca1388c44e68bc8b7287ef18bfc0f92e01bcf`. `origin/main` local et distant
+reste `c97992ca2c82bc4f22f9222ea98ed53714fede4c`. Le lockfile reste à
+`a1b9744d0b132e6a2f20809c606b7b7525a17230c147dc6155ec05b5ba4aa2f3`.
+R10 porte 29 fichiers et `+7651/-8796`; la PR #50 totalise huit commits, 84
+fichiers et `+27570/-9288`, reste `OPEN`, Draft, `CLEAN/MERGEABLE` et non
+fusionnée. Son corps de 33 510 octets porte le SHA-256
+`42b05985cedd61ca3aec5da095905c75126d6be841689a7be2c920e3deb27b61`.
+
+Infrastructure `37657618058`, Launcher Windows `37657618156`, Security
+`37657618168` et Quality Linux `37657618092` sont tous
+`pull_request/completed/success`, tentative 1. Leur head source est R10; les
+jobs ont utilisé la ref de merge synthétique distincte
+`509575edb2f918f519906dedbd78dcb203b91a19`. Les dix worktrees et les clôtures
+03A/03A-CLOSURE sont préservés; aucune branche, ref ou PR C2/C3 n'existe.
+
+La revue terminale suivante prononce **BLOCK** sur deux findings **HIGH** :
+
+- F1 : le premier préflight omet
+  `OR membership.member = (SELECT oid FROM runtime_role)`, de sorte que
+  `GRANT probe TO reader` pouvait être accepté puis révoqué silencieusement;
+- F2 : `VALIDATION_ERROR` manque dans `x-kora-operation-errors` pour cinq
+  opérations qui renvoient déjà ce code.
+
+Les quatre workflows R10 précèdent ces findings; ils ne sont jamais présentés
+comme des preuves R11.
+
+### Erratum sur la preuve membership historique
+
+Les preuves R3 à R10 qualifiées de bidirectionnelles préparaient uniquement
+`GRANT <target> TO <probe>`, donc
+`pg_auth_members.roleid=<target>`. Elles n'exerçaient pas
+`GRANT <probe> TO <target>`, donc `member=<target>`. Une postcondition saine
+après retrait/nettoyage démontre l'absence finale de membership; elle ne
+démontre pas que le provisionneur a refusé sans mutation l'orientation absente.
+
+### F1 — refus réel avant mutation
+
+Le préflight contient maintenant les quatre orientations reader/writer et
+`roleid`/`member`, sans retrait des protections ni des `REVOKE` historiques.
+Chaque wrapper exécute séquentiellement, sur chacune des bases A/B :
+
+| Cible  | `roleid=target`         | `member=target`         |
+| ------ | ----------------------- | ----------------------- |
+| reader | `GRANT reader TO probe` | `GRANT probe TO reader` |
+| writer | `GRANT writer TO probe` | `GRANT probe TO writer` |
+
+Les huit cas par wrapper prouvent le grant préparatoire et les options brutes
+`adminOption=false`, `inheritOption=false`, `setOption=true`. La signature
+incluant reader, writer et probe est strictement identique avant/après; le
+grant tiers et ses options restent identiques. Le probe est gardé absent avant
+création, nettoyé par la révocation exacte puis prouvé absent après suppression.
+Le refus writer/ACL reste distinct. Chaque exécution rapporte 39 modèles, 40
+tables, quatre provisionnements positifs/idempotents, huit refus membership et
+un refus writer/ACL, soit neuf refus.
+
+### F2 — contrat et cinq régressions HTTP
+
+`VALIDATION_ERROR` est ajouté uniquement aux listes de
+`confirmAdminTotpEnrollment`, `verifyAdminTotp`,
+`verifyAdminRecoveryCode`, `rotateAdminRecoveryCodes` et
+`stepUpAdminSession`. Le validateur impose cet ensemble exact. Cinq mutations
+retirent le code une opération à la fois et sont refusées avec le nom de
+l'opération. Une mutation distincte prouve que
+`deliverAdminTotpEnrollmentQr` n'accepte pas ce code et conserve son remapping
+`403 FORBIDDEN`.
+
+Les cinq régressions réelles fournissent Origin, PREAUTH ou bearer/session,
+CSRF, UUID, QR livré et TOTP réel, recovery material et idempotence selon la
+route. Le seul défaut injecté est un champ JSON superflu. Chaque réponse est
+exactement 400 avec l'enveloppe complète `VALIDATION_ERROR`, un `requestId` de
+8 à 128 caractères, aucun `Set-Cookie`, le code présent dans la liste
+contractuelle, une signature métier inchangée, zéro `AuditLog` et exactement
+un `AdminSecurityEvent` `ADMIN_AUTH_REQUEST_REJECTED` / `FAILED` /
+`VALIDATION_ERROR` sans `adminUserId` inventé.
+
+### Résultats locaux observés
+
+| Gate                   | Résultat R11                                                                                                                                           |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Syntaxe et format      | Git Bash `sh -n`, trois `node --check` et Prettier ciblé avec parser `json` pour `openapi.yaml` : **PASS**                                             |
+| OpenAPI                | 60 chemins, 67 opérations, 137 schémas; suite adversariale 299/299 **PASS**                                                                            |
+| Génération / Contracts | génération courante; `audio-pilot.ts` byte-identique SHA-256 `d53665d89388e399d1a7dbf782739b836bb652d8cfd281e3679621c86377b697`; boundary 7/7 **PASS** |
+| API sans services      | lint et typecheck **PASS**; 17 fichiers, 93 réussites, 41 conditionnels ignorés, 134 au total                                                          |
+| Tooling                | 426/426 **PASS**                                                                                                                                       |
+| Scanner officiel       | **PASS**, 385 fichiers, historique actif, 52 sources immuables, six scripts qualifiés, zéro omission suivie                                            |
+| Wrapper frais 1        | PostgreSQL A/B, huit refus membership + un refus writer/ACL; HTTP/PostgreSQL/Redis 42/42 **PASS**                                                      |
+| Wrapper frais 2        | nouvelle isolation, mêmes compteurs et HTTP/PostgreSQL/Redis 42/42 **PASS**                                                                            |
+
+Trois contrôles/tentatives NON-PASS sont conservés. Le premier contrôle a utilisé
+l'alias WSL `bash.exe` sans distribution et a inclus le shell dans Prettier,
+qui n'a pas de parseur shell; la reprise ciblée utilise Git Bash et exclut le
+shell de Prettier. La première tentative lint a ensuite refusé une constante de
+test utilisée seulement comme type; elle est remplacée par une union explicite,
+puis lint et typecheck passent. Aucun de ces échecs n'est renommé PASS.
+Un premier contrôle ad hoc de liens/encodage n'a pas démarré à cause du quoting
+de la commande Node; il n'a modifié aucun fichier et reste NON-PASS. La reprise
+PowerShell typée vérifie les six documents et les douze fichiers modifiés.
+
+Docker était initialement arrêté. Après démarrage temporaire, l'inventaire
+initial comptait 4 conteneurs, 5 réseaux, 5 volumes et 4 images, empreinte
+`c91f7fba3776d81685f34adf834307d2399a7f82bea3be44a1e58275fce5015e`.
+L'inventaire est strictement identique après chaque wrapper, sans ressource
+ciblée restante. Docker est ensuite arrêté; le daemon est inaccessible et le
+nombre de processus Docker est zéro.
+
+### Frontière et limites
+
+Dans cet instantané local prépublication, R11 restait limité aux douze fichiers
+existants autorisés, sans ajout, suppression, renommage ni changement de mode.
+L'index était vide. Aucun `git add`, commit, push, rerun CI, changement de PR,
+commentaire, Ready, approval, merge, tag, release ou déploiement n'avait été
+effectué. Audits npm, signatures, licences, Web/Admin/Flutter/APK, couverture V8
+et iOS n'étaient pas rejoués et ne devenaient pas des preuves fraîches R11.
+Toute publication ultérieure fait foi dans Git et GitHub.
+
+Le fournisseur de clés de production reste **NON QUALIFIÉ**, la politique OSS
+différée n'est pas installée, le JTI transactionnel reste séparé, la pagination
+reste **NON CONCLUSIVE**, et C2/C3 restent `Not started`. La publication R11
+relève du mandat actif; une nouvelle revue terminale C1 reste requise avant
+toute décision de fusion.

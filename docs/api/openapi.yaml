@@ -653,6 +653,7 @@
       "SERVICE_UNAVAILABLE"
     ],
     "confirmAdminTotpEnrollment": [
+      "VALIDATION_ERROR",
       "OTP_INVALID",
       "AUTH_REQUIRED",
       "FORBIDDEN",
@@ -662,6 +663,7 @@
       "SERVICE_UNAVAILABLE"
     ],
     "verifyAdminTotp": [
+      "VALIDATION_ERROR",
       "OTP_INVALID",
       "AUTH_REQUIRED",
       "OTP_EXPIRED",
@@ -669,12 +671,14 @@
       "SERVICE_UNAVAILABLE"
     ],
     "verifyAdminRecoveryCode": [
+      "VALIDATION_ERROR",
       "ADMIN_RECOVERY_CODE_INVALID",
       "AUTH_REQUIRED",
       "RATE_LIMITED",
       "SERVICE_UNAVAILABLE"
     ],
     "rotateAdminRecoveryCodes": [
+      "VALIDATION_ERROR",
       "OTP_INVALID",
       "AUTH_REQUIRED",
       "FORBIDDEN",
@@ -683,6 +687,7 @@
       "SERVICE_UNAVAILABLE"
     ],
     "stepUpAdminSession": [
+      "VALIDATION_ERROR",
       "OTP_INVALID",
       "AUTH_REQUIRED",
       "FORBIDDEN",

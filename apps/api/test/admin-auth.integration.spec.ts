@@ -3,6 +3,8 @@ import { RequestMethod, type INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomInt, type KeyObject } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import Redis from 'ioredis';
 import pg, {
   type Pool as PgPool,
@@ -154,6 +156,19 @@ interface BrowserCookies {
   cookie: string;
   csrf: string;
 }
+
+type R11ValidationOperation =
+  | 'confirmAdminTotpEnrollment'
+  | 'rotateAdminRecoveryCodes'
+  | 'stepUpAdminSession'
+  | 'verifyAdminRecoveryCode'
+  | 'verifyAdminTotp';
+
+const r11OpenApi = JSON.parse(
+  readFileSync(resolve(process.cwd(), '..', '..', 'docs', 'api', 'openapi.yaml'), 'utf8'),
+) as Readonly<{
+  'x-kora-operation-errors': Readonly<Record<string, readonly string[]>>;
+}>;
 
 interface AdminWriterPoolFixture {
   pool: PgPool;
@@ -335,6 +350,11 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', { timeout: 300_000 }, (
     r6Rollback: deterministicUuid(157),
     concurrentForward: deterministicUuid(158),
     concurrentReverse: deterministicUuid(159),
+    r11Confirm: deterministicUuid(160),
+    r11Totp: deterministicUuid(161),
+    r11Recovery: deterministicUuid(162),
+    r11Rotate: deterministicUuid(163),
+    r11StepUp: deterministicUuid(164),
   } as const;
   const seeds = new Map<string, Uint8Array>();
   const keys = new TestEphemeralAdminKeyProvider();
@@ -343,6 +363,16 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', { timeout: 300_000 }, (
   const accessTokens = new Map<string, string>();
   const r4Sessions = new Map<string, Readonly<{ refreshToken?: string; sessionId: string }>>();
   const recoveryMaterials = new Map<string, Readonly<{ selector: string; verifier: string }>>();
+  const r11BusinessTables = [
+    'AdminSession',
+    'AdminRecoveryCode',
+    'AdminPreAuthContext',
+    'AdminTotpEnrollment',
+    'AdminRecoveryContext',
+    'AdminRefreshToken',
+    'AdminRecoveryCodeBatch',
+    'AdminIdempotencyRecord',
+  ] as const;
   const owner = new Client({
     database: process.env.S1203C1_E2E_DATABASE,
     host: '127.0.0.1',
@@ -856,6 +886,80 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', { timeout: 300_000 }, (
     throw new Error('Could not generate an invalid TOTP fixture.');
   }
 
+  async function r11BusinessStateSignature(adminUserId: string): Promise<string> {
+    const sections: unknown[] = [];
+    const user = await owner.query<{ row: string }>(
+      `SELECT to_jsonb(entry)::text AS row FROM "AdminUser" AS entry WHERE "id" = $1`,
+      [adminUserId],
+    );
+    sections.push(user.rows);
+    for (const table of r11BusinessTables) {
+      const state = await owner.query<{ row: string }>(
+        `SELECT to_jsonb(entry)::text AS row FROM "${table}" AS entry
+          WHERE "adminUserId" = $1 ORDER BY "id"`,
+        [adminUserId],
+      );
+      sections.push(state.rows);
+    }
+    return createHash('sha256').update(JSON.stringify(sections), 'utf8').digest('hex');
+  }
+
+  async function expectR11ValidationFailure(
+    response: request.Response,
+    operationId: R11ValidationOperation,
+    adminUserId: string,
+    businessStateBefore: string,
+  ): Promise<void> {
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      error: {
+        code: 'VALIDATION_ERROR',
+        details: {},
+        message: 'Requête invalide.',
+        retryable: false,
+      },
+      requestId: expect.any(String),
+    });
+    expect(String(response.body.requestId).length).toBeGreaterThanOrEqual(8);
+    expect(String(response.body.requestId).length).toBeLessThanOrEqual(128);
+    expect(response.headers['set-cookie']).toBeUndefined();
+    expect(r11OpenApi['x-kora-operation-errors'][operationId]).toContain('VALIDATION_ERROR');
+    await expect(r11BusinessStateSignature(adminUserId)).resolves.toBe(businessStateBefore);
+
+    const sinks = await owner.query<{
+      action: string | null;
+      adminUserId: string | null;
+      auditCount: string;
+      failureCode: string | null;
+      outcome: string | null;
+      securityCount: string;
+    }>(
+      `SELECT
+         (SELECT count(*)::text FROM "AuditLog" WHERE "requestId" = $1) AS "auditCount",
+         (SELECT count(*)::text FROM "AdminSecurityEvent" WHERE "requestId" = $1)
+           AS "securityCount",
+         (SELECT "action" FROM "AdminSecurityEvent" WHERE "requestId" = $1 LIMIT 1)
+           AS "action",
+         (SELECT "adminUserId" FROM "AdminSecurityEvent" WHERE "requestId" = $1 LIMIT 1)
+           AS "adminUserId",
+         (SELECT "failureCode"::text FROM "AdminSecurityEvent" WHERE "requestId" = $1 LIMIT 1)
+           AS "failureCode",
+         (SELECT "outcome"::text FROM "AdminSecurityEvent" WHERE "requestId" = $1 LIMIT 1)
+           AS "outcome"`,
+      [String(response.body.requestId)],
+    );
+    expect(sinks.rows).toEqual([
+      {
+        action: 'ADMIN_AUTH_REQUEST_REJECTED',
+        adminUserId: null,
+        auditCount: '0',
+        failureCode: 'VALIDATION_ERROR',
+        outcome: 'FAILED',
+        securityCount: '1',
+      },
+    ]);
+  }
+
   beforeAll(async () => {
     const required = [
       'S1203C1_E2E_DATABASE',
@@ -1039,6 +1143,17 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', { timeout: 300_000 }, (
       'ACTIVE',
       true,
     );
+    await insertUser(
+      ids.r11Confirm,
+      'r11-confirm@example.invalid',
+      passwordHash,
+      'PENDING_MFA',
+      false,
+    );
+    await insertUser(ids.r11Totp, 'r11-totp@example.invalid', passwordHash, 'ACTIVE', true);
+    await insertUser(ids.r11Recovery, 'r11-recovery@example.invalid', passwordHash, 'ACTIVE', true);
+    await insertUser(ids.r11Rotate, 'r11-rotate@example.invalid', passwordHash, 'ACTIVE', true);
+    await insertUser(ids.r11StepUp, 'r11-step-up@example.invalid', passwordHash, 'ACTIVE', true);
     for (let index = 1; index <= 3; index += 1) await insertSession(ids.totp, index);
     for (const [adminUserId, firstSequence] of [
       [ids.concurrent, 20],
@@ -1107,6 +1222,9 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', { timeout: 300_000 }, (
       recoveryMaterials.set(adminUserId, await insertRecoveryCode(adminUserId, index + 3));
     }
     recoveryMaterials.set(ids.r6Rollback, await insertRecoveryCode(ids.r6Rollback, 10));
+    recoveryMaterials.set(ids.r11Recovery, await insertRecoveryCode(ids.r11Recovery, 11));
+    accessTokens.set(ids.r11Rotate, await insertSession(ids.r11Rotate, 71));
+    accessTokens.set(ids.r11StepUp, await insertSession(ids.r11StepUp, 72));
     process.env.S1203C1_ROTATE_TOKEN = rotateToken;
     process.env.S1203C1_STEP_UP_TOKEN = stepUpToken;
     process.env.S1203C1_TARGET_TOKEN = targetToken;
@@ -1456,6 +1574,139 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', { timeout: 300_000 }, (
       .set('Authorization', `Bearer ${process.env.S1203C1_STEP_UP_TOKEN}`)
       .set('Origin', origin);
     expect(revokedCurrent.status).toBe(204);
+  });
+
+  it('contracts structural validation for confirmAdminTotpEnrollment without business mutation', async () => {
+    const server = application.getHttpServer();
+    const cookies = await loginBrowser(server, 'r11-confirm@example.invalid');
+    const enrollment = await request(server)
+      .post('/api/v1/admin/auth/totp/enrollments')
+      .set('Cookie', cookies.cookie)
+      .set('Idempotency-Key', 'r11-confirm-enrollment-0001')
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', cookies.csrf);
+    expect(enrollment.status).toBe(201);
+    const enrollmentId = String(enrollment.body.data.enrollmentId);
+    await request(server)
+      .post(`/api/v1/admin/auth/totp/enrollments/${enrollmentId}/qr`)
+      .set('Cookie', cookies.cookie)
+      .set('Idempotency-Key', 'r11-confirm-qr-0001')
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', cookies.csrf)
+      .expect(200);
+    const stored = await owner.query<{ secretEncrypted: string }>(
+      `SELECT "secretEncrypted" FROM "AdminTotpEnrollment" WHERE "id" = $1`,
+      [enrollmentId],
+    );
+    const decrypted = await crypto.decryptTotpSecret(
+      stored.rows[0]!.secretEncrypted,
+      ids.r11Confirm,
+    );
+    let code: string;
+    try {
+      code = crypto.generateTotpCode(decrypted.secret, BigInt(Math.floor(Date.now() / 30_000)));
+    } finally {
+      decrypted.secret.fill(0);
+    }
+    const businessStateBefore = await r11BusinessStateSignature(ids.r11Confirm);
+
+    const response = await request(server)
+      .post(`/api/v1/admin/auth/totp/enrollments/${enrollmentId}/confirm`)
+      .set('Content-Type', 'application/json')
+      .set('Cookie', cookies.cookie)
+      .set('Idempotency-Key', 'r11-confirm-invalid-0001')
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', cookies.csrf)
+      .send({ code, unexpected: true });
+
+    await expectR11ValidationFailure(
+      response,
+      'confirmAdminTotpEnrollment',
+      ids.r11Confirm,
+      businessStateBefore,
+    );
+  });
+
+  it('contracts structural validation for verifyAdminTotp without business mutation', async () => {
+    const server = application.getHttpServer();
+    const cookies = await loginBrowser(server, 'r11-totp@example.invalid');
+    const businessStateBefore = await r11BusinessStateSignature(ids.r11Totp);
+
+    const response = await request(server)
+      .post('/api/v1/admin/auth/totp/verify')
+      .set('Content-Type', 'application/json')
+      .set('Cookie', cookies.cookie)
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', cookies.csrf)
+      .send({ code: currentTotp(ids.r11Totp), unexpected: true });
+
+    await expectR11ValidationFailure(response, 'verifyAdminTotp', ids.r11Totp, businessStateBefore);
+  });
+
+  it('contracts structural validation for verifyAdminRecoveryCode without business mutation', async () => {
+    const server = application.getHttpServer();
+    const cookies = await loginBrowser(server, 'r11-recovery@example.invalid');
+    const material = recoveryMaterials.get(ids.r11Recovery);
+    if (material === undefined) throw new Error('Missing R11 recovery-code fixture.');
+    const businessStateBefore = await r11BusinessStateSignature(ids.r11Recovery);
+
+    const response = await request(server)
+      .post('/api/v1/admin/auth/recovery-codes/verify')
+      .set('Content-Type', 'application/json')
+      .set('Cookie', cookies.cookie)
+      .set('Origin', origin)
+      .set('X-Kora-Csrf', cookies.csrf)
+      .send({ ...material, unexpected: true });
+
+    await expectR11ValidationFailure(
+      response,
+      'verifyAdminRecoveryCode',
+      ids.r11Recovery,
+      businessStateBefore,
+    );
+  });
+
+  it('contracts structural validation for rotateAdminRecoveryCodes without business mutation', async () => {
+    const server = application.getHttpServer();
+    const businessStateBefore = await r11BusinessStateSignature(ids.r11Rotate);
+
+    const response = await request(server)
+      .post('/api/v1/admin/auth/recovery-codes/rotate')
+      .set('Authorization', `Bearer ${accessTokens.get(ids.r11Rotate)}`)
+      .set('Content-Type', 'application/json')
+      .set('Idempotency-Key', 'r11-rotate-invalid-0001')
+      .set('Origin', origin)
+      .send({ code: currentTotp(ids.r11Rotate), unexpected: true });
+
+    await expectR11ValidationFailure(
+      response,
+      'rotateAdminRecoveryCodes',
+      ids.r11Rotate,
+      businessStateBefore,
+    );
+  });
+
+  it('contracts structural validation for stepUpAdminSession without business mutation', async () => {
+    const server = application.getHttpServer();
+    const businessStateBefore = await r11BusinessStateSignature(ids.r11StepUp);
+
+    const response = await request(server)
+      .post('/api/v1/admin/auth/step-up')
+      .set('Authorization', `Bearer ${accessTokens.get(ids.r11StepUp)}`)
+      .set('Content-Type', 'application/json')
+      .set('Origin', origin)
+      .send({
+        purpose: 'SESSION_REVOCATION',
+        totpCode: currentTotp(ids.r11StepUp),
+        unexpected: true,
+      });
+
+    await expectR11ValidationFailure(
+      response,
+      'stepUpAdminSession',
+      ids.r11StepUp,
+      businessStateBefore,
+    );
   });
 
   it('returns one success and one secret-free 409 for concurrent enrollment confirmation', async () => {

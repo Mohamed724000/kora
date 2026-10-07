@@ -5,6 +5,14 @@ import { fileURLToPath } from "node:url";
 export const OPENAPI_PATH = resolve("docs", "api", "openapi.yaml");
 export const PRISMA_PATH = resolve("apps", "api", "prisma", "schema.prisma");
 
+export const ADMIN_STRUCTURAL_VALIDATION_OPERATIONS = Object.freeze([
+  "confirmAdminTotpEnrollment",
+  "verifyAdminTotp",
+  "verifyAdminRecoveryCode",
+  "rotateAdminRecoveryCodes",
+  "stepUpAdminSession",
+]);
+
 export const ADMIN_SECURITY_CONTRACTS = Object.freeze([
   {
     path: "/api/v1/admin/auth/login",
@@ -1917,6 +1925,14 @@ function validateErrorsAndAuthorization(document) {
     }
   }
 
+  for (const operationId of ADMIN_STRUCTURAL_VALIDATION_OPERATIONS) {
+    if (!operationErrors[operationId]?.includes("VALIDATION_ERROR")) {
+      fail(
+        `${operationId} requires VALIDATION_ERROR for structural request validation`,
+      );
+    }
+  }
+
   if (!stableEqual(Object.keys(operationErrors), businessOperationIds)) {
     fail(
       "operation error-code map must cover every business operation exactly once",
@@ -3417,6 +3433,9 @@ function validateAdminSecurityContract(document) {
     qr["x-kora-idempotent-replay"] !== "SECRET_RESPONSE_RETRY_409" ||
     qr["x-kora-non-persistable-response"] !== true ||
     qr["x-kora-non-loggable-response"] !== true ||
+    document["x-kora-operation-errors"].deliverAdminTotpEnrollmentQr.includes(
+      "VALIDATION_ERROR",
+    ) ||
     !document["x-kora-operation-errors"].deliverAdminTotpEnrollmentQr.includes(
       "SENSITIVE_RESPONSE_ALREADY_DELIVERED",
     )

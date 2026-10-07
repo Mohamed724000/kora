@@ -176,8 +176,14 @@ function runProvisioner(database) {
   runDocker(provisionerArguments(database));
 }
 
-async function writerRefusalStateSignature(client) {
-  const roles = [process.env.S1203C1_READER_USER, process.env.S1203C1_WRITER_USER];
+async function writerRefusalStateSignature(client, additionalRoles = []) {
+  const roles = [
+    ...new Set([
+      process.env.S1203C1_READER_USER,
+      process.env.S1203C1_WRITER_USER,
+      ...additionalRoles,
+    ]),
+  ].sort();
   const queries = [
     {
       sql: `
@@ -316,7 +322,9 @@ async function writerRefusalStateSignature(client) {
   ];
   const sections = [];
   for (const query of queries) sections.push((await client.query(query.sql, query.values)).rows);
-  if (sections[0].length !== 2) fail('refusal signature did not cover both runtime credentials');
+  if (sections[0].length !== roles.length) {
+    fail(`refusal signature did not cover all ${roles.length} protected roles`);
+  }
   return sha256(JSON.stringify(sections));
 }
 
@@ -369,48 +377,63 @@ async function verifyWriterRefusalWithoutMutation(database) {
   }
 }
 
-async function verifyIncomingMembershipRefusalWithoutMutation(database, target) {
+async function membershipGrantState(client, grantedRole, memberRole) {
+  const grant = await client.query(
+    `
+      SELECT membership.admin_option AS "adminOption",
+             membership.inherit_option AS "inheritOption",
+             membership.set_option AS "setOption"
+      FROM pg_catalog.pg_auth_members AS membership
+      JOIN pg_catalog.pg_roles AS granted_role ON granted_role.oid = membership.roleid
+      JOIN pg_catalog.pg_roles AS member_role ON member_role.oid = membership.member
+      WHERE granted_role.rolname = $1 AND member_role.rolname = $2
+    `,
+    [grantedRole, memberRole],
+  );
+  if (
+    grant.rowCount !== 1 ||
+    typeof grant.rows[0]?.adminOption !== 'boolean' ||
+    typeof grant.rows[0]?.inheritOption !== 'boolean' ||
+    typeof grant.rows[0]?.setOption !== 'boolean'
+  ) {
+    fail('membership grant and its raw options were not established exactly once');
+  }
+  return grant.rows[0];
+}
+
+async function verifyMembershipRefusalWithoutMutation(database, target, orientation) {
+  if (!new Set(['reader', 'writer']).has(target)) fail('unknown membership target');
+  if (!new Set(['roleid', 'member']).has(orientation)) fail('unknown membership orientation');
   const owner = new Client(adminConfiguration(database));
   const targetRole =
     target === 'reader' ? process.env.S1203C1_READER_USER : process.env.S1203C1_WRITER_USER;
-  const probeRole = `c1_${target}_member_${process.pid}_${randomBytes(4).toString('hex')}`;
+  const probeRole = `c1_${target}_${orientation}_${process.pid}_${randomBytes(4).toString('hex')}`;
+  if (
+    !/^c1_(reader|writer)_(roleid|member)_\d+_[a-f0-9]{8}$/u.test(probeRole) ||
+    probeRole.length > 63
+  ) {
+    fail('generated membership probe role failed its destructive-operation guard');
+  }
+  const grantedRole = orientation === 'roleid' ? targetRole : probeRole;
+  const memberRole = orientation === 'roleid' ? probeRole : targetRole;
   const quotedTarget = quoteIdentifier(targetRole);
   const quotedProbe = quoteIdentifier(probeRole);
+  const quotedGranted = orientation === 'roleid' ? quotedTarget : quotedProbe;
+  const quotedMember = orientation === 'roleid' ? quotedProbe : quotedTarget;
   let probeCreated = false;
+  let primaryError;
   await owner.connect();
   try {
+    const existingProbe = await owner.query(
+      'SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = $1',
+      [probeRole],
+    );
+    if (existingProbe.rowCount !== 0) fail('membership probe role already exists');
     await owner.query(`CREATE ROLE ${quotedProbe} NOLOGIN NOINHERIT`);
     probeCreated = true;
-    await owner.query(`GRANT ${quotedTarget} TO ${quotedProbe}`);
-
-    const grant = await owner.query(
-      `
-        SELECT membership.admin_option, membership.inherit_option, membership.set_option
-        FROM pg_catalog.pg_auth_members AS membership
-        JOIN pg_catalog.pg_roles AS granted_role ON granted_role.oid = membership.roleid
-        JOIN pg_catalog.pg_roles AS member_role ON member_role.oid = membership.member
-        WHERE granted_role.rolname = $1 AND member_role.rolname = $2
-      `,
-      [targetRole, probeRole],
-    );
-    if (grant.rowCount !== 1) fail(`${target} incoming membership grant was not established`);
-
-    const formerPredicate = await owner.query(
-      `
-        SELECT count(*)::integer AS count
-        FROM pg_catalog.pg_auth_members AS membership
-        WHERE membership.member = (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = $1)
-      `,
-      [targetRole],
-    );
-    if (formerPredicate.rows[0]?.count !== 0) {
-      fail(`${target} pre-fix member-only predicate did not isolate the incoming-membership gap`);
-    }
-    process.stdout.write(
-      `C1_INCOMING_MEMBERSHIP_PRE_FIX_BYPASS_PROOF target=${target} member_only_count=0 raw_grant=present\n`,
-    );
-
-    const signatureBefore = await writerRefusalStateSignature(owner);
+    await owner.query(`GRANT ${quotedGranted} TO ${quotedMember}`);
+    const grantBefore = await membershipGrantState(owner, grantedRole, memberRole);
+    const signatureBefore = await writerRefusalStateSignature(owner, [probeRole]);
     const result = spawnSync('docker', provisionerArguments(database), {
       encoding: 'utf8',
       windowsHide: true,
@@ -418,6 +441,7 @@ async function verifyIncomingMembershipRefusalWithoutMutation(database, target) 
     if (result.error !== undefined) throw result.error;
     const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
     for (const secret of [
+      process.env.S1203C1_ADMIN_PASSWORD,
       process.env.S1203C1_READER_PASSWORD,
       process.env.S1203C1_WRITER_PASSWORD,
     ]) {
@@ -431,38 +455,73 @@ async function verifyIncomingMembershipRefusalWithoutMutation(database, target) 
       )
     ) {
       fail(
-        `${target} incoming membership was not deterministically refused; exit=${result.status ?? 'unknown'}; diagnostic=${normalized.slice(-1_000) || '<empty>'}`,
+        `${target} ${orientation} membership was not deterministically refused; exit=${result.status ?? 'unknown'}; diagnostic=${normalized.slice(-1_000) || '<empty>'}`,
       );
     }
     if (normalized.length > 2_000) fail('membership refusal diagnostic was not bounded');
-    const signatureAfter = await writerRefusalStateSignature(owner);
+    const signatureAfter = await writerRefusalStateSignature(owner, [probeRole]);
     if (signatureBefore !== signatureAfter) {
       fail(
-        `${target} incoming membership refusal mutated ACL, role, setting, membership, or credential state`,
+        `${target} ${orientation} membership refusal mutated ACL, role, setting, membership, or credential state`,
       );
     }
-    const preservedGrant = await owner.query(
-      `
-        SELECT 1
-        FROM pg_catalog.pg_auth_members AS membership
-        JOIN pg_catalog.pg_roles AS granted_role ON granted_role.oid = membership.roleid
-        JOIN pg_catalog.pg_roles AS member_role ON member_role.oid = membership.member
-        WHERE granted_role.rolname = $1 AND member_role.rolname = $2
-      `,
-      [targetRole, probeRole],
-    );
-    if (preservedGrant.rowCount !== 1) {
-      fail(`${target} incoming third-party membership was silently revoked`);
+    const grantAfter = await membershipGrantState(owner, grantedRole, memberRole);
+    if (JSON.stringify(grantAfter) !== JSON.stringify(grantBefore)) {
+      fail(`${target} ${orientation} membership options changed during refusal`);
     }
     process.stdout.write(
-      `C1_INCOMING_MEMBERSHIP_REFUSAL_PASS target=${target} raw_options=independent credentials=2 acl_role_setting_signature=unchanged third_party_grant=preserved diagnostic=bounded\n`,
+      `C1_MEMBERSHIP_REFUSAL_PASS database=${database} target=${target} orientation=${orientation} protected_roles=3 raw_options=${JSON.stringify(grantBefore)} acl_role_setting_signature=unchanged third_party_grant=preserved diagnostic=bounded\n`,
     );
-  } finally {
-    if (probeCreated) {
-      await owner.query(`REVOKE ${quotedTarget} FROM ${quotedProbe}`);
-      await owner.query(`DROP ROLE ${quotedProbe}`);
+  } catch (error) {
+    primaryError = error;
+  }
+
+  const cleanupErrors = [];
+  if (probeCreated) {
+    try {
+      await owner.query(`REVOKE ${quotedGranted} FROM ${quotedMember}`);
+      const removedGrant = await owner.query(
+        `
+          SELECT 1
+          FROM pg_catalog.pg_auth_members AS membership
+          JOIN pg_catalog.pg_roles AS granted_role ON granted_role.oid = membership.roleid
+          JOIN pg_catalog.pg_roles AS member_role ON member_role.oid = membership.member
+          WHERE granted_role.rolname = $1 AND member_role.rolname = $2
+        `,
+        [grantedRole, memberRole],
+      );
+      if (removedGrant.rowCount !== 0) fail('targeted membership cleanup left the prepared grant');
+    } catch (error) {
+      cleanupErrors.push(error);
     }
+    try {
+      await owner.query(`DROP ROLE ${quotedProbe}`);
+      const removedProbe = await owner.query(
+        'SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = $1',
+        [probeRole],
+      );
+      if (removedProbe.rowCount !== 0) fail('targeted membership cleanup left the probe role');
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+  }
+  try {
     await owner.end();
+  } catch (error) {
+    cleanupErrors.push(error);
+  }
+  if (primaryError !== undefined) {
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError(
+        [primaryError, ...cleanupErrors],
+        'membership refusal failed and targeted cleanup was incomplete',
+        { cause: primaryError },
+      );
+    }
+    throw primaryError;
+  }
+  if (cleanupErrors.length > 0) {
+    throw new AggregateError(cleanupErrors, 'targeted membership cleanup failed');
   }
 }
 
@@ -1087,6 +1146,10 @@ async function main() {
   verifyImmutableHistory();
   const admin = new Client(adminConfiguration());
   const databases = [];
+  let membershipRefusalCount = 0;
+  let primaryError;
+  let provisionerSuccessCount = 0;
+  let writerAclRefusalCount = 0;
   await admin.connect();
   try {
     const version = await admin.query(
@@ -1107,31 +1170,53 @@ async function main() {
     process.stdout.write(`C1_DATABASE_A_B_PROJECTION_PASS sha256=${firstSignature}\n`);
     for (const [index, database] of databases.entries()) {
       runProvisioner(database);
+      provisionerSuccessCount += 1;
       runProvisioner(database);
-      if (index === 0) await verifyWriterRefusalWithoutMutation(database);
-      await verifyIncomingMembershipRefusalWithoutMutation(database, 'reader');
-      await verifyIncomingMembershipRefusalWithoutMutation(database, 'writer');
+      provisionerSuccessCount += 1;
+      if (index === 0) {
+        await verifyWriterRefusalWithoutMutation(database);
+        writerAclRefusalCount += 1;
+      }
+      for (const target of ['reader', 'writer']) {
+        for (const orientation of ['roleid', 'member']) {
+          await verifyMembershipRefusalWithoutMutation(database, target, orientation);
+          membershipRefusalCount += 1;
+        }
+      }
       await verifyRuntimeAcl(database);
     }
-  } finally {
-    const cleanupErrors = [];
-    for (const database of [...databases].reverse()) {
-      try {
-        await dropDatabase(admin, database);
-      } catch (error) {
-        cleanupErrors.push(error);
-      }
-    }
+  } catch (error) {
+    primaryError = error;
+  }
+
+  const cleanupErrors = [];
+  for (const database of [...databases].reverse()) {
     try {
-      await admin.end();
+      await dropDatabase(admin, database);
     } catch (error) {
       cleanupErrors.push(error);
     }
-    if (cleanupErrors.length > 0)
-      throw new AggregateError(cleanupErrors, 'targeted C1 cleanup failed');
+  }
+  try {
+    await admin.end();
+  } catch (error) {
+    cleanupErrors.push(error);
+  }
+  if (primaryError !== undefined) {
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError(
+        [primaryError, ...cleanupErrors],
+        'C1 validation failed and targeted database cleanup was incomplete',
+        { cause: primaryError },
+      );
+    }
+    throw primaryError;
+  }
+  if (cleanupErrors.length > 0) {
+    throw new AggregateError(cleanupErrors, 'targeted C1 cleanup failed');
   }
   process.stdout.write(
-    'S1.2-03C1_ADMIN_AUTH_POSTGRESQL_PASS databases=2 models=39 tables=40 provisioner_successes=4 provisioner_refusals=5 incoming_membership_refusals=4\n',
+    `S1.2-03C1_ADMIN_AUTH_POSTGRESQL_PASS databases=${databases.length} models=${EXPECTED_MODELS} tables=${EXPECTED_TABLES_WITH_MIGRATION_HISTORY} provisioner_successes=${provisionerSuccessCount} provisioner_refusals=${writerAclRefusalCount + membershipRefusalCount} writer_acl_refusals=${writerAclRefusalCount} membership_refusals=${membershipRefusalCount}\n`,
   );
 }
 

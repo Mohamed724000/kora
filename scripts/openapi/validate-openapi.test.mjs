@@ -23,6 +23,7 @@ import {
 } from "./artist-earning-allocation.mjs";
 
 import {
+  ADMIN_STRUCTURAL_VALIDATION_OPERATIONS,
   ADMIN_SECURITY_CONTRACTS,
   EXPECTED_PATHS,
   OPENAPI_PATH,
@@ -35,6 +36,13 @@ import {
 
 const sourceDocument = JSON.parse(readFileSync(OPENAPI_PATH, "utf8"));
 const prismaSource = readFileSync(PRISMA_PATH, "utf8");
+const EXPECTED_ADMIN_STRUCTURAL_VALIDATION_OPERATIONS = [
+  "confirmAdminTotpEnrollment",
+  "verifyAdminTotp",
+  "verifyAdminRecoveryCode",
+  "rotateAdminRecoveryCodes",
+  "stepUpAdminSession",
+];
 
 function documentFixture() {
   return structuredClone(sourceDocument);
@@ -3456,3 +3464,39 @@ for (const [name, mutate] of adminSecurityMutations) {
     );
   });
 }
+
+test("locks the five Admin C1 structural validation operations", () => {
+  assert.deepEqual(
+    ADMIN_STRUCTURAL_VALIDATION_OPERATIONS,
+    EXPECTED_ADMIN_STRUCTURAL_VALIDATION_OPERATIONS,
+  );
+});
+
+for (const operationId of EXPECTED_ADMIN_STRUCTURAL_VALIDATION_OPERATIONS) {
+  test(`S1.2-03C1 rejects missing VALIDATION_ERROR for ${operationId}`, () => {
+    const document = documentFixture();
+    document["x-kora-operation-errors"][operationId] = document[
+      "x-kora-operation-errors"
+    ][operationId].filter((code) => code !== "VALIDATION_ERROR");
+
+    assert.throws(
+      () => validateOpenApiDocument(document),
+      new RegExp(
+        `${operationId} requires VALIDATION_ERROR for structural request validation`,
+        "u",
+      ),
+    );
+  });
+}
+
+test("S1.2-03C1 preserves the QR validation remapping as FORBIDDEN", () => {
+  const document = documentFixture();
+  document["x-kora-operation-errors"].deliverAdminTotpEnrollmentQr.push(
+    "VALIDATION_ERROR",
+  );
+
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /TOTP QR delivery must remain unique, non-loggable and retry-409/u,
+  );
+});

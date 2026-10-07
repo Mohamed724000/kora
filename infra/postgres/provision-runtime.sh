@@ -64,6 +64,7 @@ WITH runtime_role AS (
   SELECT 1
   FROM pg_catalog.pg_auth_members AS membership
   WHERE membership.roleid = (SELECT oid FROM runtime_role)
+     OR membership.member = (SELECT oid FROM runtime_role)
      OR membership.member = (SELECT oid FROM writer_role)
      OR membership.roleid = (SELECT oid FROM writer_role)
 )
