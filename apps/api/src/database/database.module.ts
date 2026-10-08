@@ -1,9 +1,11 @@
 import { Global, Module, type DynamicModule } from '@nestjs/common';
+import { AdminWriterService, type AdminWriterRuntimeBoundary } from './admin-writer.service';
 import { PostgresqlRuntimeBoundary } from './postgresql-runtime-boundary';
 import { PrismaService } from './prisma.service';
 import { RuntimeDatabaseBoundary } from './runtime-database-boundary';
 
 export interface DatabaseModuleOptions {
+  adminWriterBoundary?: AdminWriterRuntimeBoundary;
   runtimeBoundary?: RuntimeDatabaseBoundary;
 }
 
@@ -15,12 +17,16 @@ export class DatabaseModule {
       options.runtimeBoundary === undefined
         ? { provide: RuntimeDatabaseBoundary, useExisting: PostgresqlRuntimeBoundary }
         : { provide: RuntimeDatabaseBoundary, useValue: options.runtimeBoundary };
+    const adminWriterProvider =
+      options.adminWriterBoundary === undefined
+        ? AdminWriterService
+        : { provide: AdminWriterService, useValue: options.adminWriterBoundary };
 
     return {
-      exports: [PrismaService, RuntimeDatabaseBoundary],
+      exports: [AdminWriterService, PrismaService, RuntimeDatabaseBoundary],
       global: true,
       module: DatabaseModule,
-      providers: [PrismaService, PostgresqlRuntimeBoundary, boundaryProvider],
+      providers: [adminWriterProvider, PrismaService, PostgresqlRuntimeBoundary, boundaryProvider],
     };
   }
 }

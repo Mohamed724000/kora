@@ -8,12 +8,12 @@ import {
 
 function adapter(): SentryAdapter {
   return {
-    captureException: jest.fn((exception: unknown, hint?: EventHint) => {
+    captureException: vi.fn((exception: unknown, hint?: EventHint) => {
       void exception;
       void hint;
       return 'event-id';
     }),
-    init: jest.fn((options: NodeOptions) => {
+    init: vi.fn((options: NodeOptions) => {
       void options;
     }),
   };
@@ -53,12 +53,31 @@ describe('Sentry API', () => {
         tracesSampleRate: 0,
       }),
     );
+    const initializedOptions = vi.mocked(sdk.init).mock.calls[0]?.[0];
+    expect(initializedOptions?.beforeSend).toEqual(expect.any(Function));
+    const sanitized = await initializedOptions!.beforeSend!(
+      {
+        extra: { otp: '123456', qrPng: 'private-qr-png', refreshToken: 'private-refresh' },
+        request: { cookies: { session: 'private-cookie' } },
+        user: { email: 'private@example.test' },
+      } as unknown as ErrorEvent,
+      {} as EventHint,
+    );
+    const serialized = JSON.stringify(sanitized);
+    expect(serialized).toContain('[REDACTED]');
+    expect(serialized).not.toMatch(/123456|private/);
   });
 
   it('supprime la requête et l’utilisateur puis masque les valeurs sensibles', () => {
     const event = sanitizeSentryEvent({
       extra: {
-        nested: { token: 'private-token' },
+        nested: {
+          csrf: 'private-csrf',
+          seed: 'private-seed',
+          token: 'private-token',
+          verifier: 'private-verifier',
+          wrappedDek: 'private-wrapped-dek',
+        },
         note: 'email=private@example.test phone=+22370000000',
       },
       message: 'Bearer private-credential',

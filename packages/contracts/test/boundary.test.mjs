@@ -25,12 +25,24 @@ test('the generated boundary materializes all 27 admin-security operations', () 
     /securityRequirement: \['adminPreAuthCookie', 'adminCsrfCookie', 'adminCsrfHeader'\]/,
   );
   assert.match(block, /stepUpRequired: true/);
+  assert.match(block, /stepUpMode: 'INLINE_TOTP_REQUEST_BODY'/);
+  assert.match(block, /stepUpPurpose: 'RECOVERY_CODE_ROTATION'/);
+  assert.match(block, /priorStepUpPolicy: 'NOT_REQUIRED_AND_DOES_NOT_SUBSTITUTE_FOR_BODY_TOTP'/);
+  assert.match(block, /totpCounterPolicy: 'GLOBAL_PER_ADMIN_USER_REJECT_REUSE'/);
   assert.match(block, /mediaType: 'image\/png'/);
   assert.match(block, /schema: 'AdminRoleChangeRequest'/);
   assert.match(block, /auditSink: 'ADMIN_SECURITY_EVENT'/);
   assert.match(block, /auditSink: 'AUDIT_LOG'/);
   assert.match(block, /failureAuditSink: 'ADMIN_SECURITY_EVENT'/);
   assert.match(block, /failureAuditSink: 'AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT'/);
+  assert.match(
+    block,
+    /AUDIT_LOG_ADMIN_RECOVERY_IF_SERVER_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT/,
+  );
+  assert.match(
+    block,
+    /SERVER_VERIFIED_MFA_RECOVERY_OWNERSHIP_ACTOR_BINDING_STATE_AND_EXPIRY_CLIENT_INPUT_NEVER_SUFFICIENT/,
+  );
   assert.match(block, /rateLimitProfile: 'REFRESH'/);
   assert.match(block, /fetchMetadataPolicy: 'REJECT_CROSS_SITE_REQUIRE_SAME_ORIGIN'/);
   assert.match(
@@ -43,6 +55,7 @@ test('the generated boundary materializes all 27 admin-security operations', () 
   assert.match(block, /protectedHeader: 'EXACTLY_alg_EdDSA_AND_kid_SIGNATURE_KEY_ID'/);
   assert.match(block, /payloadEncoding: 'BASE64URL_NO_PADDING'/);
   assert.match(block, /unencodedPayload: false/);
+  assert.equal((block.match(/errorCode: 'SERVICE_UNAVAILABLE'/g) ?? []).length, 12);
   assert.match(
     block,
     /signatureInput:\s*'ASCII\(BASE64URL_NO_PADDING\(PROTECTED_HEADER_UTF8\)\.BASE64URL_NO_PADDING\(PAYLOAD\)\)'/,
@@ -60,6 +73,29 @@ test('the generated boundary materializes all 27 admin-security operations', () 
   assert.match(block, /name: 'X-Kora-CSRF'/);
   assert.match(block, /name: 'actorAdminUserId'/);
   assert.doesNotMatch(block, /totpSeed|provisioningUri|encryptionKeyId|signedUrl/i);
+});
+
+test('the generated boundary materializes the four C1 CTO arbitration policies', () => {
+  const source = readFileSync(new URL('../src/generated/audio-pilot.ts', import.meta.url), 'utf8');
+  const policies = /export const adminC1ContractPolicies = \{([\s\S]*?)\n\} as const;/.exec(
+    source,
+  )?.[1];
+
+  assert.ok(policies);
+  assert.match(policies, /provenContextSink: 'AUDIT_LOG_ADMIN_RECOVERY'/);
+  assert.match(policies, /clientEvidenceNeverSufficient:/);
+  assert.match(policies, /'COOKIE'/);
+  assert.match(policies, /'SELECTOR'/);
+  assert.match(policies, /'IDENTIFIER'/);
+  assert.match(policies, /stepUpMode: 'INLINE_TOTP_REQUEST_BODY'/);
+  assert.match(policies, /secondOtpRequired: false/);
+  assert.match(policies, /overflowPolicy: 'ATOMIC_LRU_EVICTION'/);
+  assert.match(policies, /maximumActiveFamilies: 3/);
+  assert.match(policies, /refreshCreatesFamily: false/);
+  assert.match(policies, /httpStatus: 503/);
+  assert.match(policies, /errorCode: 'SERVICE_UNAVAILABLE'/);
+  assert.match(policies, /dependencyDisclosure: 'FORBIDDEN'/);
+  assert.match(policies, /NO_SUCCESS_OR_SECRET_NO_BLIND_AUTOMATIC_RETRY/);
 });
 
 test('audit evidence is generated as a strict discriminated execution-context union', () => {

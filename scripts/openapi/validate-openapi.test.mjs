@@ -10,6 +10,7 @@ import { test } from "node:test";
 
 import {
   EXACT_PRETTIER_VERSION,
+  buildAdminC1ContractPolicies,
   buildAdminSecurityOperations,
   buildContractTypes,
   loadExactPrettier,
@@ -22,6 +23,7 @@ import {
 } from "./artist-earning-allocation.mjs";
 
 import {
+  ADMIN_STRUCTURAL_VALIDATION_OPERATIONS,
   ADMIN_SECURITY_CONTRACTS,
   EXPECTED_PATHS,
   OPENAPI_PATH,
@@ -34,6 +36,13 @@ import {
 
 const sourceDocument = JSON.parse(readFileSync(OPENAPI_PATH, "utf8"));
 const prismaSource = readFileSync(PRISMA_PATH, "utf8");
+const EXPECTED_ADMIN_STRUCTURAL_VALIDATION_OPERATIONS = [
+  "confirmAdminTotpEnrollment",
+  "verifyAdminTotp",
+  "verifyAdminRecoveryCode",
+  "rotateAdminRecoveryCodes",
+  "stepUpAdminSession",
+];
 
 function documentFixture() {
   return structuredClone(sourceDocument);
@@ -183,7 +192,7 @@ function predecessorFrom(result, consumedByArtistSettlementId = null) {
   };
 }
 
-test("the S1.2-03B OpenAPI and unchanged Prisma target contracts are semantically valid", () => {
+test("the S1.2-03B OpenAPI and S1.2-03C1 Prisma target contracts are semantically valid", () => {
   const result = readAndValidateOpenApi();
 
   assert.equal(result.openapi.paths, 60);
@@ -191,7 +200,7 @@ test("the S1.2-03B OpenAPI and unchanged Prisma target contracts are semanticall
   assert.equal(result.openapi.invariants, 18);
   assert.equal(result.openapi.references, "resolved");
   assert.equal(result.openapi.schemas, 137);
-  assert.equal(result.prisma.models, 33);
+  assert.equal(result.prisma.models, 39);
   assert.ok(result.prisma.integerFinancialFields >= 10);
   assert.equal(EXPECTED_PATHS.length, 60);
 });
@@ -308,7 +317,7 @@ test("rejects an unapproved Prisma target model", () => {
 
   assert.throws(
     () => validatePrismaTargetSchema(invalid),
-    /Prisma target models must be exactly the 33 approved models/,
+    /Prisma target models must be exactly the 39 approved models/,
   );
 });
 
@@ -1861,7 +1870,7 @@ test("rejects an audit record detached from its administrator session", () => {
   const invalid = replaceWithinModel(
     prismaSource,
     "AuditLog",
-    /adminSession\s+AdminSession\s+@relation\(fields: \[adminSessionId, adminUserId\], references: \[id, adminUserId\], onDelete: Restrict, onUpdate: Restrict\)/,
+    /adminSession\s+AdminSession\?\s+@relation\("AuditSession", fields: \[adminSessionId, actorAdminUserId\], references: \[id, adminUserId\], onDelete: Restrict, onUpdate: Restrict\)/,
     "adminSession AdminSession @relation(fields: [adminSessionId], references: [id])",
   );
 
@@ -1878,11 +1887,14 @@ test("rejects incomplete mandatory audit evidence", () => {
     [/entityId\s+String/, ""],
     [/maskedBefore\s+Json\?/, ""],
     [/maskedAfter\s+Json\?/, ""],
-    [/reason\s+String/, "reason String?"],
+    [
+      /legacyReason\s+String\s+@map\("reason"\)/,
+      'legacyReason String? @map("reason")',
+    ],
     [/requestId\s+String/, ""],
     [/createdAt\s+DateTime\s+@default\(now\(\)\)/, "createdAt DateTime?"],
     [/action\s+String/, "transaction String"],
-    [/reason\s+String/, "treason String"],
+    [/legacyReason\s+String/, "legacyTreason String"],
     [/requestId\s+String/, "otherrequestId String"],
   ]) {
     const invalid = replaceWithinModel(
@@ -2235,7 +2247,7 @@ for (const [name, modelName, original, style, error] of [
   [
     "AuditLog actor relation present only in a line comment",
     "AuditLog",
-    /adminSession\s+AdminSession\s+@relation\(fields: \[adminSessionId, adminUserId\], references: \[id, adminUserId\], onDelete: Restrict, onUpdate: Restrict\)/,
+    /adminSession\s+AdminSession\?\s+@relation\("AuditSession", fields: \[adminSessionId, actorAdminUserId\], references: \[id, adminUserId\], onDelete: Restrict, onUpdate: Restrict\)/,
     "line",
     /AuditLog must be append-only with complete/,
   ],
@@ -2314,7 +2326,7 @@ test("rejects TOTP material present only in a Prisma string", () => {
 
 test("rejects an AuditLog relation after an unterminated Prisma string newline", () => {
   const relation =
-    "adminSession AdminSession @relation(fields: [adminSessionId, adminUserId], references: [id, adminUserId], onDelete: Restrict, onUpdate: Restrict)";
+    'adminSession AdminSession? @relation("AuditSession", fields: [adminSessionId, actorAdminUserId], references: [id, adminUserId], onDelete: Restrict, onUpdate: Restrict)';
   for (const [name, lineBreak] of [
     ["LF", "\n"],
     ["CR", "\r"],
@@ -2323,7 +2335,7 @@ test("rejects an AuditLog relation after an unterminated Prisma string newline",
     const invalid = replaceWithinModel(
       prismaSource,
       "AuditLog",
-      /adminSession\s+AdminSession\s+@relation\(fields: \[adminSessionId, adminUserId\], references: \[id, adminUserId\], onDelete: Restrict, onUpdate: Restrict\)/,
+      /adminSession\s+AdminSession\?\s+@relation\("AuditSession", fields: \[adminSessionId, actorAdminUserId\], references: \[id, adminUserId\], onDelete: Restrict, onUpdate: Restrict\)/,
       `lexicalProbe String @default("unterminated${lineBreak}  ${relation}`,
     );
 
@@ -2819,6 +2831,56 @@ test("locks the generated admin-security inventory to 12 C1 and 15 C2 operations
   );
 });
 
+test("materializes all four C1 CTO arbitration policies in generated metadata", () => {
+  const policies = buildAdminC1ContractPolicies(sourceDocument);
+  const operations = buildAdminSecurityOperations(sourceDocument);
+  const createEnrollment = operations.find(
+    ({ operationId }) => operationId === "createAdminTotpEnrollment",
+  );
+  const deliverQr = operations.find(
+    ({ operationId }) => operationId === "deliverAdminTotpEnrollmentQr",
+  );
+  const rotate = operations.find(
+    ({ operationId }) => operationId === "rotateAdminRecoveryCodes",
+  );
+
+  assert.equal(
+    policies.enrollmentAuditRouting.provenContextSink,
+    "AUDIT_LOG_ADMIN_RECOVERY",
+  );
+  assert.equal(policies.sessionFamilies.overflowPolicy, "ATOMIC_LRU_EVICTION");
+  assert.equal(policies.sessionFamilies.refreshCreatesFamily, false);
+  assert.equal(policies.unavailability.httpStatus, 503);
+  assert.equal(policies.unavailability.errorCode, "SERVICE_UNAVAILABLE");
+  assert.equal(
+    createEnrollment.auditSink,
+    "AUDIT_LOG_ADMIN_RECOVERY_IF_SERVER_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
+  );
+  assert.equal(
+    deliverQr.failureAuditSink,
+    "AUDIT_LOG_ADMIN_RECOVERY_IF_SERVER_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT",
+  );
+  assert.match(createEnrollment.auditContextProof, /SERVER_VERIFIED/);
+  assert.equal(rotate.stepUpMode, "INLINE_TOTP_REQUEST_BODY");
+  assert.equal(rotate.stepUpPurpose, "RECOVERY_CODE_ROTATION");
+  assert.equal(
+    rotate.priorStepUpPolicy,
+    "NOT_REQUIRED_AND_DOES_NOT_SUBSTITUTE_FOR_BODY_TOTP",
+  );
+  assert.equal(rotate.totpCounterPolicy, "GLOBAL_PER_ADMIN_USER_REJECT_REUSE");
+  assert.deepEqual(rotate.transactionalEffects, [
+    "CONSUME_TOTP_COUNTER",
+    "REPLACE_RECOVERY_CODE_BATCH",
+    "RECORD_IDEMPOTENCY",
+    "WRITE_AUDIT_LOG",
+  ]);
+  assert.equal(
+    operations.filter(({ serviceUnavailable }) => serviceUnavailable !== null)
+      .length,
+    12,
+  );
+});
+
 const adminSecurityMutations = [
   [
     "path substitution",
@@ -3206,6 +3268,189 @@ const adminSecurityMutations = [
       delete document["x-kora-admin-public-failure-timing"].resetAdminPassword;
     },
   ],
+  [
+    "recovery enrollment success forced to the unproven-context sink",
+    (document) => {
+      adminSecurityOperation(document, "createAdminTotpEnrollment")[
+        "x-kora-audit-sink"
+      ] = "ADMIN_SECURITY_EVENT";
+    },
+  ],
+  [
+    "recovery QR failure routing inferred from an unproven success",
+    (document) => {
+      document[
+        "x-kora-admin-failure-audit-sinks"
+      ].deliverAdminTotpEnrollmentQr = "ADMIN_SECURITY_EVENT";
+    },
+  ],
+  [
+    "recovery enrollment server proof omitted",
+    (document) => {
+      delete adminSecurityOperation(document, "createAdminTotpEnrollment")[
+        "x-kora-audit-context-proof"
+      ];
+    },
+  ],
+  [
+    "client cookie accepted as recovery-context proof",
+    (document) => {
+      document[
+        "x-kora-admin-enrollment-audit-routing-policy"
+      ].clientEvidenceNeverSufficient = ["SELECTOR", "IDENTIFIER"];
+    },
+  ],
+  [
+    "recovery-code rotation changed to prior step-up",
+    (document) => {
+      adminSecurityOperation(document, "rotateAdminRecoveryCodes")[
+        "x-kora-step-up-mode"
+      ] = "PRIOR_STEP_UP_ENDPOINT";
+    },
+  ],
+  [
+    "prior step-up allowed to replace rotation body TOTP",
+    (document) => {
+      document["x-kora-admin-recovery-code-rotation-policy"].priorStepUpPolicy =
+        "MAY_SUBSTITUTE_FOR_BODY_TOTP";
+    },
+  ],
+  [
+    "rotation TOTP global anti-replay omitted",
+    (document) => {
+      delete adminSecurityOperation(document, "rotateAdminRecoveryCodes")[
+        "x-kora-totp-counter-policy"
+      ];
+    },
+  ],
+  [
+    "rotation audit removed from the atomic effects",
+    (document) => {
+      adminSecurityOperation(document, "rotateAdminRecoveryCodes")[
+        "x-kora-transaction-effects"
+      ].pop();
+    },
+  ],
+  [
+    "fourth session family rejected instead of LRU eviction",
+    (document) => {
+      document["x-kora-admin-session-family-policy"].overflowPolicy =
+        "REJECT_NEW_FAMILY";
+    },
+  ],
+  [
+    "session-family active-state definition weakened",
+    (document) => {
+      document["x-kora-admin-session-family-policy"].activeFamilyDefinition =
+        "NOT_REVOKED_ONLY";
+    },
+  ],
+  [
+    "session-family deterministic LRU tie-break removed",
+    (document) => {
+      document["x-kora-admin-session-family-policy"].lruOrder.pop();
+    },
+  ],
+  [
+    "refresh allowed to create a new session family",
+    (document) => {
+      document["x-kora-admin-session-family-policy"].refreshCreatesFamily =
+        true;
+    },
+  ],
+  [
+    "C1 SERVICE_UNAVAILABLE error omitted",
+    (document) => {
+      document["x-kora-operation-errors"].loginAdmin = document[
+        "x-kora-operation-errors"
+      ].loginAdmin.filter((code) => code !== "SERVICE_UNAVAILABLE");
+    },
+  ],
+  [
+    "C1 503 response omitted",
+    (document) => {
+      delete adminSecurityOperation(document, "listAdminSessions").responses[
+        "503"
+      ];
+    },
+  ],
+  [
+    "C1 503 public message discloses PostgreSQL",
+    (document) => {
+      document.components.responses.AdminServiceUnavailable.content[
+        "application/json"
+      ].examples.unavailable.value.error.message = "PostgreSQL unavailable.";
+    },
+  ],
+  [
+    "C1 503 schema permits a non-generic error code",
+    (document) => {
+      document.components.responses.AdminServiceUnavailable.content[
+        "application/json"
+      ].schema.allOf[1].properties.error.properties.code.const =
+        "INTERNAL_ERROR";
+    },
+  ],
+  [
+    "C1 503 schema permits non-empty public details",
+    (document) => {
+      document.components.responses.AdminServiceUnavailable.content[
+        "application/json"
+      ].schema.allOf[1].properties.error.properties.details.maxProperties = 1;
+    },
+  ],
+  [
+    "C1 503 schema message discloses a dependency",
+    (document) => {
+      document.components.responses.AdminServiceUnavailable.content[
+        "application/json"
+      ].schema.allOf[1].properties.error.properties.message.const =
+        "PostgreSQL unavailable.";
+    },
+  ],
+  [
+    "C1 503 schema authorizes automatic retry",
+    (document) => {
+      document.components.responses.AdminServiceUnavailable.content[
+        "application/json"
+      ].schema.allOf[1].properties.error.properties.retryable.const = true;
+    },
+  ],
+  [
+    "generic step-up accepts recovery-code rotation purpose",
+    (document) => {
+      document.components.schemas.AdminStepUpRequest.properties.purpose.enum.push(
+        "RECOVERY_CODE_ROTATION",
+      );
+    },
+  ],
+  [
+    "SERVICE_UNAVAILABLE added to C2",
+    (document) => {
+      document["x-kora-operation-errors"].requestAdminPasswordReset.push(
+        "SERVICE_UNAVAILABLE",
+      );
+      adminSecurityOperation(document, "requestAdminPasswordReset").responses[
+        "503"
+      ] = { $ref: "#/components/responses/AdminServiceUnavailable" };
+    },
+  ],
+  [
+    "blind retry allowed after unknown commit outcome",
+    (document) => {
+      document[
+        "x-kora-admin-c1-unavailability-policy"
+      ].commitAcknowledgementLoss = "AUTOMATIC_RETRY";
+    },
+  ],
+  [
+    "durable audit claimed while durability is impossible",
+    (document) => {
+      document[
+        "x-kora-admin-c1-unavailability-policy"
+      ].auditDurabilityImpossible = "CLAIM_DURABLE_AUDIT_AND_RETURN_503";
+    },
+  ],
 ];
 
 for (const [name, mutate] of adminSecurityMutations) {
@@ -3219,3 +3464,39 @@ for (const [name, mutate] of adminSecurityMutations) {
     );
   });
 }
+
+test("locks the five Admin C1 structural validation operations", () => {
+  assert.deepEqual(
+    ADMIN_STRUCTURAL_VALIDATION_OPERATIONS,
+    EXPECTED_ADMIN_STRUCTURAL_VALIDATION_OPERATIONS,
+  );
+});
+
+for (const operationId of EXPECTED_ADMIN_STRUCTURAL_VALIDATION_OPERATIONS) {
+  test(`S1.2-03C1 rejects missing VALIDATION_ERROR for ${operationId}`, () => {
+    const document = documentFixture();
+    document["x-kora-operation-errors"][operationId] = document[
+      "x-kora-operation-errors"
+    ][operationId].filter((code) => code !== "VALIDATION_ERROR");
+
+    assert.throws(
+      () => validateOpenApiDocument(document),
+      new RegExp(
+        `${operationId} requires VALIDATION_ERROR for structural request validation`,
+        "u",
+      ),
+    );
+  });
+}
+
+test("S1.2-03C1 preserves the QR validation remapping as FORBIDDEN", () => {
+  const document = documentFixture();
+  document["x-kora-operation-errors"].deliverAdminTotpEnrollmentQr.push(
+    "VALIDATION_ERROR",
+  );
+
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /TOTP QR delivery must remain unique, non-loggable and retry-409/u,
+  );
+});

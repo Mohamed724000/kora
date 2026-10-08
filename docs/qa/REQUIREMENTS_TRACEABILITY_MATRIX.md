@@ -395,6 +395,161 @@ Qualification : **instantané historique prépublication du 2026-09-29**.
 Les états ci-dessus attestent uniquement le contrat. Les garanties runtime, SQL
 et interface restent `Not started` jusqu'aux autorisations S1.2-03C1/C2/C3.
 
+## Traçabilité S1.2-03C1 — préparation contractuelle locale
+
+Qualification : **arbitrages CTO C1 matérialisés dans le contrat ; aucune
+preuve runtime ou PostgreSQL**.
+
+| Exigence                                                   | Contrat / décision                           | Preuve contractuelle attendue                                                     | État                      |
+| ---------------------------------------------------------- | -------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------- |
+| SEC-ADM-C1-PREP-01 Audit enrollment/QR selon contexte      | OpenAPI + ADR-025 amendé                     | sinks succès/échec explicites, preuve serveur, mutations adversariales            | Contract prepared locally |
+| SEC-ADM-C1-PREP-02 Rotation avec TOTP inline purpose-bound | `rotateAdminRecoveryCodes`                   | métadonnées générées, absence de pré-step-up/second OTP, compteur global          | Contract prepared locally |
+| SEC-ADM-C1-PREP-03 Quatrième famille par éviction LRU      | politique familles de session                | plafond 3, verrou, activité, ordre déterministe, transaction et refresh           | Contract prepared locally |
+| SEC-ADM-C1-PREP-04 503 générique sur les douze C1          | erreurs/réponses + politique indisponibilité | 12 réponses, message uniforme, C2 inchangé, dépendances non révélées              | Contract prepared locally |
+| SEC-ADM-C1-PREP-05 Audit impossible et COMMIT inconnu      | politique indisponibilité                    | rollback non commité, aucune fausse preuve, aucun secret/retry avant confirmation | Contract prepared locally |
+| SEC-ADM-C1-PREP-06 Principe writer/reader PostgreSQL       | ADR-025 + architecture + Threat Model        | séparation, allowlists, sinks insert-only ; aucune migration/provision            | Design recorded only      |
+| SEC-ADM-C1-PREP-07 Surface et JWS préservés                | OpenAPI/génération                           | 60/67/137, C1=12, C2=15, C3=0, cinq retraits SUPPORT, JWS R4                      | Verified locally          |
+| SEC-ADM-C1-PREP-08 Frontière sans runtime                  | allowlist fermée et postflight               | aucun Prisma/runtime/dépendance/workflow/installation                             | Verified locally          |
+
+La table PREP ci-dessus est l'instantané historique du cadrage contractuel. Le
+mandat runtime distinct est tracé ci-dessous sans réécrire cette preuve.
+
+## Traçabilité S1.2-03C1 — instantané local prépublication R3 du 2026-10-04
+
+Qualification : **à cet instant, R2 était le dernier head publié dans la Draft
+PR #50 avec quatre workflows verts ; revue CTO terminale BLOCK ; R3 validé
+localement et non publié ; après cet instantané, Git/GitHub font foi ;
+fournisseur KMS/JWT de production non qualifié**.
+
+| Exigence                                          | Preuve runtime                                                                                                                                                                                                                 | État                             |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------- |
+| SEC-ADM-C1-RUN-01 Douze opérations seulement      | module/contrôleur C1, inventaire Nest et parcours HTTP réel                                                                                                                                                                    | Verified locally                 |
+| SEC-ADM-C1-RUN-02 Surface contractuelle préservée | OpenAPI 60/67/137, C1=12, C2=15, C3=0, génération byte-identique                                                                                                                                                               | Verified locally                 |
+| SEC-ADM-C1-RUN-03 Stockage et audit legacy        | six modèles, migration unique, AuditLog v1/v2 sans DML historique, 39 modèles/40 tables                                                                                                                                        | Verified locally                 |
+| SEC-ADM-C1-RUN-04 Frontières reader/writer        | deux identités/pools attestés avant init, projections et ACL de colonnes, sinks insert-only ; la preuve R3 historique ne préparait que `roleid=target`; R11 couvre réellement `roleid` et `member` pour reader/writer sur A/B  | Verified locally — R11 completed |
+| SEC-ADM-C1-RUN-05 Transactions et concurrence     | compteur TOTP, recovery one-shot, refresh winner/replay, LRU trois familles, audit atomique ; R3 aligne rejeu de confirmation et échecs post-session                                                                           | Verified locally                 |
+| SEC-ADM-C1-RUN-06 Cryptographie réelle            | TOTP SHA-256, Argon2id, AES-GCM/rewrap, RS256 + JOSE réel, QR serveur                                                                                                                                                          | Verified locally                 |
+| SEC-ADM-C1-RUN-07 Transport fermé                 | cookies `__Host-*`, Origin/Fetch/JSON/CSRF et parser borné                                                                                                                                                                     | Verified locally                 |
+| SEC-ADM-C1-RUN-08 Redis durable et borné          | Lua atomique, profils, `WAITAOF 1 0`, restart AOF et panne fermée                                                                                                                                                              | Verified locally                 |
+| SEC-ADM-C1-RUN-09 Provider fail-closed            | clés réelles éphémères injectées en test ; provider absent = 503 C1, health préservé ; R3 préserve l'indisponibilité lors de la résolution JWT                                                                                 | Verified locally                 |
+| SEC-ADM-C1-RUN-10 Supply-chain                    | pins JOSE/Argon2/QR ; alias scoped `tinyglobby@0.2.17` ; gate sans `settings.next.rootDir` ; audits complet/production zéro                                                                                                    | Verified locally                 |
+| SEC-ADM-C1-RUN-11 Observabilité sans secret       | callbacks Pino/Sentry et enveloppes d'erreur sanitizés                                                                                                                                                                         | Verified locally                 |
+| SEC-ADM-C1-RUN-12 Frontière de publication        | dans l'instantané daté, aucun add/commit/push/PR/tag/release/déploiement ; l'état Git/GitHub postérieur fait foi ; Ready/fusion/déploiement distincts ; C2/C3 non démarrés                                                     | Verified locally                 |
+| SEC-ADM-C1-RUN-13 Lifecycle et health isolés      | `infra:verify`/`infra:verify-api` code 0 ; volumes vides, migrations puis provisioning, restart/reset, owner refusé, runtime accepté, pannes/récupérations PostgreSQL/Redis, cleanup ciblé et ressources étrangères inchangées | Verified locally                 |
+
+### Traçabilité S1.2-03C1-R3 — instantané local prépublication
+
+Baseline R2 publiée, dernier head à cet instant : commit
+`59972cc0614842627c8c17717605345eaae277c4`, parent
+`efb14d1d075dac50ff081b6ef3c1cce516de01e0`, arbre
+`a4e721cf14350655c9d7a94baae28a5f4edb298d`, trois commits PR, 78 fichiers,
+`+15279/-641`. Les runs R2 `37160117048`, `37160117009`, `37160117045` et
+`37160117042` sont tous verts sur ce head ; ils précèdent le BLOCK CTO et ne
+valident pas les corrections R3.
+
+| Exigence                                      | Preuve R3 obtenue                                                                                                                                                                                                          | État                                 |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| SEC-ADM-C1-R3-01 Memberships incidentes       | Preuve historique limitée à `GRANT <target> TO <probe>`, donc `roleid=target`; elle n'exerçait pas `GRANT <probe> TO <target>`, donc `member=target`. La postcondition saine ne démontrait pas ce refus sans mutation.     | Partial historically — corrected R11 |
+| SEC-ADM-C1-R3-02 Statuts Auth                 | cinq surfaces exactes à 400 avec codes canoniques                                                                                                                                                                          | Verified locally                     |
+| SEC-ADM-C1-R3-03 Rejeu confirmation           | rejeu exact séquentiel/concurrent et même clé avec payload divergent à 409 ; autre clé/utilisateur refusés ; aucun secret, cookie, session ou mutation supplémentaire                                                      | Verified locally                     |
+| SEC-ADM-C1-R3-04 Audit post-session           | rotation/step-up et branches explicitement contextualisées prouvés ; le chemin générique partagé de certaines pannes `refresh`/`revokeCurrent`/`revokeOther` pouvait encore perdre un contexte serveur déjà prouvé         | Partial historically — HIGH post-R3  |
+| SEC-ADM-C1-R3-05 Provider de vérification JWT | `assertAvailable` réussi puis résolution ou digest tardif indisponible à 503 ; kid/signature/malformation/expiration à 401, aucun contexte inventé                                                                         | Verified locally                     |
+| SEC-ADM-C1-R3-06 Audit `revokeOther`          | cible connue réelle et motif validé ; sujet absent si inconnu ; succès, rôle, step-up absent/expiré, auto-cible et 404 sans mutation sur refus                                                                             | Verified locally                     |
+| SEC-ADM-C1-R3-07 Gouvernance et frontière     | champs vivants réconciliés ; historiques R0/R1/R2 préservés ; R3 local/non publié dans l'instantané daté ; état Git/GitHub postérieur faisant foi ; politique open source différée ; KMS non qualifié ; C2/C3 non démarrés | Reconciled locally                   |
+| SEC-ADM-C1-R3-08 Points séparés               | recommandation JTI non bloquante et pagination `NON CONCLUSIVE`, sans élargissement silencieux du lot                                                                                                                      | Preserved separately                 |
+
+### S1.2-03C1-R4 — instantané local prépublication du 2026-10-04
+
+R3 est publié au head `b0792934aa2f9d6f6d481517f384825874d72402` de la Draft
+PR #50. Infrastructure `37190396720`, Launcher Windows `37190396716`, Security
+`37190396718` et Quality Linux `37190396709` réussissent en tentative 1. La
+revue CTO terminale ultérieure reste **BLOCK** : cinq findings R3 sont clos et
+le finding **HIGH** d'audit post-session n'était que partiellement corrigé avant R4.
+Les onze fichiers techniques R3, dont PostgreSQL/Infrastructure, restent figés
+après leurs validations ; R4 est borné aux trois fichiers Auth/tests et aux six
+documents autorisés. Les preuves ci-dessous sont celles de l'instantané local
+prépublication ; après cet instantané, l'état Git/GitHub fait foi.
+
+| Exigence                                      | Preuve R4                                                                                                                                                                                                                       | État                    |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| SEC-ADM-C1-R4-01 Contexte `revokeCurrent`     | principal serveur conservé avant transaction ; panne précoce : un `AuditLog` attribué, aucun événement générique, session non révoquée                                                                                          | Verified locally        |
+| SEC-ADM-C1-R4-02 Cible `revokeOther`          | avant résolution : sujet nul et cible/motif conservés ; après résolution : sujet serveur exact ; rollback acteur/cible                                                                                                          | Verified locally        |
+| SEC-ADM-C1-R4-03 Preuve `refresh`             | aucun acteur inventé avant preuve ; après vérification user/session/token, pannes CSRF/signature/rotation vers un `AuditLog` exact                                                                                              | Verified locally        |
+| SEC-ADM-C1-R4-04 Rotation atomique            | échec après consommation SQL de l'ancien refresh mais avant insertion du suivant ; ancien token non consommé, génération/session inchangées après rollback                                                                      | Verified locally        |
+| SEC-ADM-C1-R4-05 Normalisation et concurrence | erreur normalisée enrichie avec métadonnées intactes, contexte explicite prioritaire, deux invocations concurrentes isolées                                                                                                     | Verified locally        |
+| SEC-ADM-C1-R4-06 Sink indisponible            | `refresh`, `revokeCurrent`, `revokeOther` : 503 sûr, zéro `AuditLog`, zéro fallback `AdminSecurityEvent`, mutations non commitées annulées                                                                                      | Verified locally        |
+| SEC-ADM-C1-R4-07 COMMIT inconnu               | trois opérations : 503 neutre, aucun rejet ni second sink ; succès/audit et mutation durables acceptés sans prétendre au rollback                                                                                               | Verified locally        |
+| SEC-ADM-C1-R4-08 Régression complète          | wrapper PostgreSQL/Redis réel 30/30 ; API 17 suites, 87 réussis et 29 `skipped` ; OpenAPI 60/67/137 et génération inchangée                                                                                                     | Verified locally        |
+| SEC-ADM-C1-R4-09 Publication et limites       | R3 publié et quatre CI vertes mais finding terminal HIGH ; R4 validé dans l'instantané prépublication, neuf fichiers existants maximum ; publication distincte, KMS non qualifié, pagination non concluante, C2/C3 non démarrés | Scope preserved locally |
+
+La clôture matérielle distincte du worktree 03A, à sémantique préservée et de
+cause **NON CONCLUSIVE**, n'est ni une preuve R4 ni une extension de ce lot.
+
+### S1.2-03C1-R5 — publication R4 et instantané local du 2026-10-05
+
+R4 est publié au commit `cdc020caa8b06d74af816dc072e778e25e020699` et ses
+quatre workflows réussissent en tentative 1. La revue terminale conserve
+**BLOCK** sur deux findings, traités localement par R5 sans modifier le contrat.
+
+| Exigence / contrôle                         | Preuve R5                                                                                                                                                                                      | Statut                             |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| SEC-ADM-C1-R5-01 Recovery après preuve      | création, QR et confirmation sous panne post-preuve : exactement un `AuditLog` `ADMIN_RECOVERY`, aucun événement, écritures métier annulées                                                    | Verified locally                   |
+| SEC-ADM-C1-R5-02 Avant preuve / PREAUTH     | digest initial de confirmation et panne PREAUTH : zéro attribution recovery; événement de sécurité seulement                                                                                   | Verified locally                   |
+| SEC-ADM-C1-R5-03 Sink recovery indisponible | échec d'enregistrement du rejet : 503 neutre, zéro fallback, zéro mutation durable                                                                                                             | Verified locally                   |
+| SEC-ADM-C1-R5-04 Liste avant preuve         | JWT signé à JTI incompatible et panne transactionnelle pré-preuve : `AdminSecurityEvent`, zéro `AuditLog`                                                                                      | Verified locally                   |
+| SEC-ADM-C1-R5-05 Liste après preuve         | panne après le véritable UPDATE touch : rollback des horodatages et zéro sink; panne de lecture après commit d'authentification : touch durable possible et zéro sink                          | Verified locally                   |
+| SEC-ADM-C1-R5-06 COMMIT inconnu             | callback et COMMIT réels puis perte d'accusé sur création, QR, confirmation et touch liste : 503 neutre, succès durable possible, aucun rejet contradictoire, second sink ou retry automatique | Verified locally                   |
+| SEC-ADM-C1-R5-07 Régression C1              | wrapper PostgreSQL A/B + HTTP + Redis : 34/34 tests réels, douze opérations; API 17 suites, 90 réussis, 33 conditionnels `skipped`; OpenAPI 60/67/137 inchangé                                 | Verified locally                   |
+| SEC-ADM-C1-R5-08 Frontière                  | six fichiers TypeScript et six documents existants; repository/filter/writer, Prisma, migrations, provisioning, wrapper, workflows, manifestes, lockfile et contrat inchangés                  | Scope preserved; local unpublished |
+
+La politique open source reste différée et non installée, le fournisseur de
+clés de production **NON QUALIFIÉ**, la recommandation JTI séparée, la
+pagination **NON CONCLUSIVE**, et C2/C3 `Not started`.
+
+### S1.2-03C1-R6 — publication R5 et instantané local du 2026-10-05
+
+R5 est publié au commit `89323beb1ebbae9a488456db5d1dc2cb19215dd6`; ses
+quatre workflows réussissent en tentative 1. R6 ferme localement le finding de
+réutilisation d'un client après rollback non confirmé, sans modifier les
+contrats ni les services Auth/session.
+
+| Exigence / contrôle                                | Preuve R6                                                                                                                                                                                                                        | Statut                             |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| SEC-ADM-C1-R6-01 Rollback non confirmé             | callback rejeté avant COMMIT, `ROLLBACK` rejeté, `AggregateError` contenant les deux erreurs, libération unique par `release(true)`, aucun COMMIT ni retry                                                                       | Verified locally                   |
+| SEC-ADM-C1-R6-02 BEGIN et COMMIT                   | BEGIN rejeté avec rollback confirmé ou rejeté; COMMIT inconnu sans rollback, cause conservée et client détruit; succès et rollback confirmé réutilisables                                                                        | Verified locally                   |
+| SEC-ADM-C1-R6-03 Preuve PostgreSQL réelle          | writer de production, `pg`, pool dédié `max=1`, mutation réelle, transaction ouverte, rejet contrôlé du rollback, ancien backend retiré, identité suivante distincte                                                             | Verified locally                   |
+| SEC-ADM-C1-R6-04 État durable et non-contamination | connexion indépendante : mutation abandonnée absente, mutation saine suivante présente, ancien PID absent; aucune transaction ni entrée d'audit héritée                                                                          | Verified locally                   |
+| SEC-ADM-C1-R6-05 Parcours HTTP contextuel          | enrollment, idempotence et audit de succès exécutés dans la transaction puis annulés; 503 neutre, un rejet `ADMIN_RECOVERY`, aucun événement, succès contradictoire ou double sink                                               | Verified locally                   |
+| SEC-ADM-C1-R6-06 Régression C1                     | writer 13/13; wrapper PostgreSQL A/B + HTTP + Redis 36/36; API 17 suites, 93 réussis et 35 conditionnels `skipped`; lint, typecheck, build, audits à zéro et scanner officiel 384 fichiers                                       | Verified locally                   |
+| SEC-ADM-C1-R6-07 Frontière et qualification        | trois fichiers techniques et six documents existants; injection contrôlée distincte d'un timeout réseau réel; Auth/session, contrats, Prisma, migrations, ACL, wrapper, dépendances, lockfile, workflows et manifestes inchangés | Scope preserved; local unpublished |
+
+Le fournisseur de clés de production reste **NON QUALIFIÉ**, la politique open
+source reste différée et non installée, le JTI transactionnel reste une
+recommandation séparée, la pagination reste **NON CONCLUSIVE**, et C2/C3
+restent `Not started`.
+
+### S1.2-03C1-R7 — publication R6 et diagnostic causal local du 2026-10-06
+
+R6 est publié au commit `bc907192075df1ccd68ec8a0378c9eae53e1ce23`.
+Trois workflows réussissent; Infrastructure `37390492450` échoue sur l'ancien
+oracle concurrent après 35/36 tests. Le statut exact de la réponse historique
+n'est pas présent dans le log et n'est pas reconstruit comme un fait.
+
+| Exigence / contrôle                         | Preuve R7                                                                                                                                                                                                | Statut                              |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| SEC-ADM-C1-R7-01 Provenance CI bornée       | checkout du merge synthétique du head R6 exact; PostgreSQL A/B passe; échec historique en 258 ms car statut hors `{200,401}`; statut, corps et ordre absents du log                                      | Verified; historical limit explicit |
+| SEC-ADM-C1-R7-02 Ordre `n → n+1`            | deux réponses 200; compteur durable `n+1`; deux PREAUTH consommés; deux audits corrélés; deux nouvelles sessions; deux victimes LRU exactes; trois familles actives                                      | Verified locally                    |
+| SEC-ADM-C1-R7-03 Ordre `n+1 → n`            | 200 puis 400 `OTP_INVALID` au message neutre; aucun cookie/secret au rejet; PREAUTH rejeté non consommé; un audit de succès, un événement `ADMIN_TOTP_VERIFY/FAILED/OTP_INVALID`; une seule éviction LRU | Verified locally                    |
+| SEC-ADM-C1-R7-04 Concurrence réelle         | deux requêtes HTTP avec PREAUTH distincts, deux writers observés bloqués dans PostgreSQL, au moins un directement par la fixture; deux répétitions `200/200`; maximum observé de trois familles actives  | Verified locally                    |
+| SEC-ADM-C1-R7-05 Régression et répétabilité | deux wrappers frais : PostgreSQL A/B et 37/37 à chaque fois, HTTP/PostgreSQL/Redis réels et nettoyage ciblé; API lint/typecheck, 17/17 suites, 93 réussis et 36 conditionnels `skipped`                  | Verified locally                    |
+| SEC-ADM-C1-R7-06 Essais non conclusifs      | scénario original local 36/36 sans ordre inverse forcé; première correction 36/37 sur observateur ne comptant que les blocages directs; tentative Docker sandbox refusée avant exécution fonctionnelle   | Recorded, not counted as PASS       |
+| SEC-ADM-C1-R7-07 Frontière                  | un test et six documents existants; aucun runtime, contrat, ADR, Prisma, migration, ACL, provisioning, wrapper, dépendance, lockfile, workflow ou manifeste modifié; aucun changement GitHub             | Scope preserved; local unpublished  |
+
+Le fournisseur de clés de production reste **NON QUALIFIÉ**, la politique open
+source reste différée et non installée, le JTI transactionnel reste une
+recommandation séparée, la pagination reste **NON CONCLUSIVE**, et C2/C3
+restent `Not started`.
+
 ## Traçabilité S1.2-03B-R1 — Supply-chain remediation
 
 Qualification : **instantané historique local prépublication du 2026-09-29**.
@@ -472,3 +627,78 @@ non publié. Aucun SHA, arbre, Run ID ou succès CI R4 futur n'y était anticip�
 après cet instantané, l'état de publication et de CI fait foi dans Git et
 GitHub. Les résultats de validation locale sont consignés dans le rapport du
 gate.
+
+## Traçabilité locale S1.2-03C1-R10 — 2026-10-07
+
+| ID        | Exigence vérifiée                                                | Preuve locale R10                                                                                                                    | Statut           |
+| --------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------- |
+| C1-R10-01 | Adopter le candidat R9 sans dépendre du prototype après adoption | Frontière finale de 23 chemins techniques ; prototype et preuves R9 inchangés                                                        | Verified locally |
+| C1-R10-02 | Reproduire le graphe supply-chain                                | Deux installations fraîches avec scripts ignorés ; graphe SHA-256 `d015a1fbf88a052ef55e3fdd9bcc640fcd61602a8a2156a5d5bf2667c022fe73` | Verified locally |
+| C1-R10-03 | Qualifier vulnérabilités, signatures et licences                 | Audits complet/production zéro ; signatures manquantes/invalides vides ; licences 933/0/0                                            | Verified locally |
+| C1-R10-04 | Gérer strictement une suppression suivie                         | `apps/api/jest.config.cjs` seul est omis ; toute autre erreur de lecture reste bloquante                                             | Verified locally |
+| C1-R10-05 | Composer strictement `qs` et `proxy-addr`                        | Ensemble exact sous `express@5.2.1`, versions exactes, parents/lock/singletons vérifiés ; 107/107 tests scanner                      | Verified locally |
+| C1-R10-06 | Préserver le contrôle global du dépôt                            | 419/419 tests tooling ; scanner officiel avec historique sur 385 fichiers, 52 immuables et six scripts qualifiés                     | Verified locally |
+| C1-R10-07 | Requalifier l'API et les consommateurs                           | API format/lint/typecheck/OpenAPI/tests/build ; Web/Admin/UI tests/typechecks/builds ; smoke Sharp                                   | Verified locally |
+| C1-R10-08 | Rejouer le runtime réel deux fois                                | Deux répétitions fraîches PostgreSQL A/B et 37/37 HTTP/PostgreSQL/Redis, nettoyage complet                                           | Verified locally |
+| C1-R10-09 | Reproduire le gel technique                                      | Deux manifestes byte-identiques, 385 lignes, SHA-256 `627aada7638656ef510c3f767f6a8b641c29f204f9c041f229834b3a23557337`              | Verified locally |
+| C1-R10-10 | Préserver la frontière de publication                            | Instantané prépublication : 29 chemins non indexés, aucune mutation Git/GitHub, PR #50 au head R6 ; état ultérieur dans Git/GitHub   | Scope preserved  |
+
+Les deux NON-PASS scanner intermédiaires et les incidents environnementaux sont
+conservés dans le rapport de validation ; aucun résultat non exécuté ou échoué
+n'est renommé en PASS. Le fournisseur de clés de production reste **NON
+QUALIFIÉ**, la politique open source différée n'est pas installée, la pagination
+reste **NON CONCLUSIVE** et C2/C3 restent `Not started`.
+
+Les mentions R10 ci-dessus décrivent l'instantané local antérieur à toute
+publication. Elles ne prédisent aucun SHA, Run ID ou succès CI ; l'état courant
+ultérieur fait foi dans Git et GitHub.
+
+## Instantané local prépublication S1.2-03C1-R11 — 2026-10-07
+
+Chronologie qualifiée : R10 est publié au head source
+`153b6ca1ef861a9fc09f3c290cb4d8cb54e9802d` avec quatre workflows verts; la
+revue terminale suivante prononce **BLOCK** sur F1/F2; R11 est la remédiation
+locale non indexée, non commitée et non publiée. Les succès CI R10 ne sont pas
+des preuves R11.
+
+| ID        | Exigence vérifiée                               | Preuve locale R11                                                                                                                                                                                                                      | Statut                                      |
+| --------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| C1-R11-01 | Refuser les quatre orientations de membership   | prédicat F1 présent avec les trois anciens; matrice A/B × reader/writer × `roleid`/`member`, soit huit refus réels par wrapper                                                                                                         | Verified locally                            |
+| C1-R11-02 | Prouver le refus avant mutation                 | grant et options brutes prouvés; signature reader/writer/probe strictement identique; grant tiers inchangé; nettoyage ciblé et absence du probe vérifiés                                                                               | Verified locally                            |
+| C1-R11-03 | Préserver les preuves PostgreSQL existantes     | quatre provisionnements positifs/idempotents, refus writer/ACL distinct, 39 modèles, 40 tables, rollback et COMMIT inconnu conservés                                                                                                   | Verified locally                            |
+| C1-R11-04 | Aligner cinq contrats `VALIDATION_ERROR`        | code ajouté uniquement aux cinq listes autorisées; QR exclu et remapping `403 FORBIDDEN` préservé                                                                                                                                      | Verified locally                            |
+| C1-R11-05 | Refuser cinq dérives contractuelles             | cinq retraits unitaires refusés avec l'operationId concerné; OpenAPI adversarial 299/299; surface 60/67/137                                                                                                                            | Verified locally                            |
+| C1-R11-06 | Prouver cinq réponses HTTP réelles              | prérequis Origin/PREAUTH ou session/CSRF/UUID/idempotence valides; exactement 400, enveloppe et code `VALIDATION_ERROR`, sink existant, zéro mutation métier                                                                           | Verified locally                            |
+| C1-R11-07 | Préserver génération et boundary                | générateur courant; `audio-pilot.ts` byte-identique SHA-256 `d53665d89388e399d1a7dbf782739b836bb652d8cfd281e3679621c86377b697`; boundary 7/7                                                                                           | Verified locally                            |
+| C1-R11-08 | Requalifier API et outillage                    | lint/typecheck; API 17 fichiers, 93 réussites, 41 conditionnels ignorés; tooling 426/426; scanner 385 fichiers, historique, 52 immuables, six scripts                                                                                  | Verified locally                            |
+| C1-R11-09 | Répéter l'intégration réelle                    | deux wrappers frais, chacun PostgreSQL A/B, huit refus membership, un refus writer/ACL et 42/42 HTTP/PostgreSQL/Redis; inventaire Docker restauré puis Docker arrêté                                                                   | Verified locally                            |
+| C1-R11-10 | Conserver les tentatives NON-PASS               | première tentative lint refusée sur constante de test inutilisée; correction causale et reprise réussie, sans renommer l'échec initial en PASS                                                                                         | Traced                                      |
+| C1-R11-11 | Préserver la frontière locale et de publication | dans l'instantané prépublication : douze fichiers existants au maximum, index vide, aucune mutation Git/GitHub/CI; audits/signatures/licences/builds hors périmètre non rejoués; toute publication ultérieure fait foi dans Git/GitHub | Scope preserved — historical prepublication |
+
+Limites inchangées : fournisseur de clés de production **NON QUALIFIÉ**,
+politique OSS différée/non installée, JTI transactionnel séparé, pagination
+**NON CONCLUSIVE**, couverture V8 et iOS non exécutées, C2/C3 `Not started`.
+
+## Instantané prépublication S1.2-03C1-R12 — 2026-10-08
+
+R11 est publié au head `3e02785d06c0d5f397eb9f9a39a09b8058b10467` avec
+quatre runs `pull_request/completed/success`. La revue terminale cumulative
+identifie ensuite le parsing JSON pré-contrôleur comme finding **HIGH**. À
+l'instantané prépublication du 2026-10-08, R12 était local, non indexé, non
+commité et non publié; toute publication ultérieure fait foi dans Git et
+GitHub.
+
+| ID        | Exigence vérifiée                        | Preuve locale R12                                                                                                                                                                                                                                                                                                   | Statut           |
+| --------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| C1-R12-01 | Reproduire les sept erreurs JSON réelles | sept chaînes brutes tronquées; avant correction, 400 `BAD_REQUEST`, champs génériques, zéro événement/audit, état métier inchangé; campagne 42 réussites/1 échec                                                                                                                                                    | Reproduced       |
+| C1-R12-02 | Classifier uniquement l'erreur causale   | `SyntaxError`, `entity.parse.failed`, statut 400; aucun matching de message/corps; erreurs URI, applicatives, taille, encodage et C1 existantes transmises par identité                                                                                                                                             | Verified locally |
+| C1-R12-03 | Borner le routage aux sept POST          | montages Express exacts, sans suffixe; casse, query, slash terminal et paramètre non-UUID acceptés comme par le routeur; méthode, route étrangère, QR, opérations sans corps, C2 et client non surclassés                                                                                                           | Verified locally |
+| C1-R12-04 | Préserver les parseurs Nest              | un `jsonParser`, un `urlencodedParser`; logger avant JSON, sept normaliseurs avant les routes; aucune option de limite, stricteté, type, encodage, `verify` ou `rawBody` ajoutée                                                                                                                                    | Verified locally |
+| C1-R12-05 | Produire l'enveloppe et le sink exacts   | sept fois 400 `VALIDATION_ERROR`, enveloppe fermée, même requestId, un `AdminSecurityEvent` sans acteur, zéro `AuditLog`, cookie ou mutation; canari absent de la réponse, du recorder, du sink et des logs structurés                                                                                              | Verified locally |
+| C1-R12-06 | Neutraliser la panne du recorder         | 503 C1 fermé, un appel, zéro sink durable, aucun retry, fallback ou second sink; fixture restaurée dans `finally`                                                                                                                                                                                                   | Verified locally |
+| C1-R12-07 | Préserver R3–R11 et les transactions     | wrapper réel PostgreSQL A/B et 47/47; 42 scénarios R11 conservés; rollback, COMMIT inconnu, TOTP, LRU, refresh, révocations, ACL et memberships inchangés                                                                                                                                                           | Verified locally |
+| C1-R12-08 | Requalifier API et contrats              | unités 7/7; format/lint/typecheck/tests/build; API 17 fichiers, 96 réussites, 46 conditionnels ignorés; OpenAPI 60/67/137; boundary 7/7; généré byte-identique                                                                                                                                                      | Verified locally |
+| C1-R12-09 | Scanner et frontière                     | scanner officiel 385 fichiers, historique actif, 52 immuables, six scripts; quatre fichiers techniques et six documents existants au maximum; aucun changement de dépendance, lockfile, OpenAPI, Prisma, provisioning, workflow ou contrat généré                                                                   | Verified locally |
+| C1-R12-10 | Conserver les NON-PASS et limites        | démarrage Docker PowerShell, Prettier, premier typecheck, reproduction rouge, premier montage `.post()` et trois timeouts `AdminRequestPolicy` consignés; après arrêt Docker, reprise isolée 6/6 et suite 96 réussites/46 ignorés; causalité Docker non affirmée; KMS, OSS/JTI/pagination/V8/iOS et C2/C3 inchangés | Traced           |
+| C1-R12-11 | Qualifier l'incident npm                 | invocation du `2026-10-08T08:53:14.3124154Z` au code 1, stdout vide et `MODULE_NOT_FOUND` avant analyse; résultat NON CONCLUSIVE, production NON EXÉCUTÉE; bundle absolu Node `v22.18.0`/npm `10.9.3` ensuite qualifié; mécanisme exact de relocalisation non conclu                                                | Traced           |
+| C1-R12-12 | Reprendre les audits frais               | appels directs du Node et `npm-cli.js` absolus; audits complet et production au code 0, chacun avec `found 0 vulnerabilities` et stderr vide; index, hashes techniques et lockfile inchangés; C1 reste en revue dans la Draft PR #50, non intégré à `main`                                                          | Verified locally |

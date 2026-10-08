@@ -1,11 +1,13 @@
 # KORA+ Final — Source de vérité
 
-Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 CLÔTURÉ — S1.2-03A CLÔTURÉ
-ET FUSIONNÉ — S1.2-03B-R4 VALIDÉ LOCALEMENT LE 2026-10-01 — ÉTAT DE
-PUBLICATION COURANT DANS GIT/GITHUB — PR #48 DRAFT NON FUSIONNÉE**
+Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 ET S1.2-03A CLÔTURÉS ET
+FUSIONNÉS — S1.2-03B-R4 FUSIONNÉ VIA PR #48 — S1.2-03C1-R11 PUBLIÉ AU HEAD
+`3e02785d…` DE LA DRAFT PR #50 AVEC QUATRE WORKFLOWS VERTS — REVUE TERMINALE
+BLOCK MALFORMED JSON — INSTANTANÉ PRÉPUBLICATION R12 VALIDÉ —
+FOURNISSEUR DE CLÉS DE PRODUCTION NON QUALIFIÉ — C2/C3 NOT STARTED**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-10-01
+Dernière réconciliation documentaire : 2026-10-08
 
 ## Hiérarchie normative
 
@@ -62,6 +64,199 @@ les types ; Prisma et les migrations restent inchangés jusqu'à une autorisatio
 runtime distincte.
 S1.2-02 matérialise le schéma Prisma par des migrations PostgreSQL versionnées et
 des contraintes SQL ; il ne constitue toujours pas un runtime métier.
+
+État courant vérifié le 2026-10-02 : la PR #48, titre
+`feat(contracts): define S1.2-03B Admin security gate`, est fusionnée et fermée
+au merge `c97992ca2c82bc4f22f9222ea98ed53714fede4c`, arbre
+`c8a6d52e7dcfdd24b5b9d0caee14363fa8220869`. Les workflows `push/main`
+Infrastructure `36991329968`, Launcher Windows `36991329948`, Security
+`36991329957` et Quality Linux `36991330060`, tentative 1, sont tous
+`completed/success` sur ce merge. Les instantanés Draft R0–R4 plus bas restent
+historiques.
+
+Le mandat runtime distinct S1.2-03C1 matérialise les douze opérations
+auth/session, six modèles, la migration unique, les contraintes et ACL C1, les
+pools lecteur/writer attestés et le client Redis dédié. La surface contractuelle
+reste à 60 chemins, 67 opérations et 137 schémas. Les gates applicatifs,
+PostgreSQL, Redis et contractuels passent localement. La chaîne dev-only
+signalée par `GHSA-vfj7-8cjw-p6xm` est retirée par l'override strictement scoped
+du seul import `fast-glob` de `@next/eslint-plugin-next@16.3.8` vers
+`tinyglobby@0.2.17`. Les audits npm bruts complet et production passent à zéro
+vulnérabilité. Cette substitution est qualifiée uniquement sans
+`settings.next.rootDir` ; le gate permanent refuse toute future apparition de
+cette propriété et impose une nouvelle qualification.
+
+R3 est publié au commit `b0792934aa2f9d6f6d481517f384825874d72402`, parent
+R2 `59972cc0614842627c8c17717605345eaae277c4`, arbre
+`87e41d9304820a1ebf8808fc783a5407a8c2105d`. La PR #50 reste `OPEN`, Draft et
+non fusionnée ; son cumul publié est de quatre commits, 78 fichiers et
+`+16965/-642`, et son corps inchangé porte le SHA-256
+`81f1cf58e7ed6e3f5f206785c92516bb14d6e2c651dc8156b942d68ad6e240d2`.
+Infrastructure `37190396720`, Launcher Windows `37190396716`, Security
+`37190396718` et Quality Linux `37190396709` sont tous
+`pull_request/completed/success`, tentative 1, sur ce head exact.
+
+Ces succès CI n'annulent pas le verdict CTO terminal **BLOCK** post-R3. Cinq
+findings R3 sont clos : memberships PostgreSQL entrantes, statuts Auth, rejeu
+de confirmation, indisponibilité de résolution JWT et sujet/motif des refus
+`revokeOther`. Le finding **HIGH** d'audit post-session n'était que partiellement
+corrigé : des pannes de `refresh`, `revokeCurrent` et `revokeOther` perdaient
+encore un contexte administrateur déjà prouvé et choisissaient le sink
+générique.
+
+Les preuves R4 ci-dessous constituent l'instantané local prépublication daté du
+2026-10-04. R4 conserve ce contexte par invocation, sans état mutable partagé. Le sujet de
+`revokeOther` n'est enrichi qu'après résolution serveur de la cible ; `refresh`
+ne prouve aucun contexte à partir du cookie, du hash ou du candidat seuls. Les
+erreurs déjà normalisées sans contexte sont enrichies sans remplacer un
+contexte explicite, et le COMMIT inconnu reste un 503 neutre marqué déjà audité,
+sans seconde écriture d'échec.
+
+Le wrapper C1 R4 final termine au code 0 : PostgreSQL A/B, 39 modèles, 40
+tables, quatre provisionnements réussis, cinq refus de provisionnement, quatre
+refus de membership entrante et 30/30 tests HTTP/PostgreSQL/Redis réels pour les
+douze opérations. L'API passe format, lint, typecheck, 17 suites avec 87 tests
+réussis et 29 `skipped`, puis build. OpenAPI reste à 60/67/137 et la génération
+reste inchangée. Les deux premières tentatives wrapper R4, limitées à des
+erreurs de fixtures de test, restent non concluantes et ne valent pas PASS.
+
+Les onze fichiers techniques figés pour la publication R3 incluaient les
+surfaces PostgreSQL/Infrastructure alors validées. R4 ne modifie aucune de ces
+surfaces : seuls les trois fichiers Auth/tests autorisés et les six documents
+vivants sont réconciliés. Dans cet instantané, R4 était local, non indexé, non
+commité et non publié ; après cet instantané, l'état Git/GitHub fait foi.
+L'incident matériel distinct du worktree 03A a été clos sous mandat séparé,
+avec sémantique préservée et causes historiques **NON CONCLUSIVE** ; cette
+clôture n'est pas une preuve fonctionnelle R4 et ses artefacts restent hors C1.
+Le fournisseur KMS/JWT de production reste non qualifié ; C2 et C3 restent
+`Not started`. L'architecture courante est décrite dans
+[SLICE_1_2_03C1_ADMIN_AUTH_SESSION_RUNTIME.md](../architecture/SLICE_1_2_03C1_ADMIN_AUTH_SESSION_RUNTIME.md).
+
+R4 est ensuite publié au commit
+`cdc020caa8b06d74af816dc072e778e25e020699`, parent R3
+`b0792934aa2f9d6f6d481517f384825874d72402`, arbre
+`86dc270dd29e22cb75b4b11c9c7d7574457ba62a`. La PR #50 reste `OPEN`, Draft et
+non fusionnée, avec cinq commits, 78 fichiers et `+18069/-645`; son corps
+inchangé de 17 976 octets porte le SHA-256
+`e9214bc3a8f00ddbca895263df8ebcedc4c584841e9449b59b79e5befe95e647`.
+Infrastructure `37242762675`, Launcher Windows `37242762612`, Security
+`37242762666` et Quality Linux `37242762665` sont tous
+`pull_request/completed/success`, tentative 1, sur ce head exact.
+
+La revue terminale R4 maintient **BLOCK** sur deux findings. Premièrement, les
+trois opérations d'enrollment sous contexte recovery perdaient encore
+l'attribution `ADMIN_RECOVERY` sur certaines pannes génériques après preuve
+serveur. Deuxièmement, `listAdminSessions` confondait certaines liaisons JTI
+rejetées avec une preuve complète et pouvait attribuer un sink d'audit après
+une panne du touch, alors que le contrat impose `AdminSecurityEvent` avant
+preuve et `NONE` après liaison user/session/JTI complète.
+
+L'instantané local R5 du 2026-10-05 ferme ces deux findings sans étendre C1.
+Le contexte recovery est minimal, local à l'invocation et activé uniquement
+après `resolveContext` réussi, ou après `activeContext` réussi pour la
+confirmation. La liste applique une politique interne non commandable par le
+client : avant preuve complète, événement de sécurité; après preuve, les
+pannes du touch ou de lecture inhibent les deux sinks. Le COMMIT inconnu reste
+prioritaire, neutre et sans second sink. Le wrapper final passe 34/34 tests
+réels avec PostgreSQL A/B et Redis; l'API passe 17 suites, 90 tests réussis et
+33 conditionnels `skipped`, ainsi que format, lint, typecheck et build.
+OpenAPI reste à 60/67/137, les audits npm complet et production restent à zéro
+vulnérabilité et le scanner officiel passe sur 384 fichiers avec historique.
+R5 est local, non indexé, non commité et non publié; aucun succès CI R5 futur
+n'est affirmé. La politique open source demeure différée et non installée, le
+fournisseur de clés de production **NON QUALIFIÉ**, la recommandation JTI
+séparée, la pagination **NON CONCLUSIVE**, et C2/C3 `Not started`.
+
+R5 est ensuite publié au commit
+`89323beb1ebbae9a488456db5d1dc2cb19215dd6`, parent R4
+`cdc020caa8b06d74af816dc072e778e25e020699`, arbre
+`43b4448ed68f4093dc3e6c636257dae100d4d755`. La PR #50 reste `OPEN`, Draft,
+`CLEAN/MERGEABLE` et non fusionnée, avec six commits, 78 fichiers et
+`+19481/-645`. Son corps de 25 862 octets porte le SHA-256
+`d17b14a763c16a5ee256b9d06a84ef811d3e6c0ca7d9addbbdefa4a46ddd7079`.
+Infrastructure `37317920495`, Launcher Windows `37317920363`, Security
+`37317920190` et Quality Linux `37317920587` sont tous
+`pull_request/completed/success`, tentative 1, sur ce head exact.
+
+La revue post-R5 identifie un finding transactionnel : après échec du callback
+avant COMMIT, un `ROLLBACK` rejeté laissait le client réutilisable dans le pool.
+R6 détruit désormais ce client lors de son unique libération, conserve
+l'`AggregateError` et ses deux erreurs, n'ajoute aucun retry et ne confond pas
+ce cas avec `AdminWriterCommitUnknownError`. Le succès, le rollback confirmé et
+la destruction après résultat COMMIT inconnu restent inchangés.
+
+La preuve réelle R6 utilise le writer de production et un pool `pg` dédié
+`max=1`. Après mutation effective et rejet contrôlé de `ROLLBACK`, elle observe
+la transaction encore ouverte, le retrait du backend, son remplacement par une
+connexion saine, l'absence durable de la mutation abandonnée et la persistance
+de l'opération suivante. Cette injection contrôlée ne qualifie pas un timeout
+réseau réel. Le scénario HTTP distinct confirme la mutation intermédiaire puis
+son rollback, une réponse 503 neutre, exactement un `AuditLog` de rejet
+contextuel sur connexion saine, aucun succès contradictoire et aucun double
+sink.
+
+Le wrapper final passe PostgreSQL A/B et 36/36 parcours réels avec Redis. Le
+writer passe 13/13 tests; l'API passe 17 suites, 93 tests réussis et 35
+conditionnels `skipped`, ainsi que format ciblé, lint, typecheck et build. Les
+audits npm brut complet et production rapportent zéro vulnérabilité et le
+scanner officiel passe sur 384 fichiers, historique inclus. R6 reste limité à
+neuf fichiers existants, local, non indexé, non commité et non publié; aucun
+SHA, Run ID ou succès CI R6 futur n'est affirmé. La PR #50 reste Draft. Les
+limites R5 demeurent : politique open source différée et non installée,
+fournisseur de clés de production **NON QUALIFIÉ**, recommandation JTI séparée,
+pagination **NON CONCLUSIVE**, C2/C3 `Not started`.
+
+R6 est ensuite publié au commit
+`bc907192075df1ccd68ec8a0378c9eae53e1ce23`, parent R5
+`89323beb1ebbae9a488456db5d1dc2cb19215dd6`, arbre
+`fa9e70f913d554978c04bb609fb3d6eed6bed041`, avec neuf fichiers et
+`+697/-106`. La PR #50 reste `OPEN`, Draft et non fusionnée, avec sept commits,
+78 fichiers et `+20087/-660`; son corps inchangé de 25 862 octets porte le
+SHA-256 `d17b14a763c16a5ee256b9d06a84ef811d3e6c0ca7d9addbbdefa4a46ddd7079`.
+Launcher Windows `37390491683`, Security `37390492725` et Quality Linux
+`37390491796` réussissent en tentative 1. Infrastructure `37390492450` échoue
+en tentative 1 sur ce même head.
+
+Le log Infrastructure prouve PostgreSQL A/B et les contrôles ACL avant
+l'échec, puis 35/36 tests. Le scénario historique de concurrence échoue en
+258 ms parce qu'au moins une réponse n'appartient pas à l'ancien oracle
+`{200,401}`. Le log ne contient ni son statut exact, ni son corps, ni l'ordre
+d'acquisition, ni les états durables; aucune réponse historique 400 ne peut
+donc être affirmée comme directement observée. Le nettoyage ciblé réussit. La
+préparation Compose, son cycle de vie et la santé API sont ignorés; l'échec
+ultérieur de l'arrêt Compose, faute de fichiers `.local`, est secondaire.
+
+R7 démontre causalement que l'oracle était incomplet, sans finding runtime. Le
+verrou `AdminUser ... FOR UPDATE` sérialise les vérifications et le compteur
+TOTP est strictement croissant. Pour les compteurs adjacents `n` puis `n+1`,
+les deux réponses sont 200. Pour `n+1` puis `n`, la première est 200 et la
+seconde exactement 400 `OTP_INVALID`, message neutre, sans cookie ni secret.
+Le compteur durable vaut `n+1`; seul le PREAUTH gagnant est consommé; chaque
+succès possède exactement son audit et sa nouvelle session; le rejet possède
+exactement son événement de sécurité et aucun audit. L'éviction LRU des seules
+familles actives est exacte et le plafond reste trois.
+
+Deux isolations fraîches passent chacune PostgreSQL A/B et 37/37 parcours
+HTTP/PostgreSQL/Redis. Elles observent en concurrence réelle deux writers
+bloqués, au moins un directement par la transaction témoin, puis `200/200`,
+avec au plus trois familles actives. L'API passe lint, typecheck et 17/17 suites
+avec 93 tests réussis et 36 conditionnels `skipped`. R7 ne modifie qu'un test
+d'intégration et les six documents vivants autorisés; runtime Auth/session,
+OpenAPI, contrat, ADR-025, Prisma, migrations, ACL, provisioning, wrapper,
+dépendances, lockfile, workflows et manifestes restent inchangés. R7 demeure
+local, non indexé, non commité et non publié; aucun changement GitHub ou rerun
+n'est effectué. La publication R7 et la revue terminale C1 exigent des
+décisions séparées.
+
+Le complément Infrastructure du 2026-10-03 a rendu les scripts génériques
+isolables sans modifier leurs valeurs locales par défaut, puis a exécuté
+`infra:verify` et `infra:verify-api` au code 0 sur des ressources jetables. Il
+prouve la création depuis volumes vides, l'ordre migrations puis
+provisionnement/reprovisionnement, la persistance et le reset ciblé, le refus
+du propriétaire, l'acceptation runtime, les transitions de santé
+PostgreSQL/Redis et l'absence de fuite de secrets. Les ressources jetables ont
+été supprimées ; les ressources Docker préexistantes ont conservé leurs IDs,
+volumes, réseau, images, états et ports.
 
 ## Règle de contradiction
 
@@ -529,3 +724,180 @@ officiel avec historique, allowlist et `git diff --check` passent. Les audits
 npm complet et production frais terminent au code 0 avec zéro vulnérabilité.
 Les signatures, licences, builds applicatifs, Flutter et PostgreSQL ne sont pas
 rejoués, leurs fichiers techniques étant inchangés par R4.
+
+## Instantané local prépublication S1.2-03C1-R10 — 2026-10-07
+
+R10 avait adopté localement le candidat supply-chain R9 isolé, sans relire son
+arbre comme source après adoption. Le prototype et son répertoire de preuves
+restaient immuables. La frontière de cet instantané comportait exactement 29
+chemins : 23 chemins techniques hérités ou autorisés par R10 (20 modifiés, deux
+ajoutés et un supprimé), puis les six documents vivants réconciliés. L'index Git
+était vide.
+
+Le lockfile adopté porte le SHA-256
+`a1b9744d0b132e6a2f20809c606b7b7525a17230c147dc6155ec05b5ba4aa2f3`.
+Deux installations fraîches avec scripts ignorés aboutissent au même graphe de
+dépendances. Les audits npm complet et production signalent zéro vulnérabilité,
+les signatures de registre n'ont aucun élément manquant ou invalide et le
+contrôle de licences classe 933 composants, sans inconnu ni interdit. La
+politique open source différée n'est pas installée.
+
+Deux NON-PASS officiels restent distinctement consignés. Le premier scanner
+échoue sur le chemin suivi mais supprimé `apps/api/jest.config.cjs`; le correctif
+autorisé exclut uniquement cette suppression suivie, sans ignorer les autres
+erreurs de lecture. Le second révèle une contradiction entre le validateur
+historique de `qs` et l'override frère `proxy-addr` du candidat R9. La composition
+finale autorise exactement ces deux clés sous `express@5.2.1`, avec les versions
+exactes `qs@6.16.0` et `proxy-addr@2.0.8`, et conserve les validateurs de parent,
+lockfile, singleton et absence de troisième clé. Le scanner final passe 107/107
+tests ciblés et 419/419 tests tooling, puis scanne 385 fichiers avec historique,
+52 sources immuables et six scripts d'installation qualifiés ; le seul chemin
+omis est la suppression suivie explicitement déclarée.
+
+L'API passe format, lint, typecheck, OpenAPI 60/67/137, 17 fichiers Vitest avec
+93 réussites et 36 tests conditionnels ignorés, puis build. Web, Admin et UI
+passent leurs tests, typechecks et builds ; le smoke test Sharp produit un PNG
+2×2 valide. Deux exécutions fraîches du wrapper réel passent chacune PostgreSQL
+A/B et 37/37 parcours HTTP/PostgreSQL/Redis, y compris les deux ordres TOTP et
+la concurrence contrôlée, sans dépasser trois familles actives. Les ressources
+ciblées sont supprimées après chaque exécution et Docker est rendu arrêté.
+
+Le manifeste technique R10 est reproduit byte à byte par deux implémentations :
+385 lignes, 44 492 octets et SHA-256
+`627aada7638656ef510c3f767f6a8b641c29f204f9c041f229834b3a23557337`.
+Il diffère du manifeste R9 uniquement sur le test d'intégration et les deux
+fichiers du scanner autorisés. Dans cet instantané local prépublication, aucun
+commit, push, changement de PR, rerun, passage Ready, approval, merge, tag,
+release ou déploiement R10 n'avait été effectué, et la PR #50 restait au head R6
+publié `bc907192075df1ccd68ec8a0378c9eae53e1ce23`. Toute publication ultérieure
+fait foi dans Git et GitHub. Le fournisseur de clés de production reste **NON
+QUALIFIÉ**, et C2/C3 restent `Not started`.
+
+## R10 publié, BLOCK terminal F1/F2 et instantané prépublication S1.2-03C1-R11 — 2026-10-07
+
+R10 est publié au commit source
+`153b6ca1ef861a9fc09f3c290cb4d8cb54e9802d`, parent
+`bc907192075df1ccd68ec8a0378c9eae53e1ce23`, arbre
+`d61ca1388c44e68bc8b7287ef18bfc0f92e01bcf`. La PR #50 reste `OPEN`, Draft,
+`CLEAN/MERGEABLE` et non fusionnée. Infrastructure `37657618058`, Launcher
+Windows `37657618156`, Security `37657618168` et Quality Linux `37657618092`
+sont `pull_request/completed/success`, tentative 1, avec ce head source. Les
+jobs ont utilisé la ref de merge synthétique distincte
+`509575edb2f918f519906dedbd78dcb203b91a19`.
+
+La revue terminale post-R10 maintient **BLOCK** sur deux findings **HIGH**. F1
+est l'absence du prédicat `membership.member = runtime_role.oid` dans le
+préflight PostgreSQL. F2 est l'absence de `VALIDATION_ERROR` dans les listes
+contractuelles de cinq opérations qui renvoient déjà ce code. Les quatre
+workflows R10 précèdent ces constats et ne prouvent pas R11.
+
+Erratum : les preuves R3 à R10 qualifiées de bidirectionnelles avaient préparé
+uniquement `GRANT <target> TO <probe>`, soit
+`pg_auth_members.roleid=<target>`. Elles n'avaient pas exercé
+`GRANT <probe> TO <target>`, soit `member=<target>`. La postcondition saine
+après retrait/nettoyage prouvait l'absence finale de membership, pas un refus
+sans mutation pour l'orientation manquante.
+
+R11 ajoute ce prédicat sans retirer les trois autres. Deux wrappers frais
+prouvent chacun, sur PostgreSQL A/B, la matrice reader/writer × `roleid`/`member`
+de huit refus sans mutation : grant et options brutes préalables présents,
+signature reader/writer/probe strictement identique, grant tiers préservé et
+nettoyage ciblé vérifié. Chaque exécution conserve aussi quatre
+provisionnements positifs/idempotents et le refus writer/ACL distinct, soit
+neuf refus au total.
+
+Le contrat ajoute `VALIDATION_ERROR` uniquement à
+`confirmAdminTotpEnrollment`, `verifyAdminTotp`,
+`verifyAdminRecoveryCode`, `rotateAdminRecoveryCodes` et
+`stepUpAdminSession`. Cinq mutations adversariales nommées et cinq parcours
+HTTP réels prouvent respectivement le gate et exactement 400 avec l'enveloppe
+contractuelle, le sink existant et aucune mutation métier. Le QR reste à son
+remapping `403 FORBIDDEN`. OpenAPI reste 60/67/137 et le contrat généré reste
+byte-identique, SHA-256
+`d53665d89388e399d1a7dbf782739b836bb652d8cfd281e3679621c86377b697`.
+
+Les validations observées sont : syntaxe shell/Node et Prettier ciblé PASS;
+OpenAPI adversarial 299/299 et boundary 7/7; API lint/typecheck PASS, 17 fichiers
+Vitest, 93 réussites et 41 conditionnels ignorés; tooling 426/426; scanner 385
+fichiers, historique actif, 52 sources immuables et six scripts qualifiés; deux
+wrappers frais à 42/42 tests réels chacun. La première tentative lint, arrêtée
+sur une constante de test inutilisée, reste NON-PASS; la correction bornée et
+la reprise passent. Les inventaires Docker avant/après sont identiques et
+Docker est rendu arrêté.
+
+Dans cet instantané local prépublication, R11 était non indexé, non commité et
+non publié. Aucun add, commit, push, rerun CI, changement de PR, Ready,
+approval, merge, tag, release ou déploiement n'avait été effectué. Audits,
+signatures, licences, Web/Admin/Flutter/APK, couverture V8 et iOS n'étaient pas
+rejoués. Toute publication ultérieure fait foi dans Git et GitHub. La politique
+OSS différée n'est pas installée,
+le fournisseur de clés de production reste **NON QUALIFIÉ**, la recommandation
+JTI reste séparée, la pagination reste **NON CONCLUSIVE**, et C2/C3 restent
+`Not started`.
+
+## R11 publié, BLOCK terminal malformed JSON et instantané prépublication S1.2-03C1-R12 — 2026-10-08
+
+R11 est publié au commit source
+`3e02785d06c0d5f397eb9f9a39a09b8058b10467`, parent R10
+`153b6ca1ef861a9fc09f3c290cb4d8cb54e9802d`, arbre
+`618d0b0af203d3c33857dd3c478a295b13ce16a0`. La PR #50 reste `OPEN`, Draft,
+`CLEAN/MERGEABLE` et non fusionnée. Les quatre runs R11 `37693349868`,
+`37693349718`, `37693349633` et `37693349599` réussissent en tentative 1 sur
+ce head source; leur checkout est la merge ref synthétique distincte
+`8d7c7b84010bb42a5a7caa54d7b475eda3307742`.
+
+La revue terminale cumulative suivante maintient **BLOCK** sur un finding
+**HIGH** distinct de F1/F2 : le parseur JSON Express s'exécutait avant le
+contrôleur et son `SyntaxError` était normalisé par Nest en
+`BadRequestException`. Les sept opérations JSON répondaient alors avec le code
+générique `BAD_REQUEST`, les champs `path`/`timestamp` et aucun sink, au lieu de
+`VALIDATION_ERROR` et d'un `AdminSecurityEvent` pré-contexte.
+
+La reproduction HTTP R12 envoie des chaînes brutes tronquées sur les sept
+routes. Avant correction, les sept réponses observées sont 400
+`BAD_REQUEST`, avec zéro `AuditLog`, zéro `AdminSecurityEvent`, aucun cookie et
+signature métier globale inchangée; la campagne conserve ce résultat
+**NON-PASS** à 42 réussites et un échec.
+
+R12 installe explicitement le parseur JSON public Nest après le logger, sans
+modifier ses options. Sept montages Express réutilisent le routage réel et
+normalisent seulement `SyntaxError` + `entity.parse.failed` + statut 400 +
+POST + absence de suffixe en un nouvel
+`AdminC1HttpError(400, VALIDATION_ERROR)`. Le corps, le message, la cause, les
+cookies, bearer et identifiants reçus ne sont jamais transformés en contexte.
+Le filtre et le recorder existants persistent exactement un
+`AdminSecurityEvent`; leur panne rend un seul 503 neutre sans retry ni second
+sink.
+
+Les preuves locales corrigées passent : unités 7/7; format, lint, typecheck,
+tests et build API; 17 fichiers avec 96 réussites et 46 conditionnels ignorés;
+deux isolations finales à 47/47 avec PostgreSQL A/B, Redis réel, huit refus
+membership et un refus writer/ACL; OpenAPI 60/67/137; boundary 7/7; contrat
+généré byte-identique; scanner officiel sur 385 fichiers avec historique, 52
+immuables et six scripts qualifiés. Les routes voisines, méthodes différentes,
+QR, opérations sans corps, C2/client, MIME non sélectionné, `URIError`, erreurs
+applicatives, taille/encodage et `AdminC1HttpError` existant restent hors de la
+normalisation R12.
+
+L'incident d'outillage du `2026-10-08T08:53:14.3124154Z` reste séparé des
+résultats de sécurité : `npm.cmd audit --audit-level=low` termine au code 1,
+stdout vide, avec `MODULE_NOT_FOUND` sur `npm-prefix.js` puis `npm-cli.js`,
+avant toute analyse de vulnérabilités. Il est **NON CONCLUSIVE** et l'audit
+production est alors **NON EXÉCUTÉ**. Le bundle système absolu est ensuite
+qualifié à Node `v22.18.0` et npm `10.9.3`; l'appel relatif défaillant est
+reproduit par une sonde non mutante, tandis que l'appel absolu réussit. Le
+mécanisme exact de relocalisation reste non conclusif. Via le Node et
+`npm-cli.js` absolus qualifiés, les audits complet et production frais du
+2026-10-08 terminent chacun au code 0 avec `found 0 vulnerabilities` et stderr
+vide; index, hashes techniques et lockfile restent inchangés.
+
+À l'instantané prépublication du 2026-10-08, R12 était local, non indexé, non
+commité et non publié. Toute publication ultérieure fait foi dans Git et
+GitHub. C1 demeure en revue dans la Draft PR #50 et n'est pas intégré à `main`.
+R12 ne modifie ni OpenAPI, dépendance, lockfile, Prisma, migration,
+provisioning, workflow, contrôleur, service, repository, writer ou contrat
+généré. Le fournisseur de clés de production reste **NON QUALIFIÉ**, la
+politique OSS différée n'est pas installée, la recommandation JTI reste
+séparée, la pagination reste **NON CONCLUSIVE**, V8/iOS ne sont pas exécutés et
+C2/C3 restent `Not started`. Aucun Ready, approval, merge, tag, release ou
+déploiement n'est autorisé par cet instantané.

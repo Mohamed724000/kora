@@ -57,6 +57,59 @@ export function validateWorkflowText(path, text) {
   return errors;
 }
 
+export function validateInfrastructureGateText(text) {
+  const errors = [];
+  const exactGate = "./apps/api/prisma/run-admin-auth-runtime-validation.ps1";
+  if (!text.includes("name: Validate Admin Auth Session PostgreSQL runtime")) {
+    errors.push("infrastructure workflow lacks the named C1 PostgreSQL gate");
+  }
+  if (!text.includes("shell: pwsh") || !text.includes(exactGate)) {
+    errors.push(
+      "infrastructure workflow lacks the executable C1 PostgreSQL gate",
+    );
+  }
+  if (
+    (text.match(/run-admin-auth-runtime-validation\.ps1/gu) ?? []).length !== 1
+  ) {
+    errors.push(
+      "infrastructure workflow must execute the C1 PostgreSQL gate exactly once",
+    );
+  }
+  return errors;
+}
+
+export function validateSecurityGateText(text) {
+  const errors = [];
+  const compatibilityGate = "npm run security:next-root-dirs";
+  const gateMatches = text.match(
+    /^\s*run:\s*npm run security:next-root-dirs\s*$/gmu,
+  );
+  if ((gateMatches ?? []).length !== 1) {
+    errors.push(
+      "security workflow must execute the Next rootDir compatibility gate exactly once",
+    );
+  }
+
+  const installIndex = text.indexOf("npm ci --ignore-scripts");
+  const compatibilityIndex = text.indexOf(compatibilityGate);
+  const auditIndex = text.indexOf("npm audit --audit-level=low");
+  if (
+    installIndex < 0 ||
+    compatibilityIndex <= installIndex ||
+    auditIndex <= compatibilityIndex
+  ) {
+    errors.push(
+      "security workflow must run the Next rootDir compatibility gate after install and before audits",
+    );
+  }
+  if (text.includes("continue-on-error")) {
+    errors.push(
+      "security workflow must not weaken gates with continue-on-error",
+    );
+  }
+  return errors;
+}
+
 export function validateWorkflows(repositoryRoot = process.cwd()) {
   const errors = WORKFLOW_PATHS.flatMap((path) =>
     validateWorkflowText(
@@ -71,6 +124,7 @@ export function validateWorkflows(repositoryRoot = process.cwd()) {
   if (!/if: always\(\)[\s\S]*npm run infra:down/u.test(infrastructure)) {
     errors.push("infrastructure workflow lacks unconditional shutdown");
   }
+  errors.push(...validateInfrastructureGateText(infrastructure));
   const windows = readFileSync(
     resolve(repositoryRoot, ".github/workflows/launcher-windows.yml"),
     "utf8",
@@ -87,7 +141,9 @@ export function validateWorkflows(repositoryRoot = process.cwd()) {
     resolve(repositoryRoot, ".github/workflows/security.yml"),
     "utf8",
   );
+  errors.push(...validateSecurityGateText(security));
   for (const requiredGate of [
+    "npm run security:next-root-dirs",
     "npm ls --all",
     "npm audit --audit-level=low",
     "npm audit --omit=dev --audit-level=low",

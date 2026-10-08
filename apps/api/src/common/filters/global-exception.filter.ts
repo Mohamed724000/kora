@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import type { ServerResponse } from 'node:http';
 import type { Logger } from 'pino';
+import { AdminC1HttpError } from '../../admin-auth/admin-session.service';
 import { safePath, type RequestWithId } from '../../observability/http-logger';
 
 interface ErrorDefinition {
@@ -21,10 +22,54 @@ interface ErrorResponse {
   timestamp: string;
 }
 
+interface AdminC1ErrorResponse {
+  error: {
+    code: string;
+    details: Readonly<Record<string, unknown>>;
+    message: string;
+    retryable: false;
+  };
+  requestId: string;
+}
+
 type ExceptionReporter = (
   exception: unknown,
   context: Readonly<{ path: string; requestId: string }>,
 ) => void;
+type AdminFailureAuditRecorder = (exception: AdminC1HttpError, requestId: string) => Promise<void>;
+type ErrorMiddlewareNext = (exception: unknown) => void;
+
+interface BodyParserError extends SyntaxError {
+  status?: unknown;
+  type?: unknown;
+}
+
+interface MountedRequest {
+  method?: unknown;
+  url?: unknown;
+}
+
+export function isMalformedJsonParserError(exception: unknown): exception is BodyParserError {
+  if (!(exception instanceof SyntaxError)) return false;
+  const candidate = exception as BodyParserError;
+  return candidate.status === HttpStatus.BAD_REQUEST && candidate.type === 'entity.parse.failed';
+}
+
+export function normalizeAdminC1MalformedJsonError(
+  exception: unknown,
+  request: MountedRequest,
+  _response: unknown,
+  next: ErrorMiddlewareNext,
+): void {
+  next(
+    request.method === 'POST' &&
+      typeof request.url === 'string' &&
+      safePath(request.url) === '/' &&
+      isMalformedJsonParserError(exception)
+      ? new AdminC1HttpError(HttpStatus.BAD_REQUEST, 'VALIDATION_ERROR')
+      : exception,
+  );
+}
 
 const PUBLIC_ERRORS: Readonly<Record<number, ErrorDefinition>> = {
   [HttpStatus.BAD_REQUEST]: {
@@ -67,6 +112,9 @@ const INTERNAL_ERROR: ErrorDefinition = {
 };
 
 function statusFor(exception: unknown): number {
+  if (exception instanceof AdminC1HttpError) {
+    return exception.status;
+  }
   return exception instanceof HttpException
     ? exception.getStatus()
     : HttpStatus.INTERNAL_SERVER_ERROR;
@@ -90,9 +138,36 @@ export class GlobalExceptionFilter implements ExceptionFilter {
   constructor(
     private readonly logger: Logger,
     private readonly reportException: ExceptionReporter = () => undefined,
+    private readonly recordAdminFailure?: AdminFailureAuditRecorder,
   ) {}
 
-  catch(exception: unknown, host: ArgumentsHost): void {
+  catch(exception: unknown, host: ArgumentsHost): void | Promise<void> {
+    if (
+      exception instanceof AdminC1HttpError &&
+      !exception.auditRecorded &&
+      this.recordAdminFailure !== undefined
+    ) {
+      return this.auditThenRespond(exception, host);
+    }
+    this.respond(exception, host);
+  }
+
+  private async auditThenRespond(exception: AdminC1HttpError, host: ArgumentsHost): Promise<void> {
+    const request = host.switchToHttp().getRequest<RequestWithId>();
+    const recorder = this.recordAdminFailure;
+    if (recorder === undefined) {
+      this.respond(exception, host);
+      return;
+    }
+    try {
+      await recorder(exception, request.id ?? 'unavailable');
+      this.respond(exception, host);
+    } catch {
+      this.respond(new AdminC1HttpError(503, 'SERVICE_UNAVAILABLE', { auditRecorded: true }), host);
+    }
+  }
+
+  private respond(exception: unknown, host: ArgumentsHost): void {
     const http = host.switchToHttp();
     const request = http.getRequest<RequestWithId>();
     const response = http.getResponse<ServerResponse>();
@@ -100,12 +175,23 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const path = safePath(request.url);
     const requestId = request.id ?? 'unavailable';
 
-    const body: ErrorResponse = {
-      error: publicError(status),
-      path,
-      requestId,
-      timestamp: new Date().toISOString(),
-    };
+    const body: ErrorResponse | AdminC1ErrorResponse =
+      exception instanceof AdminC1HttpError
+        ? {
+            error: {
+              code: exception.code,
+              details: exception.details,
+              message: exception.message,
+              retryable: exception.retryable,
+            },
+            requestId,
+          }
+        : {
+            error: publicError(status),
+            path,
+            requestId,
+            timestamp: new Date().toISOString(),
+          };
 
     this.logger.error(
       {
@@ -125,6 +211,9 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     }
 
     response.statusCode = status;
+    if (exception instanceof AdminC1HttpError && exception.retryAfterSeconds !== undefined) {
+      response.setHeader('retry-after', String(exception.retryAfterSeconds));
+    }
     response.setHeader('content-type', 'application/json; charset=utf-8');
     response.end(JSON.stringify(body));
   }

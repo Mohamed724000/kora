@@ -88,6 +88,10 @@ export class PrismaService extends PrismaClient implements OnApplicationShutdown
     }
   }
 
+  async selectCustomerProbe(): Promise<void> {
+    await this.customer.findFirst({ select: { id: true } });
+  }
+
   async runtimeBoundarySnapshot(): Promise<RuntimeBoundarySnapshot> {
     const rows = await this.$queryRaw<RuntimeBoundarySnapshot[]>`
       WITH RECURSIVE runtime_role AS (
@@ -263,14 +267,6 @@ export class PrismaService extends PrismaClient implements OnApplicationShutdown
             OR namespace_entry.oid IS NOT NULL
           )
           AND privilege.grantee IN (0, runtime_role.oid)
-          AND NOT (
-            privilege.grantee = runtime_role.oid
-            AND default_acl.defaclobjtype = 'r'
-            AND default_acl.defaclrole = current_database_entry.datdba
-            AND namespace_entry.nspname = 'public'
-            AND privilege.privilege_type = 'SELECT'
-            AND NOT privilege.is_grantable
-          )
       ), grant_option_violations AS (
         SELECT 1
         FROM pg_catalog.pg_database AS database_entry
@@ -429,6 +425,7 @@ export class PrismaService extends PrismaClient implements OnApplicationShutdown
           SELECT count(*)::integer
           FROM pg_catalog.pg_auth_members AS membership
           WHERE membership.member = runtime_role.oid
+             OR membership.roleid = runtime_role.oid
         ) AS "directMembershipCount",
         (
           SELECT count(*)::integer
@@ -455,44 +452,55 @@ export class PrismaService extends PrismaClient implements OnApplicationShutdown
           WHERE namespace_entry.nspname = 'public' AND table_entry.relkind IN ('r', 'p')
         ) AS "tableCount",
         (
-          SELECT count(*)::integer
-          FROM pg_catalog.pg_class AS table_entry
-          JOIN non_system_schemas AS namespace_entry
-            ON namespace_entry.oid = table_entry.relnamespace
-          WHERE table_entry.relkind IN ('r', 'p', 'v', 'm', 'f')
-            AND (
-              (
-                namespace_entry.nspname = 'public'
-                AND (
-                  NOT pg_catalog.has_table_privilege(current_user, table_entry.oid, 'SELECT')
-                  OR pg_catalog.has_table_privilege(
-                    current_user,
-                    table_entry.oid,
-                    'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'
-                  )
-                  OR pg_catalog.has_any_column_privilege(
-                    current_user,
-                    table_entry.oid,
-                    'INSERT,UPDATE,REFERENCES'
-                  )
-                )
-              )
-              OR (
-                namespace_entry.nspname <> 'public'
-                AND (
-                  pg_catalog.has_table_privilege(
-                    current_user,
-                    table_entry.oid,
-                    'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'
-                  )
-                  OR pg_catalog.has_any_column_privilege(
-                    current_user,
-                    table_entry.oid,
-                    'SELECT,INSERT,UPDATE,REFERENCES'
-                  )
-                )
-              )
-            )
+          WITH expected(table_name, column_name, privilege_type) AS (
+            VALUES
+              ('Customer', 'id', 'SELECT'),
+              ('AdminUser', 'id', 'SELECT'),
+              ('AdminUser', 'role', 'SELECT'),
+              ('AdminUser', 'status', 'SELECT'),
+              ('AdminUser', 'authorizationVersion', 'SELECT'),
+              ('AdminUser', 'totpEnabledAt', 'SELECT'),
+              ('AdminSession', 'id', 'SELECT'),
+              ('AdminSession', 'adminUserId', 'SELECT'),
+              ('AdminSession', 'authorizationVersion', 'SELECT'),
+              ('AdminSession', 'lastTwoFactorAt', 'SELECT'),
+              ('AdminSession', 'lastActivityAt', 'SELECT'),
+              ('AdminSession', 'expiresAt', 'SELECT'),
+              ('AdminSession', 'absoluteExpiresAt', 'SELECT'),
+              ('AdminSession', 'revokedAt', 'SELECT'),
+              ('AdminSession', 'createdAt', 'SELECT'),
+              ('AdminSession', 'updatedAt', 'SELECT'),
+              ('AdminSession', 'stepUpPurpose', 'SELECT'),
+              ('AdminSession', 'stepUpVerifiedAt', 'SELECT'),
+              ('AdminSession', 'stepUpExpiresAt', 'SELECT')
+          ), actual AS (
+            SELECT class_entry.relname, attribute_entry.attname, privilege.privilege_type
+            FROM pg_catalog.pg_attribute AS attribute_entry
+            JOIN pg_catalog.pg_class AS class_entry ON class_entry.oid = attribute_entry.attrelid
+            JOIN non_system_schemas AS namespace_entry ON namespace_entry.oid = class_entry.relnamespace
+            CROSS JOIN runtime_role
+            CROSS JOIN LATERAL pg_catalog.aclexplode(attribute_entry.attacl) AS privilege
+            WHERE class_entry.relkind IN ('r', 'p', 'v', 'm', 'f')
+              AND attribute_entry.attnum > 0
+              AND NOT attribute_entry.attisdropped
+              AND privilege.grantee = runtime_role.oid
+          ), mismatches AS (
+            (SELECT * FROM expected EXCEPT SELECT * FROM actual)
+            UNION ALL
+            (SELECT * FROM actual EXCEPT SELECT * FROM expected)
+          ), direct_table_privileges AS (
+            SELECT 1
+            FROM pg_catalog.pg_class AS class_entry
+            JOIN non_system_schemas AS namespace_entry ON namespace_entry.oid = class_entry.relnamespace
+            CROSS JOIN runtime_role
+            CROSS JOIN LATERAL pg_catalog.aclexplode(
+              COALESCE(class_entry.relacl, pg_catalog.acldefault('r', class_entry.relowner))
+            ) AS privilege
+            WHERE class_entry.relkind IN ('r', 'p', 'v', 'm', 'f')
+              AND privilege.grantee = runtime_role.oid
+          )
+          SELECT (SELECT count(*) FROM mismatches)::integer
+               + (SELECT count(*) FROM direct_table_privileges)::integer
         ) AS "tablePrivilegeViolationCount",
         (
           SELECT count(*)::integer

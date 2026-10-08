@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, statSync } from "node:fs";
-import { basename, extname, resolve, sep } from "node:path";
+import { lstatSync, readFileSync, statSync } from "node:fs";
+import { basename, dirname, extname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const MAX_TRACKED_BYTES = 10 * 1024 * 1024;
@@ -76,6 +76,18 @@ const NEXT_SAFE_VERSION = "16.3.8";
 const NEXT_WORKSPACES = ["apps/admin", "apps/web"];
 const NEXT_ENV_PACKAGE = "@next/env";
 const NEXT_ESLINT_PLUGIN_PACKAGE = "@next/eslint-plugin-next";
+const NEXT_ESLINT_PLUGIN_PATH = `node_modules/${NEXT_ESLINT_PLUGIN_PACKAGE}`;
+const NEXT_ESLINT_PLUGIN_SELECTOR = `${NEXT_ESLINT_PLUGIN_PACKAGE}@${NEXT_SAFE_VERSION}`;
+const NEXT_FAST_GLOB_PACKAGE = "fast-glob";
+const NEXT_FAST_GLOB_ALIAS_PATH = `${NEXT_ESLINT_PLUGIN_PATH}/node_modules/${NEXT_FAST_GLOB_PACKAGE}`;
+const NEXT_FAST_GLOB_DECLARED_VERSION = "3.3.1";
+const NEXT_FAST_GLOB_ALIAS_SPEC = "npm:tinyglobby@0.2.17";
+const NEXT_FAST_GLOB_ALIAS_PACKAGE = "tinyglobby";
+const NEXT_FAST_GLOB_ALIAS_VERSION = "0.2.17";
+const NEXT_FAST_GLOB_ALIAS_INTEGRITY =
+  "sha512-wXR/dYpcqKmfWpEdZjiKJOwCNFndD0DMnrW/cYjVGttEkBfVgcLFHoNrlj47mjOVic9yyNu65alsgF4NQyTa2g==";
+const NEXT_FAST_GLOB_ALIAS_RESOLVED =
+  "https://registry.npmjs.org/tinyglobby/-/tinyglobby-0.2.17.tgz";
 const NEXT_SWC_PACKAGES = [
   "@next/swc-darwin-arm64",
   "@next/swc-darwin-x64",
@@ -91,14 +103,13 @@ const ESLINT_CONFIG_NEXT_SAFE_VERSION = "16.3.8";
 const ESLINT_CONFIG_NEXT_WORKSPACES = ["apps/admin", "apps/web", "packages/ui"];
 const VITEST_PACKAGE = "vitest";
 const VITEST_SAFE_VERSION = "4.1.11";
-const VITEST_WORKSPACES = ["apps/admin", "apps/web", "packages/ui"];
+const VITEST_WORKSPACES = ["apps/admin", "apps/api", "apps/web", "packages/ui"];
 const VITEST_MOCKER_PACKAGE = "@vitest/mocker";
 const VITEST_MOCKER_SAFE_VERSION = "4.1.11";
+const VITEST_COVERAGE_PACKAGE = "@vitest/coverage-v8";
+const VITEST_COVERAGE_PATH = `node_modules/${VITEST_COVERAGE_PACKAGE}`;
 const JS_YAML_PACKAGE = "js-yaml";
-const JS_YAML_OVERRIDES = new Map([
-  ["js-yaml@3.15.0", "3.15.2"],
-  ["js-yaml@4.3.0", "4.3.2"],
-]);
+const JS_YAML_OVERRIDES = new Map([["js-yaml@4.3.0", "4.3.2"]]);
 const JS_YAML_PARENTS = [
   {
     declaredVersion: "^4.3.0",
@@ -106,25 +117,45 @@ const JS_YAML_PARENTS = [
     version: "3.3.6",
   },
   {
-    declaredVersion: "^3.13.1",
-    packagePath: "node_modules/@istanbuljs/load-nyc-config",
-    version: "1.1.0",
-  },
-  {
     declaredVersion: "^4.1.0",
     packagePath: "node_modules/cosmiconfig",
     version: "8.3.6",
   },
 ];
-const JS_YAML_INSTALLATIONS = new Map([
-  ["node_modules/js-yaml", "4.3.2"],
-  ["node_modules/@istanbuljs/load-nyc-config/node_modules/js-yaml", "3.15.2"],
-]);
+const JS_YAML_INSTALLATIONS = new Map([["node_modules/js-yaml", "4.3.2"]]);
 const SHARP_PACKAGE = "sharp";
 const SHARP_ROOT_PATH = `node_modules/${SHARP_PACKAGE}`;
-const SHARP_SAFE_VERSION = "0.35.4";
+const SHARP_SAFE_VERSION = "0.35.5";
 const SHARP_PARENT_PATH = "node_modules/next";
 const SHARP_DECLARED_VERSION = "^0.35.4";
+const PROXY_ADDR_PACKAGE = "proxy-addr";
+const PROXY_ADDR_SAFE_VERSION = "2.0.8";
+const PROXY_ADDR_PARENT_PATH = "node_modules/express";
+const PROXY_ADDR_PARENT_SELECTOR = "express@5.2.1";
+const SOURCE_MAP_JS_PACKAGE = "source-map-js";
+const SOURCE_MAP_JS_SAFE_VERSION = "1.2.2";
+const SOURCE_MAP_JS_PARENTS = [
+  {
+    declaredVersion: "^1.2.1",
+    packagePath: "node_modules/css-tree",
+    version: "3.2.1",
+  },
+  {
+    declaredVersion: "^1.2.1",
+    packagePath: "node_modules/magicast",
+    version: "0.5.5",
+  },
+  {
+    declaredVersion: "^1.2.1",
+    packagePath: "node_modules/postcss",
+    version: "8.5.24",
+  },
+];
+const REMOVED_API_TEST_PACKAGES = ["@types/jest", "jest", "ts-jest"];
+const REMOVED_VULNERABLE_CHAIN_PACKAGES = [
+  "@istanbuljs/load-nyc-config",
+  "sprintf-js",
+];
 const MULTER_PACKAGE = "multer";
 const MULTER_ROOT_PATH = `node_modules/${MULTER_PACKAGE}`;
 const MULTER_SAFE_VERSION = "2.4.0";
@@ -132,6 +163,18 @@ const NEST_PLATFORM_EXPRESS_VERSION = "11.1.28";
 const NEST_PLATFORM_EXPRESS_PATH = "node_modules/@nestjs/platform-express";
 const NEST_PLATFORM_EXPRESS_OVERRIDE = `@nestjs/platform-express@${NEST_PLATFORM_EXPRESS_VERSION}`;
 const MULTER_DECLARED_VERSION = "2.2.0";
+const ADMIN_AUTH_API_PATH = "apps/api";
+const ADMIN_AUTH_PACKAGES = new Map([
+  ["argon2", { section: "dependencies", version: "0.45.1" }],
+  ["jose", { section: "dependencies", version: "6.2.12" }],
+  ["qrcode", { section: "dependencies", version: "1.5.4" }],
+  ["@types/qrcode", { section: "devDependencies", version: "1.5.6" }],
+]);
+const ARGON2_PATH = "node_modules/argon2";
+const ARGON2_VERSION = "0.45.1";
+const ARGON2_INTEGRITY =
+  "sha512-skm+/WCjkGqCQxF7FG1LuZXM5yvbFjgbfiCGsud2oLgaDhh6b6dbH0b1EkghbM+xx4Bj8Ape+KKgixoIlWZicQ==";
+const ARGON2_INSTALL_SCRIPT = "cross-env ZERO_AR_DATE=1 node-gyp-build";
 const DEPENDABOT_ECOSYSTEMS = new Map([
   ["npm", "/"],
   ["pub", "/apps/mobile"],
@@ -145,10 +188,24 @@ const APPROVED_LARGE_FILES = new Set([
 ]);
 const APPROVED_INSTALL_SCRIPTS = new Set([
   "node_modules/@prisma/engines@7.9.1",
+  `${ARGON2_PATH}@${ARGON2_VERSION}`,
   "node_modules/fsevents@2.3.3",
   "node_modules/msgpackr-extract@3.0.4",
   "node_modules/prisma@7.9.1",
   "node_modules/unrs-resolver@1.12.2",
+]);
+const REQUIRED_REPOSITORY_FILES = new Set([
+  ".github/dependabot.yml",
+  "apps/admin/package.json",
+  "apps/api/package.json",
+  "apps/mobile/pubspec.lock",
+  "apps/web/package.json",
+  "docs/governance/SOURCE_BASELINE_MANIFEST.sha256",
+  "package-lock.json",
+  "package.json",
+  "packages/config/package.json",
+  "packages/contracts/package.json",
+  "packages/ui/package.json",
 ]);
 const SECRET_PATTERNS = [
   ["private-key", /-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/u],
@@ -182,20 +239,283 @@ export function findSecretTypes(content) {
   );
 }
 
-function trackedFiles(repositoryRoot) {
-  return execFileSync(
-    "git",
-    ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
-    {
-      cwd: repositoryRoot,
-      encoding: "utf8",
-    },
-  )
-    .split("\0")
-    .filter(Boolean);
+const DEFAULT_REPOSITORY_OPERATIONS = Object.freeze({
+  execFileSync,
+  lstatSync,
+  statSync,
+});
+
+export function parseNulSeparatedPaths(output, label = "Git path list") {
+  if (output.length === 0) {
+    return [];
+  }
+  if (!output.endsWith("\0")) {
+    throw new Error(`${label} is not NUL-terminated`);
+  }
+  const paths = output.slice(0, -1).split("\0");
+  if (paths.some((path) => path.length === 0)) {
+    throw new Error(`${label} contains an empty path`);
+  }
+  if (new Set(paths).size !== paths.length) {
+    throw new Error(`${label} contains duplicate paths`);
+  }
+  return paths;
 }
 
-function scanTrackedFiles(repositoryRoot, files, errors) {
+function gitPathList(repositoryRoot, arguments_, operations) {
+  return parseNulSeparatedPaths(
+    operations.execFileSync("git", arguments_, {
+      cwd: repositoryRoot,
+      encoding: "utf8",
+    }),
+    `git ${arguments_.join(" ")}`,
+  );
+}
+
+function repositoryGitPaths(repositoryRoot, operations) {
+  return {
+    deletedFiles: gitPathList(
+      repositoryRoot,
+      ["ls-files", "-z", "--deleted"],
+      operations,
+    ),
+    listedFiles: gitPathList(
+      repositoryRoot,
+      ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+      operations,
+    ),
+  };
+}
+
+function isFileSystemError(error, code) {
+  return error instanceof Error && "code" in error && error.code === code;
+}
+
+function statSignature(stat) {
+  return [
+    stat.dev,
+    stat.ino,
+    stat.mode,
+    stat.size,
+    stat.mtimeNs,
+    stat.ctimeNs,
+  ].map(String);
+}
+
+function capturePathState(absolutePath, normalizedPath, operations) {
+  const entry = operations.lstatSync(absolutePath, { bigint: true });
+  let target = null;
+  if (entry.isSymbolicLink()) {
+    try {
+      target = operations.statSync(absolutePath, { bigint: true });
+    } catch (error) {
+      if (isFileSystemError(error, "ENOENT")) {
+        throw new Error(`broken symbolic link: ${normalizedPath}`, {
+          cause: error,
+        });
+      }
+      throw error;
+    }
+  }
+  return {
+    entry: statSignature(entry),
+    target: target === null ? null : statSignature(target),
+  };
+}
+
+function assertNoBrokenParentLink(
+  repositoryRoot,
+  relativePath,
+  normalizedPath,
+  operations,
+) {
+  const repositoryPath = resolve(repositoryRoot);
+  let currentPath = dirname(resolve(repositoryRoot, relativePath));
+  const parents = [];
+  while (currentPath !== repositoryPath) {
+    if (!relative(repositoryPath, currentPath).startsWith(`..${sep}`)) {
+      parents.push(currentPath);
+    }
+    const nextPath = dirname(currentPath);
+    if (nextPath === currentPath) {
+      break;
+    }
+    currentPath = nextPath;
+  }
+  for (const parentPath of parents.reverse()) {
+    let entry;
+    try {
+      entry = operations.lstatSync(parentPath, { bigint: true });
+    } catch (error) {
+      if (isFileSystemError(error, "ENOENT")) {
+        return;
+      }
+      throw error;
+    }
+    if (!entry.isSymbolicLink()) {
+      continue;
+    }
+    try {
+      operations.statSync(parentPath, { bigint: true });
+    } catch (error) {
+      if (isFileSystemError(error, "ENOENT")) {
+        throw new Error(`broken parent symbolic link: ${normalizedPath}`, {
+          cause: error,
+        });
+      }
+      throw error;
+    }
+  }
+}
+
+export function classifyRepositoryPaths(
+  repositoryRoot,
+  listedFiles,
+  deletedFiles,
+  operations = DEFAULT_REPOSITORY_OPERATIONS,
+) {
+  const listedSet = new Set(listedFiles);
+  const deletedSet = new Set(deletedFiles);
+  for (const deletedPath of deletedSet) {
+    if (!listedSet.has(deletedPath)) {
+      throw new Error(
+        `Git deletion is absent from the repository file list: ${normalizePath(deletedPath)}`,
+      );
+    }
+  }
+
+  const files = [];
+  const omittedPaths = [];
+  const states = new Map();
+  for (const relativePath of listedFiles) {
+    const normalizedPath = normalizePath(relativePath);
+    const absolutePath = resolve(repositoryRoot, relativePath);
+    assertNoBrokenParentLink(
+      repositoryRoot,
+      relativePath,
+      normalizedPath,
+      operations,
+    );
+    try {
+      states.set(
+        normalizedPath,
+        capturePathState(absolutePath, normalizedPath, operations),
+      );
+      if (deletedSet.has(relativePath)) {
+        throw new Error(`tracked deletion reappeared: ${normalizedPath}`);
+      }
+      files.push(relativePath);
+    } catch (error) {
+      if (!isFileSystemError(error, "ENOENT")) {
+        throw error;
+      }
+      if (!deletedSet.has(relativePath)) {
+        throw new Error(
+          `repository path is absent without a Git deletion: ${normalizedPath}`,
+          { cause: error },
+        );
+      }
+      omittedPaths.push(normalizedPath);
+    }
+  }
+
+  return {
+    deletedFiles: [...deletedFiles],
+    files,
+    listedFiles: [...listedFiles],
+    omittedPaths: omittedPaths.sort(),
+    states,
+  };
+}
+
+export function snapshotRepositoryFiles(
+  repositoryRoot,
+  operations = DEFAULT_REPOSITORY_OPERATIONS,
+) {
+  const { deletedFiles, listedFiles } = repositoryGitPaths(
+    repositoryRoot,
+    operations,
+  );
+  return classifyRepositoryPaths(
+    repositoryRoot,
+    listedFiles,
+    deletedFiles,
+    operations,
+  );
+}
+
+export function assertRequiredRepositoryFiles(files) {
+  const normalizedFiles = new Set(files.map(normalizePath));
+  const missing = [...REQUIRED_REPOSITORY_FILES]
+    .filter((path) => !normalizedFiles.has(path))
+    .sort();
+  if (missing.length > 0) {
+    throw new Error(
+      `required repository file is absent: ${missing.join(", ")}`,
+    );
+  }
+}
+
+function samePaths(left, right) {
+  const sortedLeft = [...left].sort();
+  const sortedRight = [...right].sort();
+  return (
+    sortedLeft.length === sortedRight.length &&
+    sortedLeft.every((path, index) => path === sortedRight[index])
+  );
+}
+
+export function verifyRepositoryFileSnapshot(
+  repositoryRoot,
+  snapshot,
+  operations = DEFAULT_REPOSITORY_OPERATIONS,
+) {
+  const current = repositoryGitPaths(repositoryRoot, operations);
+  if (!samePaths(current.listedFiles, snapshot.listedFiles)) {
+    throw new Error("repository file list changed during the security scan");
+  }
+  if (!samePaths(current.deletedFiles, snapshot.deletedFiles)) {
+    throw new Error("Git deletion list changed during the security scan");
+  }
+  for (const relativePath of snapshot.files) {
+    const normalizedPath = normalizePath(relativePath);
+    const state = capturePathState(
+      resolve(repositoryRoot, relativePath),
+      normalizedPath,
+      operations,
+    );
+    if (
+      JSON.stringify(state) !==
+      JSON.stringify(snapshot.states.get(normalizedPath))
+    ) {
+      throw new Error(
+        `repository path changed during the security scan: ${normalizedPath}`,
+      );
+    }
+  }
+  for (const relativePath of snapshot.deletedFiles) {
+    const normalizedPath = normalizePath(relativePath);
+    assertNoBrokenParentLink(
+      repositoryRoot,
+      relativePath,
+      normalizedPath,
+      operations,
+    );
+    try {
+      operations.lstatSync(resolve(repositoryRoot, relativePath), {
+        bigint: true,
+      });
+    } catch (error) {
+      if (isFileSystemError(error, "ENOENT")) {
+        continue;
+      }
+      throw error;
+    }
+    throw new Error(`tracked deletion reappeared: ${normalizedPath}`);
+  }
+}
+
+export function scanTrackedFiles(repositoryRoot, files, errors) {
   for (const relativePath of files) {
     const normalized = normalizePath(relativePath);
     const absolutePath = resolve(repositoryRoot, relativePath);
@@ -233,7 +553,7 @@ function scanTrackedFiles(repositoryRoot, files, errors) {
   }
 }
 
-function scanHistory(repositoryRoot, errors) {
+export function scanHistory(repositoryRoot, errors) {
   const history = execFileSync(
     "git",
     ["log", "--all", "--no-ext-diff", "--format=", "-p", "--", "."],
@@ -284,6 +604,63 @@ export function validateManifestVersions(manifests) {
       }
     }
   }
+  return errors;
+}
+
+export function validateAdminAuthSupplyChain(
+  manifests,
+  lockfile,
+  installedArgon2Manifest,
+) {
+  const errors = [];
+  const apiManifest = manifests[ADMIN_AUTH_API_PATH] ?? {};
+  const lockedApiManifest = lockfile.packages?.[ADMIN_AUTH_API_PATH] ?? {};
+
+  for (const [packageName, { section, version }] of ADMIN_AUTH_PACKAGES) {
+    if (apiManifest[section]?.[packageName] !== version) {
+      errors.push(
+        `${packageName} must be pinned to ${version} in ${ADMIN_AUTH_API_PATH}/${section}`,
+      );
+    }
+    if (lockedApiManifest[section]?.[packageName] !== version) {
+      errors.push(
+        `${packageName} lock specification must be ${version} in ${ADMIN_AUTH_API_PATH}/${section}`,
+      );
+    }
+
+    const installations = packageInstallations(lockfile, packageName);
+    const expectedPath = `node_modules/${packageName}`;
+    if (
+      installations.length !== 1 ||
+      installations[0]?.[0] !== expectedPath ||
+      installations[0]?.[1]?.version !== version
+    ) {
+      errors.push(
+        `${packageName} must have one physical installation at ${expectedPath}@${version}; found ${installationSummary(installations)}`,
+      );
+    }
+  }
+
+  const lockedArgon2 = lockfile.packages?.[ARGON2_PATH];
+  if (
+    lockedArgon2?.integrity !== ARGON2_INTEGRITY ||
+    lockedArgon2?.hasInstallScript !== true ||
+    lockedArgon2?.license !== "MIT" ||
+    lockedArgon2?.resolved !==
+      `https://registry.npmjs.org/argon2/-/argon2-${ARGON2_VERSION}.tgz`
+  ) {
+    errors.push("argon2 lock metadata must match the qualified 0.45.1 package");
+  }
+  if (
+    installedArgon2Manifest?.name !== "argon2" ||
+    installedArgon2Manifest?.version !== ARGON2_VERSION ||
+    installedArgon2Manifest?.scripts?.install !== ARGON2_INSTALL_SCRIPT
+  ) {
+    errors.push(
+      `argon2 installed hook must be exactly: ${ARGON2_INSTALL_SCRIPT}`,
+    );
+  }
+
   return errors;
 }
 
@@ -916,10 +1293,15 @@ export function validateQsOverrides(manifests, lockfile) {
   }
   for (const parent of QS_PARENTS) {
     const targetedOverride = overrides[parent.selector];
+    const approvedKeys =
+      parent.selector === PROXY_ADDR_PARENT_SELECTOR
+        ? new Set([QS_PACKAGE, PROXY_ADDR_PACKAGE])
+        : new Set([QS_PACKAGE]);
     if (
       !isObjectRecord(targetedOverride) ||
       targetedOverride[QS_PACKAGE] !== QS_SAFE_VERSION ||
-      Object.keys(targetedOverride).length !== 1
+      Object.keys(targetedOverride).length !== approvedKeys.size ||
+      Object.keys(targetedOverride).some((key) => !approvedKeys.has(key))
     ) {
       errors.push(
         `${parent.selector} must override qs to exact version ${QS_SAFE_VERSION}`,
@@ -1117,7 +1499,6 @@ export function validateNextToolchain(manifests, lockfile) {
   for (const packageName of [
     NEXT_PACKAGE,
     NEXT_ENV_PACKAGE,
-    NEXT_ESLINT_PLUGIN_PACKAGE,
     ...NEXT_SWC_PACKAGES,
     ESLINT_CONFIG_NEXT_PACKAGE,
   ]) {
@@ -1194,6 +1575,118 @@ export function validateNextToolchain(manifests, lockfile) {
       );
     }
   }
+  errors.push(...validateNextLintGlobOverride(manifests, lockfile));
+  return errors;
+}
+
+export function validateNextLintGlobOverride(manifests, lockfile) {
+  const errors = [];
+  const overrides = manifests[""]?.overrides ?? {};
+  const targetedOverride = overrides[NEXT_ESLINT_PLUGIN_SELECTOR];
+
+  for (const overridePath of forbiddenTargetedOverridePaths(overrides, {
+    childPackage: NEXT_FAST_GLOB_PACKAGE,
+    parentPackage: NEXT_ESLINT_PLUGIN_PACKAGE,
+    parentSelector: NEXT_ESLINT_PLUGIN_SELECTOR,
+  })) {
+    errors.push(
+      `Next lint glob security override is forbidden at path: ${overridePath}`,
+    );
+  }
+  for (const packageName of [
+    "braces",
+    "micromatch",
+    NEXT_FAST_GLOB_ALIAS_PACKAGE,
+  ]) {
+    for (const overridePath of overridePathsTargetingPackage(
+      overrides,
+      packageName,
+    )) {
+      errors.push(
+        `${packageName} override is forbidden at path: ${overridePath}`,
+      );
+    }
+  }
+  if (
+    !isObjectRecord(targetedOverride) ||
+    targetedOverride[NEXT_FAST_GLOB_PACKAGE] !== NEXT_FAST_GLOB_ALIAS_SPEC ||
+    Object.keys(targetedOverride).length !== 1
+  ) {
+    errors.push(
+      `${NEXT_ESLINT_PLUGIN_SELECTOR} must override fast-glob to exact alias ${NEXT_FAST_GLOB_ALIAS_SPEC}`,
+    );
+  }
+
+  const packages = lockfile.packages ?? {};
+  const pluginMetadata = packages[NEXT_ESLINT_PLUGIN_PATH];
+  if (
+    pluginMetadata?.version !== NEXT_SAFE_VERSION ||
+    pluginMetadata?.dependencies?.[NEXT_FAST_GLOB_PACKAGE] !==
+      NEXT_FAST_GLOB_DECLARED_VERSION
+  ) {
+    errors.push(
+      `${NEXT_ESLINT_PLUGIN_SELECTOR} lock metadata must retain its audited fast-glob ${NEXT_FAST_GLOB_DECLARED_VERSION} dependency declaration`,
+    );
+  }
+
+  for (const parentPath of unexpectedDependencyParentPaths(
+    lockfile,
+    NEXT_FAST_GLOB_PACKAGE,
+    [NEXT_ESLINT_PLUGIN_PATH],
+  )) {
+    errors.push(`fast-glob has an unapproved lock parent: ${parentPath}`);
+  }
+
+  const aliasMetadata = packages[NEXT_FAST_GLOB_ALIAS_PATH];
+  if (
+    aliasMetadata?.name !== NEXT_FAST_GLOB_ALIAS_PACKAGE ||
+    aliasMetadata?.version !== NEXT_FAST_GLOB_ALIAS_VERSION ||
+    aliasMetadata?.resolved !== NEXT_FAST_GLOB_ALIAS_RESOLVED ||
+    aliasMetadata?.integrity !== NEXT_FAST_GLOB_ALIAS_INTEGRITY ||
+    aliasMetadata?.license !== "MIT" ||
+    aliasMetadata?.engines?.node !== ">=12.0.0" ||
+    aliasMetadata?.dependencies?.fdir !== "^6.5.0" ||
+    aliasMetadata?.dependencies?.picomatch !== "^4.0.4"
+  ) {
+    errors.push(
+      "fast-glob alias lock metadata must identify the qualified tinyglobby@0.2.17 package",
+    );
+  }
+
+  const fastGlobInstallations = packageInstallations(
+    lockfile,
+    NEXT_FAST_GLOB_PACKAGE,
+  );
+  if (
+    fastGlobInstallations.length !== 1 ||
+    fastGlobInstallations[0]?.[0] !== NEXT_FAST_GLOB_ALIAS_PATH ||
+    fastGlobInstallations[0]?.[1]?.name !== NEXT_FAST_GLOB_ALIAS_PACKAGE ||
+    fastGlobInstallations[0]?.[1]?.version !== NEXT_FAST_GLOB_ALIAS_VERSION
+  ) {
+    errors.push(
+      `fast-glob import identity must resolve only to ${NEXT_FAST_GLOB_ALIAS_PATH} as tinyglobby@${NEXT_FAST_GLOB_ALIAS_VERSION}; found ${installationSummary(fastGlobInstallations)}`,
+    );
+  }
+
+  for (const packageName of ["braces", "micromatch"]) {
+    const installations = packageInstallations(lockfile, packageName);
+    if (installations.length > 0) {
+      errors.push(
+        `${packageName} must have no physical installation after the scoped alias; found ${installationSummary(installations)}`,
+      );
+    }
+  }
+
+  const unexpectedNamedFastGlob = Object.entries(packages).filter(
+    ([packagePath, metadata]) =>
+      metadata?.name === NEXT_FAST_GLOB_PACKAGE &&
+      packagePath !== NEXT_FAST_GLOB_ALIAS_PATH,
+  );
+  if (unexpectedNamedFastGlob.length > 0) {
+    errors.push(
+      `real fast-glob package residue is forbidden: ${installationSummary(unexpectedNamedFastGlob)}`,
+    );
+  }
   return errors;
 }
 
@@ -1211,9 +1704,27 @@ export function validateVitestSupplyChain(manifests, lockfile) {
       VITEST_MOCKER_PACKAGE,
       VITEST_MOCKER_SAFE_VERSION,
     ),
+    ...validatePhysicalSingleton(
+      lockfile,
+      VITEST_COVERAGE_PACKAGE,
+      VITEST_SAFE_VERSION,
+    ),
   ];
+  if (
+    manifests[ADMIN_AUTH_API_PATH]?.devDependencies?.[
+      VITEST_COVERAGE_PACKAGE
+    ] !== VITEST_SAFE_VERSION
+  ) {
+    errors.push(
+      `${ADMIN_AUTH_API_PATH} must pin ${VITEST_COVERAGE_PACKAGE} to exact ${VITEST_SAFE_VERSION} in devDependencies`,
+    );
+  }
   const overrides = manifests[""]?.overrides;
-  for (const packageName of [VITEST_PACKAGE, VITEST_MOCKER_PACKAGE]) {
+  for (const packageName of [
+    VITEST_PACKAGE,
+    VITEST_MOCKER_PACKAGE,
+    VITEST_COVERAGE_PACKAGE,
+  ]) {
     for (const overridePath of overridePathsTargetingPackage(
       overrides,
       packageName,
@@ -1231,10 +1742,17 @@ export function validateVitestSupplyChain(manifests, lockfile) {
   ) {
     errors.push("vitest@4.1.11 must depend on @vitest/mocker 4.1.11");
   }
+  if (
+    lockfile.packages?.[VITEST_COVERAGE_PATH]?.peerDependencies?.[
+      VITEST_PACKAGE
+    ] !== VITEST_SAFE_VERSION
+  ) {
+    errors.push("@vitest/coverage-v8@4.1.11 must peer-depend on vitest 4.1.11");
+  }
   for (const parentPath of unexpectedDependencyParentPaths(
     lockfile,
     VITEST_PACKAGE,
-    VITEST_WORKSPACES,
+    [...VITEST_WORKSPACES, VITEST_COVERAGE_PATH],
   )) {
     errors.push(`vitest has an unapproved lock parent: ${parentPath}`);
   }
@@ -1244,6 +1762,15 @@ export function validateVitestSupplyChain(manifests, lockfile) {
     [`node_modules/${VITEST_PACKAGE}`],
   )) {
     errors.push(`@vitest/mocker has an unapproved lock parent: ${parentPath}`);
+  }
+  for (const parentPath of unexpectedDependencyParentPaths(
+    lockfile,
+    VITEST_COVERAGE_PACKAGE,
+    [ADMIN_AUTH_API_PATH, `node_modules/${VITEST_PACKAGE}`],
+  )) {
+    errors.push(
+      `@vitest/coverage-v8 has an unapproved lock parent: ${parentPath}`,
+    );
   }
   return errors;
 }
@@ -1309,6 +1836,134 @@ export function validateJsYamlOverrides(manifests, lockfile) {
   return errors;
 }
 
+export function validateR9SupplyChainRemediation(manifests, lockfile) {
+  const errors = [];
+  const overrides = manifests[""]?.overrides ?? {};
+  const apiManifest = manifests[ADMIN_AUTH_API_PATH] ?? {};
+  const proxyOverride = overrides[PROXY_ADDR_PARENT_SELECTOR];
+
+  if (proxyOverride?.[PROXY_ADDR_PACKAGE] !== PROXY_ADDR_SAFE_VERSION) {
+    errors.push(
+      `${PROXY_ADDR_PARENT_SELECTOR} must override ${PROXY_ADDR_PACKAGE} to exact version ${PROXY_ADDR_SAFE_VERSION}`,
+    );
+  }
+  for (const overridePath of overridePathsTargetingPackage(
+    overrides,
+    PROXY_ADDR_PACKAGE,
+  )) {
+    if (
+      overridePath !== `${PROXY_ADDR_PARENT_SELECTOR} > ${PROXY_ADDR_PACKAGE}`
+    ) {
+      errors.push(
+        `${PROXY_ADDR_PACKAGE} security override is forbidden at path: ${overridePath}`,
+      );
+    }
+  }
+  const proxyParent = lockfile.packages?.[PROXY_ADDR_PARENT_PATH];
+  if (
+    proxyParent?.version !== "5.2.1" ||
+    proxyParent?.dependencies?.[PROXY_ADDR_PACKAGE] !== "^2.0.7"
+  ) {
+    errors.push(
+      `${PROXY_ADDR_PARENT_PATH} lock metadata must retain its audited ${PROXY_ADDR_PACKAGE} ^2.0.7 dependency`,
+    );
+  }
+  for (const parentPath of unexpectedDependencyParentPaths(
+    lockfile,
+    PROXY_ADDR_PACKAGE,
+    [PROXY_ADDR_PARENT_PATH],
+  )) {
+    errors.push(
+      `${PROXY_ADDR_PACKAGE} has an unapproved lock parent: ${parentPath}`,
+    );
+  }
+  errors.push(
+    ...validatePhysicalSingleton(
+      lockfile,
+      PROXY_ADDR_PACKAGE,
+      PROXY_ADDR_SAFE_VERSION,
+    ),
+  );
+
+  if (overrides[SOURCE_MAP_JS_PACKAGE] !== SOURCE_MAP_JS_SAFE_VERSION) {
+    errors.push(
+      `${SOURCE_MAP_JS_PACKAGE} must be overridden to exact version ${SOURCE_MAP_JS_SAFE_VERSION}`,
+    );
+  }
+  for (const overridePath of overridePathsTargetingPackage(
+    overrides,
+    SOURCE_MAP_JS_PACKAGE,
+  )) {
+    if (overridePath !== SOURCE_MAP_JS_PACKAGE) {
+      errors.push(
+        `${SOURCE_MAP_JS_PACKAGE} security override is forbidden at path: ${overridePath}`,
+      );
+    }
+  }
+  for (const parent of SOURCE_MAP_JS_PARENTS) {
+    const parentMetadata = lockfile.packages?.[parent.packagePath];
+    if (
+      parentMetadata?.version !== parent.version ||
+      parentMetadata?.dependencies?.[SOURCE_MAP_JS_PACKAGE] !==
+        parent.declaredVersion
+    ) {
+      errors.push(
+        `${parent.packagePath} lock metadata must retain its audited ${SOURCE_MAP_JS_PACKAGE} ${parent.declaredVersion} dependency`,
+      );
+    }
+  }
+  for (const parentPath of unexpectedDependencyParentPaths(
+    lockfile,
+    SOURCE_MAP_JS_PACKAGE,
+    SOURCE_MAP_JS_PARENTS.map(({ packagePath }) => packagePath),
+  )) {
+    errors.push(
+      `${SOURCE_MAP_JS_PACKAGE} has an unapproved lock parent: ${parentPath}`,
+    );
+  }
+  errors.push(
+    ...validatePhysicalSingleton(
+      lockfile,
+      SOURCE_MAP_JS_PACKAGE,
+      SOURCE_MAP_JS_SAFE_VERSION,
+    ),
+  );
+
+  if (apiManifest.devDependencies?.[VITEST_PACKAGE] !== VITEST_SAFE_VERSION) {
+    errors.push(
+      `${ADMIN_AUTH_API_PATH} must pin ${VITEST_PACKAGE} to exact ${VITEST_SAFE_VERSION} in devDependencies`,
+    );
+  }
+  for (const packageName of REMOVED_API_TEST_PACKAGES) {
+    if (
+      Object.hasOwn(apiManifest.dependencies ?? {}, packageName) ||
+      Object.hasOwn(apiManifest.devDependencies ?? {}, packageName)
+    ) {
+      errors.push(
+        `${ADMIN_AUTH_API_PATH} must not declare removed Jest package ${packageName}`,
+      );
+    }
+  }
+  for (const packageName of REMOVED_VULNERABLE_CHAIN_PACKAGES) {
+    const installations = packageInstallations(lockfile, packageName);
+    if (installations.length > 0) {
+      errors.push(
+        `${packageName} must have no physical installation after the API Vitest migration; found ${installationSummary(installations)}`,
+      );
+    }
+  }
+  const vulnerableArgparse = packageInstallations(lockfile, "argparse").filter(
+    ([, metadata]) => metadata.version?.startsWith("1."),
+  );
+  if (vulnerableArgparse.length > 0) {
+    errors.push(
+      `argparse 1.x must have no physical installation after removal of the vulnerable chain; found ${installationSummary(vulnerableArgparse)}`,
+    );
+  }
+
+  return errors;
+}
+
 export function validateSharpOverride(manifests, lockfile) {
   const errors = [];
   const overrides = manifests[""]?.overrides ?? {};
@@ -1348,6 +2003,58 @@ export function validateSharpOverride(manifests, lockfile) {
   errors.push(
     ...validatePhysicalSingleton(lockfile, SHARP_PACKAGE, SHARP_SAFE_VERSION),
   );
+
+  const sharpMetadata = lockfile.packages?.[SHARP_ROOT_PATH];
+  const sharpArtifacts = Object.entries(
+    sharpMetadata?.optionalDependencies ?? {},
+  ).filter(([packageName]) => packageName.startsWith("@img/sharp-"));
+  if (
+    sharpArtifacts.length !== 25 ||
+    sharpArtifacts.some(([packageName, version]) =>
+      packageName.startsWith("@img/sharp-libvips-")
+        ? version !== "1.3.4"
+        : version !== SHARP_SAFE_VERSION,
+    )
+  ) {
+    errors.push(
+      "sharp@0.35.5 must retain exactly its 25 audited optional @img artifacts at sharp 0.35.5/libvips 1.3.4",
+    );
+  }
+
+  const expectedArtifactNames = new Set([
+    ...sharpArtifacts.map(([packageName]) => packageName),
+    "@img/sharp-wasm32",
+  ]);
+  const physicalArtifacts = Object.entries(lockfile.packages ?? {}).filter(
+    ([packagePath]) =>
+      packagePath.startsWith("node_modules/@img/sharp-") &&
+      !packagePath.slice("node_modules/".length).includes("/node_modules/"),
+  );
+  if (
+    physicalArtifacts.length !== expectedArtifactNames.size ||
+    physicalArtifacts.some(([packagePath, metadata]) => {
+      const packageName = packagePath.slice("node_modules/".length);
+      const expectedVersion = packageName.startsWith("@img/sharp-libvips-")
+        ? "1.3.4"
+        : SHARP_SAFE_VERSION;
+      const expectedLicense = packageName.startsWith("@img/sharp-libvips-")
+        ? "LGPL-3.0-or-later"
+        : packageName === "@img/sharp-wasm32"
+          ? "Apache-2.0 AND LGPL-3.0-or-later AND MIT"
+          : packageName.startsWith("@img/sharp-win32-")
+            ? "Apache-2.0 AND LGPL-3.0-or-later"
+            : "Apache-2.0";
+      return (
+        !expectedArtifactNames.has(packageName) ||
+        metadata.version !== expectedVersion ||
+        metadata.license !== expectedLicense
+      );
+    })
+  ) {
+    errors.push(
+      `sharp native artifacts must match the 26 audited package/version/license tuples; found ${installationSummary(physicalArtifacts)}`,
+    );
+  }
   return errors;
 }
 
@@ -1653,7 +2360,9 @@ function verifyImmutableBaseline(repositoryRoot, errors) {
 
 export function scanRepository(repositoryRoot = process.cwd(), options = {}) {
   const errors = [];
-  const files = trackedFiles(repositoryRoot);
+  const snapshot = snapshotRepositoryFiles(repositoryRoot);
+  const { files, omittedPaths } = snapshot;
+  assertRequiredRepositoryFiles(files);
   scanTrackedFiles(repositoryRoot, files, errors);
   const manifests = Object.fromEntries(
     files
@@ -1677,6 +2386,18 @@ export function scanRepository(repositoryRoot = process.cwd(), options = {}) {
   );
   errors.push(...validateManifestVersions(manifests));
   errors.push(...validateManifestLockConsistency(manifests, lockfile));
+  errors.push(
+    ...validateAdminAuthSupplyChain(
+      manifests,
+      lockfile,
+      JSON.parse(
+        readFileSync(
+          resolve(repositoryRoot, "node_modules", "argon2", "package.json"),
+          "utf8",
+        ),
+      ),
+    ),
+  );
   errors.push(...validateReactTypesSingleton(manifests, lockfile));
   errors.push(...validatePrismaDeepmergeOverride(manifests, lockfile));
   errors.push(...validatePrismaMysqlOverride(manifests, lockfile));
@@ -1686,6 +2407,7 @@ export function scanRepository(repositoryRoot = process.cwd(), options = {}) {
   errors.push(...validateNextToolchain(manifests, lockfile));
   errors.push(...validateVitestSupplyChain(manifests, lockfile));
   errors.push(...validateJsYamlOverrides(manifests, lockfile));
+  errors.push(...validateR9SupplyChainRemediation(manifests, lockfile));
   errors.push(...validateSharpOverride(manifests, lockfile));
   errors.push(...validateNestMulterOverride(manifests, lockfile));
   errors.push(...validatePackageLock(lockfile));
@@ -1702,11 +2424,15 @@ export function scanRepository(repositoryRoot = process.cwd(), options = {}) {
   if (options.history !== false) {
     scanHistory(repositoryRoot, errors);
   }
+  verifyRepositoryFileSnapshot(repositoryRoot, snapshot);
   fail(errors);
   return {
     approvedInstallScripts: APPROVED_INSTALL_SCRIPTS.size,
     historyScanned: options.history !== false,
     immutableFiles,
+    listedFiles: snapshot.listedFiles.length,
+    omittedPaths,
+    omittedTrackedDeletions: omittedPaths.length,
     trackedFiles: files.length,
   };
 }
@@ -1720,5 +2446,8 @@ if (direct) {
   const result = scanRepository();
   console.log(
     `Security scan passed: ${result.trackedFiles} files, history=${result.historyScanned}, immutable=${result.immutableFiles}, ${result.approvedInstallScripts} qualified install scripts.`,
+  );
+  console.log(
+    `Repository paths: ${result.listedFiles} listed, ${result.omittedTrackedDeletions} omitted tracked deletion(s): ${result.omittedPaths.join(", ") || "none"}.`,
   );
 }

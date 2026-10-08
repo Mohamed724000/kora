@@ -35,10 +35,11 @@ export default tseslint.config(
       globals: {
         afterAll: 'readonly',
         beforeAll: 'readonly',
+        beforeEach: 'readonly',
         describe: 'readonly',
         expect: 'readonly',
         it: 'readonly',
-        jest: 'readonly',
+        vi: 'readonly',
       },
     },
   },

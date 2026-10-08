@@ -3,8 +3,10 @@
 Périmètre durable couvert : **BASELINE + S0.4/S0.5/M0.1/M0.2/S0.6 ET M0.3
 FUSIONNÉS ET CLÔTURÉS + S1.1 FERMÉ + CONTRACT & DATA READINESS S1.2-01 +
 S1.2-02 CLÔTURÉ ET FUSIONNÉ + S1.2-03A CLÔTURÉ ET FUSIONNÉ + S1.2-03B-R4
-VALIDÉ LOCALEMENT LE 2026-10-01, ÉTAT DE PUBLICATION COURANT DANS GIT/GITHUB,
-PR #48 DRAFT NON FUSIONNÉE, BASELINE TECHNIQUE PRÉSERVÉE**.
+FUSIONNÉ VIA PR #48 + S1.2-03C1-R11 PUBLIÉ DANS LA DRAFT PR #50 AVEC QUATRE
+WORKFLOWS VERTS + REVUE TERMINALE BLOCK MALFORMED JSON + INSTANTANÉ
+PRÉPUBLICATION R12 VALIDÉ — KMS/JWT DE PRODUCTION NON QUALIFIÉS — C2/C3 NOT
+STARTED**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
 commit, push ou changement GitHub S1.1 n’avait encore été effectué : il s’agit
@@ -17,6 +19,110 @@ modèle Prisma cible et des composants visuels. S1.2-01 renforce le contrat, la
 cible de données et leurs gates. S1.2-02 matérialise uniquement les contrôles
 d’intégrité SQL explicitement énumérés plus bas ; aucun endpoint, service,
 worker, seed, runtime métier ou interface n’est déclaré opérationnel.
+
+Le mandat runtime C1 matérialise la preuve serveur du contexte
+recovery pour l'audit enrollment/QR, le TOTP inline de rotation, l'éviction LRU
+atomique au plafond de trois familles et le 503 générique fail-closed. Il ajoute
+les frontières PostgreSQL reader/writer, la migration et les ACL de colonnes,
+la crypto réelle du harness et un client Redis auth séparé. Il ne qualifie ni
+KMS/JWT de production, ni exploitation ou déploiement.
+R3 est publié au head `b0792934aa2f9d6f6d481517f384825874d72402` de la Draft
+PR #50. Infrastructure `37190396720`, Launcher Windows `37190396716`, Security
+`37190396718` et Quality Linux `37190396709` réussissent en tentative 1 sur ce
+head exact, mais la revue CTO terminale maintient **BLOCK** : cinq findings sont
+clos et le finding **HIGH** d'attribution des échecs post-session reste partiel. Des
+pannes de `refresh`, `revokeCurrent` et `revokeOther` pouvaient encore perdre
+un contexte serveur déjà prouvé.
+
+R4 corrige cette cause sans étendre la surface C1 : contexte par invocation,
+sujet de révocation externe ajouté seulement après résolution serveur, aucune
+identité inventée avant preuve refresh, normalisation conservant les
+métadonnées, et priorité inchangée du COMMIT inconnu. Le wrapper final exerce
+30/30 tests réels ; les pannes avec rollback confirmé écrivent exactement le
+sink attendu, le sink indisponible n'entraîne aucun fallback trompeur et le
+COMMIT inconnu n'écrit aucun faux rejet. Aucune dépendance, surface OpenAPI,
+migration ou capacité C2/C3 n'est ajoutée.
+Ces éléments sont des preuves locales de l'instantané prépublication du
+2026-10-04, pas une qualification de production ; après cet instantané, l'état
+Git/GitHub fait foi.
+Les onze fichiers techniques R3, dont PostgreSQL/Infrastructure, restent figés
+après leurs validations ; R4 ne modifie que les trois fichiers Auth/tests et
+les six documents autorisés. La politique open source reste différée, le
+provider de clés de production non qualifié, la pagination non concluante et
+C2/C3 non démarrés.
+
+R4 est ensuite publié au head `cdc020caa8b06d74af816dc072e778e25e020699`;
+les quatre workflows `37242762675`, `37242762612`, `37242762666` et
+`37242762665` réussissent en tentative 1. La revue terminale suivante maintient
+**BLOCK** sur deux menaces résiduelles : perte d'attribution recovery après
+preuve complète dans les trois opérations enrollment, et choix de sink erroné
+pour la liste des sessions autour de la preuve user/session/JTI.
+
+R5 conserve uniquement des identifiants minimaux prouvés côté serveur, dans la
+portée locale de chaque invocation. Avant preuve recovery, aucune attribution
+`ADMIN_RECOVERY` n'est créée; après preuve, les pannes normalisées ou génériques
+gardent l'acteur, le contexte et l'entité. Pour `listAdminSessions`, un JWT signé
+avec JTI incompatible reste avant preuve et produit un `AdminSecurityEvent`;
+après liaison complète, une panne de touch ou de lecture suit `NONE`. Le touch,
+la fenêtre idle et le plafond absolu restent actifs. Les injections réelles
+prouvent rollback des mutations connues, absence de fallback si le sink
+recovery est indisponible, et succès durable possible sans faux rejet lorsque
+l'accusé COMMIT est perdu. Le wrapper final passe 34/34 tests réels. R5 est
+ensuite publié au head `89323beb1ebbae9a488456db5d1dc2cb19215dd6`, avec les
+quatre workflows en succès sur ce head exact.
+
+R6 ferme localement la réutilisation possible d'un client après callback
+rejeté et rollback non confirmé. La libération unique détruit ce client, tout
+en préservant l'`AggregateError`, l'absence de retry et la sémantique COMMIT
+inconnu. Le wrapper final passe 36/36 tests réels; R6 ne qualifie ni KMS/JWT de
+production, ni timeout réseau réel, déploiement, C2 ou C3.
+
+R6 est publié au head `bc907192075df1ccd68ec8a0378c9eae53e1ce23`. Trois
+workflows réussissent, mais Infrastructure `37390492450` échoue sur l'ancien
+oracle du test concurrent après 35/36 tests. Son log ne contient pas le statut,
+le corps ni l'ordre exacts de la réponse fautive; une réponse historique 400
+n'est donc pas traitée comme une observation.
+
+R7 qualifie les deux ordres TOTP adjacents sans modifier le runtime. Avec le
+verrou utilisateur et le compteur global strict, `n → n+1` produit deux succès;
+`n+1 → n` produit un succès puis un 400 `OTP_INVALID`. Le rejet ne consomme pas
+son PREAUTH, ne crée ni session ni audit de succès et écrit exactement un
+événement de sécurité; le succès consomme son PREAUTH et produit exactement la
+session et l'audit attendus. Dans les deux cas, le compteur durable vaut `n+1`,
+l'éviction LRU porte uniquement sur les familles actives et leur nombre reste
+trois. La preuve concurrente réelle observe deux writers bloqués et un maximum
+de trois familles actives. Deux isolations fraîches passent chacune 37/37.
+
+La menace de dépassement concurrent, d'anti-rejeu contourné, de double sink ou
+de PREAUTH indûment consommé n'est pas reproduite. Le finding est limité à
+l'oracle de test historique, désormais remplacé par des assertions exactes et
+des traces expurgées. R7 reste local et ne qualifie toujours ni provider de
+clés de production, ni déploiement, pagination, JTI transactionnel, C2 ou C3.
+
+Le gate supply-chain final du 2026-10-03 retire la chaîne dev-only
+`eslint-config-next → @next/eslint-plugin-next → fast-glob → micromatch → braces`
+signalée par `GHSA-vfj7-8cjw-p6xm`. L'override racine est borné au seul parent
+`@next/eslint-plugin-next@16.3.8` et substitue son import `fast-glob` par l'alias
+officiel `tinyglobby@0.2.17`. Le lock ne contient plus `braces`, `micromatch` ni
+le véritable `fast-glob`; les audits npm bruts complet et production terminent
+à zéro vulnérabilité. Cette qualification est strictement limitée aux
+configurations ESLint effectives actuelles sans `settings.next.rootDir`, car
+les deux moteurs ne sont pas généralement équivalents pour les répertoires
+littéraux. Un gate permanent refuse toute future apparition de cette propriété,
+les alias ou parents divergents et la désactivation des règles Next témoins.
+
+### Frontière runtime locale S1.2-03C1
+
+| Menace                              | Contrôle local C1                                                                                                                                                                                                        | Limite résiduelle                                                          |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| Compte, session ou version obsolète | rechargement serveur du statut, rôle, session et `authorizationVersion`                                                                                                                                                  | aucun déploiement ou runbook production qualifié                           |
+| Rejeu TOTP/recovery/refresh         | compteur TOTP strict, codes one-shot Argon2id, refresh à usage unique et révocation de famille                                                                                                                           | `WAITAOF` n'est pas une transaction distribuée                             |
+| Vol ou altération de secret         | AES-256-GCM avec AAD/tag/version, enveloppe et rewrap après preuve ; cookies `__Host-*`                                                                                                                                  | KMS externe et clés JWT de production non qualifiés                        |
+| Escalade PostgreSQL                 | lecteur/writer séparés, ACL de colonnes, sinks insert-only; R11 contrôle réellement sur A/B reader/writer dans les orientations `roleid=target` et `member=target` avant mutation, avant COMMIT et sur connexion fraîche | preuve R3–R10 historique limitée à `roleid=target`; opérations C2 absentes |
+| Course sur familles/sessions        | verrou utilisateur, plafond trois et LRU déterministe ; refresh winner unique                                                                                                                                            | preuve locale seulement, pas de charge production                          |
+| Oracle d'existence                  | réponses publiques uniformes, travail Argon2 comparable et observations randomisées                                                                                                                                      | échantillon local limité ; aucune déclaration d'absence d'oracle           |
+| Fuite logs/Sentry                   | sanitation traversante testée sur callbacks et erreurs                                                                                                                                                                   | aucune télémétrie Sentry réseau exercée en test                            |
+| Dépendance indisponible             | rollback des mutations non commitées; client détruit si rollback non confirmé; 503 C1 constant sans secret                                                                                                               | résultat COMMIT inconnu reste explicitement non retryable                  |
 
 ## Actifs
 
@@ -98,21 +204,21 @@ métier ou runtime.
 
 ## Menaces et mesures attendues
 
-| Domaine      | Menaces principales                                                                            | Mesures attendues / autorités                                                                                                                                         | État                                                                                                              |
-| ------------ | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Identité/OTP | Brute force, interception, replay, enumeration                                                 | Rate limits, OTP court et haché, rotation session, logs masqués ; ADR-010                                                                                             | Contract/target model S1.1 — runtime not implemented                                                              |
-| Admin        | Vol de session, MFA contournée, récupération abusive                                           | TOTP RFC 6238, codes Argon2id, cookies httpOnly, rotation/replay, step-up, révocation ; ADR-002/005/008                                                               | Contract/data target S1.2-01 — runtime not implemented                                                            |
-| RBAC         | Escalade verticale/horizontale, champs sensibles                                               | Contrôle serveur route/action/champ, moindre privilège ; ADR-020                                                                                                      | Not implemented                                                                                                   |
-| Paiement     | Double débit, faux webhook, replay, ordre inversé                                              | Signature, idempotence, Inbox/Outbox, PaymentAttempts immuables ; ADR-012/015                                                                                         | Sandbox contract/target model S1.1 — runtime not implemented                                                      |
-| Ledger       | Altération, déséquilibre, double comptage                                                      | Append-only, groupes équilibrés, compensation, reconciliation ; ADR-013/014                                                                                           | SQL integrity S1.2-02 validated in the 2026-09-15 prepublication proof — runtime orchestration not implemented    |
-| Droits       | Accès sans achat, révocation excessive                                                         | Entitlement permanent ciblé, checks serveur ; ADR-016                                                                                                                 | SQL grant immutability S1.2-02 validated in the 2026-09-15 prepublication proof — runtime checks not implemented  |
-| Média        | URL brute, faux callback/replay, partage, scraping, logs sensibles                             | Stockage privé, représentation contrôlée, Inbox Mux signée/chiffrée/dédupliquée, descriptor court ; ADR-011/015/017                                                   | Contract/target model S1.2-01 — runtime not implemented                                                           |
-| Offline      | Extraction clé/fichier, replay licence, copie appareil                                         | AES-256-GCM, clé non exportable, licence renouvelable ; ADR-018                                                                                                       | Not implemented                                                                                                   |
-| Audit        | Suppression, falsification ou attribution au mauvais acteur/session                            | Écriture transactionnelle, liaison composite acteur/session, `Restrict`, blocage UPDATE/DELETE ; ADR-019                                                              | SQL immutability S1.2-02 validated in the 2026-09-15 prepublication proof — transactional runtime not implemented |
-| Capture      | Enregistrement écran et dispositif externe                                                     | `FLAG_SECURE`, détection/pause iOS, protections en couches sans promesse absolue ; ADR-024                                                                            | Not implemented                                                                                                   |
-| Données/logs | Fuite PII, token ou secret                                                                     | Redaction des champs et messages, `msg` catégoriel, minimisation, contrôle accès, rétention et tests                                                                  | Foundation validated locally by S0.6 — no business PII flow                                                       |
-| Supply chain | Package compromis, licence incompatible, épuisement de pile, SSRF ou déni de service transitif | Versions verrouillées, revue, audit, provenance, scripts qualifiés, parents exacts, gates de graphe, sorties Next reproductibles et exceptions de licence nominatives | M0.3 publié et vert ; S1.1-R2 et R3 publiés dans la Draft PR #36, R3 au head `7d23f146…`                          |
-| CI/CD        | Secret exposé, artefact altéré, déploiement non autorisé                                       | Permissions lecture seule, actions épinglées, scans, timeouts et rollback                                                                                             | Workflows M0.3 #45 verts ; quatre workflows S1.1-R3 verts sur le head publié exact                                |
+| Domaine      | Menaces principales                                                                            | Mesures attendues / autorités                                                                                                                                         | État                                                                                                             |
+| ------------ | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Identité/OTP | Brute force, interception, replay, enumeration                                                 | Rate limits, OTP court et haché, rotation session, logs masqués ; ADR-010                                                                                             | Contract/target model S1.1 — runtime not implemented                                                             |
+| Admin        | Vol de session, MFA contournée, récupération abusive                                           | TOTP RFC 6238, codes Argon2id, cookies httpOnly, rotation/replay, step-up, révocation ; ADR-002/005/008                                                               | Auth/session/TOTP C1 validé localement, non déployé ; recovery support/RBAC C2 non implémentés                   |
+| RBAC         | Escalade verticale/horizontale, champs sensibles                                               | Contrôle serveur route/action/champ, moindre privilège ; ADR-020                                                                                                      | Not implemented                                                                                                  |
+| Paiement     | Double débit, faux webhook, replay, ordre inversé                                              | Signature, idempotence, Inbox/Outbox, PaymentAttempts immuables ; ADR-012/015                                                                                         | Sandbox contract/target model S1.1 — runtime not implemented                                                     |
+| Ledger       | Altération, déséquilibre, double comptage                                                      | Append-only, groupes équilibrés, compensation, reconciliation ; ADR-013/014                                                                                           | SQL integrity S1.2-02 validated in the 2026-09-15 prepublication proof — runtime orchestration not implemented   |
+| Droits       | Accès sans achat, révocation excessive                                                         | Entitlement permanent ciblé, checks serveur ; ADR-016                                                                                                                 | SQL grant immutability S1.2-02 validated in the 2026-09-15 prepublication proof — runtime checks not implemented |
+| Média        | URL brute, faux callback/replay, partage, scraping, logs sensibles                             | Stockage privé, représentation contrôlée, Inbox Mux signée/chiffrée/dédupliquée, descriptor court ; ADR-011/015/017                                                   | Contract/target model S1.2-01 — runtime not implemented                                                          |
+| Offline      | Extraction clé/fichier, replay licence, copie appareil                                         | AES-256-GCM, clé non exportable, licence renouvelable ; ADR-018                                                                                                       | Not implemented                                                                                                  |
+| Audit        | Suppression, falsification ou attribution au mauvais acteur/session                            | Écriture transactionnelle, liaison composite acteur/session, `Restrict`, blocage UPDATE/DELETE ; ADR-019                                                              | Audit transactionnel Admin C1 validé localement, non déployé ; couverture produit C2+ non implémentée            |
+| Capture      | Enregistrement écran et dispositif externe                                                     | `FLAG_SECURE`, détection/pause iOS, protections en couches sans promesse absolue ; ADR-024                                                                            | Not implemented                                                                                                  |
+| Données/logs | Fuite PII, token ou secret                                                                     | Redaction des champs et messages, `msg` catégoriel, minimisation, contrôle accès, rétention et tests                                                                  | Foundation validated locally by S0.6 — no business PII flow                                                      |
+| Supply chain | Package compromis, licence incompatible, épuisement de pile, SSRF ou déni de service transitif | Versions verrouillées, revue, audit, provenance, scripts qualifiés, parents exacts, gates de graphe, sorties Next reproductibles et exceptions de licence nominatives | M0.3 publié et vert ; S1.1-R2 et R3 publiés dans la Draft PR #36, R3 au head `7d23f146…`                         |
+| CI/CD        | Secret exposé, artefact altéré, déploiement non autorisé                                       | Permissions lecture seule, actions épinglées, scans, timeouts et rollback                                                                                             | Workflows M0.3 #45 verts ; quatre workflows S1.1-R3 verts sur le head publié exact                               |
 
 ## Risques ouverts et gates
 
@@ -730,26 +836,65 @@ Chaque lot affectant une frontière :
 
 ## Frontière contractuelle S1.2-03B — Admin Security
 
-| Menace                                     | Contrôle contractuel                                                                                                                                                | Risque résiduel / lot runtime                     |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| Oracle de compte au login/reset/invitation | statuts/erreurs génériques et table de timing comparable pour inconnu/expiré/consommé/révoqué/état compte                                                           | tests statistiques et budgets en C1/C2            |
-| CSRF ou Origin contourné                   | exigences OpenAPI AND cookie pré-auth/refresh + cookie CSRF + `X-Kora-CSRF`, Origin exact et Fetch Metadata au login                                                | middleware et tests navigateur en C1              |
-| Fuite/rejeu du seed TOTP                   | QR POST binaire unique, `no-store`, `nosniff`, HMAC-SHA-256/30 s/±1/replay refusé, secret 256 bits sous AES-256-GCM enveloppe                                       | KMS et redaction runtime en C1                    |
-| Vol ou replay refresh                      | 256 bits, cookie host-only protégé, rotation one-shot, famille révoquée au replay/course, profil 10/min                                                             | transaction et concurrence en C1                  |
-| Bruteforce codes de secours                | sélecteur public + vérificateur 128 bits, Argon2id 64 MiB/t=3/p=1, usage atomique unique, profil 5/h                                                                | contrainte SQL en C1                              |
-| Création de session pendant récupération   | contexte `MFA_RECOVERY` borné, seule l'inscription TOTP est autorisée                                                                                               | machine d'état en C1                              |
-| Collusion/récupération support             | trois parties distinctes ; annulation serveur auditée sur remplacement/inéligibilité ; approbateur super-admin step-up                                              | transaction et alerting en C2/C3                  |
-| Audit attribué au mauvais acteur           | sinks succès/échec par opération, contexte non prouvé vers événement ; SYSTEM autonome/délégué, XOR et union discriminée                                            | migration, XOR SQL et trigger avant runtime C1/C2 |
-| Escalade RBAC                              | deny by default, rôle rechargé, `authorizationVersion`, no self-change, dernier super-admin protégé                                                                 | middleware et verrouillage transactionnel en C2   |
-| Exfiltration d'export                      | bearer+step-up ; PII ; payload JCS UTF-8 ; signing input RFC 7515 ; JWS Ed25519 détaché avec `b64=false` interdit ; ZIP bijectif ; trust bundle ; aucune URL signée | stockage/chiffrement/expiry en C2                 |
+| Menace                                      | Contrôle contractuel                                                                                                                                                | Risque résiduel / lot runtime                   |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Oracle de compte au login/reset/invitation  | statuts/erreurs génériques et table de timing comparable pour inconnu/expiré/consommé/révoqué/état compte                                                           | tests statistiques et budgets en C1/C2          |
+| CSRF ou Origin contourné                    | exigences OpenAPI AND cookie pré-auth/refresh + cookie CSRF + `X-Kora-CSRF`, Origin exact et Fetch Metadata au login                                                | middleware et tests navigateur en C1            |
+| Fuite/rejeu du seed TOTP                    | QR POST binaire unique, `no-store`, `nosniff`, HMAC-SHA-256/30 s/±1/replay refusé, secret 256 bits sous AES-256-GCM enveloppe                                       | KMS et redaction runtime en C1                  |
+| Vol ou replay refresh                       | 256 bits, cookie host-only protégé, rotation one-shot, famille révoquée au replay/course, profil 10/min                                                             | transaction et concurrence en C1                |
+| Bruteforce codes de secours                 | sélecteur public + vérificateur 128 bits, Argon2id 64 MiB/t=3/p=1, usage atomique unique, profil 5/h                                                                | contrainte SQL en C1                            |
+| Création de session pendant récupération    | contexte `MFA_RECOVERY` borné, seule l'inscription TOTP est autorisée                                                                                               | machine d'état en C1                            |
+| Collusion/récupération support              | trois parties distinctes ; annulation serveur auditée sur remplacement/inéligibilité ; approbateur super-admin step-up                                              | transaction et alerting en C2/C3                |
+| Audit attribué au mauvais acteur            | sinks succès/échec par opération, contexte non prouvé vers événement ; R4 conserve le contexte prouvé de refresh/révocations par invocation                         | extension runtime et alerting C2                |
+| Faux contexte recovery fourni par le client | enrollment/QR n'utilisent `ADMIN_RECOVERY` qu'après ownership, acteur, état et expiration prouvés côté serveur ; cookie/selector/id seuls insuffisants              | transactions et preuves négatives en C1         |
+| Contournement du step-up de rotation        | TOTP frais inline obligatoire, purpose `RECOVERY_CODE_ROTATION`, compteur global anti-rejeu ; preuve antérieure non substituable                                    | verrouillage et transaction en C1               |
+| Dépassement ou course sur trois familles    | éviction LRU atomique après authentification complète sous verrou utilisateur, ordre déterministe, refresh sans nouvelle famille                                    | tests de concurrence PostgreSQL en C1           |
+| Mutation sans audit ou transaction ambiguë  | 503 uniforme fermé avec `retryable=false`; rollback confirmé avant réutilisation, client détruit si rollback non confirmé; COMMIT inconnu sans faux rejet ni retry  | supervision de production non qualifiée         |
+| Lecture transversale de secrets PostgreSQL  | writer C1 séparé et borné ; lecteur sur allowlist tables/colonnes ; grants globaux retirés ; sinks audit `INSERT`-only sans `RETURNING`                             | toute extension C2 exige de nouvelles ACL       |
+| Escalade RBAC                               | deny by default, rôle rechargé, `authorizationVersion`, no self-change, dernier super-admin protégé                                                                 | middleware et verrouillage transactionnel en C2 |
+| Exfiltration d'export                       | bearer+step-up ; PII ; payload JCS UTF-8 ; signing input RFC 7515 ; JWS Ed25519 détaché avec `b64=false` interdit ; ZIP bijectif ; trust bundle ; aucune URL signée | stockage/chiffrement/expiry en C2               |
 
-Les contrôles ci-dessus sont des obligations de contrat et des tests de dérive ;
-ils ne sont pas déclarés opérationnels. Tout événement futur sans contexte
-prouvé va dans `AdminSecurityEvent`, même si le succès de la même opération
-produit un `AuditLog`; les mutations sous session ou récupération prouvée et
-leur `AuditLog` doivent être atomiques. Jusqu'à arbitrage légal, la
+Les contrôles C1 explicitement couverts par le runtime sont implémentés et
+vérifiés localement dans cet instantané, sans être déployés ; les contrôles C2/C3 restent des
+obligations de contrat et ne sont pas déclarés livrés. Un échec sans contexte
+prouvé va dans `AdminSecurityEvent`. Enrollment/QR sous recovery prouvé,
+rotation/step-up et désormais refresh/révocations sous session prouvée vont
+dans `AuditLog`; les parcours sans preuve n'inventent pas d'identité. Les
+mutations sous session ou récupération prouvée et leur `AuditLog` restent
+atomiques, sous réserve distincte du résultat COMMIT inconnu.
+Jusqu'à arbitrage légal, la
 rétention est fail-safe sans suppression. ADR-025 reste l'autorité de conception
 pour les contextes d'audit.
+
+### Renforcement transactionnel local S1.2-03C1-R6
+
+R5 est publié au commit `89323beb1ebbae9a488456db5d1dc2cb19215dd6` avec
+quatre workflows `pull_request/completed/success`. Le finding post-R5 portait
+sur une fenêtre précise : callback rejeté avant COMMIT, accusé `ROLLBACK`
+absent, puis client rendu au pool sans destruction. La menace est une
+réutilisation sous transaction active ou avortée, susceptible de contaminer la
+mutation et l'audit suivants.
+
+R6 détruit le client dans ce cas via `release(true)`, exactement une fois. Il
+conserve l'erreur métier et l'erreur de rollback dans l'`AggregateError`, ne
+réessaie aucune écriture et ne reclasse pas ce cas pré-COMMIT en résultat COMMIT
+inconnu. Les chemins COMMIT confirmé, rollback confirmé et COMMIT inconnu
+gardent leurs sémantiques antérieures.
+
+La preuve PostgreSQL réelle observe une transaction ouverte après mutation,
+puis un backend retiré et remplacé dans un pool dédié à une connexion. La
+mutation abandonnée est absente, l'opération suivante est persistée sur le
+backend sain et l'ancien PID n'est plus actif. L'injection qui rejette l'appel
+`ROLLBACK` est contrôlée au niveau de la fixture et ne constitue pas une preuve
+de timeout réseau réel. Le parcours HTTP séparé confirme un 503 neutre, un seul
+rejet `AuditLog` contextuel sur connexion saine, aucun succès durable, aucun
+événement de fallback et aucun double sink.
+
+Le risque résiduel relève de la qualification et de la supervision de
+production : fournisseur de clés **NON QUALIFIÉ**, réseau réel et télémétrie de
+pool non qualifiés par cette injection locale. La politique open source reste
+différée et non installée, le JTI transactionnel reste une recommandation
+séparée, la pagination **NON CONCLUSIVE**, et C2/C3 `Not started`.
 
 ## Instantané historique local prépublication S1.2-03B-R1
 
@@ -888,3 +1033,122 @@ complet et production frais terminent au code 0 avec zéro vulnérabilité. Aucu
 audit de signature de registre, licence, build applicatif, Flutter ou test
 PostgreSQL n'est rejoué pour les surfaces inchangées ; cette non-répétition ne
 transforme aucune preuve historique en preuve R4.
+
+## Qualification locale supply-chain et runtime S1.2-03C1-R10
+
+R10 adopte le candidat R9 sans réutiliser son prototype comme source après
+l'adoption. Le lockfile reste lié à l'empreinte
+`a1b9744d0b132e6a2f20809c606b7b7525a17230c147dc6155ec05b5ba4aa2f3` et son
+graphe est reproduit par deux installations fraîches avec scripts ignorés. Les
+audits complet et production sont à zéro vulnérabilité ; aucune signature n'est
+manquante ou invalide ; 933 composants ont une licence classée, sans inconnu ni
+interdit.
+
+Le scanner traite une suppression suivie uniquement lorsqu'elle est confirmée
+par l'état Git et refuse toujours les lectures absentes inattendues. Pour
+`express@5.2.1`, l'override autorisé est l'ensemble exact `{qs, proxy-addr}` avec
+`qs@6.16.0` et `proxy-addr@2.0.8`. Toute clé manquante, valeur non exacte,
+troisième clé, mauvais parent ou dérive du lockfile reste bloquante. Les règles
+strictes `body-parser`, `superagent`, de singleton et d'intégrité du lockfile
+restent actives. Les deux échecs officiels ayant révélé ces contradictions sont
+conservés séparément dans le rapport R10 ; la qualification finale passe
+107/107 tests scanner, 419/419 tests tooling et le scan avec historique sur 385
+fichiers, 52 sources immuables et six scripts d'installation qualifiés.
+
+Deux répétitions fraîches sur PostgreSQL et Redis réels passent chacune 37/37
+parcours, couvrent les contraintes et ACL, les deux ordres TOTP et la
+concurrence contrôlée. L'ordre décroissant refuse l'ancien code par exactement
+`400 OTP_INVALID`; la concurrence reste à trois familles actives au maximum.
+Les ressources et secrets de test ciblés sont supprimés et Docker est rendu
+arrêté. Ces preuves ne qualifient ni KMS/JWT de production, ni réseau ou
+déploiement de production, ni C2/C3.
+
+Dans cet instantané local prépublication, la frontière R10 comportait 23 chemins
+techniques et six documents vivants, non indexés et non publiés. Aucun commit,
+push, changement de PR, rerun, Ready, approval, merge, tag, release ou
+déploiement n'avait été réalisé. Toute publication ultérieure fait foi dans Git
+et GitHub. La politique open source différée n'est pas installée et aucun secret,
+DSN, jeton ou URL média brute n'est ajouté au dépôt ou aux preuves.
+
+## Menaces F1/F2 et contrôles locaux S1.2-03C1-R11
+
+R10 est publié au head source
+`153b6ca1ef861a9fc09f3c290cb4d8cb54e9802d` de la Draft PR #50 avec quatre
+workflows verts. La revue terminale postérieure établit deux findings **HIGH**,
+qui maintiennent **BLOCK** jusqu'à la remédiation R11 :
+
+| Menace                                  | Cause R10                                                                                                                        | Contrôle local R11                                                                                                                                                        | Limite résiduelle                                                          |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Révocation silencieuse d'un grant tiers | le préflight omettait `membership.member = runtime_role.oid`; `GRANT probe TO reader` pouvait atteindre les `REVOKE` historiques | quatrième prédicat ajouté; deux wrappers prouvent chacun A/B × reader/writer × `roleid`/`member`, huit refus avant mutation, options et signatures strictement inchangées | preuve locale éphémère; exploitation production non qualifiée              |
+| Contrat d'erreur incomplet              | cinq opérations renvoyaient `VALIDATION_ERROR` sans le déclarer                                                                  | code ajouté seulement aux cinq listes; cinq mutations adversariales et cinq parcours HTTP réels à exactement 400, enveloppe et sink exacts, zéro mutation métier          | aucun nouveau mapping runtime; consommateurs futurs doivent garder le gate |
+| Élargissement involontaire du QR        | ajouter le code à toutes les routes TOTP aurait contredit le remapping existant                                                  | mutation négative distincte : `deliverAdminTotpEnrollmentQr` reste sans `VALIDATION_ERROR` et remappe vers `403 FORBIDDEN`                                                | politique QR inchangée                                                     |
+
+Erratum de preuve : R3 à R10 avaient préparé uniquement
+`GRANT <target> TO <probe>`, donc `roleid=target`. Ils n'avaient pas préparé
+`GRANT <probe> TO <target>`, donc `member=target`. L'absence finale de
+membership après retrait/nettoyage était une postcondition saine, pas la preuve
+d'un refus sans mutation pour cette seconde orientation.
+
+Chaque wrapper R11 conserve 39 modèles, 40 tables, quatre provisionnements
+positifs/idempotents, le refus writer/ACL distinct, les scénarios auth/audit,
+rollback, COMMIT inconnu, ordres TOTP et concurrence. Il passe 42/42 tests
+HTTP/PostgreSQL/Redis. Les signatures reader/writer/probe et les options brutes
+des grants restent identiques. L'inventaire Docker est restauré après chaque
+isolation et Docker est rendu arrêté.
+
+Le contrat conserve 60 chemins, 67 opérations et 137 schémas; le contrat
+généré est byte-identique. Les contrôles OpenAPI adversariaux passent 299/299,
+boundary 7/7, API 93 réussites avec 41 conditionnels ignorés, tooling 426/426 et
+scanner 385 fichiers avec historique, 52 immuables et six scripts. Les audits,
+signatures, licences et builds de surfaces inchangées ne sont pas rejoués.
+
+Dans cet instantané local prépublication, R11 était non indexé, non commité et
+non publié. Toute publication ultérieure fait foi dans Git et GitHub. Le
+fournisseur de clés de production reste **NON QUALIFIÉ**, la politique OSS
+différée n'est pas installée, le JTI transactionnel reste séparé, la pagination
+reste **NON CONCLUSIVE**, la couverture V8 et iOS ne sont pas exécutées, et
+C2/C3 restent `Not started`.
+
+## Menace de parsing JSON pré-contrôleur et instantané prépublication S1.2-03C1-R12 — 2026-10-08
+
+R11 est publié au head source
+`3e02785d06c0d5f397eb9f9a39a09b8058b10467`. La revue terminale cumulative
+identifie ensuite le finding **HIGH** suivant :
+
+| Menace                                     | Cause R11                                                                                      | Contrôle local R12                                                                                                                                             | Limite résiduelle                                                                                     |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Réponse JSON hors contrat                  | body-parser échoue avant le contrôleur; Nest remappe le `SyntaxError` en `BadRequestException` | interception avant ce remapping; nouvel `AdminC1HttpError(400, VALIDATION_ERROR)` sans message, corps, cause ou détail                                         | seules les sept opérations POST JSON sont normalisées                                                 |
+| Perte du sink pré-contexte                 | le filtre générique ne déclenche pas `recordFailure`                                           | réutilisation de `auditThenRespond`; exactement un `AdminSecurityEvent`, sans acteur fabriqué, avant la réponse                                                | panne du sink répond 503 neutre; une persistance dont le COMMIT est inconnu n'est jamais affirmée     |
+| Fuite du fragment malformé                 | body-parser attache le corps et un message interne à l'erreur                                  | l'erreur d'origine n'est ni copiée, loggée, reportée, stockée ou renvoyée; canari absent réponse, recorder, événement et logs structurés                       | les contrôles de sérialisation HTTP existants restent nécessaires pour toute nouvelle donnée sensible |
+| Surclassement de routes ou erreurs tierces | catch-all 400 ou matching par préfixe aurait modifié d'autres surfaces                         | patterns Express réels + POST + reliquat `/`; erreurs URI/applicatives/taille/encodage/C1 transmises par identité; routes QR, sans corps, C2/client inchangées | autres familles pré-contrôleur restent hors du remède malformed-JSON                                  |
+
+La reproduction antérieure au correctif observe sur les sept routes : 400
+`BAD_REQUEST`, enveloppe générique, zéro événement/audit et état métier
+inchangé. Après correction, les sept réponses sont exactement 400
+`VALIDATION_ERROR`, sans cookie ni mutation, avec un événement corrélé au même
+requestId. La panne contrôlée du recorder produit un seul 503, sans retry,
+fallback ou double sink.
+
+Les garanties transactionnelles restent inchangées : le middleware n'écrit
+rien et ne crée aucun second sink; `AdminAuthRepository.recordFailure` reste la
+seule voie; rollback non confirmé, destruction du client et COMMIT inconnu
+conservent les règles R6. Deux isolations corrigées finales passent chacune
+47/47 avec PostgreSQL A/B et Redis réels. Les 42 scénarios R11, memberships,
+ACL, TOTP, refresh, révocations, LRU et idempotence restent verts.
+
+L'incident npm du `2026-10-08T08:53:14.3124154Z` est un échec de lanceur, pas
+un finding produit ni une vulnérabilité observée : code 1, stdout vide et
+`MODULE_NOT_FOUND` avant analyse, donc audit complet **NON CONCLUSIVE** et audit
+production alors **NON EXÉCUTÉ**. Le bundle absolu Node `v22.18.0`/npm `10.9.3`
+est ensuite qualifié; la sonde relative reproduit l'échec et la sonde absolue
+réussit, sans conclure sur le mécanisme exact de relocalisation. Les audits
+complet et production exécutés directement par les chemins absolus terminent
+ensuite au code 0 avec `found 0 vulnerabilities` et stderr vide. Ils ne
+modifient ni l'index, ni les quatre hashes techniques, ni le lockfile.
+
+À l'instantané prépublication du 2026-10-08, R12 était local, non indexé, non
+commité et non publié. Toute publication ultérieure fait foi dans Git et
+GitHub. C1 demeure en revue dans la Draft PR #50 et n'est pas intégré à `main`.
+Cet instantané ne qualifie ni le fournisseur KMS/JWT de production, ni
+OSS/JTI/pagination/V8/iOS, ni C2/C3, et n'autorise aucun Ready, approval, merge,
+tag, release ou déploiement.

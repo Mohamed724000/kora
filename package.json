@@ -16,6 +16,9 @@
     "packages/ui"
   ],
   "overrides": {
+    "@next/eslint-plugin-next@16.3.8": {
+      "fast-glob": "npm:tinyglobby@0.2.17"
+    },
     "@nestjs/platform-express@11.1.28": {
       "multer": "2.4.0"
     },
@@ -33,14 +36,15 @@
     },
     "brace-expansion": "5.0.12",
     "express@5.2.1": {
+      "proxy-addr": "2.0.8",
       "qs": "6.16.0"
     },
-    "js-yaml@3.15.0": "3.15.2",
     "js-yaml@4.3.0": "4.3.2",
     "minimatch": "10.2.6",
     "nanoid": "3.3.18",
     "postcss": "8.5.24",
-    "sharp": "0.35.4",
+    "sharp": "0.35.5",
+    "source-map-js": "1.2.2",
     "superagent@10.3.0": {
       "qs": "6.16.0"
     }
@@ -52,10 +56,11 @@
     "typecheck": "node scripts/run-workspace-task.mjs typecheck",
     "test": "node scripts/run-workspace-task.mjs test",
     "build": "node scripts/run-workspace-task.mjs build",
-    "test:tooling": "node --test scripts/run-workspace-task.test.mjs scripts/ci/validate-workflows.test.mjs scripts/openapi/validate-openapi.test.mjs scripts/security/scan-repository.test.mjs scripts/infra/verify-api-health-assertions.test.mjs",
+    "test:tooling": "node --test scripts/run-workspace-task.test.mjs scripts/ci/validate-workflows.test.mjs scripts/openapi/validate-openapi.test.mjs scripts/security/scan-repository.test.mjs scripts/security/next-root-dirs-compatibility.test.mjs scripts/infra/verify-api-health-assertions.test.mjs",
     "launcher:verify": "node scripts/ci/verify-launcher-failure.mjs",
     "ci:validate": "node scripts/ci/validate-workflows.mjs",
     "security:scan": "node scripts/security/scan-repository.mjs",
+    "security:next-root-dirs": "node --test scripts/security/next-root-dirs-compatibility.test.mjs",
     "openapi:validate": "node scripts/openapi/validate-openapi.mjs",
     "db:generate": "npm run db:generate --workspace @kora-plus/api",
     "licenses": "node scripts/report-licenses.mjs",
