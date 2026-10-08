@@ -3,9 +3,9 @@
 Périmètre durable couvert : **BASELINE + S0.4/S0.5/M0.1/M0.2/S0.6 ET M0.3
 FUSIONNÉS ET CLÔTURÉS + S1.1 FERMÉ + CONTRACT & DATA READINESS S1.2-01 +
 S1.2-02 CLÔTURÉ ET FUSIONNÉ + S1.2-03A CLÔTURÉ ET FUSIONNÉ + S1.2-03B-R4
-FUSIONNÉ VIA PR #48 + S1.2-03C1-R10 PUBLIÉ DANS LA DRAFT PR #50 AVEC QUATRE
-WORKFLOWS VERTS + REVUE TERMINALE BLOCK F1/F2 + INSTANTANÉ PRÉPUBLICATION R11
-VALIDÉ — KMS/JWT DE PRODUCTION NON QUALIFIÉS — C2/C3 NOT
+FUSIONNÉ VIA PR #48 + S1.2-03C1-R11 PUBLIÉ DANS LA DRAFT PR #50 AVEC QUATRE
+WORKFLOWS VERTS + REVUE TERMINALE BLOCK MALFORMED JSON + INSTANTANÉ
+PRÉPUBLICATION R12 VALIDÉ — KMS/JWT DE PRODUCTION NON QUALIFIÉS — C2/C3 NOT
 STARTED**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
@@ -1108,3 +1108,47 @@ fournisseur de clés de production reste **NON QUALIFIÉ**, la politique OSS
 différée n'est pas installée, le JTI transactionnel reste séparé, la pagination
 reste **NON CONCLUSIVE**, la couverture V8 et iOS ne sont pas exécutées, et
 C2/C3 restent `Not started`.
+
+## Menace de parsing JSON pré-contrôleur et instantané prépublication S1.2-03C1-R12 — 2026-10-08
+
+R11 est publié au head source
+`3e02785d06c0d5f397eb9f9a39a09b8058b10467`. La revue terminale cumulative
+identifie ensuite le finding **HIGH** suivant :
+
+| Menace                                     | Cause R11                                                                                      | Contrôle local R12                                                                                                                                             | Limite résiduelle                                                                                     |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Réponse JSON hors contrat                  | body-parser échoue avant le contrôleur; Nest remappe le `SyntaxError` en `BadRequestException` | interception avant ce remapping; nouvel `AdminC1HttpError(400, VALIDATION_ERROR)` sans message, corps, cause ou détail                                         | seules les sept opérations POST JSON sont normalisées                                                 |
+| Perte du sink pré-contexte                 | le filtre générique ne déclenche pas `recordFailure`                                           | réutilisation de `auditThenRespond`; exactement un `AdminSecurityEvent`, sans acteur fabriqué, avant la réponse                                                | panne du sink répond 503 neutre; une persistance dont le COMMIT est inconnu n'est jamais affirmée     |
+| Fuite du fragment malformé                 | body-parser attache le corps et un message interne à l'erreur                                  | l'erreur d'origine n'est ni copiée, loggée, reportée, stockée ou renvoyée; canari absent réponse, recorder, événement et logs structurés                       | les contrôles de sérialisation HTTP existants restent nécessaires pour toute nouvelle donnée sensible |
+| Surclassement de routes ou erreurs tierces | catch-all 400 ou matching par préfixe aurait modifié d'autres surfaces                         | patterns Express réels + POST + reliquat `/`; erreurs URI/applicatives/taille/encodage/C1 transmises par identité; routes QR, sans corps, C2/client inchangées | autres familles pré-contrôleur restent hors du remède malformed-JSON                                  |
+
+La reproduction antérieure au correctif observe sur les sept routes : 400
+`BAD_REQUEST`, enveloppe générique, zéro événement/audit et état métier
+inchangé. Après correction, les sept réponses sont exactement 400
+`VALIDATION_ERROR`, sans cookie ni mutation, avec un événement corrélé au même
+requestId. La panne contrôlée du recorder produit un seul 503, sans retry,
+fallback ou double sink.
+
+Les garanties transactionnelles restent inchangées : le middleware n'écrit
+rien et ne crée aucun second sink; `AdminAuthRepository.recordFailure` reste la
+seule voie; rollback non confirmé, destruction du client et COMMIT inconnu
+conservent les règles R6. Deux isolations corrigées finales passent chacune
+47/47 avec PostgreSQL A/B et Redis réels. Les 42 scénarios R11, memberships,
+ACL, TOTP, refresh, révocations, LRU et idempotence restent verts.
+
+L'incident npm du `2026-10-08T08:53:14.3124154Z` est un échec de lanceur, pas
+un finding produit ni une vulnérabilité observée : code 1, stdout vide et
+`MODULE_NOT_FOUND` avant analyse, donc audit complet **NON CONCLUSIVE** et audit
+production alors **NON EXÉCUTÉ**. Le bundle absolu Node `v22.18.0`/npm `10.9.3`
+est ensuite qualifié; la sonde relative reproduit l'échec et la sonde absolue
+réussit, sans conclure sur le mécanisme exact de relocalisation. Les audits
+complet et production exécutés directement par les chemins absolus terminent
+ensuite au code 0 avec `found 0 vulnerabilities` et stderr vide. Ils ne
+modifient ni l'index, ni les quatre hashes techniques, ni le lockfile.
+
+À l'instantané prépublication du 2026-10-08, R12 était local, non indexé, non
+commité et non publié. Toute publication ultérieure fait foi dans Git et
+GitHub. C1 demeure en revue dans la Draft PR #50 et n'est pas intégré à `main`.
+Cet instantané ne qualifie ni le fournisseur KMS/JWT de production, ni
+OSS/JTI/pagination/V8/iOS, ni C2/C3, et n'autorise aucun Ready, approval, merge,
+tag, release ou déploiement.

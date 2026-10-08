@@ -1,13 +1,13 @@
 # KORA+ Final — Source de vérité
 
 Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 ET S1.2-03A CLÔTURÉS ET
-FUSIONNÉS — S1.2-03B-R4 FUSIONNÉ VIA PR #48 — S1.2-03C1-R10 PUBLIÉ AU HEAD
-`153b6ca1…` DE LA DRAFT PR #50 AVEC QUATRE WORKFLOWS VERTS — REVUE TERMINALE
-BLOCK F1/F2 — INSTANTANÉ PRÉPUBLICATION R11 VALIDÉ —
+FUSIONNÉS — S1.2-03B-R4 FUSIONNÉ VIA PR #48 — S1.2-03C1-R11 PUBLIÉ AU HEAD
+`3e02785d…` DE LA DRAFT PR #50 AVEC QUATRE WORKFLOWS VERTS — REVUE TERMINALE
+BLOCK MALFORMED JSON — INSTANTANÉ PRÉPUBLICATION R12 VALIDÉ —
 FOURNISSEUR DE CLÉS DE PRODUCTION NON QUALIFIÉ — C2/C3 NOT STARTED**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-10-07
+Dernière réconciliation documentaire : 2026-10-08
 
 ## Hiérarchie normative
 
@@ -834,3 +834,70 @@ OSS différée n'est pas installée,
 le fournisseur de clés de production reste **NON QUALIFIÉ**, la recommandation
 JTI reste séparée, la pagination reste **NON CONCLUSIVE**, et C2/C3 restent
 `Not started`.
+
+## R11 publié, BLOCK terminal malformed JSON et instantané prépublication S1.2-03C1-R12 — 2026-10-08
+
+R11 est publié au commit source
+`3e02785d06c0d5f397eb9f9a39a09b8058b10467`, parent R10
+`153b6ca1ef861a9fc09f3c290cb4d8cb54e9802d`, arbre
+`618d0b0af203d3c33857dd3c478a295b13ce16a0`. La PR #50 reste `OPEN`, Draft,
+`CLEAN/MERGEABLE` et non fusionnée. Les quatre runs R11 `37693349868`,
+`37693349718`, `37693349633` et `37693349599` réussissent en tentative 1 sur
+ce head source; leur checkout est la merge ref synthétique distincte
+`8d7c7b84010bb42a5a7caa54d7b475eda3307742`.
+
+La revue terminale cumulative suivante maintient **BLOCK** sur un finding
+**HIGH** distinct de F1/F2 : le parseur JSON Express s'exécutait avant le
+contrôleur et son `SyntaxError` était normalisé par Nest en
+`BadRequestException`. Les sept opérations JSON répondaient alors avec le code
+générique `BAD_REQUEST`, les champs `path`/`timestamp` et aucun sink, au lieu de
+`VALIDATION_ERROR` et d'un `AdminSecurityEvent` pré-contexte.
+
+La reproduction HTTP R12 envoie des chaînes brutes tronquées sur les sept
+routes. Avant correction, les sept réponses observées sont 400
+`BAD_REQUEST`, avec zéro `AuditLog`, zéro `AdminSecurityEvent`, aucun cookie et
+signature métier globale inchangée; la campagne conserve ce résultat
+**NON-PASS** à 42 réussites et un échec.
+
+R12 installe explicitement le parseur JSON public Nest après le logger, sans
+modifier ses options. Sept montages Express réutilisent le routage réel et
+normalisent seulement `SyntaxError` + `entity.parse.failed` + statut 400 +
+POST + absence de suffixe en un nouvel
+`AdminC1HttpError(400, VALIDATION_ERROR)`. Le corps, le message, la cause, les
+cookies, bearer et identifiants reçus ne sont jamais transformés en contexte.
+Le filtre et le recorder existants persistent exactement un
+`AdminSecurityEvent`; leur panne rend un seul 503 neutre sans retry ni second
+sink.
+
+Les preuves locales corrigées passent : unités 7/7; format, lint, typecheck,
+tests et build API; 17 fichiers avec 96 réussites et 46 conditionnels ignorés;
+deux isolations finales à 47/47 avec PostgreSQL A/B, Redis réel, huit refus
+membership et un refus writer/ACL; OpenAPI 60/67/137; boundary 7/7; contrat
+généré byte-identique; scanner officiel sur 385 fichiers avec historique, 52
+immuables et six scripts qualifiés. Les routes voisines, méthodes différentes,
+QR, opérations sans corps, C2/client, MIME non sélectionné, `URIError`, erreurs
+applicatives, taille/encodage et `AdminC1HttpError` existant restent hors de la
+normalisation R12.
+
+L'incident d'outillage du `2026-10-08T08:53:14.3124154Z` reste séparé des
+résultats de sécurité : `npm.cmd audit --audit-level=low` termine au code 1,
+stdout vide, avec `MODULE_NOT_FOUND` sur `npm-prefix.js` puis `npm-cli.js`,
+avant toute analyse de vulnérabilités. Il est **NON CONCLUSIVE** et l'audit
+production est alors **NON EXÉCUTÉ**. Le bundle système absolu est ensuite
+qualifié à Node `v22.18.0` et npm `10.9.3`; l'appel relatif défaillant est
+reproduit par une sonde non mutante, tandis que l'appel absolu réussit. Le
+mécanisme exact de relocalisation reste non conclusif. Via le Node et
+`npm-cli.js` absolus qualifiés, les audits complet et production frais du
+2026-10-08 terminent chacun au code 0 avec `found 0 vulnerabilities` et stderr
+vide; index, hashes techniques et lockfile restent inchangés.
+
+À l'instantané prépublication du 2026-10-08, R12 était local, non indexé, non
+commité et non publié. Toute publication ultérieure fait foi dans Git et
+GitHub. C1 demeure en revue dans la Draft PR #50 et n'est pas intégré à `main`.
+R12 ne modifie ni OpenAPI, dépendance, lockfile, Prisma, migration,
+provisioning, workflow, contrôleur, service, repository, writer ou contrat
+généré. Le fournisseur de clés de production reste **NON QUALIFIÉ**, la
+politique OSS différée n'est pas installée, la recommandation JTI reste
+séparée, la pagination reste **NON CONCLUSIVE**, V8/iOS ne sont pas exécutés et
+C2/C3 restent `Not started`. Aucun Ready, approval, merge, tag, release ou
+déploiement n'est autorisé par cet instantané.

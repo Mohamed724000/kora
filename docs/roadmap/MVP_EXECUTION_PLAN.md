@@ -29,7 +29,7 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 | Slice 1 / S1.2-02   | Baseline PostgreSQL et contraintes SQL        | Closed and merged — PR #43                                                   |
 | Slice 1 / S1.2-03A  | Frontière PostgreSQL runtime en lecture seule | Closed and merged — PR #45                                                   |
 | Slice 1 / S1.2-03B  | Admin Security Contract Gate, sans runtime    | Closed and merged — PR #48, merge `c97992ca2c82bc4f22f9222ea98ed53714fede4c` |
-| Slice 1 / S1.2-03C1 | Auth admin, TOTP et sessions runtime          | R10 published; terminal BLOCK F1/F2; R11 prepublication snapshot validated   |
+| Slice 1 / S1.2-03C1 | Auth admin, TOTP et sessions runtime          | R11 published; terminal malformed-JSON finding; R12 validated locally        |
 | Slice 1 / S1.2-03C2 | Recovery, audit, invitations et RBAC runtime  | Not started — separate authorization required                                |
 | Slice 1 / S1.2-03C3 | Interface d'authentification Admin            | Not started — separate authorization required                                |
 | Slice 1 / S1.2-03D  | Artist API                                    | Not started                                                                  |
@@ -775,3 +775,40 @@ foi dans Git et GitHub. Fournisseur de clés de production **NON QUALIFIÉ**,
 politique OSS différée non installée, JTI transactionnel séparé, pagination
 **NON CONCLUSIVE**, couverture V8 et iOS non exécutées. Une revue terminale C1
 reste requise avant toute décision de fusion.
+
+## S1.2-03C1-R12 — instantané prépublication du parsing JSON pré-contrôleur — 2026-10-08
+
+R11 est publié au head
+`3e02785d06c0d5f397eb9f9a39a09b8058b10467` avec quatre workflows verts. La
+revue cumulative suivante identifie un finding **HIGH** : les sept opérations
+JSON pouvaient répondre `BAD_REQUEST` avant contrôleur et omettre leur
+`AdminSecurityEvent` pré-contexte.
+
+R12 intercepte uniquement l'erreur causale de body-parser sur les sept patterns
+POST et la convertit en `400 VALIDATION_ERROR` avant la perte d'information par
+Nest. Le recorder, ADR-025, les contrôleurs et toutes les garanties R3–R11 sont
+réutilisés sans second sink. Les routes voisines, méthodes, QR, opérations sans
+corps, C2/client, MIME non JSON et autres familles d'erreur restent inchangés.
+
+Les unités passent 7/7; l'API passe format, lint, typecheck, 96 tests avec 46
+conditionnels ignorés et build; deux isolations finales passent 47/47 avec
+PostgreSQL A/B et Redis réels. OpenAPI reste 60/67/137, le contrat généré reste
+byte-identique, boundary passe 7/7 et le scanner officiel conserve ses 385
+fichiers avec historique.
+
+L'invocation npm du `2026-10-08T08:53:14.3124154Z` échoue avant analyse avec un
+code 1, stdout vide et `MODULE_NOT_FOUND`; elle reste **NON CONCLUSIVE** et
+l'audit production est alors **NON EXÉCUTÉ**. Le bundle absolu existant est
+ensuite qualifié à Node `v22.18.0` et npm `10.9.3`; le mécanisme exact ayant
+relocalisé l'appel relatif reste non conclusif. Les reprises directes par
+chemins absolus terminent ensuite les audits complet et production au code 0,
+avec `found 0 vulnerabilities` et stderr vide, sans modifier l'index, les
+hashes techniques ou le lockfile.
+
+À l'instantané prépublication du 2026-10-08, R12 était local, non indexé, non
+commité et non publié. Toute publication ultérieure fait foi dans Git et
+GitHub. C1 demeure en revue dans la Draft PR #50 et n'est pas intégré à `main`.
+Cet instantané n'autorise ni Ready, approval, fusion, tag, release ou
+déploiement, ni démarrage de C2/C3. Le fournisseur de clés de production reste
+**NON QUALIFIÉ**; OSS, JTI, pagination, V8 et iOS gardent leurs qualifications
+antérieures.

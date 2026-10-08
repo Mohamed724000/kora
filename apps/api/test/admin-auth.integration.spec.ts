@@ -164,6 +164,15 @@ type R11ValidationOperation =
   | 'verifyAdminRecoveryCode'
   | 'verifyAdminTotp';
 
+type R12MalformedJsonOperation =
+  | 'confirmAdminTotpEnrollment'
+  | 'loginAdmin'
+  | 'revokeAdminSession'
+  | 'rotateAdminRecoveryCodes'
+  | 'stepUpAdminSession'
+  | 'verifyAdminRecoveryCode'
+  | 'verifyAdminTotp';
+
 const r11OpenApi = JSON.parse(
   readFileSync(resolve(process.cwd(), '..', '..', 'docs', 'api', 'openapi.yaml'), 'utf8'),
 ) as Readonly<{
@@ -904,6 +913,17 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', { timeout: 300_000 }, (
     return createHash('sha256').update(JSON.stringify(sections), 'utf8').digest('hex');
   }
 
+  async function r12BusinessStateSignature(): Promise<string> {
+    const sections: unknown[] = [];
+    for (const table of ['AdminUser', ...r11BusinessTables]) {
+      const state = await owner.query<{ row: string }>(
+        `SELECT to_jsonb(entry)::text AS row FROM "${table}" AS entry ORDER BY "id"`,
+      );
+      sections.push(state.rows);
+    }
+    return createHash('sha256').update(JSON.stringify(sections), 'utf8').digest('hex');
+  }
+
   async function expectR11ValidationFailure(
     response: request.Response,
     operationId: R11ValidationOperation,
@@ -1281,6 +1301,38 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', { timeout: 300_000 }, (
     keys.recover();
   }, 300_000);
 
+  it('registers one JSON parser before the seven causal routes and preserves urlencoded', () => {
+    interface ExpressLayer {
+      handle?: Readonly<{ name?: unknown }>;
+      route?: Readonly<{
+        path?: unknown;
+        stack?: readonly Readonly<{ handle?: Readonly<{ name?: unknown }> }>[];
+      }>;
+    }
+    interface ExpressApplication {
+      router?: Readonly<{ stack?: readonly ExpressLayer[] }>;
+    }
+    const instance = application.getHttpAdapter().getInstance() as ExpressApplication;
+    const stack = instance.router?.stack;
+    expect(Array.isArray(stack)).toBe(true);
+    const layers: readonly ExpressLayer[] = stack!;
+    const namedIndexes = (name: string): number[] =>
+      layers.flatMap((layer, index) => (layer.handle?.name === name ? [index] : []));
+    const jsonIndexes = namedIndexes('jsonParser');
+    const urlencodedIndexes = namedIndexes('urlencodedParser');
+    const causalIndexes = namedIndexes('normalizeAdminC1MalformedJsonError');
+
+    expect(jsonIndexes).toHaveLength(1);
+    expect(urlencodedIndexes).toHaveLength(1);
+    expect(causalIndexes).toHaveLength(7);
+    expect(jsonIndexes[0]).toBeGreaterThan(0);
+    expect(causalIndexes.every((index) => index > jsonIndexes[0]!)).toBe(true);
+    expect(urlencodedIndexes[0]).toBeGreaterThan(Math.max(...causalIndexes));
+    expect(layers.slice(urlencodedIndexes[0]! + 1).some((layer) => layer.route !== undefined)).toBe(
+      true,
+    );
+  });
+
   afterAll(async () => {
     rateLimitRedis?.disconnect(false);
     await faultApplication?.close();
@@ -1574,6 +1626,343 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', { timeout: 300_000 }, (
       .set('Authorization', `Bearer ${process.env.S1203C1_STEP_UP_TOKEN}`)
       .set('Origin', origin);
     expect(revokedCurrent.status).toBe(204);
+  });
+
+  it('normalizes malformed JSON for the seven C1 JSON operations before context proof', async () => {
+    const server = application.getHttpServer();
+    const canary = 'R12_MALFORMED_JSON_CANARY_7f4d1a';
+    const malformedBody = `{"r12Canary":"${canary}`;
+    const businessStateBefore = await r12BusinessStateSignature();
+    const cases: readonly Readonly<{
+      contentType: string;
+      operationId: R12MalformedJsonOperation;
+      path: string;
+    }>[] = [
+      {
+        contentType: 'application/json',
+        operationId: 'loginAdmin',
+        path: '/api/v1/admin/auth/login',
+      },
+      {
+        contentType: 'application/json; charset=utf-8',
+        operationId: 'confirmAdminTotpEnrollment',
+        path: `/api/v1/admin/auth/totp/enrollments/${deterministicUuid(9_001)}/confirm`,
+      },
+      {
+        contentType: 'application/json',
+        operationId: 'verifyAdminTotp',
+        path: '/api/v1/admin/auth/totp/verify',
+      },
+      {
+        contentType: 'application/json; charset=UTF-8',
+        operationId: 'verifyAdminRecoveryCode',
+        path: '/api/v1/admin/auth/recovery-codes/verify',
+      },
+      {
+        contentType: 'application/json',
+        operationId: 'rotateAdminRecoveryCodes',
+        path: '/api/v1/admin/auth/recovery-codes/rotate',
+      },
+      {
+        contentType: 'application/json; charset=utf-8',
+        operationId: 'stepUpAdminSession',
+        path: '/api/v1/admin/auth/step-up',
+      },
+      {
+        contentType: 'application/json',
+        operationId: 'revokeAdminSession',
+        path: `/api/v1/admin/auth/sessions/${deterministicUuid(9_002)}/revocations`,
+      },
+    ];
+    const observations: {
+      auditCount: string;
+      body: unknown;
+      event: string | null;
+      operationId: R12MalformedJsonOperation;
+      requestId: string;
+      securityCount: string;
+      setCookie: boolean;
+      status: number;
+    }[] = [];
+
+    for (const scenario of cases) {
+      const response = await request(server)
+        .post(scenario.path)
+        .set('Authorization', 'Bearer received-but-unproved-token')
+        .set('Content-Type', scenario.contentType)
+        .set('Cookie', '__Host-kora_admin_preauth=received-but-unproved-cookie')
+        .set('Idempotency-Key', `r12-${scenario.operationId}-0001`)
+        .set('Origin', origin)
+        .set('Sec-Fetch-Site', 'same-origin')
+        .set('X-Kora-Csrf', 'received-but-unproved-csrf')
+        .send(malformedBody);
+      const requestId = String(response.body.requestId);
+      const sinks = await owner.query<{
+        auditCount: string;
+        event: string | null;
+        securityCount: string;
+      }>(
+        `SELECT
+           (SELECT count(*)::text FROM "AuditLog" WHERE "requestId" = $1) AS "auditCount",
+           (SELECT count(*)::text FROM "AdminSecurityEvent" WHERE "requestId" = $1)
+             AS "securityCount",
+           (SELECT to_jsonb(entry)::text FROM "AdminSecurityEvent" AS entry
+             WHERE "requestId" = $1 LIMIT 1) AS "event"`,
+        [requestId],
+      );
+      observations.push({
+        ...sinks.rows[0]!,
+        body: response.body,
+        operationId: scenario.operationId,
+        requestId,
+        setCookie: response.headers['set-cookie'] !== undefined,
+        status: response.status,
+      });
+      await expect(r12BusinessStateSignature()).resolves.toBe(businessStateBefore);
+    }
+
+    const businessStateAfter = await r12BusinessStateSignature();
+    for (const observation of observations) {
+      expect(observation.status).toBe(400);
+      expect(observation.body).toEqual({
+        error: {
+          code: 'VALIDATION_ERROR',
+          details: {},
+          message: 'Requête invalide.',
+          retryable: false,
+        },
+        requestId: expect.any(String),
+      });
+      expect(observation.requestId.length).toBeGreaterThanOrEqual(8);
+      expect(observation.requestId.length).toBeLessThanOrEqual(128);
+      expect(observation.setCookie).toBe(false);
+      expect(observation.auditCount).toBe('0');
+      expect(observation.securityCount).toBe('1');
+      expect(observation.event).not.toBeNull();
+      expect(JSON.parse(observation.event!)).toMatchObject({
+        action: 'ADMIN_AUTH_REQUEST_REJECTED',
+        adminUserId: null,
+        failureCode: 'VALIDATION_ERROR',
+        outcome: 'FAILED',
+        requestId: observation.requestId,
+      });
+      expect(JSON.stringify(observation)).not.toContain(canary);
+      expect(JSON.stringify(observation.body)).not.toMatch(
+        /SyntaxError|JSON|position|unexpected/iu,
+      );
+    }
+    expect(businessStateAfter).toBe(businessStateBefore);
+  });
+
+  it('uses the configured router semantics for malformed JSON without widening the allowlist', async () => {
+    const server = application.getHttpServer();
+    const businessStateBefore = await r12BusinessStateSignature();
+    const acceptedPaths = [
+      '/API/V1/ADMIN/AUTH/LOGIN?variant=case-and-query',
+      '/api/v1/admin/auth/totp/verify/',
+      '/api/v1/admin/auth/totp/enrollments/not-a-uuid/confirm',
+    ] as const;
+
+    for (const path of acceptedPaths) {
+      const response = await request(server)
+        .post(path)
+        .set('Content-Type', 'application/json; charset=utf-8')
+        .send('{');
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({
+        error: {
+          code: 'VALIDATION_ERROR',
+          details: {},
+          message: 'Requête invalide.',
+          retryable: false,
+        },
+        requestId: expect.any(String),
+      });
+      const sinks = await owner.query<{ auditCount: string; securityCount: string }>(
+        `SELECT
+           (SELECT count(*)::text FROM "AuditLog" WHERE "requestId" = $1) AS "auditCount",
+           (SELECT count(*)::text FROM "AdminSecurityEvent" WHERE "requestId" = $1)
+             AS "securityCount"`,
+        [String(response.body.requestId)],
+      );
+      expect(sinks.rows[0]).toEqual({ auditCount: '0', securityCount: '1' });
+    }
+    await expect(r12BusinessStateSignature()).resolves.toBe(businessStateBefore);
+  });
+
+  it('does not normalize malformed JSON outside the seven exact POST routes', async () => {
+    const server = application.getHttpServer();
+    const malformedBody = '{';
+    const cases = [
+      {
+        expectedCode: 'BAD_REQUEST',
+        label: 'wrong-method',
+        send: () =>
+          request(server)
+            .put('/api/v1/admin/auth/login')
+            .set('Content-Type', 'application/json')
+            .send(malformedBody),
+      },
+      {
+        expectedCode: 'BAD_REQUEST',
+        label: 'foreign-path',
+        send: () =>
+          request(server)
+            .post('/api/v1/foreign')
+            .set('Content-Type', 'application/json')
+            .send(malformedBody),
+      },
+      {
+        expectedCode: 'BAD_REQUEST',
+        label: 'suffix',
+        send: () =>
+          request(server)
+            .post('/api/v1/admin/auth/login/extra')
+            .set('Content-Type', 'application/json')
+            .send(malformedBody),
+      },
+      {
+        expectedCode: 'BAD_REQUEST',
+        label: 'qr',
+        send: () =>
+          request(server)
+            .post(`/api/v1/admin/auth/totp/enrollments/${deterministicUuid(9_003)}/qr`)
+            .set('Content-Type', 'application/json')
+            .send(malformedBody),
+      },
+      {
+        expectedCode: 'BAD_REQUEST',
+        label: 'bodyless-c1',
+        send: () =>
+          request(server)
+            .post('/api/v1/admin/auth/totp/enrollments')
+            .set('Content-Type', 'application/json')
+            .send(malformedBody),
+      },
+      {
+        expectedCode: 'BAD_REQUEST',
+        label: 'refresh-without-json-body',
+        send: () =>
+          request(server)
+            .post('/api/v1/admin/auth/sessions/refresh')
+            .set('Content-Type', 'application/json')
+            .send(malformedBody),
+      },
+      {
+        expectedCode: 'BAD_REQUEST',
+        label: 'revoke-current-without-json-body',
+        send: () =>
+          request(server)
+            .delete('/api/v1/admin/auth/sessions/current')
+            .set('Content-Type', 'application/json')
+            .send(malformedBody),
+      },
+      {
+        expectedCode: 'BAD_REQUEST',
+        label: 'list-without-json-body',
+        send: () =>
+          request(server)
+            .get('/api/v1/admin/auth/sessions')
+            .set('Content-Type', 'application/json')
+            .send(malformedBody),
+      },
+      {
+        expectedCode: 'BAD_REQUEST',
+        label: 'c2',
+        send: () =>
+          request(server)
+            .post('/api/v1/admin/auth/password/reset-requests')
+            .set('Content-Type', 'application/json')
+            .send(malformedBody),
+      },
+      {
+        expectedCode: 'BAD_REQUEST',
+        label: 'client-route',
+        send: () =>
+          request(server)
+            .post('/api/v1/auth/login')
+            .set('Content-Type', 'application/json')
+            .send(malformedBody),
+      },
+      {
+        expectedCode: 'BAD_REQUEST',
+        label: 'invalid-uri-parameter',
+        send: () =>
+          request(server)
+            .post('/api/v1/admin/auth/sessions/%FF/revocations')
+            .set('Content-Type', 'application/json')
+            .send(malformedBody),
+      },
+      {
+        expectedCode: 'NOT_FOUND',
+        label: 'unselected-json-like-mime',
+        send: () =>
+          request(server)
+            .post('/api/v1/foreign')
+            .set('Content-Type', 'application/json-malformed')
+            .send(malformedBody),
+      },
+    ] as const;
+
+    for (const scenario of cases) {
+      const response = await scenario.send();
+      expect(response.status, scenario.label).toBe(
+        scenario.expectedCode === 'NOT_FOUND' ? 404 : 400,
+      );
+      expect(response.body.error.code, scenario.label).toBe(scenario.expectedCode);
+      expect(response.body.error.details, scenario.label).toBeUndefined();
+      const sinks = await owner.query<{ auditCount: string; securityCount: string }>(
+        `SELECT
+           (SELECT count(*)::text FROM "AuditLog" WHERE "requestId" = $1) AS "auditCount",
+           (SELECT count(*)::text FROM "AdminSecurityEvent" WHERE "requestId" = $1)
+             AS "securityCount"`,
+        [String(response.body.requestId)],
+      );
+      expect(sinks.rows[0], scenario.label).toEqual({ auditCount: '0', securityCount: '0' });
+    }
+  });
+
+  it('returns one neutral 503 without retry when malformed-JSON audit persistence fails', async () => {
+    const server = application.getHttpServer();
+    const repository = application.get(AdminAuthRepository);
+    const canary = 'R12_RECORDER_FAILURE_CANARY_b9802d';
+    const businessStateBefore = await r12BusinessStateSignature();
+    const recorder = vi
+      .spyOn(repository, 'recordFailure')
+      .mockRejectedValueOnce(new Error('controlled R12 recorder failure'));
+    try {
+      const response = await request(server)
+        .post('/api/v1/admin/auth/login')
+        .set('Content-Type', 'application/json')
+        .send(`{"r12Canary":"${canary}`);
+      expect(response.status).toBe(503);
+      expect(response.body).toEqual({
+        error: {
+          code: 'SERVICE_UNAVAILABLE',
+          details: {},
+          message: 'Service temporairement indisponible.',
+          retryable: false,
+        },
+        requestId: expect.any(String),
+      });
+      expect(response.headers['set-cookie']).toBeUndefined();
+      expect(recorder).toHaveBeenCalledTimes(1);
+      expect(recorder.mock.calls[0]?.[0]).toMatchObject({ code: 'VALIDATION_ERROR' });
+      expect(recorder.mock.calls[0]?.[1]).toBe(response.body.requestId);
+      expect(JSON.stringify(response.body)).not.toContain(canary);
+      expect(JSON.stringify(recorder.mock.calls)).not.toContain(canary);
+      const sinks = await owner.query<{ auditCount: string; securityCount: string }>(
+        `SELECT
+           (SELECT count(*)::text FROM "AuditLog" WHERE "requestId" = $1) AS "auditCount",
+           (SELECT count(*)::text FROM "AdminSecurityEvent" WHERE "requestId" = $1)
+             AS "securityCount"`,
+        [String(response.body.requestId)],
+      );
+      expect(sinks.rows[0]).toEqual({ auditCount: '0', securityCount: '0' });
+      await expect(r12BusinessStateSignature()).resolves.toBe(businessStateBefore);
+    } finally {
+      recorder.mockRestore();
+    }
   });
 
   it('contracts structural validation for confirmAdminTotpEnrollment without business mutation', async () => {

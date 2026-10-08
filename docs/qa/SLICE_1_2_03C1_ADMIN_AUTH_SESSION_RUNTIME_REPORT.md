@@ -1,11 +1,11 @@
 # Rapport de validation locale S1.2-03C1 — Admin Auth Session Runtime
 
-Statut : **R10 PUBLIÉ AU HEAD `153b6ca1…` DE LA DRAFT PR #50 AVEC QUATRE
-WORKFLOWS VERTS — REVUE TERMINALE BLOCK F1/F2 — INSTANTANÉ PRÉPUBLICATION R11
-VALIDÉ — FOURNISSEUR DE CLÉS DE PRODUCTION NON
+Statut : **R11 PUBLIÉ AU HEAD `3e02785d…` DE LA DRAFT PR #50 AVEC QUATRE
+WORKFLOWS VERTS — REVUE TERMINALE BLOCK MALFORMED JSON — INSTANTANÉ
+PRÉPUBLICATION R12 VALIDÉ — FOURNISSEUR DE CLÉS DE PRODUCTION NON
 QUALIFIÉ — C2/C3 NOT STARTED**
 
-Date : 2026-10-07
+Date : 2026-10-08
 
 ## Périmètre et préflight historiques C1 initial
 
@@ -1184,3 +1184,142 @@ différée n'est pas installée, le JTI transactionnel reste séparé, la pagina
 reste **NON CONCLUSIVE**, et C2/C3 restent `Not started`. La publication R11
 relève du mandat actif; une nouvelle revue terminale C1 reste requise avant
 toute décision de fusion.
+
+## Publication R11, finding terminal et remédiation locale S1.2-03C1-R12 — 2026-10-07
+
+### Baseline publiée et préflight
+
+R11 est publié au commit
+`3e02785d06c0d5f397eb9f9a39a09b8058b10467`, parent R10
+`153b6ca1ef861a9fc09f3c290cb4d8cb54e9802d`, arbre
+`618d0b0af203d3c33857dd3c478a295b13ce16a0`. Le manifeste R11 reste à douze
+lignes, 1 258 octets et SHA-256
+`c7bc7b13b38b38c835b80c5ad5dda117b48b8977f804f63170a8af248e7cfba8`;
+le lockfile reste
+`a1b9744d0b132e6a2f20809c606b7b7525a17230c147dc6155ec05b5ba4aa2f3`.
+
+La PR #50 reste `OPEN`, Draft, `CLEAN/MERGEABLE` et non fusionnée, avec neuf
+commits, 84 fichiers et `+28269/-9288`. Son corps de 40 395 octets porte le
+SHA-256
+`2915c3bb7f926e03be725716b07875846fac808896b1013b4730a2319149471b`.
+Les runs Infrastructure `37693349868`, Launcher Windows `37693349718`, Security
+`37693349633` et Quality Linux `37693349599` sont
+`pull_request/completed/success`, tentative 1, sur le head source R11. Leur
+merge ref testée est la ref synthétique distincte
+`8d7c7b84010bb42a5a7caa54d7b475eda3307742`.
+
+### Reproduction avant correction
+
+Le corps brut tronqué contient le canari R12 et est envoyé avec
+`Content-Type: application/json` ou un paramètre charset valide sur les sept
+opérations JSON. La sortie effective antérieure au correctif est identique sur
+les sept routes : statut 400, code `BAD_REQUEST`, message public, `path`,
+`requestId`, `timestamp`, aucun `Set-Cookie`, zéro `AuditLog`, zéro
+`AdminSecurityEvent` et signature des neuf tables métier inchangée. La suite
+réelle termine 42 réussites et un échec sur l'enveloppe attendue
+`VALIDATION_ERROR`. Cette sortie constitue la reproduction officielle
+**NON-PASS**, pas une inférence de la revue précédente.
+
+### Correction causale
+
+`createApplication` conserve les parseurs Nest activés. Après le logger HTTP,
+il appelle `useBodyParser('json')` sans option puis monte le normaliseur sur les
+sept patterns Express. L'initialisation Nest déduplique le parseur JSON par son
+nom et ajoute toujours son parseur URL-encoded par défaut. Une introspection
+après init prouve un seul `jsonParser`, un seul `urlencodedParser`, sept
+normaliseurs placés entre eux et des routes enregistrées ensuite.
+
+Le normaliseur exige cumulativement : erreur `SyntaxError`, type exact
+`entity.parse.failed`, statut 400, méthode POST et reliquat Express exact `/`.
+Il ne lit pas le message ou le corps et ne copie ni cause, détail, identité ou
+contexte. Toute autre erreur est transmise par identité. Le nouvel
+`AdminC1HttpError(400, VALIDATION_ERROR)` rejoint `auditThenRespond` et le seul
+recorder existant.
+
+### Régressions et isolation réelle
+
+Les sept cas corrigés exigent l'enveloppe C1 fermée, message canonique,
+`details={}`, `retryable=false`, un requestId de longueur bornée, zéro cookie,
+zéro mutation et exactement un `AdminSecurityEvent`
+`ADMIN_AUTH_REQUEST_REJECTED/FAILED/VALIDATION_ERROR` sans `adminUserId`.
+Le canari est absent de la réponse, de l'événement, des arguments du recorder
+et des logs structurés; le test HTTP logger historique prouve également que le
+corps et les en-têtes sensibles ne sont pas sérialisés.
+
+Les positifs de routage couvrent query, casse, slash terminal et segment
+dynamique non-UUID. Les négatifs couvrent mauvaise méthode, route étrangère,
+suffixe, QR, create/refresh/revoke-current/list sans corps JSON, vrai chemin C2
+`password/reset-requests`, route client, MIME ressemblant à JSON mais non
+sélectionné et paramètre URI invalide. Les unités transmettent aussi par
+identité `URIError`, erreur 400 applicative, erreur de taille, erreur
+d'encodage, `AdminC1HttpError` préexistant et erreurs sans marqueur causal.
+
+La panne contrôlée du recorder produit exactement un 503 C1 neutre, un seul
+appel, zéro sink durable et aucun retry, fallback ou second sink; le spy est
+restauré dans `finally`. Le writer et le traitement du COMMIT inconnu ne sont
+pas modifiés, et les scénarios historiques correspondants restent verts.
+
+### Résultats effectifs
+
+| Gate                               | Résultat R12                                                                                                                                       |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Classificateur/filtre ciblés       | 1 fichier, 7/7 **PASS**                                                                                                                            |
+| API                                | format, lint, typecheck, 17 fichiers, 96 réussites, 46 conditionnels ignorés, build **PASS**                                                       |
+| Isolation réelle finale, deux fois | PostgreSQL A/B, 39 modèles, 40 tables, quatre provisionnements, huit refus membership, un refus writer/ACL et 47/47 HTTP/PostgreSQL/Redis **PASS** |
+| OpenAPI                            | 60 chemins, 67 opérations, 137 schémas **PASS**                                                                                                    |
+| Contrat généré                     | courant et byte-identique, SHA-256 `d53665d89388e399d1a7dbf782739b836bb652d8cfd281e3679621c86377b697`                                              |
+| Boundary                           | 7/7 **PASS**                                                                                                                                       |
+| Qualité documentaire               | Prettier 10/10, allowlist/modes/index, UTF-8 sans BOM ni U+FFFD et `git diff --check` **PASS**                                                     |
+| Scanner officiel                   | 385 fichiers, historique actif, 52 immuables, six scripts qualifiés **PASS**                                                                       |
+| Audits frais                       | complet et production au code 0, stdout `found 0 vulnerabilities`, stderr vide **PASS**                                                            |
+
+Les tentatives NON-PASS restent séparées : le premier démarrage Docker s'est
+interrompu sur le message transitoire du daemon à cause de la politique
+PowerShell; le premier Prettier a refusé le nouveau test; le premier typecheck
+a exigé le type `NestExpressApplication`; la reproduction pré-correctif a
+échoué 42/43 comme attendu; le premier montage `.post()` a laissé le parseur
+hors interception et terminé 43/47. Chaque cause a été corrigée directement et
+revalidée. Aucune de ces sorties n'est renommée PASS.
+
+La relance finale de la suite API sous Docker actif a ensuite produit un
+NON-PASS distinct : 16/17 fichiers, 95 réussites, 46 conditionnels ignorés et
+un timeout de 5 s dans le test préexistant
+`AdminRequestPolicy > refuse qu’une variable ou origine non HTTPS active un
+relâchement de test`. Une première reprise isolée sous le même état a de nouveau
+expiré; une seconde reprise isolée, lancée pour écarter le mode d'exécution hors
+sandbox, a également expiré. Ces résultats ne prouvent ni une régression R12 ni
+une causalité Docker. Après restitution de Docker à son état initial arrêté, la
+reprise isolée passe 6/6, puis la suite complète passe 17/17 fichiers, 96
+réussites et 46 conditionnels ignorés. Les trois timeouts restent classés
+NON-PASS et ne sont pas absorbés par les reprises vertes.
+
+L'incident npm du `2026-10-08T08:53:14.3124154Z` reste lui aussi distinct :
+`npm.cmd audit --audit-level=low` termine au code 1, stdout vide, avec
+`MODULE_NOT_FOUND` sur `npm-prefix.js` puis `npm-cli.js`; aucune analyse de
+vulnérabilités ne commence. Ce résultat reste **NON CONCLUSIVE** et l'audit
+production reste alors **NON EXÉCUTÉ**. Le bundle absolu existant est ensuite
+qualifié à Node `v22.18.0` et npm `10.9.3`, avec signature OpenJS valide et
+fichiers npm requis présents. La sonde `--version` reproduit l'échec avec le
+nom relatif via l'API de processus et réussit avec le chemin absolu; le
+mécanisme exact de relocalisation reste non conclusif. Les reprises autorisées
+appellent directement le Node et `npm-cli.js` absolus : audit complet du
+`2026-10-08T09:11:14.8010878Z`, puis production du
+`2026-10-08T09:11:41.3937212Z`, tous deux au code 0 avec stdout explicite
+`found 0 vulnerabilities` et stderr vide. L'index, les quatre hashes techniques
+et le lockfile restent inchangés après chacun.
+
+### Frontière et limites
+
+R12 porte au maximum sur quatre fichiers techniques et six documents existants
+de l'allowlist. Aucun ajout, suppression, renommage ou changement de mode n'est
+autorisé. OpenAPI, contrat généré, contrôleurs, services, repository, writer,
+Prisma, migrations, provisioning, dépendances, lockfile, Vitest et workflows
+restent inchangés.
+
+À l'instantané prépublication du 2026-10-08, R12 était local, non indexé, non
+commité et non publié. Toute publication ultérieure fait foi dans Git et
+GitHub. C1 demeure en revue dans la Draft PR #50 et n'est pas intégré à `main`.
+Aucun Ready, approval, merge, tag, release ou déploiement n'est autorisé par
+cet instantané. Le fournisseur de clés de production demeure **NON QUALIFIÉ**,
+la politique OSS différée n'est pas installée, le JTI reste séparé, la
+pagination **NON CONCLUSIVE**, V8/iOS non exécutés et C2/C3 `Not started`.

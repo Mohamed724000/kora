@@ -37,6 +37,39 @@ type ExceptionReporter = (
   context: Readonly<{ path: string; requestId: string }>,
 ) => void;
 type AdminFailureAuditRecorder = (exception: AdminC1HttpError, requestId: string) => Promise<void>;
+type ErrorMiddlewareNext = (exception: unknown) => void;
+
+interface BodyParserError extends SyntaxError {
+  status?: unknown;
+  type?: unknown;
+}
+
+interface MountedRequest {
+  method?: unknown;
+  url?: unknown;
+}
+
+export function isMalformedJsonParserError(exception: unknown): exception is BodyParserError {
+  if (!(exception instanceof SyntaxError)) return false;
+  const candidate = exception as BodyParserError;
+  return candidate.status === HttpStatus.BAD_REQUEST && candidate.type === 'entity.parse.failed';
+}
+
+export function normalizeAdminC1MalformedJsonError(
+  exception: unknown,
+  request: MountedRequest,
+  _response: unknown,
+  next: ErrorMiddlewareNext,
+): void {
+  next(
+    request.method === 'POST' &&
+      typeof request.url === 'string' &&
+      safePath(request.url) === '/' &&
+      isMalformedJsonParserError(exception)
+      ? new AdminC1HttpError(HttpStatus.BAD_REQUEST, 'VALIDATION_ERROR')
+      : exception,
+  );
+}
 
 const PUBLIC_ERRORS: Readonly<Record<number, ErrorDefinition>> = {
   [HttpStatus.BAD_REQUEST]: {

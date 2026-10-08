@@ -1,10 +1,148 @@
-import type { ArgumentsHost } from '@nestjs/common';
+import { BadRequestException, type ArgumentsHost } from '@nestjs/common';
 import type { ServerResponse } from 'node:http';
+import type { Logger } from 'pino';
 import { AdminC1HttpError } from '../../admin-auth/admin-session.service';
 import { createStructuredLogger } from '../../observability/structured-logger';
-import { GlobalExceptionFilter } from './global-exception.filter';
+import {
+  GlobalExceptionFilter,
+  isMalformedJsonParserError,
+  normalizeAdminC1MalformedJsonError,
+} from './global-exception.filter';
 
 describe('GlobalExceptionFilter', () => {
+  it('classifie uniquement le SyntaxError entity.parse.failed 400 de body-parser', () => {
+    const canary = 'R12_UNIT_CANARY_2f8a91';
+    const parserError = Object.assign(new SyntaxError(`internal ${canary}`), {
+      body: `{"secret":"${canary}`,
+      status: 400,
+      statusCode: 400,
+      type: 'entity.parse.failed',
+    });
+    expect(isMalformedJsonParserError(parserError)).toBe(true);
+
+    const next = vi.fn();
+    normalizeAdminC1MalformedJsonError(parserError, { method: 'POST', url: '/' }, {}, next);
+    expect(next).toHaveBeenCalledTimes(1);
+    const normalized = next.mock.calls[0]?.[0];
+    expect(normalized).toBeInstanceOf(AdminC1HttpError);
+    expect(normalized).not.toBe(parserError);
+    expect(normalized).toMatchObject({
+      auditAction: undefined,
+      auditContext: undefined,
+      auditRecorded: false,
+      code: 'VALIDATION_ERROR',
+      details: {},
+      message: 'Requête invalide.',
+      retryable: false,
+      status: 400,
+    });
+    expect(JSON.stringify(normalized)).not.toContain(canary);
+  });
+
+  it('préserve par identité les erreurs hors classificateur JSON borné', () => {
+    const cases: readonly unknown[] = [
+      new URIError('invalid URI'),
+      new BadRequestException('application failure'),
+      Object.assign(new SyntaxError('too large'), {
+        status: 413,
+        type: 'entity.too.large',
+      }),
+      Object.assign(new SyntaxError('wrong status'), {
+        status: 413,
+        type: 'entity.parse.failed',
+      }),
+      Object.assign(new SyntaxError('unsupported encoding'), {
+        status: 415,
+        type: 'encoding.unsupported',
+      }),
+      new AdminC1HttpError(400, 'VALIDATION_ERROR'),
+      new Error('unrelated failure'),
+    ];
+
+    for (const exception of cases) {
+      expect(isMalformedJsonParserError(exception)).toBe(false);
+      const next = vi.fn();
+      normalizeAdminC1MalformedJsonError(exception, { method: 'POST', url: '/' }, {}, next);
+      expect(next).toHaveBeenCalledExactlyOnceWith(exception);
+    }
+
+    for (const request of [
+      { method: 'GET', url: '/' },
+      { method: 'POST', url: '/extra' },
+      { method: 'POST', url: '/extra?query=ignored' },
+    ]) {
+      const parserError = Object.assign(new SyntaxError('parse failure'), {
+        status: 400,
+        type: 'entity.parse.failed',
+      });
+      const next = vi.fn();
+      normalizeAdminC1MalformedJsonError(parserError, request, {}, next);
+      expect(next).toHaveBeenCalledExactlyOnceWith(parserError);
+    }
+  });
+
+  it('compose normalisation, sink et filtre sans exposer le corps ou message du parseur', async () => {
+    const canary = 'R12_LOG_CANARY_854c0e';
+    const parserError = Object.assign(new SyntaxError(`parser detail ${canary}`), {
+      body: `{"canary":"${canary}`,
+      status: 400,
+      statusCode: 400,
+      type: 'entity.parse.failed',
+    });
+    let body = '';
+    const response = {
+      end(payload: string): void {
+        body = payload;
+      },
+      setHeader: vi.fn(),
+      statusCode: 0,
+    } as unknown as ServerResponse;
+    const host = {
+      switchToHttp: () => ({
+        getRequest: () => ({
+          id: 'request-r12-composition',
+          method: 'POST',
+          url: '/api/v1/admin/auth/login?query=safe',
+        }),
+        getResponse: () => response,
+      }),
+    } as ArgumentsHost;
+    const loggerError = vi.fn();
+    const logger = { error: loggerError } as unknown as Logger;
+    const recorder = vi.fn().mockResolvedValue(undefined);
+    const reporter = vi.fn();
+    const filter = new GlobalExceptionFilter(logger, reporter, recorder);
+    let completion: void | Promise<void> = undefined;
+
+    normalizeAdminC1MalformedJsonError(
+      parserError,
+      { method: 'POST', url: '/' },
+      {},
+      (normalized) => {
+        completion = filter.catch(normalized, host);
+      },
+    );
+    await completion;
+
+    expect(response.statusCode).toBe(400);
+    expect(JSON.parse(body)).toEqual({
+      error: {
+        code: 'VALIDATION_ERROR',
+        details: {},
+        message: 'Requête invalide.',
+        retryable: false,
+      },
+      requestId: 'request-r12-composition',
+    });
+    expect(recorder).toHaveBeenCalledTimes(1);
+    expect(recorder.mock.calls[0]?.[1]).toBe('request-r12-composition');
+    expect(loggerError).toHaveBeenCalledTimes(1);
+    expect(reporter).not.toHaveBeenCalled();
+    expect(body).not.toContain(canary);
+    expect(JSON.stringify(recorder.mock.calls)).not.toContain(canary);
+    expect(JSON.stringify(loggerError.mock.calls)).not.toContain(canary);
+  });
+
   it('retourne une erreur structurée sans stack ni message interne', () => {
     let body = '';
     const response = {
