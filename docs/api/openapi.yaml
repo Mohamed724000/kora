@@ -2,10 +2,10 @@
   "openapi": "3.1.0",
   "info": {
     "title": "KORA+ Audio Pilot API",
-    "version": "1.2.1",
-    "description": "S1.2-03B contract-only Admin Security gate layered on the immutable S1.2-01 surface. No runtime implementation, migration, provider call, seed media or private media location is supplied by this contract."
+    "version": "1.2.2",
+    "description": "S1.2-03C2-P0 contract prerequisite layered on the integrated C1 surface. It locks fifteen C2 operations and their security semantics without runtime implementation, migration, provisioning, provider call, interface or deployment."
   },
-  "x-kora-scope": "S1.2_03B_ADMIN_SECURITY_CONTRACT_GATE",
+  "x-kora-scope": "S1.2_03C2_P0_ADMIN_SECURITY_CONTRACT_PREREQUISITE",
   "x-kora-authentication-policy": {
     "primaryFlow": "PHONE_PASSWORD_THEN_OTP",
     "registrationOperation": "registerCustomer",
@@ -77,7 +77,7 @@
   },
   "x-kora-admin-security-policy": {
     "authorization": "DENY_BY_DEFAULT_SERVER_SIDE_ROLE_AND_AUTHORIZATION_VERSION",
-    "bootstrap": "ADMIN_BOOTSTRAP_CLI_ONE_SHOT_AUDITED_OUTSIDE_OPENAPI_DEFERRED_TO_C2_C1_TEST_FIXTURES_ONLY",
+    "bootstrap": "ADMIN_BOOTSTRAP_CLI_ONE_SHOT_AUDITED_OUTSIDE_OPENAPI_CONTRACTED_BY_C2_P0_RUNTIME_NOT_IMPLEMENTED",
     "csrfHeaderName": "X-Kora-CSRF",
     "loginBrowserPolicy": "EXACT_ORIGIN_AND_FETCH_METADATA_REJECT_CROSS_SITE",
     "loginFailurePolicy": "UNIFORM_401_AUTH_INVALID_CREDENTIALS_COMPARABLE_TIMING",
@@ -232,6 +232,565 @@
     "auditDurabilityImpossible": "ROLLBACK_UNCOMMITTED_RETURN_SAFE_503_NEUTRALIZED_OPERATIONAL_OBSERVATION_NO_DURABLE_AUDIT_CLAIM",
     "commitAcknowledgementLoss": "UNKNOWN_OUTCOME_NO_SUCCESS_OR_SECRET_NO_BLIND_AUTOMATIC_RETRY",
     "idempotencyAndSingleUseRulesPreserved": true
+  },
+  "x-kora-admin-c2-unavailability-policy": {
+    "operationIds": [
+      "requestAdminPasswordReset",
+      "resetAdminPassword",
+      "createAdminRecoveryCase",
+      "listAdminRecoveryCases",
+      "getAdminRecoveryCase",
+      "approveAdminRecoveryCase",
+      "listAdminAuditLogs",
+      "createAdminAuditLogExport",
+      "getAdminAuditLogExport",
+      "downloadAdminAuditLogExport",
+      "createAdminInvitation",
+      "acceptAdminInvitation",
+      "listAdminUsers",
+      "changeAdminUserRole",
+      "changeAdminUserStatus"
+    ],
+    "httpStatus": 503,
+    "errorCode": "SERVICE_UNAVAILABLE",
+    "publicMessage": "Service temporairement indisponible.",
+    "publicDetails": "EMPTY_OBJECT",
+    "retryable": false,
+    "dependencyDisclosure": "FORBIDDEN",
+    "requiredDependencyFailure": "FAIL_CLOSED",
+    "criticalMutationWithoutDurableAudit": "FORBIDDEN",
+    "auditDurabilityImpossible": "ROLLBACK_UNCOMMITTED_RETURN_SAFE_503_NEUTRALIZED_OPERATIONAL_OBSERVATION_NO_DURABLE_AUDIT_CLAIM",
+    "commitAcknowledgementLoss": "UNKNOWN_OUTCOME_NO_SUCCESS_OR_SECRET_NO_BLIND_AUTOMATIC_RETRY",
+    "idempotencyAndSingleUseRulesPreserved": true
+  },
+  "x-kora-admin-c2-contract-policy": {
+    "operationMatrix": {
+      "requestAdminPasswordReset": {
+        "roles": [],
+        "serverProof": "NO_AUDIT_CONTEXT",
+        "stepUpPurpose": null,
+        "stepUpApplicability": "NOT_APPLICABLE",
+        "clientReasonCodes": [],
+        "operatorReason": "NOT_APPLICABLE",
+        "auditContext": null,
+        "successSink": "ADMIN_SECURITY_EVENT",
+        "failureBeforeProof": "ADMIN_SECURITY_EVENT",
+        "failureAfterProof": "ADMIN_SECURITY_EVENT",
+        "action": "requestAdminPasswordReset",
+        "eventClass": "LOGIN",
+        "entityType": "ADMIN_PASSWORD_RESET_REQUEST",
+        "maskedSnapshots": [
+          "REDACTED_SUBJECT_DIGEST",
+          "DELIVERY_REQUEST_STATE"
+        ],
+        "atomicity": "RESET_REQUEST_ENCRYPTED_OUTBOX_AND_SECURITY_EVENT",
+        "asynchronousTransitions": ["NOTIFICATION_DELIVERY_SYSTEM_AUDIT"]
+      },
+      "resetAdminPassword": {
+        "roles": [],
+        "serverProof": "SERVER_VERIFIED_PASSWORD_RESET_CONTEXT_BOUND_TO_ACTIVE_ADMIN_USER_NOT_EXPIRED_NOT_CONSUMED_NOT_REVOKED_CLIENT_INPUT_NEVER_SUFFICIENT",
+        "proofPurpose": "PASSWORD_RESET",
+        "forbiddenProofPurpose": "MFA_RECOVERY",
+        "stepUpPurpose": null,
+        "stepUpApplicability": "NOT_APPLICABLE",
+        "clientReasonCodes": [],
+        "operatorReason": "NOT_APPLICABLE",
+        "auditContext": "ADMIN_RECOVERY",
+        "successSink": "AUDIT_LOG",
+        "failureBeforeProof": "ADMIN_SECURITY_EVENT",
+        "failureAfterProof": "AUDIT_LOG",
+        "action": "resetAdminPassword",
+        "eventClass": "LOGIN",
+        "entityType": "ADMIN_USER",
+        "maskedSnapshots": [
+          "PASSWORD_CREDENTIAL_VERSION",
+          "AUTHORIZATION_VERSION",
+          "SESSION_REVOCATION_STATE"
+        ],
+        "atomicity": "CONSUME_RESET_CONTEXT_CHANGE_PASSWORD_INCREMENT_AUTHORIZATION_VERSION_REVOKE_SESSIONS_AND_AUDIT",
+        "asynchronousTransitions": []
+      },
+      "createAdminRecoveryCase": {
+        "roles": ["SUPER_ADMIN", "SUPPORT"],
+        "serverProof": "ACTIVE_ADMIN_SESSION_ROLE_AND_AUTHORIZATION_VERSION_RELOADED",
+        "stepUpPurpose": null,
+        "stepUpApplicability": "NOT_APPLICABLE",
+        "clientReasonCodes": ["ACCOUNT_RECOVERY", "SECURITY_RESPONSE"],
+        "operatorReason": "REQUIRED",
+        "auditContext": "ADMIN_SESSION",
+        "successSink": "AUDIT_LOG",
+        "failureBeforeProof": "ADMIN_SECURITY_EVENT",
+        "failureAfterProof": "AUDIT_LOG",
+        "action": "createAdminRecoveryCase",
+        "eventClass": "BUSINESS",
+        "entityType": "ADMIN_RECOVERY_CASE",
+        "maskedSnapshots": ["CASE_STATE", "SUBJECT_ADMIN_USER_ID"],
+        "atomicity": "CANCEL_OLDER_PENDING_CREATE_CASE_RECORD_IDEMPOTENCY_AND_AUDIT",
+        "asynchronousTransitions": ["SERVER_POLICY_CANCELLATION_SYSTEM_AUDIT"]
+      },
+      "listAdminRecoveryCases": {
+        "roles": ["SUPER_ADMIN", "SUPPORT"],
+        "serverProof": "ACTIVE_ADMIN_SESSION_ROLE_AND_AUTHORIZATION_VERSION_RELOADED",
+        "stepUpPurpose": null,
+        "stepUpApplicability": "NOT_APPLICABLE",
+        "clientReasonCodes": [],
+        "operatorReason": "NOT_APPLICABLE",
+        "auditContext": "ADMIN_SESSION",
+        "successSink": "NONE",
+        "failureBeforeProof": "ADMIN_SECURITY_EVENT",
+        "failureAfterProof": "NONE",
+        "action": "listAdminRecoveryCases",
+        "eventClass": "BUSINESS",
+        "entityType": "ADMIN_RECOVERY_CASE_SNAPSHOT",
+        "maskedSnapshots": ["SAFE_PROJECTION_DIGEST"],
+        "atomicity": "MATERIALIZED_SAFE_SNAPSHOT_READ",
+        "asynchronousTransitions": []
+      },
+      "getAdminRecoveryCase": {
+        "roles": ["SUPER_ADMIN", "SUPPORT"],
+        "serverProof": "ACTIVE_ADMIN_SESSION_ROLE_AND_AUTHORIZATION_VERSION_RELOADED",
+        "stepUpPurpose": null,
+        "stepUpApplicability": "NOT_APPLICABLE",
+        "clientReasonCodes": [],
+        "operatorReason": "NOT_APPLICABLE",
+        "auditContext": "ADMIN_SESSION",
+        "successSink": "NONE",
+        "failureBeforeProof": "ADMIN_SECURITY_EVENT",
+        "failureAfterProof": "NONE",
+        "action": "getAdminRecoveryCase",
+        "eventClass": "BUSINESS",
+        "entityType": "ADMIN_RECOVERY_CASE",
+        "maskedSnapshots": ["SAFE_CASE_PROJECTION"],
+        "atomicity": "READ_ONLY",
+        "asynchronousTransitions": []
+      },
+      "approveAdminRecoveryCase": {
+        "roles": ["SUPER_ADMIN"],
+        "serverProof": "ACTIVE_ADMIN_SESSION_ROLE_AUTHORIZATION_VERSION_AND_FRESH_TOTP_STEP_UP_RELOADED",
+        "stepUpPurpose": "RECOVERY_APPROVAL",
+        "stepUpApplicability": "REQUIRED",
+        "clientReasonCodes": ["ACCOUNT_RECOVERY", "SECURITY_RESPONSE"],
+        "operatorReason": "REQUIRED",
+        "auditContext": "ADMIN_SESSION",
+        "successSink": "AUDIT_LOG",
+        "failureBeforeProof": "ADMIN_SECURITY_EVENT",
+        "failureAfterProof": "AUDIT_LOG",
+        "action": "approveAdminRecoveryCase",
+        "eventClass": "BUSINESS",
+        "entityType": "ADMIN_RECOVERY_CASE",
+        "maskedSnapshots": [
+          "CASE_STATE",
+          "SUBJECT_AUTHORIZATION_AND_MFA_STATE"
+        ],
+        "atomicity": "CONSUME_CASE_RESET_SUBJECT_TO_PENDING_MFA_REVOKE_SECURITY_MATERIAL_RECORD_IDEMPOTENCY_AND_AUDIT",
+        "asynchronousTransitions": []
+      },
+      "listAdminAuditLogs": {
+        "roles": ["SUPER_ADMIN"],
+        "serverProof": "ACTIVE_ADMIN_SESSION_ROLE_AND_AUTHORIZATION_VERSION_RELOADED",
+        "stepUpPurpose": null,
+        "stepUpApplicability": "NOT_APPLICABLE",
+        "clientReasonCodes": [],
+        "operatorReason": "NOT_APPLICABLE",
+        "auditContext": "ADMIN_SESSION",
+        "successSink": "AUDIT_LOG",
+        "failureBeforeProof": "ADMIN_SECURITY_EVENT",
+        "failureAfterProof": "AUDIT_LOG",
+        "action": "listAdminAuditLogs",
+        "eventClass": "EXPORT",
+        "entityType": "AUDIT_LOG_SNAPSHOT",
+        "maskedSnapshots": ["FILTER_DIGEST", "SNAPSHOT_BOUNDS"],
+        "atomicity": "MATERIALIZE_SNAPSHOT_BEFORE_AUDIT_READ_EVENT_TO_EXCLUDE_SELF",
+        "asynchronousTransitions": []
+      },
+      "createAdminAuditLogExport": {
+        "roles": ["SUPER_ADMIN"],
+        "serverProof": "ACTIVE_ADMIN_SESSION_ROLE_AUTHORIZATION_VERSION_AND_FRESH_TOTP_STEP_UP_RELOADED",
+        "stepUpPurpose": "AUDIT_EXPORT",
+        "stepUpApplicability": "REQUIRED",
+        "clientReasonCodes": ["AUDIT_EXPORT"],
+        "operatorReason": "REQUIRED",
+        "auditContext": "ADMIN_SESSION",
+        "successSink": "AUDIT_LOG",
+        "failureBeforeProof": "ADMIN_SECURITY_EVENT",
+        "failureAfterProof": "AUDIT_LOG",
+        "action": "createAdminAuditLogExport",
+        "eventClass": "EXPORT",
+        "entityType": "ADMIN_AUDIT_EXPORT",
+        "maskedSnapshots": ["FILTER_DIGEST", "EXPORT_STATE"],
+        "atomicity": "CREATE_IMMUTABLE_SNAPSHOT_EXPORT_JOB_RECORD_IDEMPOTENCY_AND_AUDIT",
+        "asynchronousTransitions": [
+          "EXPORT_BUILD_SYSTEM_AUDIT",
+          "EXPORT_EXPIRY_SYSTEM_AUDIT"
+        ]
+      },
+      "getAdminAuditLogExport": {
+        "roles": ["SUPER_ADMIN"],
+        "serverProof": "ACTIVE_ADMIN_SESSION_ROLE_AND_AUTHORIZATION_VERSION_RELOADED",
+        "stepUpPurpose": null,
+        "stepUpApplicability": "NOT_APPLICABLE",
+        "clientReasonCodes": [],
+        "operatorReason": "NOT_APPLICABLE",
+        "auditContext": "ADMIN_SESSION",
+        "successSink": "AUDIT_LOG",
+        "failureBeforeProof": "ADMIN_SECURITY_EVENT",
+        "failureAfterProof": "AUDIT_LOG",
+        "action": "getAdminAuditLogExport",
+        "eventClass": "EXPORT",
+        "entityType": "ADMIN_AUDIT_EXPORT",
+        "maskedSnapshots": ["EXPORT_STATE", "INTEGRITY_METADATA"],
+        "atomicity": "AUDIT_DURABLE_BEFORE_RESPONSE",
+        "asynchronousTransitions": []
+      },
+      "downloadAdminAuditLogExport": {
+        "roles": ["SUPER_ADMIN"],
+        "serverProof": "ACTIVE_ADMIN_SESSION_ROLE_AUTHORIZATION_VERSION_FRESH_TOTP_STEP_UP_AND_EXPORT_INTEGRITY_RELOADED",
+        "stepUpPurpose": "AUDIT_EXPORT",
+        "stepUpApplicability": "REQUIRED",
+        "clientReasonCodes": [],
+        "operatorReason": "NOT_APPLICABLE",
+        "auditContext": "ADMIN_SESSION",
+        "successSink": "AUDIT_LOG",
+        "failureBeforeProof": "ADMIN_SECURITY_EVENT",
+        "failureAfterProof": "AUDIT_LOG",
+        "action": "downloadAdminAuditLogExport",
+        "eventClass": "EXPORT",
+        "entityType": "ADMIN_AUDIT_EXPORT",
+        "maskedSnapshots": ["EXPORT_STATE", "INTEGRITY_METADATA"],
+        "atomicity": "AUTHORIZATION_STEP_UP_INTEGRITY_AND_AUDIT_DURABLE_BEFORE_FIRST_BYTE",
+        "asynchronousTransitions": []
+      },
+      "createAdminInvitation": {
+        "roles": ["SUPER_ADMIN"],
+        "serverProof": "ACTIVE_ADMIN_SESSION_ROLE_AUTHORIZATION_VERSION_AND_FRESH_TOTP_STEP_UP_RELOADED",
+        "stepUpPurpose": "INVITATION",
+        "stepUpApplicability": "REQUIRED",
+        "clientReasonCodes": ["INVITATION_ADMINISTRATION"],
+        "operatorReason": "REQUIRED",
+        "auditContext": "ADMIN_SESSION",
+        "successSink": "AUDIT_LOG",
+        "failureBeforeProof": "ADMIN_SECURITY_EVENT",
+        "failureAfterProof": "AUDIT_LOG",
+        "action": "createAdminInvitation",
+        "eventClass": "BUSINESS",
+        "entityType": "ADMIN_INVITATION",
+        "maskedSnapshots": [
+          "CANONICAL_EMAIL_DIGEST",
+          "ROLE",
+          "INVITATION_STATE"
+        ],
+        "atomicity": "REVOKE_PRIOR_VALID_INVITATION_CREATE_INVITATION_ENCRYPTED_OUTBOX_RECORD_IDEMPOTENCY_AND_AUDIT",
+        "asynchronousTransitions": ["NOTIFICATION_DELIVERY_SYSTEM_AUDIT"]
+      },
+      "acceptAdminInvitation": {
+        "roles": [],
+        "serverProof": "NO_AUDIT_CONTEXT_PUBLIC_SINGLE_USE_INVITATION_CHECK",
+        "stepUpPurpose": null,
+        "stepUpApplicability": "NOT_APPLICABLE",
+        "clientReasonCodes": [],
+        "operatorReason": "NOT_APPLICABLE",
+        "auditContext": null,
+        "successSink": "ADMIN_SECURITY_EVENT",
+        "failureBeforeProof": "ADMIN_SECURITY_EVENT",
+        "failureAfterProof": "ADMIN_SECURITY_EVENT",
+        "action": "acceptAdminInvitation",
+        "eventClass": "BUSINESS",
+        "entityType": "ADMIN_INVITATION",
+        "maskedSnapshots": ["INVITATION_STATE", "PENDING_MFA_ACCOUNT_STATE"],
+        "atomicity": "CONSUME_INVITATION_CREATE_PENDING_MFA_ACCOUNT_AND_SECURITY_EVENT",
+        "asynchronousTransitions": []
+      },
+      "listAdminUsers": {
+        "roles": ["SUPER_ADMIN"],
+        "serverProof": "ACTIVE_ADMIN_SESSION_ROLE_AND_AUTHORIZATION_VERSION_RELOADED",
+        "stepUpPurpose": null,
+        "stepUpApplicability": "NOT_APPLICABLE",
+        "clientReasonCodes": [],
+        "operatorReason": "NOT_APPLICABLE",
+        "auditContext": "ADMIN_SESSION",
+        "successSink": "NONE",
+        "failureBeforeProof": "ADMIN_SECURITY_EVENT",
+        "failureAfterProof": "NONE",
+        "action": "listAdminUsers",
+        "eventClass": "BUSINESS",
+        "entityType": "ADMIN_USER_SNAPSHOT",
+        "maskedSnapshots": ["SAFE_USER_PROJECTION_DIGEST"],
+        "atomicity": "MATERIALIZED_SAFE_SNAPSHOT_READ",
+        "asynchronousTransitions": []
+      },
+      "changeAdminUserRole": {
+        "roles": ["SUPER_ADMIN"],
+        "serverProof": "ACTIVE_ADMIN_SESSION_ROLE_AUTHORIZATION_VERSION_AND_FRESH_TOTP_STEP_UP_RELOADED",
+        "stepUpPurpose": "ROLE_CHANGE",
+        "stepUpApplicability": "REQUIRED",
+        "clientReasonCodes": ["ROLE_ADMINISTRATION"],
+        "operatorReason": "REQUIRED",
+        "auditContext": "ADMIN_SESSION",
+        "successSink": "AUDIT_LOG",
+        "failureBeforeProof": "ADMIN_SECURITY_EVENT",
+        "failureAfterProof": "AUDIT_LOG",
+        "action": "changeAdminUserRole",
+        "eventClass": "BUSINESS",
+        "entityType": "ADMIN_USER",
+        "maskedSnapshots": [
+          "ROLE",
+          "AUTHORIZATION_VERSION",
+          "SESSION_REVOCATION_STATE"
+        ],
+        "atomicity": "CHANGE_ROLE_INCREMENT_AUTHORIZATION_VERSION_REVOKE_SESSIONS_RECORD_IDEMPOTENCY_AND_AUDIT",
+        "asynchronousTransitions": []
+      },
+      "changeAdminUserStatus": {
+        "roles": ["SUPER_ADMIN"],
+        "serverProof": "ACTIVE_ADMIN_SESSION_ROLE_AUTHORIZATION_VERSION_AND_FRESH_TOTP_STEP_UP_RELOADED",
+        "stepUpPurpose": "STATUS_CHANGE",
+        "stepUpApplicability": "REQUIRED",
+        "clientReasonCodes": ["STATUS_ADMINISTRATION", "SECURITY_RESPONSE"],
+        "operatorReason": "REQUIRED",
+        "auditContext": "ADMIN_SESSION",
+        "successSink": "AUDIT_LOG",
+        "failureBeforeProof": "ADMIN_SECURITY_EVENT",
+        "failureAfterProof": "AUDIT_LOG",
+        "action": "changeAdminUserStatus",
+        "eventClass": "BUSINESS",
+        "entityType": "ADMIN_USER",
+        "maskedSnapshots": [
+          "STATUS",
+          "AUTHORIZATION_VERSION",
+          "SESSION_REVOCATION_STATE"
+        ],
+        "atomicity": "CHANGE_STATUS_INCREMENT_AUTHORIZATION_VERSION_REVOKE_SESSIONS_RECORD_IDEMPOTENCY_AND_AUDIT",
+        "asynchronousTransitions": []
+      }
+    },
+    "passwordReset": {
+      "recoveryPurpose": "PASSWORD_RESET",
+      "forbiddenSubstitutePurpose": "MFA_RECOVERY",
+      "purposeCardinality": "EXACTLY_ONE",
+      "contextMustPreexistCriticalTransaction": true,
+      "contextCreationInsideRolledBackCriticalTransactionForbidden": true,
+      "serverProofOnly": true,
+      "clientFieldNeverProof": true,
+      "oneShot": true,
+      "preserveTotpEnrollment": true,
+      "preserveRecoveryCodes": true,
+      "createsSession": false,
+      "bypassesMfa": false,
+      "effects": [
+        "CHANGE_PASSWORD_ARGON2ID",
+        "INCREMENT_AUTHORIZATION_VERSION",
+        "REVOKE_ALL_SESSIONS",
+        "CONSUME_PASSWORD_RESET_CONTEXT",
+        "WRITE_ADMIN_RECOVERY_AUDIT"
+      ],
+      "beforeProofSink": "ADMIN_SECURITY_EVENT",
+      "afterProofSink": "AUDIT_LOG_ADMIN_RECOVERY",
+      "unknownCommit": "NEUTRAL_503_NO_SECOND_SINK_NO_BLIND_RETRY",
+      "futureModel": "DEDICATED_PURPOSE_DISCRIMINATOR_WITHOUT_FICTITIOUS_RECOVERY_CODE_ID"
+    },
+    "preControllerJson": {
+      "operationIds": [
+        "requestAdminPasswordReset",
+        "resetAdminPassword",
+        "createAdminRecoveryCase",
+        "approveAdminRecoveryCase",
+        "createAdminAuditLogExport",
+        "createAdminInvitation",
+        "acceptAdminInvitation",
+        "changeAdminUserRole",
+        "changeAdminUserStatus"
+      ],
+      "causalMatch": "EXPRESS_ENTITY_PARSE_FAILED_SYNTAX_ERROR_STATUS_400_POST_EXACT_ROUTE_REMAINDER_APPLICATION_JSON",
+      "response": "CLOSED_ADMIN_400_VALIDATION_ERROR_SAME_REQUEST_ID_EMPTY_DETAILS_RETRYABLE_FALSE",
+      "securitySink": "EXACTLY_ONE_ADMIN_SECURITY_EVENT",
+      "forbiddenEffects": [
+        "AUDIT_LOG",
+        "COOKIE",
+        "SECRET",
+        "BUSINESS_MUTATION"
+      ],
+      "excluded": [
+        "HTTP_413",
+        "HTTP_415",
+        "URI_ERROR",
+        "OTHER_ERROR_FAMILIES",
+        "OTHER_ROUTES",
+        "GET",
+        "PREFIX_MATCH"
+      ],
+      "recorderFailure": "NEUTRAL_503_NO_RETRY_NO_FALLBACK_NO_SECOND_SINK"
+    },
+    "notificationAndPassword": {
+      "channels": ["EMAIL"],
+      "secretPresentation": "MANUAL_CODE_NO_SECRET_IN_URL",
+      "port": "NOTIFICATION_PORT",
+      "durableOutbox": true,
+      "transaction": "BUSINESS_STATE_ENCRYPTED_OUTBOX_AND_SECURITY_SINK_ATOMIC",
+      "rawCodePersistence": "FORBIDDEN",
+      "rawCodeLogging": "FORBIDDEN",
+      "rawCodeAudit": "FORBIDDEN",
+      "plaintextLifetime": "TRANSIENT_TRANSPORT_ONLY",
+      "deliveryRevalidation": ["EXPIRATION", "REVOCATION", "REPLACEMENT"],
+      "providerAcknowledgement": "SEPARATE_FROM_REQUEST_COMMIT",
+      "uncertainDelivery": "REPRESENTED_NO_EXACTLY_ONCE_EMAIL_CLAIM",
+      "accepted202Meaning": "DURABLY_ACCEPTED_NOT_DELIVERED",
+      "accountTimingLeak": "FORBIDDEN",
+      "compromiseCheck": {
+        "provider": "HIBP_PWNED_PASSWORDS_RANGE_API",
+        "request": "SHA1_PREFIX_ONLY_WITH_PADDING",
+        "passwordSent": false,
+        "fullHashSent": false,
+        "failurePolicy": "FAIL_CLOSED_ON_UNAVAILABLE_OR_UNUSABLE_RESPONSE",
+        "sha1Purpose": "REMOTE_LOOKUP_ONLY",
+        "storage": "ARGON2ID",
+        "inputEncoding": "EXACT_UTF8_NO_UNICODE_NORMALIZATION",
+        "productionProviderCall": false,
+        "productionSdk": false,
+        "officialReference": "https://haveibeenpwned.com/API/v3#PwnedPasswords"
+      }
+    },
+    "emailAndIdempotency": {
+      "emailComparison": "ASCII_CASE_INSENSITIVE",
+      "deliverySpelling": "PRESERVE_ACCEPTED_INPUT",
+      "plusRewrite": false,
+      "dotRewrite": false,
+      "rejectSpacesAndAmbiguousForms": true,
+      "migrationCollisionPreflight": "SAME_COMPARISON_AS_LOGIN",
+      "collisionResolution": "NO_AUTO_MERGE_DELETE_OR_REWRITE",
+      "invitationExistingAccount": "CONFLICT",
+      "validInvitationCardinality": "ONE_PER_CANONICAL_EMAIL",
+      "replacement": "ATOMICALLY_REVOKE_OLD_INVITATION_AND_PENDING_DELIVERY",
+      "sameKeySamePayload": "SAME_RESULT_NO_NEW_CODE_NO_NEW_DELIVERY",
+      "idempotentOperationIds": [
+        "createAdminRecoveryCase",
+        "approveAdminRecoveryCase",
+        "createAdminAuditLogExport",
+        "createAdminInvitation",
+        "changeAdminUserRole",
+        "changeAdminUserStatus"
+      ],
+      "idempotencyWindowHours": 24,
+      "idempotencyScope": "ACTOR_OPERATION_KEY_AND_PAYLOAD_DIGEST",
+      "differentPayload": "HTTP_409_IDEMPOTENCY_CONFLICT",
+      "replay": "RECHECK_CURRENT_AUTHORIZATION_DO_NOT_EXTEND_EXPIRY_DO_NOT_RETURN_SECRET"
+    },
+    "pagination": {
+      "operationIds": [
+        "listAdminRecoveryCases",
+        "listAdminAuditLogs",
+        "listAdminUsers"
+      ],
+      "defaultLimit": 25,
+      "maximumLimit": 50,
+      "order": ["createdAt_DESC", "id_DESC"],
+      "cursor": "OPAQUE_AUTHENTICATED_BOUND_TO_PRINCIPAL_OPERATION_AND_FILTERS",
+      "invalidCursor": "HTTP_400_VALIDATION_ERROR",
+      "snapshot": "SERVER_MATERIALIZED_SAFE_PROJECTION_CONSISTENT_TRANSACTION",
+      "authorizationReloadedEachPage": true,
+      "snapshotLifetimeMinutes": 15,
+      "maximumEntries": 10000,
+      "maximumUtf8Bytes": 26214400,
+      "overflow": "EXPLICIT_RESTRICT_FILTERS_NO_TRUNCATION",
+      "auditSnapshotRule": "MATERIALIZE_BEFORE_AUDIT_READ_EVENT_NO_SELF_INCLUSION",
+      "retentionMeaning": "TECHNICAL_ONLY_NOT_LEGAL"
+    },
+    "auditExport": {
+      "filterSemantics": "ALL_SUPPLIED_FILTERS_ARE_COMBINED_WITH_AND",
+      "snapshot": "IMMUTABLE",
+      "maximumEntries": 10000,
+      "maximumUncompressedUtf8Bytes": 26214400,
+      "truncation": "FORBIDDEN",
+      "storage": "PRIVATE_ENCRYPTED_OPAQUE_REFERENCE_NO_SIGNED_URL",
+      "expiresHoursAfterReady": 24,
+      "expiryDeletion": "DERIVATIVE_ONLY",
+      "masking": "POSITIVE_ALLOWLIST_BY_ACTION",
+      "forbiddenFields": [
+        "SECRET",
+        "RAW_EMAIL",
+        "RAW_IP",
+        "FREE_FORM_JUSTIFICATION"
+      ],
+      "unknownField": "OMIT_OR_MASK",
+      "keySeparation": ["ED25519_SIGNATURE", "JWT", "STORAGE_ENCRYPTION"],
+      "productionProvider": "NOT_QUALIFIED",
+      "sourceOfTruth": "POSTGRESQL",
+      "worker": "BOUNDED_IDEMPOTENT_CLAIMS_AND_RETRIES",
+      "unknownCommit": "RECONCILE_NO_BLIND_RETRY",
+      "beforeFirstByte": [
+        "AUTHORIZATION",
+        "STEP_UP_AUDIT_EXPORT",
+        "INTEGRITY_VERIFICATION",
+        "DURABLE_AUDIT"
+      ],
+      "streamFailure": "INTERRUPT_STREAM_NO_JSON_NO_FALSE_COMPLETION_AUDIT"
+    },
+    "bootstrap": {
+      "interface": "DEDICATED_CLI_OUTSIDE_OPENAPI",
+      "concurrency": "POSTGRESQL_SINGLETON_GUARD",
+      "precondition": "REFUSE_IF_ANY_ADMIN_USER_EXISTS",
+      "createdRole": "SUPER_ADMIN",
+      "createdStatus": "PENDING_MFA",
+      "precreatedTotp": false,
+      "precreatedRecoveryCodes": false,
+      "precreatedSession": false,
+      "secretInput": "PROTECTED_STDIN_OR_SECRET_STORE_NEVER_ARGUMENT_OR_OUTPUT",
+      "transaction": "CREATE_GUARD_AND_STANDALONE_SYSTEM_AUDIT_ATOMIC",
+      "output": "NON_SECRET_IDENTIFIERS_AND_STATUS_ONLY",
+      "unknownCommit": "NEUTRAL_NO_BLIND_RETRY",
+      "futureIdentity": "DEDICATED_LEAST_PRIVILEGE_BOOTSTRAP_IDENTITY",
+      "implementedInP0": false
+    },
+    "futureDatabaseBoundary": {
+      "c1ReaderExpansion": "FORBIDDEN",
+      "ownership": "FORBIDDEN",
+      "membership": "FORBIDDEN_BOTH_ORIENTATIONS",
+      "publicGrant": "FORBIDDEN",
+      "defaultGrant": "FORBIDDEN",
+      "grantOption": "FORBIDDEN",
+      "auditSinks": "INSERT_ONLY_NO_RETURNING",
+      "auditRead": "MASKED_PROJECTION_ONLY",
+      "writerAndWorker": "ONLY_REQUIRED_TABLES_COLUMNS_AND_TRANSITIONS",
+      "delivery": {
+        "C2a": "ELEVEN_RESET_INVITATION_RECOVERY_USER_RBAC_OPERATIONS_PLUS_BOOTSTRAP_OUTSIDE_API",
+        "C2b": "FOUR_AUDIT_AND_EXPORT_OPERATIONS",
+        "final": "FIFTEEN_C2_OPERATIONS_PLUS_TWELVE_C1_OPERATIONS"
+      },
+      "runtimeAuthorizationMeaning": "NONE_P0_CONTRACT_ONLY",
+      "migrationPath": "NOT_AUTHORIZED_IN_P0_EXACT_LITERAL_REQUIRED_BY_FUTURE_CTO_MANDATE",
+      "allowlists": {
+        "C2a": [
+          "apps/api/src/admin-security/admin-security.module.ts",
+          "apps/api/src/admin-security/admin-security.controller.ts",
+          "apps/api/src/admin-security/admin-security.service.ts",
+          "apps/api/src/admin-security/admin-security.repository.ts",
+          "apps/api/src/admin-security/admin-notification.port.ts",
+          "apps/api/src/admin-security/admin-password-compromise.port.ts",
+          "apps/api/src/admin-security/admin-notification.worker.ts",
+          "apps/api/src/admin-security/admin-bootstrap.command.ts",
+          "apps/api/test/admin-security-c2a.integration.spec.ts",
+          "apps/api/prisma/schema.prisma"
+        ],
+        "C2b": [
+          "apps/api/src/admin-security/admin-audit-query.service.ts",
+          "apps/api/src/admin-security/admin-audit-export.service.ts",
+          "apps/api/src/admin-security/admin-audit-export.worker.ts",
+          "apps/api/test/admin-security-c2b.integration.spec.ts",
+          "apps/api/prisma/schema.prisma"
+        ]
+      }
+    },
+    "asynchronousAudit": {
+      "action": "DISTINCT_FROM_INITIATING_HTTP_OPERATION_ID",
+      "context": "SYSTEM",
+      "causality": "REQUIRES_CAUSATION_EVENT_ID_AND_DELEGATED_BY_ADMIN_USER_ID"
+    },
+    "productionQualification": {
+      "notificationProvider": "NOT_QUALIFIED",
+      "pwnedPasswordProvider": "NOT_QUALIFIED",
+      "exportStorageProvider": "NOT_QUALIFIED",
+      "signatureKeyProvider": "NOT_QUALIFIED",
+      "runtimeImplemented": false
+    }
   },
   "x-kora-admin-failure-audit-sinks": {
     "loginAdmin": "ADMIN_SECURITY_EVENT",
@@ -708,23 +1267,35 @@
       "ADMIN_SESSION_NOT_FOUND",
       "SERVICE_UNAVAILABLE"
     ],
-    "requestAdminPasswordReset": ["VALIDATION_ERROR", "RATE_LIMITED"],
-    "resetAdminPassword": ["ADMIN_RECOVERY_INVALID", "RATE_LIMITED"],
+    "requestAdminPasswordReset": [
+      "VALIDATION_ERROR",
+      "RATE_LIMITED",
+      "SERVICE_UNAVAILABLE"
+    ],
+    "resetAdminPassword": [
+      "VALIDATION_ERROR",
+      "ADMIN_RECOVERY_INVALID",
+      "RATE_LIMITED",
+      "SERVICE_UNAVAILABLE"
+    ],
     "createAdminRecoveryCase": [
       "VALIDATION_ERROR",
       "AUTH_REQUIRED",
       "FORBIDDEN",
-      "IDEMPOTENCY_CONFLICT"
+      "IDEMPOTENCY_CONFLICT",
+      "SERVICE_UNAVAILABLE"
     ],
     "listAdminRecoveryCases": [
       "VALIDATION_ERROR",
       "AUTH_REQUIRED",
-      "FORBIDDEN"
+      "FORBIDDEN",
+      "SERVICE_UNAVAILABLE"
     ],
     "getAdminRecoveryCase": [
       "AUTH_REQUIRED",
       "FORBIDDEN",
-      "RECOVERY_CASE_NOT_FOUND"
+      "RECOVERY_CASE_NOT_FOUND",
+      "SERVICE_UNAVAILABLE"
     ],
     "approveAdminRecoveryCase": [
       "VALIDATION_ERROR",
@@ -733,46 +1304,63 @@
       "RECOVERY_CASE_NOT_FOUND",
       "RECOVERY_CASE_CONFLICT",
       "IDEMPOTENCY_CONFLICT",
-      "RECOVERY_CASE_EXPIRED"
+      "RECOVERY_CASE_EXPIRED",
+      "SERVICE_UNAVAILABLE"
     ],
-    "listAdminAuditLogs": ["VALIDATION_ERROR", "AUTH_REQUIRED", "FORBIDDEN"],
+    "listAdminAuditLogs": [
+      "VALIDATION_ERROR",
+      "AUTH_REQUIRED",
+      "FORBIDDEN",
+      "SERVICE_UNAVAILABLE"
+    ],
     "createAdminAuditLogExport": [
       "VALIDATION_ERROR",
       "AUTH_REQUIRED",
       "FORBIDDEN",
-      "IDEMPOTENCY_CONFLICT"
+      "IDEMPOTENCY_CONFLICT",
+      "SERVICE_UNAVAILABLE"
     ],
     "getAdminAuditLogExport": [
       "AUTH_REQUIRED",
       "FORBIDDEN",
-      "AUDIT_EXPORT_NOT_FOUND"
+      "AUDIT_EXPORT_NOT_FOUND",
+      "SERVICE_UNAVAILABLE"
     ],
     "downloadAdminAuditLogExport": [
       "AUTH_REQUIRED",
       "FORBIDDEN",
       "AUDIT_EXPORT_NOT_FOUND",
       "AUDIT_EXPORT_NOT_READY",
-      "AUDIT_EXPORT_EXPIRED"
+      "AUDIT_EXPORT_EXPIRED",
+      "SERVICE_UNAVAILABLE"
     ],
     "createAdminInvitation": [
       "VALIDATION_ERROR",
       "AUTH_REQUIRED",
       "FORBIDDEN",
-      "IDEMPOTENCY_CONFLICT"
+      "IDEMPOTENCY_CONFLICT",
+      "SERVICE_UNAVAILABLE"
     ],
     "acceptAdminInvitation": [
       "VALIDATION_ERROR",
       "ADMIN_INVITATION_INVALID",
-      "RATE_LIMITED"
+      "RATE_LIMITED",
+      "SERVICE_UNAVAILABLE"
     ],
-    "listAdminUsers": ["VALIDATION_ERROR", "AUTH_REQUIRED", "FORBIDDEN"],
+    "listAdminUsers": [
+      "VALIDATION_ERROR",
+      "AUTH_REQUIRED",
+      "FORBIDDEN",
+      "SERVICE_UNAVAILABLE"
+    ],
     "changeAdminUserRole": [
       "VALIDATION_ERROR",
       "AUTH_REQUIRED",
       "FORBIDDEN",
       "ADMIN_USER_NOT_FOUND",
       "IDEMPOTENCY_CONFLICT",
-      "LAST_SUPER_ADMIN_PROTECTED"
+      "LAST_SUPER_ADMIN_PROTECTED",
+      "SERVICE_UNAVAILABLE"
     ],
     "changeAdminUserStatus": [
       "VALIDATION_ERROR",
@@ -780,7 +1368,8 @@
       "FORBIDDEN",
       "ADMIN_USER_NOT_FOUND",
       "IDEMPOTENCY_CONFLICT",
-      "LAST_SUPER_ADMIN_PROTECTED"
+      "LAST_SUPER_ADMIN_PROTECTED",
+      "SERVICE_UNAVAILABLE"
     ]
   },
   "servers": [{ "url": "/", "description": "Relative contract root only" }],
@@ -2031,7 +2620,9 @@
           "400": { "$ref": "#/components/responses/ClientError" },
           "401": { "$ref": "#/components/responses/ClientError" },
           "429": { "$ref": "#/components/responses/RateLimitedError" },
-          "503": { "$ref": "#/components/responses/AdminServiceUnavailable" }
+          "503": {
+            "$ref": "#/components/responses/AdminServiceUnavailable"
+          }
         }
       }
     },
@@ -2083,7 +2674,9 @@
           "401": { "$ref": "#/components/responses/ClientError" },
           "403": { "$ref": "#/components/responses/ClientError" },
           "409": { "$ref": "#/components/responses/ClientError" },
-          "503": { "$ref": "#/components/responses/AdminServiceUnavailable" }
+          "503": {
+            "$ref": "#/components/responses/AdminServiceUnavailable"
+          }
         }
       }
     },
@@ -2135,7 +2728,9 @@
           "401": { "$ref": "#/components/responses/ClientError" },
           "403": { "$ref": "#/components/responses/ClientError" },
           "409": { "$ref": "#/components/responses/ClientError" },
-          "503": { "$ref": "#/components/responses/AdminServiceUnavailable" }
+          "503": {
+            "$ref": "#/components/responses/AdminServiceUnavailable"
+          }
         }
       }
     },
@@ -2205,7 +2800,9 @@
           "409": { "$ref": "#/components/responses/ClientError" },
           "410": { "$ref": "#/components/responses/ClientError" },
           "429": { "$ref": "#/components/responses/RateLimitedError" },
-          "503": { "$ref": "#/components/responses/AdminServiceUnavailable" }
+          "503": {
+            "$ref": "#/components/responses/AdminServiceUnavailable"
+          }
         }
       }
     },
@@ -2265,7 +2862,9 @@
           "401": { "$ref": "#/components/responses/ClientError" },
           "410": { "$ref": "#/components/responses/ClientError" },
           "429": { "$ref": "#/components/responses/RateLimitedError" },
-          "503": { "$ref": "#/components/responses/AdminServiceUnavailable" }
+          "503": {
+            "$ref": "#/components/responses/AdminServiceUnavailable"
+          }
         }
       }
     },
@@ -2324,7 +2923,9 @@
           "400": { "$ref": "#/components/responses/ClientError" },
           "401": { "$ref": "#/components/responses/ClientError" },
           "429": { "$ref": "#/components/responses/RateLimitedError" },
-          "503": { "$ref": "#/components/responses/AdminServiceUnavailable" }
+          "503": {
+            "$ref": "#/components/responses/AdminServiceUnavailable"
+          }
         }
       }
     },
@@ -2398,7 +2999,9 @@
           "403": { "$ref": "#/components/responses/ClientError" },
           "409": { "$ref": "#/components/responses/ClientError" },
           "429": { "$ref": "#/components/responses/RateLimitedError" },
-          "503": { "$ref": "#/components/responses/AdminServiceUnavailable" }
+          "503": {
+            "$ref": "#/components/responses/AdminServiceUnavailable"
+          }
         }
       }
     },
@@ -2454,7 +3057,9 @@
           "401": { "$ref": "#/components/responses/ClientError" },
           "403": { "$ref": "#/components/responses/ClientError" },
           "429": { "$ref": "#/components/responses/RateLimitedError" },
-          "503": { "$ref": "#/components/responses/AdminServiceUnavailable" }
+          "503": {
+            "$ref": "#/components/responses/AdminServiceUnavailable"
+          }
         }
       }
     },
@@ -2501,7 +3106,9 @@
           },
           "401": { "$ref": "#/components/responses/ClientError" },
           "429": { "$ref": "#/components/responses/RateLimitedError" },
-          "503": { "$ref": "#/components/responses/AdminServiceUnavailable" }
+          "503": {
+            "$ref": "#/components/responses/AdminServiceUnavailable"
+          }
         }
       }
     },
@@ -2527,7 +3134,9 @@
         "responses": {
           "204": { "description": "Current session revoked." },
           "401": { "$ref": "#/components/responses/ClientError" },
-          "503": { "$ref": "#/components/responses/AdminServiceUnavailable" }
+          "503": {
+            "$ref": "#/components/responses/AdminServiceUnavailable"
+          }
         }
       }
     },
@@ -2559,7 +3168,9 @@
             }
           },
           "401": { "$ref": "#/components/responses/ClientError" },
-          "503": { "$ref": "#/components/responses/AdminServiceUnavailable" }
+          "503": {
+            "$ref": "#/components/responses/AdminServiceUnavailable"
+          }
         }
       }
     },
@@ -2598,7 +3209,9 @@
           "401": { "$ref": "#/components/responses/ClientError" },
           "403": { "$ref": "#/components/responses/ClientError" },
           "404": { "$ref": "#/components/responses/ClientError" },
-          "503": { "$ref": "#/components/responses/AdminServiceUnavailable" }
+          "503": {
+            "$ref": "#/components/responses/AdminServiceUnavailable"
+          }
         }
       }
     },
@@ -2640,7 +3253,10 @@
             }
           },
           "400": { "$ref": "#/components/responses/ClientError" },
-          "429": { "$ref": "#/components/responses/RateLimitedError" }
+          "429": { "$ref": "#/components/responses/RateLimitedError" },
+          "503": {
+            "$ref": "#/components/responses/AdminServiceUnavailable"
+          }
         }
       }
     },
@@ -2675,7 +3291,10 @@
             "description": "Reset context consumed; password changed and sessions revoked."
           },
           "400": { "$ref": "#/components/responses/ClientError" },
-          "429": { "$ref": "#/components/responses/RateLimitedError" }
+          "429": { "$ref": "#/components/responses/RateLimitedError" },
+          "503": {
+            "$ref": "#/components/responses/AdminServiceUnavailable"
+          }
         }
       }
     },
@@ -2727,7 +3346,10 @@
           "400": { "$ref": "#/components/responses/ClientError" },
           "401": { "$ref": "#/components/responses/ClientError" },
           "403": { "$ref": "#/components/responses/ClientError" },
-          "409": { "$ref": "#/components/responses/ClientError" }
+          "409": { "$ref": "#/components/responses/ClientError" },
+          "503": {
+            "$ref": "#/components/responses/AdminServiceUnavailable"
+          }
         }
       },
       "get": {
@@ -2740,10 +3362,11 @@
         "x-kora-step-up-required": false,
         "x-kora-audit-sink": "NONE",
         "x-kora-pagination": "cursor",
+        "x-kora-pagination-policy": "ADMIN_C2_MATERIALIZED_SNAPSHOT_V1",
         "security": [{ "adminSession": [] }],
         "parameters": [
-          { "$ref": "#/components/parameters/Cursor" },
-          { "$ref": "#/components/parameters/Limit" }
+          { "$ref": "#/components/parameters/AdminC2Cursor" },
+          { "$ref": "#/components/parameters/AdminC2Limit" }
         ],
         "responses": {
           "200": {
@@ -2758,7 +3381,10 @@
           },
           "400": { "$ref": "#/components/responses/ClientError" },
           "401": { "$ref": "#/components/responses/ClientError" },
-          "403": { "$ref": "#/components/responses/ClientError" }
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "503": {
+            "$ref": "#/components/responses/AdminServiceUnavailable"
+          }
         }
       }
     },
@@ -2787,7 +3413,10 @@
           },
           "401": { "$ref": "#/components/responses/ClientError" },
           "403": { "$ref": "#/components/responses/ClientError" },
-          "404": { "$ref": "#/components/responses/ClientError" }
+          "404": { "$ref": "#/components/responses/ClientError" },
+          "503": {
+            "$ref": "#/components/responses/AdminServiceUnavailable"
+          }
         }
       }
     },
@@ -2800,6 +3429,7 @@
         "x-kora-auth-class": "ADMIN_SESSION",
         "x-kora-roles": ["SUPER_ADMIN"],
         "x-kora-step-up-required": true,
+        "x-kora-step-up-purpose": "RECOVERY_APPROVAL",
         "x-kora-audit-sink": "AUDIT_LOG",
         "x-kora-origin-policy": "EXACT_ALLOWLIST",
         "x-kora-transactional-audit": true,
@@ -2832,7 +3462,10 @@
           "403": { "$ref": "#/components/responses/ClientError" },
           "404": { "$ref": "#/components/responses/ClientError" },
           "409": { "$ref": "#/components/responses/ClientError" },
-          "410": { "$ref": "#/components/responses/ClientError" }
+          "410": { "$ref": "#/components/responses/ClientError" },
+          "503": {
+            "$ref": "#/components/responses/AdminServiceUnavailable"
+          }
         }
       }
     },
@@ -2847,11 +3480,12 @@
         "x-kora-step-up-required": false,
         "x-kora-audit-sink": "AUDIT_LOG",
         "x-kora-pagination": "cursor",
+        "x-kora-pagination-policy": "ADMIN_C2_MATERIALIZED_SNAPSHOT_V1",
         "x-kora-filter-semantics": "ALL_SUPPLIED_FILTERS_ARE_COMBINED_WITH_AND",
         "security": [{ "adminSession": [] }],
         "parameters": [
-          { "$ref": "#/components/parameters/Cursor" },
-          { "$ref": "#/components/parameters/Limit" },
+          { "$ref": "#/components/parameters/AdminC2Cursor" },
+          { "$ref": "#/components/parameters/AdminC2Limit" },
           { "$ref": "#/components/parameters/AuditActorAdminUserId" },
           { "$ref": "#/components/parameters/AuditAction" },
           { "$ref": "#/components/parameters/AuditEntityType" },
@@ -2872,7 +3506,10 @@
           },
           "400": { "$ref": "#/components/responses/ClientError" },
           "401": { "$ref": "#/components/responses/ClientError" },
-          "403": { "$ref": "#/components/responses/ClientError" }
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "503": {
+            "$ref": "#/components/responses/AdminServiceUnavailable"
+          }
         }
       }
     },
@@ -2885,6 +3522,7 @@
         "x-kora-auth-class": "ADMIN_SESSION",
         "x-kora-roles": ["SUPER_ADMIN"],
         "x-kora-step-up-required": true,
+        "x-kora-step-up-purpose": "AUDIT_EXPORT",
         "x-kora-audit-sink": "AUDIT_LOG",
         "x-kora-origin-policy": "EXACT_ALLOWLIST",
         "x-kora-transactional-audit": true,
@@ -2925,7 +3563,10 @@
           "400": { "$ref": "#/components/responses/ClientError" },
           "401": { "$ref": "#/components/responses/ClientError" },
           "403": { "$ref": "#/components/responses/ClientError" },
-          "409": { "$ref": "#/components/responses/ClientError" }
+          "409": { "$ref": "#/components/responses/ClientError" },
+          "503": {
+            "$ref": "#/components/responses/AdminServiceUnavailable"
+          }
         }
       }
     },
@@ -2954,7 +3595,10 @@
           },
           "401": { "$ref": "#/components/responses/ClientError" },
           "403": { "$ref": "#/components/responses/ClientError" },
-          "404": { "$ref": "#/components/responses/ClientError" }
+          "404": { "$ref": "#/components/responses/ClientError" },
+          "503": {
+            "$ref": "#/components/responses/AdminServiceUnavailable"
+          }
         }
       }
     },
@@ -2967,6 +3611,7 @@
         "x-kora-auth-class": "ADMIN_SESSION",
         "x-kora-roles": ["SUPER_ADMIN"],
         "x-kora-step-up-required": true,
+        "x-kora-step-up-purpose": "AUDIT_EXPORT",
         "x-kora-audit-sink": "AUDIT_LOG",
         "x-kora-pii-redacted": true,
         "x-kora-signed-manifest": {
@@ -3016,7 +3661,10 @@
           "403": { "$ref": "#/components/responses/ClientError" },
           "404": { "$ref": "#/components/responses/ClientError" },
           "409": { "$ref": "#/components/responses/ClientError" },
-          "410": { "$ref": "#/components/responses/ClientError" }
+          "410": { "$ref": "#/components/responses/ClientError" },
+          "503": {
+            "$ref": "#/components/responses/AdminServiceUnavailable"
+          }
         }
       }
     },
@@ -3029,6 +3677,7 @@
         "x-kora-auth-class": "ADMIN_SESSION",
         "x-kora-roles": ["SUPER_ADMIN"],
         "x-kora-step-up-required": true,
+        "x-kora-step-up-purpose": "INVITATION",
         "x-kora-audit-sink": "AUDIT_LOG",
         "x-kora-origin-policy": "EXACT_ALLOWLIST",
         "x-kora-transactional-audit": true,
@@ -3068,7 +3717,10 @@
           "400": { "$ref": "#/components/responses/ClientError" },
           "401": { "$ref": "#/components/responses/ClientError" },
           "403": { "$ref": "#/components/responses/ClientError" },
-          "409": { "$ref": "#/components/responses/ClientError" }
+          "409": { "$ref": "#/components/responses/ClientError" },
+          "503": {
+            "$ref": "#/components/responses/AdminServiceUnavailable"
+          }
         }
       }
     },
@@ -3119,7 +3771,10 @@
             }
           },
           "400": { "$ref": "#/components/responses/ClientError" },
-          "429": { "$ref": "#/components/responses/RateLimitedError" }
+          "429": { "$ref": "#/components/responses/RateLimitedError" },
+          "503": {
+            "$ref": "#/components/responses/AdminServiceUnavailable"
+          }
         }
       }
     },
@@ -3134,10 +3789,11 @@
         "x-kora-step-up-required": false,
         "x-kora-audit-sink": "NONE",
         "x-kora-pagination": "cursor",
+        "x-kora-pagination-policy": "ADMIN_C2_MATERIALIZED_SNAPSHOT_V1",
         "security": [{ "adminSession": [] }],
         "parameters": [
-          { "$ref": "#/components/parameters/Cursor" },
-          { "$ref": "#/components/parameters/Limit" }
+          { "$ref": "#/components/parameters/AdminC2Cursor" },
+          { "$ref": "#/components/parameters/AdminC2Limit" }
         ],
         "responses": {
           "200": {
@@ -3152,7 +3808,10 @@
           },
           "400": { "$ref": "#/components/responses/ClientError" },
           "401": { "$ref": "#/components/responses/ClientError" },
-          "403": { "$ref": "#/components/responses/ClientError" }
+          "403": { "$ref": "#/components/responses/ClientError" },
+          "503": {
+            "$ref": "#/components/responses/AdminServiceUnavailable"
+          }
         }
       }
     },
@@ -3165,6 +3824,7 @@
         "x-kora-auth-class": "ADMIN_SESSION",
         "x-kora-roles": ["SUPER_ADMIN"],
         "x-kora-step-up-required": true,
+        "x-kora-step-up-purpose": "ROLE_CHANGE",
         "x-kora-audit-sink": "AUDIT_LOG",
         "x-kora-origin-policy": "EXACT_ALLOWLIST",
         "x-kora-transactional-audit": true,
@@ -3197,7 +3857,10 @@
           "401": { "$ref": "#/components/responses/ClientError" },
           "403": { "$ref": "#/components/responses/ClientError" },
           "404": { "$ref": "#/components/responses/ClientError" },
-          "409": { "$ref": "#/components/responses/ClientError" }
+          "409": { "$ref": "#/components/responses/ClientError" },
+          "503": {
+            "$ref": "#/components/responses/AdminServiceUnavailable"
+          }
         }
       }
     },
@@ -3210,6 +3873,7 @@
         "x-kora-auth-class": "ADMIN_SESSION",
         "x-kora-roles": ["SUPER_ADMIN"],
         "x-kora-step-up-required": true,
+        "x-kora-step-up-purpose": "STATUS_CHANGE",
         "x-kora-audit-sink": "AUDIT_LOG",
         "x-kora-origin-policy": "EXACT_ALLOWLIST",
         "x-kora-transactional-audit": true,
@@ -3242,7 +3906,10 @@
           "401": { "$ref": "#/components/responses/ClientError" },
           "403": { "$ref": "#/components/responses/ClientError" },
           "404": { "$ref": "#/components/responses/ClientError" },
-          "409": { "$ref": "#/components/responses/ClientError" }
+          "409": { "$ref": "#/components/responses/ClientError" },
+          "503": {
+            "$ref": "#/components/responses/AdminServiceUnavailable"
+          }
         }
       }
     }
@@ -3312,6 +3979,24 @@
           "minimum": 1,
           "maximum": 50,
           "default": 20
+        }
+      },
+      "AdminC2Cursor": {
+        "name": "cursor",
+        "in": "query",
+        "required": false,
+        "description": "Opaque authenticated cursor bound to the current principal, operation, exact filters and a 15-minute materialized safe-projection snapshot. Invalid, incompatible or expired cursors return VALIDATION_ERROR.",
+        "schema": { "type": "string", "minLength": 1, "maxLength": 512 }
+      },
+      "AdminC2Limit": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "default": 25
         }
       },
       "AuditActorAdminUserId": {
@@ -3523,7 +4208,7 @@
         }
       },
       "AdminServiceUnavailable": {
-        "description": "Uniform fail-closed Admin C1 dependency or audit-durability failure without dependency disclosure.",
+        "description": "Uniform fail-closed Admin C1/C2 dependency or audit-durability failure without dependency disclosure.",
         "content": {
           "application/json": {
             "schema": {
@@ -3537,7 +4222,9 @@
                       "type": "object",
                       "required": ["code", "details", "message", "retryable"],
                       "properties": {
-                        "code": { "const": "SERVICE_UNAVAILABLE" },
+                        "code": {
+                          "const": "SERVICE_UNAVAILABLE"
+                        },
                         "details": {
                           "type": "object",
                           "additionalProperties": false,

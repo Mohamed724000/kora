@@ -55,7 +55,7 @@ test('the generated boundary materializes all 27 admin-security operations', () 
   assert.match(block, /protectedHeader: 'EXACTLY_alg_EdDSA_AND_kid_SIGNATURE_KEY_ID'/);
   assert.match(block, /payloadEncoding: 'BASE64URL_NO_PADDING'/);
   assert.match(block, /unencodedPayload: false/);
-  assert.equal((block.match(/errorCode: 'SERVICE_UNAVAILABLE'/g) ?? []).length, 12);
+  assert.equal((block.match(/errorCode: 'SERVICE_UNAVAILABLE'/g) ?? []).length, 27);
   assert.match(
     block,
     /signatureInput:\s*'ASCII\(BASE64URL_NO_PADDING\(PROTECTED_HEADER_UTF8\)\.BASE64URL_NO_PADDING\(PAYLOAD\)\)'/,
@@ -96,6 +96,27 @@ test('the generated boundary materializes the four C1 CTO arbitration policies',
   assert.match(policies, /errorCode: 'SERVICE_UNAVAILABLE'/);
   assert.match(policies, /dependencyDisclosure: 'FORBIDDEN'/);
   assert.match(policies, /NO_SUCCESS_OR_SECRET_NO_BLIND_AUTOMATIC_RETRY/);
+});
+
+test('the generated boundary materializes the complete C2-P0 policy', () => {
+  const source = readFileSync(new URL('../src/generated/audio-pilot.ts', import.meta.url), 'utf8');
+  const policies = /export const adminC2ContractPolicies = \{([\s\S]*?)\n\} as const;/.exec(
+    source,
+  )?.[1];
+
+  assert.ok(policies);
+  assert.equal((policies.match(/stepUpApplicability:/g) ?? []).length, 15);
+  assert.match(policies, /proofPurpose: 'PASSWORD_RESET'/);
+  assert.match(policies, /forbiddenProofPurpose: 'MFA_RECOVERY'/);
+  assert.match(policies, /stepUpPurpose: 'RECOVERY_APPROVAL'/);
+  assert.match(policies, /stepUpPurpose: 'AUDIT_EXPORT'/);
+  assert.match(policies, /defaultLimit: 25/);
+  assert.match(policies, /maximumEntries: 10000/);
+  assert.match(policies, /maximumUncompressedUtf8Bytes: 26214400/);
+  assert.match(policies, /truncation: 'FORBIDDEN'/);
+  assert.match(policies, /notificationProvider: 'NOT_QUALIFIED'/);
+  assert.match(policies, /runtimeImplemented: false/);
+  assert.doesNotMatch(policies, /signedUrl: true|passwordSent: true|fullHashSent: true/i);
 });
 
 test('audit evidence is generated as a strict discriminated execution-context union', () => {
@@ -139,6 +160,10 @@ test('admin recovery-code types expose selector and verifier but no stored hash'
 
 test('the generated boundary exposes readiness metadata without private media locations', () => {
   const source = readFileSync(new URL('../src/generated/audio-pilot.ts', import.meta.url), 'utf8');
+  const publicSurface = source.replace(
+    /export const adminC2ContractPolicies = \{[\s\S]*?\n\} as const;/,
+    '',
+  );
 
   assert.match(source, /PaymentProvider = 'SANDBOX_NEUTRAL'/);
   assert.match(source, /readonly descriptor: string/);
@@ -148,7 +173,7 @@ test('the generated boundary exposes readiness metadata without private media lo
   assert.match(source, /readonly createdByAdminId: Identifier/);
   assert.match(source, /export type MuxMediaWebhookRequest/);
   assert.doesNotMatch(
-    source,
+    publicSurface,
     /\b\w*(?:Url|Uri)\b|\b(?:r2|storageObjectKey|sourceObjectKey|originKey|mediaLocator|privateProviderAssetRef|providerAssetId|muxAssetId|muxPlaybackId)\b/i,
   );
 });

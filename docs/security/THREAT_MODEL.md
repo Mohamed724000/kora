@@ -1,12 +1,10 @@
 # KORA+ Final — Threat Model initial
 
-Périmètre durable couvert : **BASELINE + S0.4/S0.5/M0.1/M0.2/S0.6 ET M0.3
-FUSIONNÉS ET CLÔTURÉS + S1.1 FERMÉ + CONTRACT & DATA READINESS S1.2-01 +
-S1.2-02 CLÔTURÉ ET FUSIONNÉ + S1.2-03A CLÔTURÉ ET FUSIONNÉ + S1.2-03B-R4
-FUSIONNÉ VIA PR #48 + S1.2-03C1-R11 PUBLIÉ DANS LA DRAFT PR #50 AVEC QUATRE
-WORKFLOWS VERTS + REVUE TERMINALE BLOCK MALFORMED JSON + INSTANTANÉ
-PRÉPUBLICATION R12 VALIDÉ — KMS/JWT DE PRODUCTION NON QUALIFIÉS — C2/C3 NOT
-STARTED**.
+Périmètre durable couvert : **BASELINE À S1.2-03B FUSIONNÉES + S1.2-03C1
+FUSIONNÉ DANS MAIN AU MERGE
+dc97eeef72c4e299988ed19d66460011a8551cf3, NON DÉPLOYÉ + S1.2-03C2-P0
+CONTRACTUEL LOCAL, RUNTIME NON IMPLÉMENTÉ — FOURNISSEURS DE PRODUCTION NON
+QUALIFIÉS — C3 NOT STARTED**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
 commit, push ou changement GitHub S1.1 n’avait encore été effectué : il s’agit
@@ -1152,3 +1150,29 @@ GitHub. C1 demeure en revue dans la Draft PR #50 et n'est pas intégré à `main
 Cet instantané ne qualifie ni le fournisseur KMS/JWT de production, ni
 OSS/JTI/pagination/V8/iOS, ni C2/C3, et n'autorise aucun Ready, approval, merge,
 tag, release ou déploiement.
+
+## Menaces et contrôles contractuels S1.2-03C2-P0 — 2026-10-09
+
+| Menace                                          | Contrôle contractuel P0                                                                                             | Preuve P0                                        | Limite résiduelle                        |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | ---------------------------------------- |
+| Fuite de dépendance ou retry dangereux          | 503 C2 fermé sur les 15 opérations; rollback confirmé distinct du COMMIT inconnu; aucun retry aveugle               | validateur exact et mutations adversariales      | runtime et timeouts réseau NON EXÉCUTÉS  |
+| Contexte/acteur fabriqué par le client          | matrice serveur par opération; avant preuve SecurityEvent, après preuve sink exact                                  | policy générée; mutations preuve/sink/contexte   | stockage et transactions C2 NON EXÉCUTÉS |
+| Reset utilisé comme bypass MFA                  | PASSWORD_RESET XOR MFA_RECOVERY; aucune session/enrollment; TOTP et codes préservés                                 | policy/ADR et mutation reset=MFA                 | modèle/migration/runtime NON EXÉCUTÉS    |
+| JSON malformé hors audit                        | neuf POST exacts, 400 VALIDATION_ERROR, même requestId, un SecurityEvent                                            | carte contractuelle et mutation retrait          | middleware C2 réel NON EXÉCUTÉ           |
+| Secret reset/invitation exposé                  | code manuel, aucun secret dans lien/DB/log/audit, outbox chiffré atomique                                           | ADR-026 et policy                                | provider/outbox/worker NON EXÉCUTÉS      |
+| Mot de passe compromis ou fuite vers HIBP       | préfixe SHA-1 seulement avec padding; fail-closed; Argon2id stockage; UTF-8 exact                                   | policy et provider déclaré non qualifié          | appel HIBP NON EXÉCUTÉ                   |
+| Collision e-mail ou invitation concurrente      | ASCII case-insensitive sans plus/dot; collision preflight; une invitation valide, remplacement atomique             | contrat/ADR                                      | migration/concurrence NON EXÉCUTÉES      |
+| Rejeu idempotent sous autorisation périmée      | portée acteur/opération/clé/digest, fenêtre 24 h, rechargement auth, aucune extension/secret                        | policy générée                                   | implémentation NON EXÉCUTÉE              |
+| Curseur substitué ou extraction non bornée      | cursor authentifié lié; snapshot 15 min; 10k/25 MiB; pas de troncature                                              | paramètres dédiés et mutations                   | stockage snapshot NON EXÉCUTÉ            |
+| Export incomplet, altéré ou trop riche          | AND, snapshot immuable, masking allowlist, JCS/JWS Ed25519, clés séparées                                           | profil R4 préservé et mutations signature/bornes | clés/storage/provider NON QUALIFIÉS      |
+| Faux succès après début de stream               | audit durable et intégrité avant premier octet; interruption ensuite sans JSON/faux succès                          | contrat/ADR                                      | streaming réel NON EXÉCUTÉ               |
+| Bootstrap concurrent ou secret en CLI           | garde singleton, refus si admin existe, stdin/secret store, audit SYSTEM atomique                                   | policy/architecture                              | CLI et PostgreSQL NON EXÉCUTÉS           |
+| Escalade PostgreSQL C2                          | reader C1 non élargi; identités séparées; aucun ownership/membership/PUBLIC/default/grant option; sinks insert-only | architecture et allowlists futures               | SQL/grants/membership NON EXÉCUTÉS       |
+| Qualification locale présentée comme production | quatre familles de providers marquées NON QUALIFIÉES; runtimeImplemented=false                                      | mutation falsement qualifiée refusée             | qualification future séparée             |
+
+La PR #50 et C1 sont intégrés au merge main
+dc97eeef72c4e299988ed19d66460011a8551cf3 avec quatre runs push/main verts,
+mais aucun déploiement n’est affirmé. Dans l’instantané de validation locale
+antérieur à sa publication, P0 était non indexé, non commité et non publié;
+toute publication ultérieure fait foi dans Git et GitHub. Il n’autorise ni
+C2a/C2b runtime, C3, politique OSS, fournisseur ou déploiement.
