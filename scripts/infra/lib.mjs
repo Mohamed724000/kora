@@ -105,6 +105,41 @@ function dockerEnvironment() {
   };
 }
 
+export function interpretDockerCommandResult(
+  argumentsList,
+  result,
+  options = {},
+) {
+  const capture = options.capture === true;
+  if (result.error || (result.status !== 0 && options.allowFailure !== true)) {
+    const detail =
+      capture && typeof result.stderr === "string" ? result.stderr.trim() : "";
+    const failure = new Error(
+      result.error
+        ? `docker ${argumentsList.join(" ")} failed to spawn`
+        : `docker ${argumentsList.join(" ")} exited with code ${result.status ?? "unknown"}${
+            detail.length === 0 ? "" : `: ${detail}`
+          }`,
+    );
+    failure.name = "DockerCommandError";
+    if (result.error?.code !== undefined) {
+      failure.spawnCode = result.error.code;
+    }
+    failure.status = result.status;
+    failure.signal = result.signal ?? null;
+    throw failure;
+  }
+
+  return {
+    signal: result.signal ?? null,
+    status: result.status ?? 1,
+    stderr:
+      capture && typeof result.stderr === "string" ? result.stderr.trim() : "",
+    stdout:
+      capture && typeof result.stdout === "string" ? result.stdout.trim() : "",
+  };
+}
+
 function commandResult(argumentsList, options = {}) {
   const capture = options.capture === true;
   const result = spawnSync("docker", argumentsList, {
@@ -116,24 +151,7 @@ function commandResult(argumentsList, options = {}) {
     windowsHide: true,
   });
 
-  if (result.error) {
-    throw result.error;
-  }
-
-  if (result.status !== 0 && options.allowFailure !== true) {
-    const detail = capture ? result.stderr.trim() : "";
-    throw new Error(
-      `docker ${argumentsList.join(" ")} exited with code ${result.status}${
-        detail.length === 0 ? "" : `: ${detail}`
-      }`,
-    );
-  }
-
-  return {
-    status: result.status ?? 1,
-    stderr: capture ? result.stderr.trim() : "",
-    stdout: capture ? result.stdout.trim() : "",
-  };
+  return interpretDockerCommandResult(argumentsList, result, options);
 }
 
 export function runDocker(argumentsList, options = {}) {

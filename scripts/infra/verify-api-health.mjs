@@ -18,6 +18,7 @@ import {
   assertNoSensitiveValue,
   assertOwnerRoleRejected,
   capturedOutputSummary,
+  phaseErrorDiagnostic,
 } from "./verify-api-health-assertions.mjs";
 
 const applicationPath = resolve(
@@ -492,18 +493,23 @@ try {
     api === undefined
       ? "not_started"
       : `pid=${api.pid ?? "unknown"},exit=${api.exitCode ?? "running"},signal=${api.signalCode ?? "none"}`;
-  const detail = capturedOutputSummary(
-    `API infrastructure verification failed (${apiState}): ${error.message}\n${logs}`,
-    sensitiveValues,
+  console.error(
+    phaseErrorDiagnostic("main", "primary_error", error, sensitiveValues),
   );
-  console.error(detail);
+  console.error(`phase=catch api_state=${apiState}`);
+  console.error(
+    `phase=catch api_log_tail=${capturedOutputSummary(logs, sensitiveValues)}`,
+  );
   process.exitCode = 1;
 } finally {
   for (const serviceName of ["postgres", "redis"]) {
     try {
       runCompose(["start", serviceName]);
       waitForServiceHealthy(serviceName);
-    } catch {
+    } catch (error) {
+      console.error(
+        `${phaseErrorDiagnostic("finally", "cleanup_error", error, sensitiveValues)}; action=start_and_wait; service=${serviceName}`,
+      );
       process.exitCode = 1;
     }
   }

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -975,7 +976,7 @@ const REQUIRED_ADMIN_AUDIT_EXPORT_MANIFEST = {
 const REQUIRED_ADMIN_SECURITY_POLICY = {
   authorization: "DENY_BY_DEFAULT_SERVER_SIDE_ROLE_AND_AUTHORIZATION_VERSION",
   bootstrap:
-    "ADMIN_BOOTSTRAP_CLI_ONE_SHOT_AUDITED_OUTSIDE_OPENAPI_DEFERRED_TO_C2_C1_TEST_FIXTURES_ONLY",
+    "ADMIN_BOOTSTRAP_CLI_ONE_SHOT_AUDITED_OUTSIDE_OPENAPI_CONTRACTED_BY_C2_P0_RUNTIME_NOT_IMPLEMENTED",
   csrfHeaderName: "X-Kora-CSRF",
   loginBrowserPolicy: "EXACT_ORIGIN_AND_FETCH_METADATA_REJECT_CROSS_SITE",
   loginFailurePolicy: "UNIFORM_401_AUTH_INVALID_CREDENTIALS_COMPARABLE_TIMING",
@@ -1121,6 +1122,57 @@ const REQUIRED_ADMIN_C1_UNAVAILABILITY_POLICY = {
     "UNKNOWN_OUTCOME_NO_SUCCESS_OR_SECRET_NO_BLIND_AUTOMATIC_RETRY",
   idempotencyAndSingleUseRulesPreserved: true,
 };
+
+const REQUIRED_ADMIN_C2_OPERATION_IDS = ADMIN_SECURITY_CONTRACTS.filter(
+  ({ slice }) => slice === "S1.2-03C2",
+).map(({ operationId }) => operationId);
+
+const REQUIRED_ADMIN_C2_UNAVAILABILITY_POLICY = {
+  operationIds: REQUIRED_ADMIN_C2_OPERATION_IDS,
+  httpStatus: 503,
+  errorCode: "SERVICE_UNAVAILABLE",
+  publicMessage: "Service temporairement indisponible.",
+  publicDetails: "EMPTY_OBJECT",
+  retryable: false,
+  dependencyDisclosure: "FORBIDDEN",
+  requiredDependencyFailure: "FAIL_CLOSED",
+  criticalMutationWithoutDurableAudit: "FORBIDDEN",
+  auditDurabilityImpossible:
+    "ROLLBACK_UNCOMMITTED_RETURN_SAFE_503_NEUTRALIZED_OPERATIONAL_OBSERVATION_NO_DURABLE_AUDIT_CLAIM",
+  commitAcknowledgementLoss:
+    "UNKNOWN_OUTCOME_NO_SUCCESS_OR_SECRET_NO_BLIND_AUTOMATIC_RETRY",
+  idempotencyAndSingleUseRulesPreserved: true,
+};
+
+const REQUIRED_ADMIN_C2_CONTRACT_POLICY_SHA256 =
+  "c9f512d64e62f1dd7a055259fa9dfd15f8d5e1cf9401ce2d2c48dc3dda3b5baa";
+
+const REQUIRED_ADMIN_C2_STEP_UP_PURPOSES = new Map([
+  ["approveAdminRecoveryCase", "RECOVERY_APPROVAL"],
+  ["createAdminAuditLogExport", "AUDIT_EXPORT"],
+  ["downloadAdminAuditLogExport", "AUDIT_EXPORT"],
+  ["createAdminInvitation", "INVITATION"],
+  ["changeAdminUserRole", "ROLE_CHANGE"],
+  ["changeAdminUserStatus", "STATUS_CHANGE"],
+]);
+
+const REQUIRED_ADMIN_C2_JSON_OPERATIONS = [
+  "requestAdminPasswordReset",
+  "resetAdminPassword",
+  "createAdminRecoveryCase",
+  "approveAdminRecoveryCase",
+  "createAdminAuditLogExport",
+  "createAdminInvitation",
+  "acceptAdminInvitation",
+  "changeAdminUserRole",
+  "changeAdminUserStatus",
+];
+
+const REQUIRED_ADMIN_C2_PAGINATED_OPERATIONS = [
+  "listAdminRecoveryCases",
+  "listAdminAuditLogs",
+  "listAdminUsers",
+];
 
 const REQUIRED_ADMIN_SERVICE_UNAVAILABLE_SCHEMA = {
   allOf: [
@@ -1681,13 +1733,15 @@ function validateOperationShape(document) {
 
           const response = dereference(document, responseValue);
           const schema = response?.content?.["application/json"]?.schema;
-          const isAdminC1ServiceUnavailable =
+          const isAdminServiceUnavailable =
             status === "503" &&
-            operation["x-kora-delivery-slice"] === "S1.2-03C1" &&
+            ["S1.2-03C1", "S1.2-03C2"].includes(
+              operation["x-kora-delivery-slice"],
+            ) &&
             responseValue?.$ref ===
               "#/components/responses/AdminServiceUnavailable";
           if (
-            !isAdminC1ServiceUnavailable &&
+            !isAdminServiceUnavailable &&
             schema?.$ref !== "#/components/schemas/ErrorResponse" &&
             schema?.$ref !== "#/components/schemas/PublishConflictError"
           ) {
@@ -3131,10 +3185,44 @@ function validateAdminSecurityContract(document) {
     JSON.stringify(document["x-kora-admin-session-family-policy"] ?? {}) !==
       JSON.stringify(REQUIRED_ADMIN_SESSION_FAMILY_POLICY) ||
     JSON.stringify(document["x-kora-admin-c1-unavailability-policy"] ?? {}) !==
-      JSON.stringify(REQUIRED_ADMIN_C1_UNAVAILABILITY_POLICY)
+      JSON.stringify(REQUIRED_ADMIN_C1_UNAVAILABILITY_POLICY) ||
+    JSON.stringify(document["x-kora-admin-c2-unavailability-policy"] ?? {}) !==
+      JSON.stringify(REQUIRED_ADMIN_C2_UNAVAILABILITY_POLICY)
   ) {
     fail(
-      "C1 audit routing, inline rotation, LRU session families and unavailability policies must be exact",
+      "C1/C2 audit routing, inline rotation, LRU session families and unavailability policies must be exact",
+    );
+  }
+
+  const c2PolicyDigest = createHash("sha256")
+    .update(JSON.stringify(document["x-kora-admin-c2-contract-policy"] ?? {}))
+    .digest("hex");
+  if (c2PolicyDigest !== REQUIRED_ADMIN_C2_CONTRACT_POLICY_SHA256) {
+    fail(
+      "C2 operation matrix, reset, JSON, delivery, pagination, export, bootstrap, database boundary and provider policies must be exact",
+    );
+  }
+
+  const c2Cursor = document.components?.parameters?.AdminC2Cursor;
+  const c2Limit = document.components?.parameters?.AdminC2Limit;
+  if (
+    c2Cursor?.name !== "cursor" ||
+    c2Cursor?.in !== "query" ||
+    c2Cursor?.required !== false ||
+    c2Cursor?.schema?.type !== "string" ||
+    c2Cursor?.schema?.minLength !== 1 ||
+    c2Cursor?.schema?.maxLength !== 512 ||
+    !c2Cursor?.description?.includes("principal, operation, exact filters") ||
+    c2Limit?.name !== "limit" ||
+    c2Limit?.in !== "query" ||
+    c2Limit?.required !== false ||
+    c2Limit?.schema?.type !== "integer" ||
+    c2Limit?.schema?.minimum !== 1 ||
+    c2Limit?.schema?.maximum !== 50 ||
+    c2Limit?.schema?.default !== 25
+  ) {
+    fail(
+      "C2 cursors must be opaque authenticated snapshots with default 25 and maximum 50",
     );
   }
 
@@ -3184,6 +3272,48 @@ function validateAdminSecurityContract(document) {
           operation["x-kora-json-body-policy"] !== "APPLICATION_JSON_ONLY"))
     ) {
       fail(`${contract.operationId} request schema or JSON policy has drifted`);
+    }
+    if (contract.slice === "S1.2-03C2") {
+      const expectedStepUpPurpose =
+        REQUIRED_ADMIN_C2_STEP_UP_PURPOSES.get(contract.operationId) ?? null;
+      if (
+        (operation["x-kora-step-up-purpose"] ?? null) !== expectedStepUpPurpose
+      ) {
+        fail(`${contract.operationId} C2 step-up purpose has drifted`);
+      }
+      const mustNormalizeMalformedJson =
+        REQUIRED_ADMIN_C2_JSON_OPERATIONS.includes(contract.operationId);
+      if (
+        mustNormalizeMalformedJson !==
+        (operation["x-kora-json-body-policy"] === "APPLICATION_JSON_ONLY" &&
+          document["x-kora-operation-errors"]?.[contract.operationId]?.includes(
+            "VALIDATION_ERROR",
+          ))
+      ) {
+        fail(
+          `${contract.operationId} C2 malformed JSON mapping must remain exact`,
+        );
+      }
+      if (
+        REQUIRED_ADMIN_C2_PAGINATED_OPERATIONS.includes(contract.operationId)
+      ) {
+        const parameterReferences = (operation.parameters ?? [])
+          .map((parameter) => parameter?.$ref)
+          .filter(Boolean);
+        if (
+          operation["x-kora-pagination"] !== "cursor" ||
+          operation["x-kora-pagination-policy"] !==
+            "ADMIN_C2_MATERIALIZED_SNAPSHOT_V1" ||
+          !parameterReferences.includes(
+            "#/components/parameters/AdminC2Cursor",
+          ) ||
+          !parameterReferences.includes("#/components/parameters/AdminC2Limit")
+        ) {
+          fail(
+            `${contract.operationId} requires the authenticated bounded C2 snapshot cursor`,
+          );
+        }
+      }
     }
     if (
       !stableEqual(Object.keys(response?.headers ?? {}), contract.headers) ||
@@ -3259,23 +3389,14 @@ function validateAdminSecurityContract(document) {
 
     const operationErrors =
       document["x-kora-operation-errors"]?.[contract.operationId] ?? [];
-    const isC1 = contract.slice === "S1.2-03C1";
     if (
-      isC1 &&
-      (!operationErrors.includes("SERVICE_UNAVAILABLE") ||
-        operation.responses?.["503"]?.$ref !==
-          "#/components/responses/AdminServiceUnavailable")
+      !operationErrors.includes("SERVICE_UNAVAILABLE") ||
+      operation.responses?.["503"]?.$ref !==
+        "#/components/responses/AdminServiceUnavailable"
     ) {
       fail(
         `${contract.operationId} requires the uniform fail-closed 503 contract`,
       );
-    }
-    if (
-      !isC1 &&
-      (operationErrors.includes("SERVICE_UNAVAILABLE") ||
-        operation.responses?.["503"] !== undefined)
-    ) {
-      fail(`${contract.operationId} C2 responses must remain unchanged`);
     }
 
     const expectedRateLimit =
@@ -3305,7 +3426,7 @@ function validateAdminSecurityContract(document) {
       (code) => code === "SERVICE_UNAVAILABLE",
     ).length !== 1
   ) {
-    fail("SERVICE_UNAVAILABLE must be the single generic Admin C1 503 code");
+    fail("SERVICE_UNAVAILABLE must be the single generic Admin C1/C2 503 code");
   }
 
   const unavailableResponse =
@@ -3329,7 +3450,7 @@ function validateAdminSecurityContract(document) {
         requestId: "req_example_503",
       })
   ) {
-    fail("Admin C1 503 must use the uniform closed ErrorResponse envelope");
+    fail("Admin C1/C2 503 must use the uniform closed ErrorResponse envelope");
   }
 
   const adminStepUpPurposes =
@@ -3670,13 +3791,16 @@ function validateAdminSecurityContract(document) {
 
   if (
     !stableEqual(document["x-kora-operation-errors"].resetAdminPassword, [
+      "VALIDATION_ERROR",
       "ADMIN_RECOVERY_INVALID",
       "RATE_LIMITED",
+      "SERVICE_UNAVAILABLE",
     ]) ||
     !stableEqual(document["x-kora-operation-errors"].acceptAdminInvitation, [
       "ADMIN_INVITATION_INVALID",
       "RATE_LIMITED",
       "VALIDATION_ERROR",
+      "SERVICE_UNAVAILABLE",
     ])
   ) {
     fail("public reset and invitation errors must not reveal secret state");
@@ -3730,6 +3854,7 @@ function validateAdminSecurityContract(document) {
         "AUDIT_EXPORT_NOT_READY",
         "AUTH_REQUIRED",
         "FORBIDDEN",
+        "SERVICE_UNAVAILABLE",
       ],
     )
   ) {
@@ -3745,16 +3870,17 @@ export function validateOpenApiDocument(document) {
   }
   if (
     document.info?.title !== "KORA+ Audio Pilot API" ||
-    document.info?.version !== "1.2.1" ||
-    document["x-kora-scope"] !== "S1.2_03B_ADMIN_SECURITY_CONTRACT_GATE"
+    document.info?.version !== "1.2.2" ||
+    document["x-kora-scope"] !==
+      "S1.2_03C2_P0_ADMIN_SECURITY_CONTRACT_PREREQUISITE"
   ) {
     fail(
-      "S1.2-03B admin-security contract title, version or scope is incorrect",
+      "S1.2-03C2-P0 admin-security contract title, version or scope is incorrect",
     );
   }
   if (!stableEqual(Object.keys(document.paths ?? {}), EXPECTED_PATHS)) {
     fail(
-      `paths must be exactly the ${EXPECTED_PATHS.length} approved S1.2-03B paths`,
+      `paths must remain exactly the ${EXPECTED_PATHS.length} approved cumulative paths`,
     );
   }
   if (
@@ -4474,6 +4600,6 @@ const direct =
 if (direct) {
   const result = readAndValidateOpenApi();
   console.log(
-    `S1.2-03B admin-security contract valid: ${result.openapi.paths} paths, ${result.openapi.operations} operations, ${result.openapi.schemas} schemas, ${result.openapi.invariants} inherited invariants, ${result.prisma.models} approved target models.`,
+    `S1.2-03C2-P0 admin-security contract valid: ${result.openapi.paths} paths, ${result.openapi.operations} operations, ${result.openapi.schemas} schemas, ${result.openapi.invariants} inherited invariants, ${result.prisma.models} preserved target models.`,
   );
 }

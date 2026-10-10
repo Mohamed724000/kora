@@ -1,13 +1,13 @@
 # KORA+ Final — Source de vérité
 
-Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 ET S1.2-03A CLÔTURÉS ET
-FUSIONNÉS — S1.2-03B-R4 FUSIONNÉ VIA PR #48 — S1.2-03C1-R11 PUBLIÉ AU HEAD
-`3e02785d…` DE LA DRAFT PR #50 AVEC QUATRE WORKFLOWS VERTS — REVUE TERMINALE
-BLOCK MALFORMED JSON — INSTANTANÉ PRÉPUBLICATION R12 VALIDÉ —
-FOURNISSEUR DE CLÉS DE PRODUCTION NON QUALIFIÉ — C2/C3 NOT STARTED**
+Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-03C1 FUSIONNÉ DANS MAIN AU
+MERGE dc97eeef72c4e299988ed19d66460011a8551cf3, NON DÉPLOYÉ — PR #50
+FERMÉE/FUSIONNÉE ET QUATRE WORKFLOWS PUSH/MAIN VERTS — S1.2-03C2-P0
+PRÉREQUIS CONTRACTUEL VALIDÉ, RUNTIME NON IMPLÉMENTÉ — FOURNISSEURS DE
+PRODUCTION NON QUALIFIÉS — C3 NOT STARTED**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-10-08
+Dernière réconciliation documentaire : 2026-10-09
 
 ## Hiérarchie normative
 
@@ -901,3 +901,31 @@ politique OSS différée n'est pas installée, la recommandation JTI reste
 séparée, la pagination reste **NON CONCLUSIVE**, V8/iOS ne sont pas exécutés et
 C2/C3 restent `Not started`. Aucun Ready, approval, merge, tag, release ou
 déploiement n'est autorisé par cet instantané.
+
+## Réconciliation C1 fusionnée et prérequis contractuel S1.2-03C2-P0 — 2026-10-09
+
+La PR #50 est fermée et fusionnée. Le head source final est
+f09fce29f43e54f2bf6bba3b043e442df1c94a77; le merge main est
+dc97eeef72c4e299988ed19d66460011a8551cf3, avec les parents ordonnés
+c97992ca2c82bc4f22f9222ea98ed53714fede4c puis
+f09fce29f43e54f2bf6bba3b043e442df1c94a77 et l’arbre
+a4eb9a79da1b676f0037bb547df84b91abb28309. Les runs push/main Infrastructure
+37778525448, Launcher Windows 37778525505, Security 37778525338 et Quality
+Linux 37778525244 sont completed/success, tentative 1, sur ce merge. C1 est
+intégré mais non déployé.
+
+S1.2-03C2-P0 matérialise ADR-026 et la fermeture contractuelle des
+quinze opérations C2 sans démarrer leur runtime. La surface cumulative reste
+60 chemins, 67 opérations et 137 schémas; C1 reste 12 opérations et C2 reste 15. P0 verrouille le 503 fermé, les purposes/sinks/contextes, le reset
+PASSWORD_RESET, les neuf erreurs JSON pré-contrôleur, les notifications/outbox,
+la compromission des mots de passe, l’e-mail/idempotence, les snapshots de
+pagination, les exports signés, le bootstrap CLI et les futures frontières
+PostgreSQL.
+
+P0 ne modifie ni runtime, Prisma, migration, provisioning, rôle/compte,
+dépendance, lockfile, workflow ou interface. Dans l’instantané de validation
+locale antérieur à sa publication, il était non indexé, non commité et non
+publié; toute publication ultérieure fait foi dans Git et GitHub. PostgreSQL,
+Redis, Docker, HTTP réel, builds applicatifs, Flutter et navigateur sont NON
+EXÉCUTÉS. Les fournisseurs de notification, HIBP, export et clés de production
+sont NON QUALIFIÉS; la politique OSS reste différée et C3 reste Not started.

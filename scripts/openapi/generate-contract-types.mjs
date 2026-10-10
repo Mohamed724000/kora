@@ -140,6 +140,13 @@ export function buildAdminC1ContractPolicies(document) {
   };
 }
 
+export function buildAdminC2ContractPolicies(document) {
+  return {
+    contract: document["x-kora-admin-c2-contract-policy"],
+    unavailability: document["x-kora-admin-c2-unavailability-policy"],
+  };
+}
+
 export function buildAdminSecurityOperations(document) {
   const operations = [];
   for (const [path, pathItem] of Object.entries(document.paths ?? {})) {
@@ -227,16 +234,15 @@ export function buildAdminSecurityOperations(document) {
           document["x-kora-admin-public-failure-timing"]?.[
             operation.operationId
           ] ?? null,
-        serviceUnavailable:
-          operation["x-kora-delivery-slice"] === "S1.2-03C1"
-            ? {
-                status: 503,
-                errorCode: "SERVICE_UNAVAILABLE",
-                publicMessage:
-                  document["x-kora-admin-c1-unavailability-policy"]
-                    ?.publicMessage ?? null,
-              }
-            : null,
+        serviceUnavailable: {
+          status: 503,
+          errorCode: "SERVICE_UNAVAILABLE",
+          publicMessage:
+            (operation["x-kora-delivery-slice"] === "S1.2-03C1"
+              ? document["x-kora-admin-c1-unavailability-policy"]
+              : document["x-kora-admin-c2-unavailability-policy"]
+            )?.publicMessage ?? null,
+        },
         signedManifest: operation["x-kora-signed-manifest"] ?? null,
         idempotency: {
           required: operation["x-kora-idempotent"] === true,
@@ -269,9 +275,10 @@ export function buildContractTypes(document) {
   const schemas = Object.entries(document.components?.schemas ?? {});
   const adminSecurityOperations = buildAdminSecurityOperations(document);
   const adminC1ContractPolicies = buildAdminC1ContractPolicies(document);
+  const adminC2ContractPolicies = buildAdminC2ContractPolicies(document);
   const lines = [
     "// Generated from docs/api/openapi.yaml by scripts/openapi/generate-contract-types.mjs.",
-    "// Do not edit by hand. Runtime clients are intentionally outside S1.2-03B.",
+    "// Do not edit by hand. Runtime clients remain outside S1.2-03C2-P0.",
     "",
     "export const audioPilotPaths = [",
     ...paths.map((path) => `  ${JSON.stringify(path)},`),
@@ -280,6 +287,8 @@ export function buildContractTypes(document) {
     "export type AudioPilotPath = (typeof audioPilotPaths)[number];",
     "",
     `export const adminC1ContractPolicies = ${JSON.stringify(adminC1ContractPolicies, null, 2)} as const;`,
+    "",
+    `export const adminC2ContractPolicies = ${JSON.stringify(adminC2ContractPolicies, null, 2)} as const;`,
     "",
     `export const adminSecurityOperations = ${JSON.stringify(adminSecurityOperations, null, 2)} as const;`,
     "",

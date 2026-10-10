@@ -1,12 +1,11 @@
 # S1.2-03C1 — Admin Auth and Session Runtime
 
-Statut : **INSTANTANÉ LOCAL PRÉPUBLICATION R3 DU 2026-10-04 — R2 ÉTAIT LE
-DERNIER HEAD PUBLIÉ DANS LA DRAFT PR #50 NON FUSIONNÉE — REVUE CTO TERMINALE
-BLOCK — R3 VALIDÉ LOCALEMENT ET NON PUBLIÉ À CET INSTANT — APRÈS CET
-INSTANTANÉ, GIT/GITHUB FONT FOI — FOURNISSEUR DE CLÉS DE PRODUCTION NON
-QUALIFIÉ — C2/C3 NOT STARTED**
+Statut : **C1 FUSIONNÉ DANS MAIN AU MERGE
+dc97eeef72c4e299988ed19d66460011a8551cf3 — QUATRE WORKFLOWS PUSH/MAIN
+VERTS — NON DÉPLOYÉ — C2-P0 CONTRACTUEL VALIDÉ, AUCUN RUNTIME C2 — FOURNISSEUR
+DE CLÉS DE PRODUCTION NON QUALIFIÉ — C3 NOT STARTED**
 
-Date : 2026-10-04
+Date : 2026-10-09
 
 Décisions : [ADR-025](../adr/ADR-025-admin-auth-session-audit-contexts.md) et
 contrat [S1.2-03B](SLICE_1_2_03B_ADMIN_SECURITY_CONTRACT_GATE.md).
@@ -244,3 +243,23 @@ tels. Les premières tentatives non concluantes du wrapper (22/24) et du gate
 Infrastructure ne sont pas comptées comme succès. Dans cet instantané daté, R3
 était local, non indexé, non commité et non publié. Après cet instantané, l'état
 réellement observé dans Git et GitHub fait foi.
+
+## Clôture C1 et frontière avec S1.2-03C2-P0
+
+La PR #50 est fermée et fusionnée. Le head source final est
+f09fce29f43e54f2bf6bba3b043e442df1c94a77 et le merge main
+dc97eeef72c4e299988ed19d66460011a8551cf3. Les quatre workflows push/main
+Infrastructure 37778525448, Launcher Windows 37778525505, Security 37778525338
+et Quality Linux 37778525244 ont réussi en tentative 1. Cette intégration ne
+constitue pas un déploiement.
+
+S1.2-03C2-P0 modifie le contrat des quinze opérations C2, son générateur et ses
+preuves documentaires. Il ne modifie aucun octet runtime C1, Prisma, migration,
+provisioning, dépendance, lockfile ou workflow. Les douze opérations C1, leurs
+transactions, ACL, sinks et garanties R12 restent la baseline intégrée.
+
+Le 503 C2 réutilise l’enveloppe fermée C1 sans modifier son comportement. Les
+neuf POST JSON C2 sont contractés séparément; le middleware C1 R12 n’est pas
+élargi dans P0. Les futurs lots C2 ne peuvent ni élargir le reader C1, ni
+réutiliser MFA_RECOVERY pour PASSWORD_RESET, ni qualifier le provider de clés
+de production.

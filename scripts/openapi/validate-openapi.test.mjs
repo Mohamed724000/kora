@@ -11,6 +11,7 @@ import { test } from "node:test";
 import {
   EXACT_PRETTIER_VERSION,
   buildAdminC1ContractPolicies,
+  buildAdminC2ContractPolicies,
   buildAdminSecurityOperations,
   buildContractTypes,
   loadExactPrettier,
@@ -192,7 +193,7 @@ function predecessorFrom(result, consumedByArtistSettlementId = null) {
   };
 }
 
-test("the S1.2-03B OpenAPI and S1.2-03C1 Prisma target contracts are semantically valid", () => {
+test("the S1.2-03C2-P0 OpenAPI and preserved S1.2-03C1 Prisma target contracts are semantically valid", () => {
   const result = readAndValidateOpenApi();
 
   assert.equal(result.openapi.paths, 60);
@@ -2877,7 +2878,53 @@ test("materializes all four C1 CTO arbitration policies in generated metadata", 
   assert.equal(
     operations.filter(({ serviceUnavailable }) => serviceUnavailable !== null)
       .length,
-    12,
+    27,
+  );
+});
+
+test("materializes the complete C2-P0 contract policy in generated metadata", () => {
+  const policies = buildAdminC2ContractPolicies(sourceDocument);
+  const operations = buildAdminSecurityOperations(sourceDocument);
+
+  assert.equal(Object.keys(policies.contract.operationMatrix).length, 15);
+  assert.equal(policies.unavailability.operationIds.length, 15);
+  assert.equal(policies.unavailability.errorCode, "SERVICE_UNAVAILABLE");
+  assert.equal(
+    policies.contract.operationMatrix.approveAdminRecoveryCase.stepUpPurpose,
+    "RECOVERY_APPROVAL",
+  );
+  assert.equal(
+    policies.contract.operationMatrix.resetAdminPassword.proofPurpose,
+    "PASSWORD_RESET",
+  );
+  assert.equal(
+    policies.contract.operationMatrix.resetAdminPassword.forbiddenProofPurpose,
+    "MFA_RECOVERY",
+  );
+  assert.deepEqual(policies.contract.preControllerJson.operationIds, [
+    "requestAdminPasswordReset",
+    "resetAdminPassword",
+    "createAdminRecoveryCase",
+    "approveAdminRecoveryCase",
+    "createAdminAuditLogExport",
+    "createAdminInvitation",
+    "acceptAdminInvitation",
+    "changeAdminUserRole",
+    "changeAdminUserStatus",
+  ]);
+  assert.equal(policies.contract.pagination.defaultLimit, 25);
+  assert.equal(policies.contract.pagination.maximumEntries, 10_000);
+  assert.equal(policies.contract.auditExport.truncation, "FORBIDDEN");
+  assert.equal(
+    policies.contract.productionQualification.runtimeImplemented,
+    false,
+  );
+  assert.equal(
+    operations.filter(
+      ({ deliverySlice, serviceUnavailable }) =>
+        deliverySlice === "S1.2-03C2" && serviceUnavailable !== null,
+    ).length,
+    15,
   );
 });
 
@@ -3425,14 +3472,87 @@ const adminSecurityMutations = [
     },
   ],
   [
-    "SERVICE_UNAVAILABLE added to C2",
+    "C2 SERVICE_UNAVAILABLE error and response omitted",
     (document) => {
-      document["x-kora-operation-errors"].requestAdminPasswordReset.push(
-        "SERVICE_UNAVAILABLE",
+      document["x-kora-operation-errors"].requestAdminPasswordReset = document[
+        "x-kora-operation-errors"
+      ].requestAdminPasswordReset.filter(
+        (code) => code !== "SERVICE_UNAVAILABLE",
       );
-      adminSecurityOperation(document, "requestAdminPasswordReset").responses[
-        "503"
-      ] = { $ref: "#/components/responses/AdminServiceUnavailable" };
+      delete adminSecurityOperation(document, "requestAdminPasswordReset")
+        .responses["503"];
+    },
+  ],
+  [
+    "C2 step-up purpose weakened",
+    (document) => {
+      adminSecurityOperation(document, "approveAdminRecoveryCase")[
+        "x-kora-step-up-purpose"
+      ] = "AUDIT_EXPORT";
+    },
+  ],
+  [
+    "C2 success sink weakened",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].operationMatrix.createAdminInvitation.successSink =
+        "ADMIN_SECURITY_EVENT";
+    },
+  ],
+  [
+    "C2 reset audit context removed",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].operationMatrix.resetAdminPassword.auditContext = null;
+    },
+  ],
+  [
+    "client reset field accepted as server proof",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].operationMatrix.resetAdminPassword.serverProof =
+        "CLIENT_RESET_CODE_IS_SUFFICIENT";
+    },
+  ],
+  [
+    "password reset aliases MFA recovery",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].passwordReset.recoveryPurpose = "MFA_RECOVERY";
+    },
+  ],
+  [
+    "C2 malformed JSON route map weakened",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].preControllerJson.operationIds.pop();
+    },
+  ],
+  [
+    "C2 cursor loses principal binding",
+    (document) => {
+      document["x-kora-admin-c2-contract-policy"].pagination.cursor =
+        "OPAQUE_ONLY";
+    },
+  ],
+  [
+    "C2 export becomes unbounded",
+    (document) => {
+      document["x-kora-admin-c2-contract-policy"].auditExport.maximumEntries =
+        null;
+    },
+  ],
+  [
+    "local provider is falsely production-qualified",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].productionQualification.notificationProvider = "QUALIFIED";
     },
   ],
   [
@@ -3454,7 +3574,7 @@ const adminSecurityMutations = [
 ];
 
 for (const [name, mutate] of adminSecurityMutations) {
-  test(`S1.2-03B rejects ${name}`, () => {
+  test(`S1.2-03C2-P0 rejects ${name}`, () => {
     const document = documentFixture();
     mutate(document);
 
