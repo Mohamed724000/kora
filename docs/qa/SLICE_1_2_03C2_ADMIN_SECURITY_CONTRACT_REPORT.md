@@ -120,3 +120,40 @@ Dans cet instantané local prépublication du 2026-10-09, P0 était non indexé,
 non commité et non publié. Aucun add, commit, push, PR, commentaire, rerun,
 Ready, approval, merge, tag, release ou déploiement n’avait été effectué. Toute
 publication ultérieure fait foi dans Git et GitHub.
+
+## Diagnostic Infrastructure historique et remédiation R1
+
+Le run Infrastructure `37924510285`, tentative 1, a échoué lors du premier
+`docker compose ... start redis` du parcours principal. Le redémarrage Redis
+observé ensuite appartient au `finally` et ne démontre pas une récupération du
+parcours principal. Le vérificateur assemblait alors l’exception primaire et
+les logs API avant de ne conserver que les dix dernières lignes et les 4 000
+derniers caractères. L’exception primaire a donc été masquée; son code spawn,
+son statut et son signal historiques restent inconnus. La cause de l’échec
+Docker historique demeure **NON CONCLUSIVE**.
+
+R1 sépare désormais l’exception principale assainie de la queue assainie des
+logs API. Les diagnostics identifient explicitement `main`, `catch` et
+`finally`, conservent le code spawn, le statut et le signal lorsqu’ils existent
+et distinguent un statut inconnu d’un code numérique. Une erreur du nettoyage
+est rapportée séparément et ne peut plus remplacer silencieusement l’erreur
+principale. Aucun délai, assertion de santé, ordre fonctionnel, retry Redis,
+runtime, fichier Compose ou workflow n’est modifié.
+
+Les preuves locales du 2026-10-10 sont distinctes de toute preuve CI future :
+
+- la reproduction pré-correctif confirme que plus de dix lignes et plus de
+  4 000 caractères de logs peuvent masquer l’erreur principale historique ;
+- les treize tests ciblés passent, y compris redaction, métadonnées
+  spawn/statut/signal et séparation de l’erreur de `finally` ;
+- `test:tooling` passe 443/443 ;
+- `infra:verify-api` passe au code 0 dans l’instance isolée
+  `kora-plus-r1diag-20261010`, avec pannes et récupérations Redis/PostgreSQL,
+  reset ciblé, PID API stable et absence de secret ou DSN dans les preuves ;
+- l’instance est supprimée, les inventaires Docker étrangers sont inchangés et
+  Docker est rendu à son état initial arrêté.
+
+Ces résultats locaux ne requalifient pas l’échec CI historique. La PR #51
+reste Draft; aucun succès CI R1 futur n’est affirmé à cet instant. Les
+fournisseurs de production restent **NON QUALIFIÉS**, la politique OSS reste
+différée et aucun runtime C2/C3 n’est commencé.

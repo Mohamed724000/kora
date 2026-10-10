@@ -24,6 +24,56 @@ export function capturedOutputSummary(output, secrets) {
   return summary.length === 0 ? "<no-captured-output>" : summary.slice(-4_000);
 }
 
+function diagnosticMetadataValue(value, nullValue) {
+  if (value === null || value === undefined) {
+    return nullValue;
+  }
+  return String(value);
+}
+
+export function diagnosticErrorSummary(error, secrets) {
+  const name =
+    typeof error?.name === "string" && error.name.length > 0
+      ? error.name
+      : "UnknownError";
+  const message =
+    typeof error?.message === "string" && error.message.length > 0
+      ? error.message
+      : "unknown error";
+  const fields = [`${name}: ${message}`];
+
+  if (error?.spawnCode !== undefined && error.spawnCode !== null) {
+    fields.push(`spawnCode=${String(error.spawnCode)}`);
+  }
+  if (Object.hasOwn(error ?? {}, "status")) {
+    fields.push(
+      `status=${Number.isInteger(error.status) ? error.status : "unknown"}`,
+    );
+  }
+  if (Object.hasOwn(error ?? {}, "signal")) {
+    fields.push(`signal=${diagnosticMetadataValue(error.signal, "none")}`);
+  }
+
+  const sanitized = sanitizedOutput(fields.join("; "), secrets)
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(" | ");
+  return sanitized.length === 0
+    ? "UnknownError: unknown error"
+    : sanitized.slice(0, 4_000);
+}
+
+export function phaseErrorDiagnostic(phase, label, error, secrets) {
+  if (!["main", "catch", "finally"].includes(phase)) {
+    throw new Error("Diagnostic phase is invalid.");
+  }
+  if (!/^[a-z][a-z_]*$/u.test(label)) {
+    throw new Error("Diagnostic label is invalid.");
+  }
+  return `phase=${phase} ${label}=${diagnosticErrorSummary(error, secrets)}`;
+}
+
 export function assertNoSensitiveValue(serialized, secrets) {
   for (const secret of secrets) {
     if (serialized.includes(secret)) {
