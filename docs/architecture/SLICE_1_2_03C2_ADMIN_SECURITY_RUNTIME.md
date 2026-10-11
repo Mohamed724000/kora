@@ -242,3 +242,47 @@ licences, audits et builds applicables.
 
 Dans P0, PostgreSQL, Redis, Docker, HTTP réel, API build, Flutter, navigateur
 et fournisseurs sont **NON EXÉCUTÉS**.
+
+## R3 — flux audit versionné et intégrité de bout en bout
+
+Le flux futur C2b est verrouillé dans cet ordre : stockage PostgreSQL existant
+→ projection allowlistée v1/v2 → filtres exacts → snapshot immuable →
+assemblage du ZIP → manifeste JCS et signature JWS Ed25519 → hash du ZIP final
+→ chiffrement de stockage → déchiffrement et vérification byte-identiques →
+audit durable de l'action avant le premier octet → téléchargement byte-identique.
+
+Le reader sélectionne les colonnes nécessaires ; il ne lit pas
+`AuditLog.reason` pour une projection v1. `version=1` produit des identifiants
+historiques textuels, toutes les métadonnées v2 à `null` et
+`legacyReasonRedacted=true`. `version=2` exige classe, contexte et motif, puis
+applique les trois contextes et les trois origines SYSTEM R2. Liste et export
+sérialisent tous deux `AdminAuditLogEntry`.
+
+Les filtres communs acteur/action/entité/date opèrent sur les valeurs physiques
+représentables. `auditVersion` compare la version exacte. Les filtres
+`auditEventClass`, `auditContext` et `auditReasonCode` lisent uniquement les
+colonnes v2 : une v1 ne correspond jamais, et aucune valeur par défaut n'est
+fabriquée. En leur absence, une v1 reste dans le snapshot si les filtres
+communs correspondent. Le curseur est lié au jeu et aux valeurs exactes des
+filtres.
+
+Le service d'audit sélectionne `reasonCode` depuis la table normative de
+l'ADR-026 : quatre opérations HTTP utilisent un motif serveur fixe, six
+valident le motif client, et sept transitions SYSTEM utilisent une origine R2
+et une source serveur précises. Un motif client absent/invalide après preuve
+devient `SECURITY_RESPONSE` avec `operatorReason=null`; le texte invalide n'est
+copié ni dans le motif normalisé ni dans la colonne de compatibilité, qui reçoit
+le littéral serveur `C2_RUNTIME`.
+
+Le worker calcule les hashes individuels du manifeste, signe le manifeste selon
+R4, ferme le ZIP, puis calcule `contentSha256` sur tous les octets de ce ZIP
+final — y compris `manifest.json` et `manifest.sig` — avant chiffrement. Le
+champ n'entre jamais dans le ZIP. READY interdit toute recompression ou
+reconstruction. Le téléchargement vérifie que le plaintext déchiffré a le même
+hash et transmet exactement ces octets. EXPIRED conserve le hash et supprime
+seulement l'artefact dérivé. Une panne après le début du stream interrompt le
+flux et ne fabrique aucun audit de complétion.
+
+R3 ne crée aucun runtime, rôle, ACL, modèle Prisma, migration, stockage ou
+provider. La surface devient 60 chemins, 67 opérations et 139 schémas en
+nommant les deux branches de projection ; C2a/C2b et C3 restent non commencés.

@@ -246,3 +246,33 @@ l'adaptateur à clés réelles éphémères est exclusivement injecté par les t
 Sans provider qualifié, C1 échoue fermé. Toute décision Ready, fusion ou
 déploiement, toute capacité C2 et toute interface C3 exigent encore une
 décision distincte.
+
+## Amendement C2-P0-R3 — projection des AuditLog historiques
+
+La projection publique d'un `AuditLog` est désormais une union exclusivement
+discriminée par `version` : `AdminAuditLogEntryV1` ou
+`AdminAuditLogEntryV2`. Cette décision ne réécrit aucune ligne et n'autorise
+aucun backfill.
+
+La branche v1 représente les lignes physiques préservées : identifiants
+historiques textuels sans coercition UUID, acteur et session historiques non
+nuls, attributs d'événement représentables, et nullité explicite de toute
+métadonnée ajoutée pour v2 (`eventClass`, `context`, `reasonCode`, causalité,
+sujet, délégation et contexte recovery/SYSTEM). Le reader C2b futur sélectionne
+une allowlist de colonnes et ne lit jamais la colonne physique `reason` mappée
+`legacyReason`. Le client reçoit uniquement `legacyReasonRedacted: true`, qui
+décrit la projection et ne fabrique aucune donnée historique. Les snapshots
+historiques passent par la même allowlist de masking positive que v2.
+
+La branche v2 conserve `eventClass`, `context` et `reasonCode` non nuls, les
+trois contextes `ADMIN_SESSION`, `ADMIN_RECOVERY`, `SYSTEM`, et les trois
+origines SYSTEM exclusives `AUTONOMOUS`, `ADMIN_DELEGATION` et
+`PUBLIC_PASSWORD_RESET`. Les nullités v1 et l'indicateur de projection legacy
+y sont interdits.
+
+Liste et export utilisent exactement `AdminAuditLogEntry`. Sans filtre de
+version/classe/contexte/motif, v1 reste éligible lorsque les filtres communs
+correspondent. `auditVersion` filtre la version exacte ;
+`auditEventClass`, `auditContext` et `auditReasonCode` sont v2-only et ne font
+jamais correspondre une v1 par valeur synthétique. Ordre, curseur, snapshot,
+limites et masking sont identiques pour les deux versions.

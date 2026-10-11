@@ -1192,3 +1192,18 @@ C2a/C2b runtime, C3, politique OSS, fournisseur ou déploiement.
 Les fournisseurs restent NON QUALIFIÉS, Prisma et les permissions restent
 inchangés, Docker/HTTP/PostgreSQL/Redis ne sont pas rejoués et aucun runtime
 C2/C3 n'est commencé.
+
+## Fermeture contractuelle S1.2-03C2-P0-R3 — 2026-10-11
+
+| Menace                                    | Contrôle R3                                                                                                        | Preuve locale                                                     | Limite résiduelle                 |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- | --------------------------------- |
+| Ligne v1 supprimée ou faussement enrichie | union versionnée, v1 incluse par défaut, métadonnées v2 nulles, identifiants historiques non coercés               | fixture v1 réelle et mutations version/attribution/filtres        | reader/runtime C2b NON IMPLÉMENTÉ |
+| Fuite de legacyReason sensible            | colonne non sélectionnée, propriété interdite, `legacyReasonRedacted=true` dérivé de version                       | canari raw rejeté et frontière générée sans propriété             | ACL/SQL futur à prouver           |
+| Motif v2 arbitraire ou enum-first         | table exacte pour dix opérations et sept transitions ; motif client validé ou rejet serveur SECURITY_RESPONSE/null | mutations valeur/source/default/reprise texte                     | writers/workers NON IMPLÉMENTÉS   |
+| Confusion causalité SYSTEM                | chaque transition fixe l'une des trois origines R2 et une source serveur validée                                   | table normative et gate exhaustif                                 | FK/CHECK futurs NON MATÉRIALISÉS  |
+| Hash d'un sous-ensemble ou ciphertext     | SHA-256 du ZIP final complet avant chiffrement, égal au plaintext téléchargé                                       | fixture ZIP, AES-GCM round-trip, hash manifest/ciphertext refusés | storage/provider NON QUALIFIÉS    |
+| Artefact READY reconstruit                | immutabilité, aucune recompression au download, hash conservé en EXPIRED, champ absent du ZIP                      | policy exacte et mutation self-reference                          | streaming réel NON EXÉCUTÉ        |
+
+La surface R3 est 60/67/139. Aucun runtime, modèle, migration, ACL, dépendance,
+workflow ou provider n'est ajouté. Docker, PostgreSQL/Redis et HTTP réel ne
+sont pas rejoués ; la cause Docker historique demeure NON CONCLUSIVE.

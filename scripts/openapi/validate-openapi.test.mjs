@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
   generateKeyPairSync,
   sign as signBytes,
   verify as verifyBytes,
@@ -60,6 +63,7 @@ function adminSecurityOperation(document, operationId) {
 
 function adminSystemAuditFixture(overrides = {}) {
   return {
+    version: 2,
     eventId: "00000000-0000-4000-8000-000000000001",
     action: "deliverAdminPasswordResetNotification",
     eventClass: "LOGIN",
@@ -74,7 +78,7 @@ function adminSystemAuditFixture(overrides = {}) {
     entityId: "00000000-0000-4000-8000-000000000002",
     maskedBefore: null,
     maskedAfter: null,
-    reasonCode: sourceDocument.components.schemas.AdminReasonCode.enum[0],
+    reasonCode: "ACCOUNT_RECOVERY",
     operatorReason: null,
     requestId: "request-r2-system-audit",
     causationEventId: null,
@@ -82,6 +86,86 @@ function adminSystemAuditFixture(overrides = {}) {
     createdAt: "2026-10-10T00:00:00.000Z",
     ...overrides,
   };
+}
+
+function adminLegacyAuditFixture(overrides = {}) {
+  return {
+    version: 1,
+    eventId: "legacy-audit",
+    action: `legacy-${"action".repeat(25)}`,
+    eventClass: null,
+    context: null,
+    actorAdminUserId: "legacy-admin",
+    subjectAdminUserId: null,
+    delegatedByAdminUserId: null,
+    adminSessionId: "legacy-session",
+    adminRecoveryContextId: null,
+    systemExecutionRefHash: null,
+    entityType: `legacy-${"entity".repeat(25)}`,
+    entityId: "legacy-entity",
+    maskedBefore: null,
+    maskedAfter: null,
+    reasonCode: null,
+    operatorReason: null,
+    requestId: "legacy-request-id",
+    causationEventId: null,
+    causationSecurityEventId: null,
+    createdAt: "2026-10-10T00:00:00.000Z",
+    legacyReasonRedacted: true,
+    ...overrides,
+  };
+}
+
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function buildStoredZip(entries) {
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+  for (const [path, value] of entries) {
+    const name = Buffer.from(path, "utf8");
+    const body = Buffer.from(value);
+    const checksum = crc32(body);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(0x0800, 6);
+    local.writeUInt32LE(checksum, 14);
+    local.writeUInt32LE(body.length, 18);
+    local.writeUInt32LE(body.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    localParts.push(local, name, body);
+
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(0x0800, 8);
+    central.writeUInt32LE(checksum, 16);
+    central.writeUInt32LE(body.length, 20);
+    central.writeUInt32LE(body.length, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt32LE(offset, 42);
+    centralParts.push(central, name);
+    offset += local.length + name.length + body.length;
+  }
+  const centralDirectory = Buffer.concat(centralParts);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(centralDirectory.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...localParts, centralDirectory, end]);
 }
 
 function base64UrlNoPadding(value) {
@@ -227,7 +311,7 @@ test("the S1.2-03C2-P0 OpenAPI and preserved S1.2-03C1 Prisma target contracts a
   assert.equal(result.openapi.operations, 67);
   assert.equal(result.openapi.invariants, 18);
   assert.equal(result.openapi.references, "resolved");
-  assert.equal(result.openapi.schemas, 137);
+  assert.equal(result.openapi.schemas, 139);
   assert.equal(result.prisma.models, 39);
   assert.ok(result.prisma.integerFinancialFields >= 10);
   assert.equal(EXPECTED_PATHS.length, 60);
@@ -336,7 +420,7 @@ test("rejects an unapproved OpenAPI schema", () => {
 
   assert.throws(
     () => validateOpenApiDocument(document),
-    /schemas must be exactly the 137 approved schemas/,
+    /schemas must be exactly the 139 approved schemas/,
   );
 });
 
@@ -2976,6 +3060,219 @@ test("accepts exactly the three valid SYSTEM causality origins", () => {
   }
 });
 
+test("accepts real legacy v1 identifiers and nullities without exposing legacyReason", () => {
+  const legacy = adminLegacyAuditFixture();
+  assert.ok(legacy.action.length > 120);
+  assert.ok(legacy.entityType.length > 120);
+  assert.equal(
+    validateSchemaInstance(sourceDocument, "AdminAuditLogEntry", legacy),
+    true,
+  );
+  assert.equal(Object.hasOwn(legacy, "legacyReason"), false);
+  assert.equal(legacy.legacyReasonRedacted, true);
+});
+
+for (const [name, audit] of [
+  ["a missing version", adminLegacyAuditFixture({ version: undefined })],
+  ["an unknown version", adminLegacyAuditFixture({ version: 3 })],
+  [
+    "v2 legacy nullities",
+    adminSystemAuditFixture({
+      context: null,
+      eventClass: null,
+      reasonCode: null,
+    }),
+  ],
+  [
+    "synthetic v1 class attribution",
+    adminLegacyAuditFixture({ eventClass: "LOGIN" }),
+  ],
+  [
+    "synthetic v1 context attribution",
+    adminLegacyAuditFixture({ context: "ADMIN_SESSION" }),
+  ],
+  [
+    "synthetic v1 reason attribution",
+    adminLegacyAuditFixture({ reasonCode: "ACCOUNT_RECOVERY" }),
+  ],
+  [
+    "a sensitive raw legacyReason canary",
+    adminLegacyAuditFixture({
+      legacyReason: "CANARY-R3-LEGACY-REASON-MUST-NEVER-BE-DELIVERED",
+    }),
+  ],
+]) {
+  test(`rejects audit projection with ${name}`, () => {
+    if (audit.version === undefined) delete audit.version;
+    assert.throws(
+      () => validateSchemaInstance(sourceDocument, "AdminAuditLogEntry", audit),
+      /must match exactly one oneOf branch/u,
+    );
+  });
+}
+
+test("binds list and export to one versioned projection and exact filter semantics", () => {
+  const policy = sourceDocument["x-kora-admin-c2-contract-policy"];
+  const list = adminSecurityOperation(sourceDocument, "listAdminAuditLogs");
+  const createExport = adminSecurityOperation(
+    sourceDocument,
+    "createAdminAuditLogExport",
+  );
+  const download = adminSecurityOperation(
+    sourceDocument,
+    "downloadAdminAuditLogExport",
+  );
+  const exportRequest =
+    sourceDocument.components.schemas.AdminAuditExportRequest;
+  const listFilterRefs = list.parameters.map((parameter) => parameter.$ref);
+
+  assert.equal(policy.auditProjection.entrySchema, "AdminAuditLogEntry");
+  assert.equal(
+    policy.auditProjection.filters.v1WithoutVersionOrV2OnlyFilters,
+    "INCLUDED_WHEN_COMMON_FILTERS_MATCH",
+  );
+  assert.equal(
+    policy.auditProjection.filters.v1WithAnyV2OnlyFilter,
+    "NEVER_MATCH",
+  );
+  assert.deepEqual(policy.auditProjection.filters.v2Only, [
+    "auditEventClass",
+    "auditContext",
+    "auditReasonCode",
+  ]);
+  for (const name of [
+    "AuditVersion",
+    "AuditEventClass",
+    "AuditContext",
+    "AuditReasonCode",
+  ]) {
+    assert.ok(listFilterRefs.includes(`#/components/parameters/${name}`));
+  }
+  for (const name of [
+    "auditVersion",
+    "auditEventClass",
+    "auditContext",
+    "auditReasonCode",
+  ]) {
+    assert.ok(exportRequest.properties[name]);
+  }
+  assert.equal(
+    exportRequest.properties.reasonCode.description.includes(
+      "not an entry filter",
+    ),
+    true,
+  );
+  assert.equal(list["x-kora-entry-schema"], "AdminAuditLogEntry");
+  assert.equal(createExport["x-kora-entry-schema"], "AdminAuditLogEntry");
+  assert.equal(download["x-kora-entry-schema"], "AdminAuditLogEntry");
+});
+
+test("locks every C2 AuditLog producer to a deterministic reason source", () => {
+  const policy = sourceDocument["x-kora-admin-c2-contract-policy"].auditReasons;
+  assert.equal(Object.keys(policy.auditLogOperations).length, 10);
+  assert.equal(Object.keys(policy.systemTransitions).length, 7);
+  assert.deepEqual(policy.auditLogOperations.resetAdminPassword, {
+    source: "SERVER_FIXED",
+    reasonCode: "ACCOUNT_RECOVERY",
+  });
+  assert.deepEqual(policy.auditLogOperations.listAdminAuditLogs, {
+    source: "SERVER_FIXED",
+    reasonCode: "AUDIT_EXPORT",
+  });
+  assert.deepEqual(policy.validatedClientRule.missingOrInvalidAfterProof, {
+    source: "SERVER_FIXED_REJECTION",
+    reasonCode: "SECURITY_RESPONSE",
+    operatorReason: null,
+    invalidClientTextReuse: "FORBIDDEN",
+  });
+  assert.equal(policy.systemTransitionOperatorReason, null);
+  for (const transition of Object.values(policy.systemTransitions)) {
+    assert.ok(
+      ["AUTONOMOUS", "ADMIN_DELEGATION", "PUBLIC_PASSWORD_RESET"].includes(
+        transition.systemOrigin,
+      ),
+    );
+    assert.equal(typeof transition.validatedSource, "string");
+  }
+  assert.equal(
+    policy.legacyReasonStorage,
+    "EXACT_SERVER_LITERAL_C2_RUNTIME_NEVER_CLIENT_TEXT_NOT_PROJECTED",
+  );
+  assert.doesNotMatch(JSON.stringify(policy), /CANARY-R3-LEGACY-REASON/u);
+});
+
+test("hashes the exact immutable final ZIP across simulated encrypted storage", () => {
+  const payload = Buffer.from(
+    '[{"legacyReasonRedacted":true,"version":1}]\n',
+    "utf8",
+  );
+  const payloadSha256 = createHash("sha256").update(payload).digest("hex");
+  const manifest = Buffer.from(
+    JSON.stringify({
+      createdAt: "2026-10-11T00:00:00.000Z",
+      entries: [
+        {
+          path: "audit.json",
+          sha256: payloadSha256,
+          size: payload.length,
+        },
+      ],
+      expiresAt: "2026-10-12T00:00:00.000Z",
+      exportId: "00000000-0000-4000-8000-000000000099",
+    }),
+    "utf8",
+  );
+  const signature = Buffer.from("fixture.detached.signature\n", "utf8");
+  const zip = buildStoredZip([
+    ["audit.json", payload],
+    ["manifest.json", manifest],
+    ["manifest.sig", signature],
+  ]);
+  const exactZipSha256 = createHash("sha256").update(zip).digest("hex");
+
+  assert.equal(zip.subarray(0, 4).toString("hex"), "504b0304");
+  assert.equal(
+    exactZipSha256,
+    "0d4f081ba9b3118e0533435becc7f1310266eb12bae03599eac3f38e5d44d79f",
+  );
+  assert.equal(manifest.includes(Buffer.from("contentSha256")), false);
+  assert.notEqual(
+    createHash("sha256").update(manifest).digest("hex"),
+    exactZipSha256,
+  );
+
+  const key = createHash("sha256").update("r3-fixture-storage-key").digest();
+  const iv = Buffer.from("000102030405060708090a0b", "hex");
+  const aad = Buffer.from("r3-audit-export-fixture", "utf8");
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  cipher.setAAD(aad);
+  const ciphertext = Buffer.concat([cipher.update(zip), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  const decipher = createDecipheriv("aes-256-gcm", key, iv);
+  decipher.setAAD(aad);
+  decipher.setAuthTag(tag);
+  const downloaded = Buffer.concat([
+    decipher.update(ciphertext),
+    decipher.final(),
+  ]);
+
+  assert.deepEqual(downloaded, zip);
+  assert.equal(
+    createHash("sha256").update(downloaded).digest("hex"),
+    exactZipSha256,
+  );
+  assert.notEqual(
+    createHash("sha256").update(ciphertext).digest("hex"),
+    exactZipSha256,
+  );
+  const mutated = Buffer.from(zip);
+  mutated[40] ^= 0x01;
+  assert.notEqual(
+    createHash("sha256").update(mutated).digest("hex"),
+    exactZipSha256,
+  );
+});
+
 for (const [name, audit] of [
   [
     "two causal sources simultaneously",
@@ -3229,7 +3526,7 @@ const adminSecurityMutations = [
   [
     "audit execution-context XOR weakened",
     (document) => {
-      document.components.schemas.AdminAuditLogEntry.oneOf.pop();
+      document.components.schemas.AdminAuditLogEntryV2.oneOf.pop();
     },
   ],
   [
@@ -3277,9 +3574,86 @@ const adminSecurityMutations = [
     },
   ],
   [
+    "legacy v1 excluded by default",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].auditProjection.filters.v1WithoutVersionOrV2OnlyFilters = "EXCLUDED";
+    },
+  ],
+  [
+    "v2-only filter synthetically attributed to v1",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].auditProjection.filters.v1WithAnyV2OnlyFilter =
+        "MATCH_SYNTHETIC_DEFAULT";
+    },
+  ],
+  [
+    "list and export use divergent audit projections",
+    (document) => {
+      adminSecurityOperation(document, "listAdminAuditLogs")[
+        "x-kora-entry-schema"
+      ] = "AdminAuditLogEntryV2";
+    },
+  ],
+  [
+    "server reset reason changed",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].auditReasons.auditLogOperations.resetAdminPassword.reasonCode =
+        "SECURITY_RESPONSE";
+    },
+  ],
+  [
+    "client reason falls back to first enum",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].auditReasons.validatedClientRule.acceptedPath = "FIRST_ENUM_DEFAULT";
+    },
+  ],
+  [
+    "invalid client reason copied to operatorReason",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].auditReasons.validatedClientRule.missingOrInvalidAfterProof.operatorReason =
+        "CLIENT_TEXT";
+    },
+  ],
+  [
+    "SYSTEM transition origin widened",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].auditReasons.systemTransitions.EXPORT_BUILD_SYSTEM_AUDIT.systemOrigin =
+        "AUTONOMOUS";
+    },
+  ],
+  [
+    "export content hash reduced to manifest-only",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].auditExport.contentSha256.input = "MANIFEST_ONLY";
+    },
+  ],
+  [
+    "export content hash made self-referential",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].auditExport.contentSha256.selfReference =
+        "contentSha256_INCLUDED_IN_MANIFEST";
+    },
+  ],
+  [
     "audit entity evidence removed",
     (document) => {
-      const schema = document.components.schemas.AdminAuditLogEntry;
+      const schema = document.components.schemas.AdminAuditLogEntryV2;
       schema.required = schema.required.filter(
         (field) => field !== "entityType",
       );
@@ -3289,7 +3663,7 @@ const adminSecurityMutations = [
   [
     "session audit actor made nullable",
     (document) => {
-      document.components.schemas.AdminAuditLogEntry.oneOf[0].properties.actorAdminUserId.type =
+      document.components.schemas.AdminAuditLogEntryV2.oneOf[0].properties.actorAdminUserId.type =
         "null";
     },
   ],
@@ -3368,7 +3742,7 @@ const adminSecurityMutations = [
   [
     "audit event class weakened",
     (document) => {
-      document.components.schemas.AdminAuditLogEntry.properties.eventClass.enum.pop();
+      document.components.schemas.AdminAuditLogEntryV2.properties.eventClass.enum.pop();
     },
   ],
   [
@@ -3432,13 +3806,13 @@ const adminSecurityMutations = [
   [
     "autonomous SYSTEM audit forced to invent causation",
     (document) => {
-      document.components.schemas.AdminAuditLogEntry.oneOf[2].oneOf.shift();
+      document.components.schemas.AdminAuditLogEntryV2.oneOf[2].oneOf.shift();
     },
   ],
   [
     "SYSTEM audit combines AuditLog and AdminSecurityEvent causality",
     (document) => {
-      document.components.schemas.AdminAuditLogEntry.oneOf[2].oneOf[2].properties.causationEventId =
+      document.components.schemas.AdminAuditLogEntryV2.oneOf[2].oneOf[2].properties.causationEventId =
         {
           type: "string",
           format: "uuid",
@@ -3448,7 +3822,7 @@ const adminSecurityMutations = [
   [
     "public reset SYSTEM audit fabricates a delegating administrator",
     (document) => {
-      document.components.schemas.AdminAuditLogEntry.oneOf[2].oneOf[2].properties.delegatedByAdminUserId =
+      document.components.schemas.AdminAuditLogEntryV2.oneOf[2].oneOf[2].properties.delegatedByAdminUserId =
         {
           type: "string",
           format: "uuid",

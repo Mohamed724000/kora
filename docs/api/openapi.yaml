@@ -284,7 +284,9 @@
           "DELIVERY_REQUEST_STATE"
         ],
         "atomicity": "RESET_REQUEST_ENCRYPTED_OUTBOX_AND_SECURITY_EVENT",
-        "asynchronousTransitions": ["NOTIFICATION_DELIVERY_SYSTEM_AUDIT"]
+        "asynchronousTransitions": [
+          "PASSWORD_RESET_NOTIFICATION_DELIVERY_SYSTEM_AUDIT"
+        ]
       },
       "resetAdminPassword": {
         "roles": [],
@@ -326,7 +328,10 @@
         "entityType": "ADMIN_RECOVERY_CASE",
         "maskedSnapshots": ["CASE_STATE", "SUBJECT_ADMIN_USER_ID"],
         "atomicity": "CANCEL_OLDER_PENDING_CREATE_CASE_RECORD_IDEMPOTENCY_AND_AUDIT",
-        "asynchronousTransitions": ["SERVER_POLICY_CANCELLATION_SYSTEM_AUDIT"]
+        "asynchronousTransitions": [
+          "RECOVERY_CASE_SERVER_CANCELLATION_SYSTEM_AUDIT",
+          "RECOVERY_CASE_SERVER_EXPIRATION_SYSTEM_AUDIT"
+        ]
       },
       "listAdminRecoveryCases": {
         "roles": ["SUPER_ADMIN", "SUPPORT"],
@@ -480,7 +485,9 @@
           "INVITATION_STATE"
         ],
         "atomicity": "REVOKE_PRIOR_VALID_INVITATION_CREATE_INVITATION_ENCRYPTED_OUTBOX_RECORD_IDEMPOTENCY_AND_AUDIT",
-        "asynchronousTransitions": ["NOTIFICATION_DELIVERY_SYSTEM_AUDIT"]
+        "asynchronousTransitions": [
+          "INVITATION_NOTIFICATION_DELIVERY_SYSTEM_AUDIT"
+        ]
       },
       "acceptAdminInvitation": {
         "roles": [],
@@ -694,6 +701,154 @@
       "auditSnapshotRule": "MATERIALIZE_BEFORE_AUDIT_READ_EVENT_NO_SELF_INCLUSION",
       "retentionMeaning": "TECHNICAL_ONLY_NOT_LEGAL"
     },
+    "auditProjection": {
+      "entrySchema": "AdminAuditLogEntry",
+      "versionDiscriminator": "version",
+      "exclusiveVersions": [1, 2],
+      "listAndExportProjection": "EXACT_SAME_VERSIONED_SCHEMA_AND_MASKING",
+      "legacyV1": {
+        "physicalVersion": 1,
+        "identityAndHistoricalAttributes": "PRESERVE_REPRESENTABLE_VALUES_WITHOUT_UUID_OR_V2_LENGTH_INVENTION",
+        "v2Metadata": "EXPLICIT_NULL_NO_BACKFILL_NO_SYNTHETIC_ATTRIBUTION",
+        "rawLegacyReason": "OMITTED_AT_POSTGRESQL_COLUMN_ALLOWLIST_NEVER_READ_NEVER_DELIVERED",
+        "legacyReasonRedacted": true,
+        "masking": "POSITIVE_ALLOWLIST_BY_ACTION",
+        "projectionIndicatorIsHistoricalMetadata": false
+      },
+      "v2": {
+        "physicalVersion": 2,
+        "eventClassContextReasonCode": "NON_NULL",
+        "executionContexts": ["ADMIN_SESSION", "ADMIN_RECOVERY", "SYSTEM"],
+        "systemOrigins": [
+          "AUTONOMOUS",
+          "ADMIN_DELEGATION",
+          "PUBLIC_PASSWORD_RESET"
+        ],
+        "legacyReasonRedacted": "FORBIDDEN"
+      },
+      "filters": {
+        "common": ["actorAdminUserId", "action", "entityType", "entityId"],
+        "dateRange": {
+          "list": ["createdFrom", "createdTo"],
+          "export": ["from", "to"],
+          "semantics": "SAME_TIME_RANGE_WITH_SURFACE_SPECIFIC_NAMES"
+        },
+        "version": "auditVersion",
+        "v2Only": ["auditEventClass", "auditContext", "auditReasonCode"],
+        "v1WithoutVersionOrV2OnlyFilters": "INCLUDED_WHEN_COMMON_FILTERS_MATCH",
+        "v1WithExplicitVersion1": "INCLUDED_WHEN_COMMON_FILTERS_MATCH",
+        "v1WithAnyV2OnlyFilter": "NEVER_MATCH",
+        "unknownHistoricalValue": "NEVER_SYNTHETICALLY_MATCH_CLASS_CONTEXT_OR_REASON",
+        "combination": "ALL_SUPPLIED_FILTERS_ARE_COMBINED_WITH_AND",
+        "cursorAndSnapshotBinding": "EXACT_FILTER_SET_AND_VALUES",
+        "orderPaginationSnapshotLimitsMasking": "IDENTICAL_FOR_V1_AND_V2"
+      }
+    },
+    "auditReasons": {
+      "auditLogOperations": {
+        "resetAdminPassword": {
+          "source": "SERVER_FIXED",
+          "reasonCode": "ACCOUNT_RECOVERY"
+        },
+        "createAdminRecoveryCase": {
+          "source": "VALIDATED_CLIENT_ONLY",
+          "allowedReasonCodes": ["ACCOUNT_RECOVERY", "SECURITY_RESPONSE"]
+        },
+        "approveAdminRecoveryCase": {
+          "source": "VALIDATED_CLIENT_ONLY",
+          "allowedReasonCodes": ["ACCOUNT_RECOVERY", "SECURITY_RESPONSE"]
+        },
+        "listAdminAuditLogs": {
+          "source": "SERVER_FIXED",
+          "reasonCode": "AUDIT_EXPORT"
+        },
+        "createAdminAuditLogExport": {
+          "source": "VALIDATED_CLIENT_ONLY",
+          "allowedReasonCodes": ["AUDIT_EXPORT"]
+        },
+        "getAdminAuditLogExport": {
+          "source": "SERVER_FIXED",
+          "reasonCode": "AUDIT_EXPORT"
+        },
+        "downloadAdminAuditLogExport": {
+          "source": "SERVER_FIXED",
+          "reasonCode": "AUDIT_EXPORT"
+        },
+        "createAdminInvitation": {
+          "source": "VALIDATED_CLIENT_ONLY",
+          "allowedReasonCodes": ["INVITATION_ADMINISTRATION"]
+        },
+        "changeAdminUserRole": {
+          "source": "VALIDATED_CLIENT_ONLY",
+          "allowedReasonCodes": ["ROLE_ADMINISTRATION"]
+        },
+        "changeAdminUserStatus": {
+          "source": "VALIDATED_CLIENT_ONLY",
+          "allowedReasonCodes": ["STATUS_ADMINISTRATION", "SECURITY_RESPONSE"]
+        }
+      },
+      "validatedClientRule": {
+        "acceptedPath": "USE_EXACT_EXPLICIT_ALLOWED_VALUE_NO_ENUM_FIRST_NO_DEFAULT",
+        "missingOrInvalidAfterProof": {
+          "source": "SERVER_FIXED_REJECTION",
+          "reasonCode": "SECURITY_RESPONSE",
+          "operatorReason": null,
+          "invalidClientTextReuse": "FORBIDDEN"
+        }
+      },
+      "systemTransitions": {
+        "PASSWORD_RESET_NOTIFICATION_DELIVERY_SYSTEM_AUDIT": {
+          "systemOrigin": "PUBLIC_PASSWORD_RESET",
+          "validatedSource": "PASSWORD_RESET_REQUEST_ADMIN_SECURITY_EVENT_AND_OUTBOX",
+          "reasonCode": "ACCOUNT_RECOVERY"
+        },
+        "INVITATION_NOTIFICATION_DELIVERY_SYSTEM_AUDIT": {
+          "systemOrigin": "ADMIN_DELEGATION",
+          "validatedSource": "CREATE_ADMIN_INVITATION_AUDIT_AND_OUTBOX",
+          "reasonCode": "INVITATION_ADMINISTRATION"
+        },
+        "EXPORT_BUILD_SYSTEM_AUDIT": {
+          "systemOrigin": "ADMIN_DELEGATION",
+          "validatedSource": "CREATE_ADMIN_AUDIT_LOG_EXPORT_AUDIT",
+          "reasonCode": "AUDIT_EXPORT"
+        },
+        "EXPORT_EXPIRY_SYSTEM_AUDIT": {
+          "systemOrigin": "AUTONOMOUS",
+          "validatedSource": "EXPORT_EXPIRY_CLOCK",
+          "reasonCode": "AUDIT_EXPORT"
+        },
+        "RECOVERY_CASE_SERVER_CANCELLATION_SYSTEM_AUDIT": {
+          "systemOrigin": "ADMIN_DELEGATION",
+          "validatedSource": "ALLOWLISTED_CREATE_RECOVERY_OR_ROLE_STATUS_AUDIT",
+          "reasonCode": "ACCOUNT_RECOVERY"
+        },
+        "RECOVERY_CASE_SERVER_EXPIRATION_SYSTEM_AUDIT": {
+          "systemOrigin": "AUTONOMOUS",
+          "validatedSource": "RECOVERY_CASE_EXPIRY_CLOCK",
+          "reasonCode": "ACCOUNT_RECOVERY"
+        },
+        "ADMIN_BOOTSTRAP_SYSTEM_AUDIT": {
+          "systemOrigin": "AUTONOMOUS",
+          "validatedSource": "BOOTSTRAP_CLI_SINGLETON_GUARD",
+          "reasonCode": "SECURITY_RESPONSE"
+        }
+      },
+      "transitionSelection": "EXACT_VALIDATED_SERVER_ORIGIN_NEVER_CLIENT_FREE_TEXT",
+      "systemTransitionOperatorReason": null,
+      "nonAuditLogOperations": {
+        "ADMIN_SECURITY_EVENT": [
+          "requestAdminPasswordReset",
+          "acceptAdminInvitation"
+        ],
+        "NONE": [
+          "listAdminRecoveryCases",
+          "getAdminRecoveryCase",
+          "listAdminUsers"
+        ]
+      },
+      "beforeProofFailures": "ADMIN_SECURITY_EVENT_WITHOUT_SQL_AUDIT_REASON",
+      "legacyReasonStorage": "EXACT_SERVER_LITERAL_C2_RUNTIME_NEVER_CLIENT_TEXT_NOT_PROJECTED"
+    },
     "auditExport": {
       "filterSemantics": "ALL_SUPPLIED_FILTERS_ARE_COMBINED_WITH_AND",
       "snapshot": "IMMUTABLE",
@@ -712,6 +867,27 @@
       ],
       "unknownField": "OMIT_OR_MASK",
       "keySeparation": ["ED25519_SIGNATURE", "JWT", "STORAGE_ENCRYPTION"],
+      "contentSha256": {
+        "algorithm": "SHA-256",
+        "encoding": "LOWERCASE_HEX_64",
+        "input": "EXACT_FINAL_ZIP_ARTIFACT_BYTES",
+        "includes": ["ALL_ZIP_BYTES", "manifest.json", "manifest.sig"],
+        "computed": "AFTER_FINAL_ZIP_ASSEMBLY_BEFORE_STORAGE_ENCRYPTION",
+        "mustEqual": [
+          "POST_DECRYPTION_PLAINTEXT_BYTES",
+          "EXACT_DOWNLOAD_RESPONSE_BODY_BYTES"
+        ],
+        "excludes": [
+          "STORAGE_CIPHERTEXT",
+          "MANIFEST_ONLY",
+          "PAYLOADS_ONLY",
+          "HTTP_HEADERS",
+          "HTTP_TRANSPORT_FRAMING"
+        ],
+        "readyArtifact": "IMMUTABLE_NO_RECOMPRESSION_NO_RECONSTRUCTION_AT_DOWNLOAD",
+        "expiredState": "HASH_PRESERVED_AFTER_DERIVED_STORAGE_DELETION",
+        "selfReference": "contentSha256_FORBIDDEN_INSIDE_ZIP_AND_MANIFEST"
+      },
       "productionProvider": "NOT_QUALIFIED",
       "sourceOfTruth": "POSTGRESQL",
       "worker": "BOUNDED_IDEMPOTENT_CLAIMS_AND_RETRIES",
@@ -3531,6 +3707,7 @@
         "x-kora-pagination": "cursor",
         "x-kora-pagination-policy": "ADMIN_C2_MATERIALIZED_SNAPSHOT_V1",
         "x-kora-filter-semantics": "ALL_SUPPLIED_FILTERS_ARE_COMBINED_WITH_AND",
+        "x-kora-entry-schema": "AdminAuditLogEntry",
         "security": [{ "adminSession": [] }],
         "parameters": [
           { "$ref": "#/components/parameters/AdminC2Cursor" },
@@ -3540,7 +3717,11 @@
           { "$ref": "#/components/parameters/AuditEntityType" },
           { "$ref": "#/components/parameters/AuditEntityId" },
           { "$ref": "#/components/parameters/AuditCreatedFrom" },
-          { "$ref": "#/components/parameters/AuditCreatedTo" }
+          { "$ref": "#/components/parameters/AuditCreatedTo" },
+          { "$ref": "#/components/parameters/AuditVersion" },
+          { "$ref": "#/components/parameters/AuditEventClass" },
+          { "$ref": "#/components/parameters/AuditContext" },
+          { "$ref": "#/components/parameters/AuditReasonCode" }
         ],
         "responses": {
           "200": {
@@ -3580,6 +3761,7 @@
         "x-kora-idempotent": true,
         "x-kora-idempotent-replay": "REPLAY_SAME_RESPONSE_FOR_SAME_PAYLOAD_DIFFERENT_PAYLOAD_409",
         "x-kora-reason-required": true,
+        "x-kora-entry-schema": "AdminAuditLogEntry",
         "security": [{ "adminSession": [] }],
         "parameters": [
           { "$ref": "#/components/parameters/AdminOrigin" },
@@ -3663,6 +3845,8 @@
         "x-kora-step-up-purpose": "AUDIT_EXPORT",
         "x-kora-audit-sink": "AUDIT_LOG",
         "x-kora-pii-redacted": true,
+        "x-kora-entry-schema": "AdminAuditLogEntry",
+        "x-kora-content-sha256": "EXACT_FINAL_ZIP_BYTES_BEFORE_STORAGE_ENCRYPTION_EQUALS_POST_DECRYPTION_DOWNLOAD_BODY",
         "x-kora-signed-manifest": {
           "manifestPath": "manifest.json",
           "signaturePath": "manifest.sig",
@@ -4052,25 +4236,29 @@
         "name": "actorAdminUserId",
         "in": "query",
         "required": false,
-        "schema": { "$ref": "#/components/schemas/Identifier" }
+        "description": "Exact physical actor identifier. Historical v1 identifiers are not coerced to UUIDs.",
+        "schema": { "type": "string", "minLength": 1 }
       },
       "AuditAction": {
         "name": "action",
         "in": "query",
         "required": false,
-        "schema": { "type": "string", "minLength": 1, "maxLength": 120 }
+        "description": "Exact physical action. Historical v1 values are not truncated to the v2 bound.",
+        "schema": { "type": "string", "minLength": 1 }
       },
       "AuditEntityType": {
         "name": "entityType",
         "in": "query",
         "required": false,
-        "schema": { "type": "string", "minLength": 1, "maxLength": 120 }
+        "description": "Exact physical entity type. Historical v1 values are not truncated to the v2 bound.",
+        "schema": { "type": "string", "minLength": 1 }
       },
       "AuditEntityId": {
         "name": "entityId",
         "in": "query",
         "required": false,
-        "schema": { "$ref": "#/components/schemas/Identifier" }
+        "description": "Exact physical entity identifier. Historical v1 identifiers are not coerced to UUIDs.",
+        "schema": { "type": "string", "minLength": 1 }
       },
       "AuditCreatedFrom": {
         "name": "createdFrom",
@@ -4083,6 +4271,37 @@
         "in": "query",
         "required": false,
         "schema": { "$ref": "#/components/schemas/Timestamp" }
+      },
+      "AuditVersion": {
+        "name": "auditVersion",
+        "in": "query",
+        "required": false,
+        "description": "Exact stored audit version. Without this filter, both versions remain eligible.",
+        "schema": { "type": "integer", "enum": [1, 2] }
+      },
+      "AuditEventClass": {
+        "name": "auditEventClass",
+        "in": "query",
+        "required": false,
+        "description": "v2-only event-class filter; historical v1 rows never match.",
+        "schema": {
+          "type": "string",
+          "enum": ["LOGIN", "SESSION", "EXPORT", "BUSINESS"]
+        }
+      },
+      "AuditContext": {
+        "name": "auditContext",
+        "in": "query",
+        "required": false,
+        "description": "v2-only execution-context filter; historical v1 rows never match.",
+        "schema": { "$ref": "#/components/schemas/AdminAuditContext" }
+      },
+      "AuditReasonCode": {
+        "name": "auditReasonCode",
+        "in": "query",
+        "required": false,
+        "description": "v2-only normalized audit-reason filter; historical v1 rows never match.",
+        "schema": { "$ref": "#/components/schemas/AdminReasonCode" }
       },
       "IdempotencyKey": {
         "name": "Idempotency-Key",
@@ -6096,6 +6315,89 @@
         "enum": ["ADMIN_SESSION", "ADMIN_RECOVERY", "SYSTEM"]
       },
       "AdminAuditLogEntry": {
+        "oneOf": [
+          { "$ref": "#/components/schemas/AdminAuditLogEntryV1" },
+          { "$ref": "#/components/schemas/AdminAuditLogEntryV2" }
+        ],
+        "discriminator": {
+          "propertyName": "version",
+          "mapping": {
+            "1": "#/components/schemas/AdminAuditLogEntryV1",
+            "2": "#/components/schemas/AdminAuditLogEntryV2"
+          }
+        }
+      },
+      "AdminAuditLogEntryV1": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "action",
+          "actorAdminUserId",
+          "adminRecoveryContextId",
+          "adminSessionId",
+          "causationEventId",
+          "causationSecurityEventId",
+          "context",
+          "createdAt",
+          "delegatedByAdminUserId",
+          "entityId",
+          "entityType",
+          "eventClass",
+          "eventId",
+          "legacyReasonRedacted",
+          "maskedAfter",
+          "maskedBefore",
+          "operatorReason",
+          "reasonCode",
+          "requestId",
+          "subjectAdminUserId",
+          "systemExecutionRefHash",
+          "version"
+        ],
+        "properties": {
+          "version": { "type": "integer", "const": 1 },
+          "eventId": { "type": "string", "minLength": 1 },
+          "action": { "type": "string", "minLength": 1 },
+          "eventClass": { "type": "null" },
+          "context": { "type": "null" },
+          "actorAdminUserId": { "type": "string", "minLength": 1 },
+          "subjectAdminUserId": { "type": "null" },
+          "delegatedByAdminUserId": { "type": "null" },
+          "adminSessionId": { "type": "string", "minLength": 1 },
+          "adminRecoveryContextId": { "type": "null" },
+          "systemExecutionRefHash": { "type": "null" },
+          "entityType": { "type": "string", "minLength": 1 },
+          "entityId": { "type": "string", "minLength": 1 },
+          "maskedBefore": {
+            "type": ["object", "null"],
+            "maxProperties": 50,
+            "additionalProperties": {
+              "type": ["string", "number", "boolean", "null"]
+            },
+            "x-kora-pii-redacted": true
+          },
+          "maskedAfter": {
+            "type": ["object", "null"],
+            "maxProperties": 50,
+            "additionalProperties": {
+              "type": ["string", "number", "boolean", "null"]
+            },
+            "x-kora-pii-redacted": true
+          },
+          "reasonCode": { "type": "null" },
+          "operatorReason": { "type": "null" },
+          "requestId": { "type": "string", "minLength": 8, "maxLength": 128 },
+          "causationEventId": { "type": "null" },
+          "causationSecurityEventId": { "type": "null" },
+          "createdAt": { "$ref": "#/components/schemas/Timestamp" },
+          "legacyReasonRedacted": {
+            "type": "boolean",
+            "const": true,
+            "description": "Projection-only indicator: the physical v1 reason column was not selected or delivered."
+          }
+        }
+      },
+      "AdminAuditLogEntryV2": {
         "type": "object",
         "additionalProperties": false,
         "required": [
@@ -6118,9 +6420,11 @@
           "reasonCode",
           "requestId",
           "subjectAdminUserId",
-          "systemExecutionRefHash"
+          "systemExecutionRefHash",
+          "version"
         ],
         "properties": {
+          "version": { "type": "integer", "const": 2 },
           "eventId": { "$ref": "#/components/schemas/Identifier" },
           "action": { "type": "string", "minLength": 1, "maxLength": 120 },
           "eventClass": {
@@ -6258,15 +6562,40 @@
         "type": "object",
         "additionalProperties": false,
         "x-kora-filter-semantics": "ALL_SUPPLIED_FILTERS_ARE_COMBINED_WITH_AND",
+        "x-kora-entry-schema": "AdminAuditLogEntry",
         "required": ["from", "operatorReason", "reasonCode", "to"],
         "properties": {
           "from": { "$ref": "#/components/schemas/Timestamp" },
           "to": { "$ref": "#/components/schemas/Timestamp" },
-          "actorAdminUserId": { "$ref": "#/components/schemas/Identifier" },
-          "action": { "type": "string", "minLength": 1, "maxLength": 120 },
-          "entityType": { "type": "string", "minLength": 1, "maxLength": 120 },
-          "entityId": { "$ref": "#/components/schemas/Identifier" },
-          "reasonCode": { "$ref": "#/components/schemas/AdminReasonCode" },
+          "actorAdminUserId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Exact physical actor identifier; v1 values are not coerced to UUIDs."
+          },
+          "action": { "type": "string", "minLength": 1 },
+          "entityType": { "type": "string", "minLength": 1 },
+          "entityId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "auditVersion": { "type": "integer", "enum": [1, 2] },
+          "auditEventClass": {
+            "type": "string",
+            "enum": ["LOGIN", "SESSION", "EXPORT", "BUSINESS"],
+            "description": "v2-only filter; v1 entries never match."
+          },
+          "auditContext": {
+            "$ref": "#/components/schemas/AdminAuditContext",
+            "description": "v2-only filter; v1 entries never match."
+          },
+          "auditReasonCode": {
+            "$ref": "#/components/schemas/AdminReasonCode",
+            "description": "v2-only normalized entry filter; v1 entries never match."
+          },
+          "reasonCode": {
+            "$ref": "#/components/schemas/AdminReasonCode",
+            "description": "Validated operator reason for creating the export; this is not an entry filter."
+          },
           "operatorReason": {
             "type": "string",
             "minLength": 3,
@@ -6296,7 +6625,8 @@
           "expiresAt": { "type": ["string", "null"], "format": "date-time" },
           "contentSha256": {
             "type": ["string", "null"],
-            "pattern": "^[a-f0-9]{64}$"
+            "pattern": "^[a-f0-9]{64}$",
+            "description": "Lowercase SHA-256 of the exact immutable final ZIP bytes, including manifest.json and manifest.sig, computed before storage encryption and preserved after expiry. It is not a hash of ciphertext, manifest-only, payload-only or transport framing and is forbidden inside the ZIP itself."
           },
           "signatureKeyId": {
             "type": ["string", "null"],

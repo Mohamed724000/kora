@@ -968,3 +968,28 @@ Dans cet instantané antérieur à toute publication, R2 est local, non indexé,
 non commité et non publié; tout état Git/GitHub postérieur fait foi. Aucun
 runtime C2/C3 n'est commencé. Les fournisseurs de production restent NON
 QUALIFIÉS et la politique OSS reste différée.
+
+## S1.2-03C2-P0-R3 — projection legacy, motifs et hash d'export — 2026-10-11
+
+Au head publié R2 `751299d10049582ba8eec829bbfcd2dbdd02fb02`, la
+revue cumulative a identifié trois ambiguïtés contractuelles : projection des
+lignes AuditLog v1, sélection des motifs v2 et portée de `contentSha256`. R3
+les ferme localement sans runtime.
+
+La projection est l'union discriminée v1/v2. V1 conserve les identifiants et
+attributs historiques représentables, n'invente aucune métadonnée v2 et omet
+la colonne `legacyReason` dès l'allowlist PostgreSQL ; liste et export restent
+cohérents et incluent v1 par défaut. V2 garde ses non-nullités et les trois
+contextes/origines R2.
+
+Une table exacte couvre dix opérations AuditLog et sept transitions SYSTEM.
+Les motifs fixes, motifs client validés, rejets après preuve, opérations sans
+AuditLog et sources causales sont séparés. L'expiration recovery reçoit
+`ACCOUNT_RECOVERY`. Le ZIP final complet est hashé avant chiffrement, transmis
+byte-identique après déchiffrement, immuable en READY et non autoréférentiel.
+
+La surface courante est 60 chemins, 67 opérations et 139 schémas. R3 reste
+local, non indexé, non commit et non publié. Les quatre succès R2, la Draft PR
+#51 et l'échec Infrastructure historique à cause Docker NON CONCLUSIVE ne sont
+pas réinterprétés. Aucun runtime C2/C3 n'est commencé ; fournisseurs de
+production NON QUALIFIÉS et politique OSS différée.

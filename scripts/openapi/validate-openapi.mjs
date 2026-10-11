@@ -538,6 +538,8 @@ const EXPECTED_SCHEMAS = [
   "AdminRecoveryCasePage",
   "AdminAuditContext",
   "AdminAuditLogEntry",
+  "AdminAuditLogEntryV1",
+  "AdminAuditLogEntryV2",
   "AdminAuditLogPage",
   "AdminAuditExportRequest",
   "AdminAuditExportState",
@@ -973,6 +975,131 @@ const REQUIRED_ADMIN_AUDIT_EXPORT_MANIFEST = {
     "OVERLAPPING_VERIFY_OLD_KEYS_UNTIL_ALL_REFERENCED_EXPORTS_EXPIRE",
 };
 
+const REQUIRED_ADMIN_AUDIT_EXPORT_CONTENT_SHA256 = {
+  algorithm: "SHA-256",
+  encoding: "LOWERCASE_HEX_64",
+  input: "EXACT_FINAL_ZIP_ARTIFACT_BYTES",
+  includes: ["ALL_ZIP_BYTES", "manifest.json", "manifest.sig"],
+  computed: "AFTER_FINAL_ZIP_ASSEMBLY_BEFORE_STORAGE_ENCRYPTION",
+  mustEqual: [
+    "POST_DECRYPTION_PLAINTEXT_BYTES",
+    "EXACT_DOWNLOAD_RESPONSE_BODY_BYTES",
+  ],
+  excludes: [
+    "STORAGE_CIPHERTEXT",
+    "MANIFEST_ONLY",
+    "PAYLOADS_ONLY",
+    "HTTP_HEADERS",
+    "HTTP_TRANSPORT_FRAMING",
+  ],
+  readyArtifact: "IMMUTABLE_NO_RECOMPRESSION_NO_RECONSTRUCTION_AT_DOWNLOAD",
+  expiredState: "HASH_PRESERVED_AFTER_DERIVED_STORAGE_DELETION",
+  selfReference: "contentSha256_FORBIDDEN_INSIDE_ZIP_AND_MANIFEST",
+};
+
+const REQUIRED_ADMIN_C2_AUDIT_REASONS = {
+  auditLogOperations: {
+    resetAdminPassword: {
+      source: "SERVER_FIXED",
+      reasonCode: "ACCOUNT_RECOVERY",
+    },
+    createAdminRecoveryCase: {
+      source: "VALIDATED_CLIENT_ONLY",
+      allowedReasonCodes: ["ACCOUNT_RECOVERY", "SECURITY_RESPONSE"],
+    },
+    approveAdminRecoveryCase: {
+      source: "VALIDATED_CLIENT_ONLY",
+      allowedReasonCodes: ["ACCOUNT_RECOVERY", "SECURITY_RESPONSE"],
+    },
+    listAdminAuditLogs: {
+      source: "SERVER_FIXED",
+      reasonCode: "AUDIT_EXPORT",
+    },
+    createAdminAuditLogExport: {
+      source: "VALIDATED_CLIENT_ONLY",
+      allowedReasonCodes: ["AUDIT_EXPORT"],
+    },
+    getAdminAuditLogExport: {
+      source: "SERVER_FIXED",
+      reasonCode: "AUDIT_EXPORT",
+    },
+    downloadAdminAuditLogExport: {
+      source: "SERVER_FIXED",
+      reasonCode: "AUDIT_EXPORT",
+    },
+    createAdminInvitation: {
+      source: "VALIDATED_CLIENT_ONLY",
+      allowedReasonCodes: ["INVITATION_ADMINISTRATION"],
+    },
+    changeAdminUserRole: {
+      source: "VALIDATED_CLIENT_ONLY",
+      allowedReasonCodes: ["ROLE_ADMINISTRATION"],
+    },
+    changeAdminUserStatus: {
+      source: "VALIDATED_CLIENT_ONLY",
+      allowedReasonCodes: ["STATUS_ADMINISTRATION", "SECURITY_RESPONSE"],
+    },
+  },
+  validatedClientRule: {
+    acceptedPath: "USE_EXACT_EXPLICIT_ALLOWED_VALUE_NO_ENUM_FIRST_NO_DEFAULT",
+    missingOrInvalidAfterProof: {
+      source: "SERVER_FIXED_REJECTION",
+      reasonCode: "SECURITY_RESPONSE",
+      operatorReason: null,
+      invalidClientTextReuse: "FORBIDDEN",
+    },
+  },
+  systemTransitions: {
+    PASSWORD_RESET_NOTIFICATION_DELIVERY_SYSTEM_AUDIT: {
+      systemOrigin: "PUBLIC_PASSWORD_RESET",
+      validatedSource: "PASSWORD_RESET_REQUEST_ADMIN_SECURITY_EVENT_AND_OUTBOX",
+      reasonCode: "ACCOUNT_RECOVERY",
+    },
+    INVITATION_NOTIFICATION_DELIVERY_SYSTEM_AUDIT: {
+      systemOrigin: "ADMIN_DELEGATION",
+      validatedSource: "CREATE_ADMIN_INVITATION_AUDIT_AND_OUTBOX",
+      reasonCode: "INVITATION_ADMINISTRATION",
+    },
+    EXPORT_BUILD_SYSTEM_AUDIT: {
+      systemOrigin: "ADMIN_DELEGATION",
+      validatedSource: "CREATE_ADMIN_AUDIT_LOG_EXPORT_AUDIT",
+      reasonCode: "AUDIT_EXPORT",
+    },
+    EXPORT_EXPIRY_SYSTEM_AUDIT: {
+      systemOrigin: "AUTONOMOUS",
+      validatedSource: "EXPORT_EXPIRY_CLOCK",
+      reasonCode: "AUDIT_EXPORT",
+    },
+    RECOVERY_CASE_SERVER_CANCELLATION_SYSTEM_AUDIT: {
+      systemOrigin: "ADMIN_DELEGATION",
+      validatedSource: "ALLOWLISTED_CREATE_RECOVERY_OR_ROLE_STATUS_AUDIT",
+      reasonCode: "ACCOUNT_RECOVERY",
+    },
+    RECOVERY_CASE_SERVER_EXPIRATION_SYSTEM_AUDIT: {
+      systemOrigin: "AUTONOMOUS",
+      validatedSource: "RECOVERY_CASE_EXPIRY_CLOCK",
+      reasonCode: "ACCOUNT_RECOVERY",
+    },
+    ADMIN_BOOTSTRAP_SYSTEM_AUDIT: {
+      systemOrigin: "AUTONOMOUS",
+      validatedSource: "BOOTSTRAP_CLI_SINGLETON_GUARD",
+      reasonCode: "SECURITY_RESPONSE",
+    },
+  },
+  transitionSelection: "EXACT_VALIDATED_SERVER_ORIGIN_NEVER_CLIENT_FREE_TEXT",
+  systemTransitionOperatorReason: null,
+  nonAuditLogOperations: {
+    ADMIN_SECURITY_EVENT: [
+      "requestAdminPasswordReset",
+      "acceptAdminInvitation",
+    ],
+    NONE: ["listAdminRecoveryCases", "getAdminRecoveryCase", "listAdminUsers"],
+  },
+  beforeProofFailures: "ADMIN_SECURITY_EVENT_WITHOUT_SQL_AUDIT_REASON",
+  legacyReasonStorage:
+    "EXACT_SERVER_LITERAL_C2_RUNTIME_NEVER_CLIENT_TEXT_NOT_PROJECTED",
+};
+
 const REQUIRED_ADMIN_SECURITY_POLICY = {
   authorization: "DENY_BY_DEFAULT_SERVER_SIDE_ROLE_AND_AUTHORIZATION_VERSION",
   bootstrap:
@@ -1145,7 +1272,7 @@ const REQUIRED_ADMIN_C2_UNAVAILABILITY_POLICY = {
 };
 
 const REQUIRED_ADMIN_C2_CONTRACT_POLICY_SHA256 =
-  "65b12df86f5b65711adb07aa3586e997d9db6b27b2a974fe4920b5996ce5a684";
+  "3847d3f86f00c4a2cd6334c93b69574b342529409b882322f5d5b9363fbb0ed7";
 
 const REQUIRED_ADMIN_C2_STEP_UP_PURPOSES = new Map([
   ["approveAdminRecoveryCase", "RECOVERY_APPROVAL"],
@@ -3390,7 +3517,7 @@ function validateAdminSecurityContract(document) {
     resetRequestPolicy?.atomicity !==
       "RESET_REQUEST_ENCRYPTED_OUTBOX_AND_SECURITY_EVENT" ||
     !stableEqual(resetRequestPolicy?.asynchronousTransitions ?? [], [
-      "NOTIFICATION_DELIVERY_SYSTEM_AUDIT",
+      "PASSWORD_RESET_NOTIFICATION_DELIVERY_SYSTEM_AUDIT",
     ]) ||
     forbiddenClientCausalityFields.some(
       (field) => resetRequestSchema?.properties?.[field] !== undefined,
@@ -3398,6 +3525,76 @@ function validateAdminSecurityContract(document) {
   ) {
     fail(
       "public password reset must create durable server-only typed AdminSecurityEvent causality without a fabricated administrator",
+    );
+  }
+
+  if (
+    JSON.stringify(c2Policy.auditReasons ?? {}) !==
+    JSON.stringify(REQUIRED_ADMIN_C2_AUDIT_REASONS)
+  ) {
+    fail(
+      "C2 AuditLog producers must preserve the exact server/client reason source and value table",
+    );
+  }
+  const matrix = c2Policy.operationMatrix ?? {};
+  const actualAuditLogOperations = Object.entries(matrix)
+    .filter(([, policy]) => policy?.successSink === "AUDIT_LOG")
+    .map(([operationId]) => operationId);
+  const requiredAuditLogOperations = Object.keys(
+    REQUIRED_ADMIN_C2_AUDIT_REASONS.auditLogOperations,
+  );
+  if (!orderedEqual(actualAuditLogOperations, requiredAuditLogOperations)) {
+    fail(
+      "C2 AuditLog reason policy must cover every and only AuditLog operation",
+    );
+  }
+  for (const [operationId, reasonPolicy] of Object.entries(
+    REQUIRED_ADMIN_C2_AUDIT_REASONS.auditLogOperations,
+  )) {
+    const operationPolicy = matrix[operationId];
+    const expectedClientReasons =
+      reasonPolicy.source === "VALIDATED_CLIENT_ONLY"
+        ? reasonPolicy.allowedReasonCodes
+        : [];
+    if (
+      !orderedEqual(
+        operationPolicy?.clientReasonCodes ?? [],
+        expectedClientReasons,
+      )
+    ) {
+      fail(
+        `${operationId} client reasons must match its deterministic AuditLog reason source`,
+      );
+    }
+  }
+  for (const [sink, operationIds] of Object.entries(
+    REQUIRED_ADMIN_C2_AUDIT_REASONS.nonAuditLogOperations,
+  )) {
+    if (
+      !orderedEqual(
+        Object.entries(matrix)
+          .filter(([, policy]) => policy?.successSink === sink)
+          .map(([operationId]) => operationId),
+        operationIds,
+      )
+    ) {
+      fail(`${sink} C2 operations must not receive a SQL AuditLog reason`);
+    }
+  }
+  const declaredAsyncTransitions = Object.values(matrix).flatMap(
+    (policy) => policy?.asynchronousTransitions ?? [],
+  );
+  const expectedAsyncTransitions = Object.keys(
+    REQUIRED_ADMIN_C2_AUDIT_REASONS.systemTransitions,
+  ).filter((name) => name !== "ADMIN_BOOTSTRAP_SYSTEM_AUDIT");
+  if (
+    !orderedEqual(
+      [...declaredAsyncTransitions].sort(),
+      [...expectedAsyncTransitions].sort(),
+    )
+  ) {
+    fail(
+      "C2 asynchronous and bootstrap AuditLog transitions must be exhaustive and origin-specific",
     );
   }
 
@@ -3905,7 +4102,9 @@ function validateAdminSecurityContract(document) {
   }
 
   const audit = document.components.schemas.AdminAuditLogEntry;
-  const auditProperties = [
+  const auditV1 = document.components.schemas.AdminAuditLogEntryV1;
+  const auditV2 = document.components.schemas.AdminAuditLogEntryV2;
+  const auditV2Required = [
     "action",
     "actorAdminUserId",
     "adminRecoveryContextId",
@@ -3926,15 +4125,83 @@ function validateAdminSecurityContract(document) {
     "requestId",
     "subjectAdminUserId",
     "systemExecutionRefHash",
+    "version",
   ];
-  const [sessionAudit, recoveryAudit, systemAudit] = audit.oneOf ?? [];
+  const auditV1Required = [
+    ...auditV2Required.slice(0, 13),
+    "legacyReasonRedacted",
+    ...auditV2Required.slice(13),
+  ];
+  const auditV2Properties = [
+    "version",
+    "eventId",
+    "action",
+    "eventClass",
+    "context",
+    "actorAdminUserId",
+    "subjectAdminUserId",
+    "delegatedByAdminUserId",
+    "adminSessionId",
+    "adminRecoveryContextId",
+    "systemExecutionRefHash",
+    "entityType",
+    "entityId",
+    "maskedBefore",
+    "maskedAfter",
+    "reasonCode",
+    "operatorReason",
+    "requestId",
+    "causationEventId",
+    "causationSecurityEventId",
+    "createdAt",
+  ];
+  const auditV1Properties = [...auditV2Properties, "legacyReasonRedacted"];
+  const [sessionAudit, recoveryAudit, systemAudit] = auditV2?.oneOf ?? [];
   const [autonomousAudit, delegatedAudit, publicResetAudit] =
     systemAudit?.oneOf ?? [];
   if (
-    !isExactObjectSchema(audit, auditProperties, auditProperties) ||
-    audit.oneOf?.length !== 3 ||
+    JSON.stringify(audit?.oneOf ?? []) !==
+      JSON.stringify([
+        { $ref: "#/components/schemas/AdminAuditLogEntryV1" },
+        { $ref: "#/components/schemas/AdminAuditLogEntryV2" },
+      ]) ||
+    JSON.stringify(audit?.discriminator ?? {}) !==
+      JSON.stringify({
+        propertyName: "version",
+        mapping: {
+          1: "#/components/schemas/AdminAuditLogEntryV1",
+          2: "#/components/schemas/AdminAuditLogEntryV2",
+        },
+      }) ||
+    !isExactObjectSchema(auditV1, auditV1Required, auditV1Properties) ||
+    !isExactObjectSchema(auditV2, auditV2Required, auditV2Properties) ||
+    auditV1.properties?.version?.const !== 1 ||
+    auditV2.properties?.version?.const !== 2 ||
+    auditV1.properties?.eventId?.format !== undefined ||
+    auditV1.properties?.actorAdminUserId?.format !== undefined ||
+    auditV1.properties?.adminSessionId?.format !== undefined ||
+    auditV1.properties?.entityId?.format !== undefined ||
+    auditV1.properties?.action?.maxLength !== undefined ||
+    auditV1.properties?.entityType?.maxLength !== undefined ||
+    auditV1.properties?.legacyReasonRedacted?.const !== true ||
+    auditV1.properties?.legacyReason !== undefined ||
+    auditV2.properties?.legacyReason !== undefined ||
+    auditV2.properties?.legacyReasonRedacted !== undefined ||
+    [
+      "eventClass",
+      "context",
+      "subjectAdminUserId",
+      "delegatedByAdminUserId",
+      "adminRecoveryContextId",
+      "systemExecutionRefHash",
+      "reasonCode",
+      "operatorReason",
+      "causationEventId",
+      "causationSecurityEventId",
+    ].some((field) => auditV1.properties?.[field]?.type !== "null") ||
+    auditV2.oneOf?.length !== 3 ||
     !stableEqual(
-      audit.oneOf.map((branch) => branch.properties?.context?.const),
+      auditV2.oneOf.map((branch) => branch.properties?.context?.const),
       ["ADMIN_SESSION", "ADMIN_RECOVERY", "SYSTEM"],
     ) ||
     sessionAudit?.properties?.actorAdminUserId?.type !== "string" ||
@@ -3953,7 +4220,7 @@ function validateAdminSecurityContract(document) {
     systemAudit?.properties?.adminSessionId?.type !== "null" ||
     systemAudit?.properties?.adminRecoveryContextId?.type !== "null" ||
     systemAudit?.properties?.systemExecutionRefHash?.type !== "string" ||
-    audit.properties?.causationSecurityEventId?.format !== "uuid" ||
+    auditV2.properties?.causationSecurityEventId?.format !== "uuid" ||
     systemAudit?.oneOf?.length !== 3 ||
     autonomousAudit?.properties?.causationEventId?.type !== "null" ||
     autonomousAudit?.properties?.causationSecurityEventId?.type !== "null" ||
@@ -3964,20 +4231,67 @@ function validateAdminSecurityContract(document) {
     publicResetAudit?.properties?.causationEventId?.type !== "null" ||
     publicResetAudit?.properties?.causationSecurityEventId?.type !== "string" ||
     publicResetAudit?.properties?.delegatedByAdminUserId?.type !== "null" ||
-    !stableEqual(audit.properties?.eventClass?.enum ?? [], [
+    !stableEqual(auditV2.properties?.eventClass?.enum ?? [], [
       "LOGIN",
       "SESSION",
       "EXPORT",
       "BUSINESS",
     ]) ||
-    audit.properties?.reasonCode?.$ref !==
+    auditV2.properties?.reasonCode?.$ref !==
       "#/components/schemas/AdminReasonCode" ||
-    audit.properties?.operatorReason?.minLength !== 3 ||
-    audit.properties?.maskedBefore?.["x-kora-pii-redacted"] !== true ||
-    audit.properties?.maskedAfter?.["x-kora-pii-redacted"] !== true
+    auditV2.properties?.operatorReason?.minLength !== 3 ||
+    auditV1.properties?.maskedBefore?.["x-kora-pii-redacted"] !== true ||
+    auditV1.properties?.maskedAfter?.["x-kora-pii-redacted"] !== true ||
+    auditV2.properties?.maskedBefore?.["x-kora-pii-redacted"] !== true ||
+    auditV2.properties?.maskedAfter?.["x-kora-pii-redacted"] !== true
   ) {
     fail(
-      "AuditLog must encode the complete ADR-004/019 evidence, strict ADR-025 context and three exclusive SYSTEM causality origins",
+      "AuditLog must be an exclusive v1/v2 projection with real legacy nullities, no raw legacy reason and strict v2 contexts/causality",
+    );
+  }
+
+  const auditProjection = c2Policy.auditProjection ?? {};
+  if (
+    auditProjection.entrySchema !== "AdminAuditLogEntry" ||
+    auditProjection.versionDiscriminator !== "version" ||
+    !stableEqual(auditProjection.exclusiveVersions ?? [], [1, 2]) ||
+    auditProjection.listAndExportProjection !==
+      "EXACT_SAME_VERSIONED_SCHEMA_AND_MASKING" ||
+    auditProjection.legacyV1?.rawLegacyReason !==
+      "OMITTED_AT_POSTGRESQL_COLUMN_ALLOWLIST_NEVER_READ_NEVER_DELIVERED" ||
+    auditProjection.legacyV1?.legacyReasonRedacted !== true ||
+    auditProjection.legacyV1?.v2Metadata !==
+      "EXPLICIT_NULL_NO_BACKFILL_NO_SYNTHETIC_ATTRIBUTION" ||
+    auditProjection.v2?.eventClassContextReasonCode !== "NON_NULL" ||
+    !stableEqual(auditProjection.filters?.common ?? [], [
+      "actorAdminUserId",
+      "action",
+      "entityType",
+      "entityId",
+    ]) ||
+    !stableEqual(auditProjection.filters?.dateRange?.list ?? [], [
+      "createdFrom",
+      "createdTo",
+    ]) ||
+    !stableEqual(auditProjection.filters?.dateRange?.export ?? [], [
+      "from",
+      "to",
+    ]) ||
+    auditProjection.filters?.dateRange?.semantics !==
+      "SAME_TIME_RANGE_WITH_SURFACE_SPECIFIC_NAMES" ||
+    !stableEqual(auditProjection.filters?.v2Only ?? [], [
+      "auditEventClass",
+      "auditContext",
+      "auditReasonCode",
+    ]) ||
+    auditProjection.filters?.v1WithAnyV2OnlyFilter !== "NEVER_MATCH" ||
+    auditProjection.filters?.v1WithoutVersionOrV2OnlyFilters !==
+      "INCLUDED_WHEN_COMMON_FILTERS_MATCH" ||
+    auditProjection.filters?.unknownHistoricalValue !==
+      "NEVER_SYNTHETICALLY_MATCH_CLASS_CONTEXT_OR_REASON"
+  ) {
+    fail(
+      "audit projection policy must include v1 by default, omit raw legacyReason and prevent synthetic v2 filter matches",
     );
   }
 
@@ -3989,16 +4303,35 @@ function validateAdminSecurityContract(document) {
     "entityId",
     "createdFrom",
     "createdTo",
+    "auditVersion",
+    "auditEventClass",
+    "auditContext",
+    "auditReasonCode",
   ];
   if (
     auditRead["x-kora-filter-semantics"] !==
       "ALL_SUPPLIED_FILTERS_ARE_COMBINED_WITH_AND" ||
+    auditRead["x-kora-entry-schema"] !== "AdminAuditLogEntry" ||
     requiredAuditFilters.some(
       (name) => !hasParameter(document, auditRead, name, "query"),
-    )
+    ) ||
+    document.components.parameters.AuditVersion?.schema?.enum?.length !== 2 ||
+    document.components.parameters.AuditEventClass?.schema?.enum?.length !==
+      4 ||
+    document.components.parameters.AuditContext?.schema?.$ref !==
+      "#/components/schemas/AdminAuditContext" ||
+    document.components.parameters.AuditReasonCode?.schema?.$ref !==
+      "#/components/schemas/AdminReasonCode" ||
+    document.components.parameters.AuditActorAdminUserId?.schema?.format !==
+      undefined ||
+    document.components.parameters.AuditAction?.schema?.maxLength !==
+      undefined ||
+    document.components.parameters.AuditEntityType?.schema?.maxLength !==
+      undefined ||
+    document.components.parameters.AuditEntityId?.schema?.format !== undefined
   ) {
     fail(
-      "audit read must preserve administrator, action, entity and date filters",
+      "audit read must preserve historical-compatible common filters and explicit version/v2-only filters",
     );
   }
 
@@ -4007,11 +4340,25 @@ function validateAdminSecurityContract(document) {
   if (
     auditExportRequest?.["x-kora-filter-semantics"] !==
       "ALL_SUPPLIED_FILTERS_ARE_COMBINED_WITH_AND" ||
-    ["actorAdminUserId", "action", "entityType", "entityId"].some(
-      (name) => auditExportRequest.properties?.[name] === undefined,
-    )
+    auditExportRequest?.["x-kora-entry-schema"] !== "AdminAuditLogEntry" ||
+    [
+      "actorAdminUserId",
+      "action",
+      "entityType",
+      "entityId",
+      "auditVersion",
+      "auditEventClass",
+      "auditContext",
+      "auditReasonCode",
+    ].some((name) => auditExportRequest.properties?.[name] === undefined) ||
+    auditExportRequest.properties?.reasonCode?.description !==
+      "Validated operator reason for creating the export; this is not an entry filter." ||
+    auditExportRequest.properties?.auditReasonCode?.$ref !==
+      "#/components/schemas/AdminReasonCode"
   ) {
-    fail("audit export must preserve the same bounded evidence filters");
+    fail(
+      "audit export must use the same versioned entry projection and non-ambiguous filters as list",
+    );
   }
 
   const recoveryCase = document.components.schemas.AdminRecoveryCase;
@@ -4056,12 +4403,19 @@ function validateAdminSecurityContract(document) {
       "FAILED",
     ]) ||
     createAuditExport["x-kora-pii-redacted"] !== true ||
+    createAuditExport["x-kora-entry-schema"] !== "AdminAuditLogEntry" ||
     auditExportContent["x-kora-pii-redacted"] !== true ||
+    auditExportContent["x-kora-entry-schema"] !== "AdminAuditLogEntry" ||
+    auditExportContent["x-kora-content-sha256"] !==
+      "EXACT_FINAL_ZIP_BYTES_BEFORE_STORAGE_ENCRYPTION_EQUALS_POST_DECRYPTION_DOWNLOAD_BODY" ||
+    auditExport.properties?.contentSha256?.pattern !== "^[a-f0-9]{64}$" ||
+    JSON.stringify(c2Policy.auditExport?.contentSha256 ?? {}) !==
+      JSON.stringify(REQUIRED_ADMIN_AUDIT_EXPORT_CONTENT_SHA256) ||
     JSON.stringify(auditExportContent["x-kora-signed-manifest"] ?? {}) !==
       JSON.stringify(REQUIRED_ADMIN_AUDIT_EXPORT_MANIFEST)
   ) {
     fail(
-      "audit exports require redacted evidence, signed manifest metadata and state-bound expiry",
+      "audit exports require one versioned projection, exact immutable ZIP-byte hashing, signed manifest metadata and state-bound expiry",
     );
   }
 

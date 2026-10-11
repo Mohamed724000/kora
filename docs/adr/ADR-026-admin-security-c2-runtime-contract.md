@@ -271,7 +271,61 @@ applicatifs, Flutter et navigateur sont **NON EXÉCUTÉES** dans P0.
   affaiblissements de 503, purpose, sink/contexte, preuve client, XOR reset,
   causalité SYSTEM typée, listes d'erreurs, carte JSON, curseur, bornes export,
   signature et qualification fournisseur.
-- L’inventaire reste 60/67/137; les cinq retraits historiques de SUPPORT
+- L’inventaire R3 est de 60 chemins, 67 opérations et 139 schémas ; les deux
+  schémas supplémentaires nomment les projections AuditLog v1/v2. Les cinq retraits historiques de SUPPORT
   restent inchangés.
 - Toute implémentation C2 exige un mandat distinct, une migration littérale,
   des identités/ACL dédiées et des preuves runtime réelles.
+
+## Amendement C2-P0-R3 — motifs déterministes et intégrité de l'export
+
+Tout producteur C2 de `AuditLog` sélectionne le motif depuis la table normative
+suivante. `SERVER_FIXED` ignore tout motif client ; `VALIDATED_CLIENT_ONLY`
+emploie seulement une valeur explicitement présente et autorisée, sans premier
+enum ni défaut silencieux.
+
+| Producteur HTTP             | Source                | Valeur(s) admise(s)                      |
+| --------------------------- | --------------------- | ---------------------------------------- |
+| resetAdminPassword          | SERVER_FIXED          | ACCOUNT_RECOVERY                         |
+| createAdminRecoveryCase     | VALIDATED_CLIENT_ONLY | ACCOUNT_RECOVERY, SECURITY_RESPONSE      |
+| approveAdminRecoveryCase    | VALIDATED_CLIENT_ONLY | ACCOUNT_RECOVERY, SECURITY_RESPONSE      |
+| listAdminAuditLogs          | SERVER_FIXED          | AUDIT_EXPORT                             |
+| createAdminAuditLogExport   | VALIDATED_CLIENT_ONLY | AUDIT_EXPORT                             |
+| getAdminAuditLogExport      | SERVER_FIXED          | AUDIT_EXPORT                             |
+| downloadAdminAuditLogExport | SERVER_FIXED          | AUDIT_EXPORT                             |
+| createAdminInvitation       | VALIDATED_CLIENT_ONLY | INVITATION_ADMINISTRATION                |
+| changeAdminUserRole         | VALIDATED_CLIENT_ONLY | ROLE_ADMINISTRATION                      |
+| changeAdminUserStatus       | VALIDATED_CLIENT_ONLY | STATUS_ADMINISTRATION, SECURITY_RESPONSE |
+
+Après preuve serveur, un motif client absent ou invalide produit un audit de
+rejet avec `reasonCode=SECURITY_RESPONSE`, `operatorReason=null` et sans copie
+du texte invalide. La colonne de compatibilité physique `AuditLog.reason`
+reçoit le littéral serveur exact `C2_RUNTIME`, jamais un texte client, et reste
+absente des projections. Avant preuve, le sink est `AdminSecurityEvent` et ne
+porte aucun motif SQL. `requestAdminPasswordReset` et
+`acceptAdminInvitation` restent `AdminSecurityEvent`; les lectures recovery et
+users déclarées `NONE` ne reçoivent aucun `reasonCode` SQL.
+
+| Transition SYSTEM                                 | Origine R2            | Source validée                                  | reasonCode                |
+| ------------------------------------------------- | --------------------- | ----------------------------------------------- | ------------------------- |
+| PASSWORD_RESET_NOTIFICATION_DELIVERY_SYSTEM_AUDIT | PUBLIC_PASSWORD_RESET | événement de demande reset + outbox             | ACCOUNT_RECOVERY          |
+| INVITATION_NOTIFICATION_DELIVERY_SYSTEM_AUDIT     | ADMIN_DELEGATION      | audit createAdminInvitation + outbox            | INVITATION_ADMINISTRATION |
+| EXPORT_BUILD_SYSTEM_AUDIT                         | ADMIN_DELEGATION      | audit createAdminAuditLogExport                 | AUDIT_EXPORT              |
+| EXPORT_EXPIRY_SYSTEM_AUDIT                        | AUTONOMOUS            | horloge d'expiration export                     | AUDIT_EXPORT              |
+| RECOVERY_CASE_SERVER_CANCELLATION_SYSTEM_AUDIT    | ADMIN_DELEGATION      | audit allowlisté create-recovery ou rôle/statut | ACCOUNT_RECOVERY          |
+| RECOVERY_CASE_SERVER_EXPIRATION_SYSTEM_AUDIT      | AUTONOMOUS            | horloge d'expiration recovery case              | ACCOUNT_RECOVERY          |
+| ADMIN_BOOTSTRAP_SYSTEM_AUDIT                      | AUTONOMOUS            | garde singleton du CLI bootstrap                | SECURITY_RESPONSE         |
+
+Chaque transition SYSTEM fixe `operatorReason=null`. L'expiration serveur d'un
+recovery case, déjà déclarée comme transition SYSTEM, est arbitrée ici dans le
+même domaine que son annulation : `ACCOUNT_RECOVERY`.
+
+`contentSha256` est le SHA-256 hexadécimal minuscule des octets exacts du ZIP
+final immuable, après assemblage et avant chiffrement de stockage. Il inclut
+`manifest.json` et `manifest.sig`. Les mêmes octets doivent être retrouvés
+après déchiffrement et former exactement le corps du téléchargement, sans
+recompression ni reconstruction. Le ciphertext, le manifeste seul, les seuls
+payloads, les en-têtes et le framing HTTP sont exclus. Le hash est conservé en
+état `EXPIRED` après suppression de l'artefact dérivé. Pour éviter toute
+autoréférence, `contentSha256` est absent du ZIP et de son manifeste ; le profil
+JCS/JWS Ed25519 R4 et les hashes par entrée restent inchangés.

@@ -223,3 +223,33 @@ deux commandes terminent au code 0 et constituent la preuve finale.
 L'échec Infrastructure historique reste distinct et sa cause Docker reste
 **NON CONCLUSIVE**. Aucun Docker, HTTP réel, PostgreSQL/Redis, build applicatif
 ou Flutter n'est exécuté par R2.
+
+## S1.2-03C2-P0-R3 — fermeture locale F1/F2/F3
+
+R3 remplace la projection AuditLog unique par l'union discriminée
+`AdminAuditLogEntryV1 | AdminAuditLogEntryV2`. La fixture v1 qualifiée conserve
+des identifiants non UUID et des textes historiques de plus de 120 caractères,
+rend les métadonnées v2 explicitement nulles et n'expose jamais
+`legacyReason`. L'indicateur `legacyReasonRedacted=true` décrit l'omission au
+niveau de l'allowlist PostgreSQL. Liste et export emploient la même projection ;
+v1 est incluse par défaut et ne correspond jamais artificiellement aux filtres
+v2-only.
+
+La table R3 couvre exactement dix producteurs HTTP `AuditLog`, sept
+transitions SYSTEM — bootstrap et expiration recovery compris — et sépare les
+cinq opérations `NONE`/`AdminSecurityEvent`. Les motifs serveur sont exacts ;
+un motif client absent ou invalide après preuve devient
+`SECURITY_RESPONSE`/`operatorReason=null`, sans réutilisation du texte client.
+
+`contentSha256` couvre les octets exacts du ZIP final incluant manifeste et
+signature, avant chiffrement. La fixture ZIP indépendante a l'empreinte
+`0d4f081ba9b3118e0533435becc7f1310266eb12bae03599eac3f38e5d44d79f` ;
+le round-trip AES-256-GCM simulé restitue les mêmes octets, tandis que le hash
+du manifeste, celui du ciphertext et une mutation d'un octet sont refusés.
+
+La surface R3 est de 60 chemins, 67 opérations et 139 schémas. Les deux
+schémas ajoutés nomment les branches v1/v2 ; aucun chemin ou opération n'est
+ajouté. R3 ne modifie ni runtime, Prisma, migration, provisioning, dépendance,
+lockfile, workflow ou Infrastructure. Les résultats complets et le double
+manifeste du gel sont consignés dans le rapport terminal d'exécution ; les
+sorties intermédiaires non-PASS restent conservées comme telles.

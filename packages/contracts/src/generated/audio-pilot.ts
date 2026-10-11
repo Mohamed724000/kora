@@ -155,7 +155,7 @@ export const adminC2ContractPolicies = {
         entityType: 'ADMIN_PASSWORD_RESET_REQUEST',
         maskedSnapshots: ['REDACTED_SUBJECT_DIGEST', 'DELIVERY_REQUEST_STATE'],
         atomicity: 'RESET_REQUEST_ENCRYPTED_OUTBOX_AND_SECURITY_EVENT',
-        asynchronousTransitions: ['NOTIFICATION_DELIVERY_SYSTEM_AUDIT'],
+        asynchronousTransitions: ['PASSWORD_RESET_NOTIFICATION_DELIVERY_SYSTEM_AUDIT'],
       },
       resetAdminPassword: {
         roles: [],
@@ -199,7 +199,10 @@ export const adminC2ContractPolicies = {
         entityType: 'ADMIN_RECOVERY_CASE',
         maskedSnapshots: ['CASE_STATE', 'SUBJECT_ADMIN_USER_ID'],
         atomicity: 'CANCEL_OLDER_PENDING_CREATE_CASE_RECORD_IDEMPOTENCY_AND_AUDIT',
-        asynchronousTransitions: ['SERVER_POLICY_CANCELLATION_SYSTEM_AUDIT'],
+        asynchronousTransitions: [
+          'RECOVERY_CASE_SERVER_CANCELLATION_SYSTEM_AUDIT',
+          'RECOVERY_CASE_SERVER_EXPIRATION_SYSTEM_AUDIT',
+        ],
       },
       listAdminRecoveryCases: {
         roles: ['SUPER_ADMIN', 'SUPPORT'],
@@ -349,7 +352,7 @@ export const adminC2ContractPolicies = {
         maskedSnapshots: ['CANONICAL_EMAIL_DIGEST', 'ROLE', 'INVITATION_STATE'],
         atomicity:
           'REVOKE_PRIOR_VALID_INVITATION_CREATE_INVITATION_ENCRYPTED_OUTBOX_RECORD_IDEMPOTENCY_AND_AUDIT',
-        asynchronousTransitions: ['NOTIFICATION_DELIVERY_SYSTEM_AUDIT'],
+        asynchronousTransitions: ['INVITATION_NOTIFICATION_DELIVERY_SYSTEM_AUDIT'],
       },
       acceptAdminInvitation: {
         roles: [],
@@ -551,6 +554,144 @@ export const adminC2ContractPolicies = {
       auditSnapshotRule: 'MATERIALIZE_BEFORE_AUDIT_READ_EVENT_NO_SELF_INCLUSION',
       retentionMeaning: 'TECHNICAL_ONLY_NOT_LEGAL',
     },
+    auditProjection: {
+      entrySchema: 'AdminAuditLogEntry',
+      versionDiscriminator: 'version',
+      exclusiveVersions: [1, 2],
+      listAndExportProjection: 'EXACT_SAME_VERSIONED_SCHEMA_AND_MASKING',
+      legacyV1: {
+        physicalVersion: 1,
+        identityAndHistoricalAttributes:
+          'PRESERVE_REPRESENTABLE_VALUES_WITHOUT_UUID_OR_V2_LENGTH_INVENTION',
+        v2Metadata: 'EXPLICIT_NULL_NO_BACKFILL_NO_SYNTHETIC_ATTRIBUTION',
+        rawLegacyReason: 'OMITTED_AT_POSTGRESQL_COLUMN_ALLOWLIST_NEVER_READ_NEVER_DELIVERED',
+        legacyReasonRedacted: true,
+        masking: 'POSITIVE_ALLOWLIST_BY_ACTION',
+        projectionIndicatorIsHistoricalMetadata: false,
+      },
+      v2: {
+        physicalVersion: 2,
+        eventClassContextReasonCode: 'NON_NULL',
+        executionContexts: ['ADMIN_SESSION', 'ADMIN_RECOVERY', 'SYSTEM'],
+        systemOrigins: ['AUTONOMOUS', 'ADMIN_DELEGATION', 'PUBLIC_PASSWORD_RESET'],
+        legacyReasonRedacted: 'FORBIDDEN',
+      },
+      filters: {
+        common: ['actorAdminUserId', 'action', 'entityType', 'entityId'],
+        dateRange: {
+          list: ['createdFrom', 'createdTo'],
+          export: ['from', 'to'],
+          semantics: 'SAME_TIME_RANGE_WITH_SURFACE_SPECIFIC_NAMES',
+        },
+        version: 'auditVersion',
+        v2Only: ['auditEventClass', 'auditContext', 'auditReasonCode'],
+        v1WithoutVersionOrV2OnlyFilters: 'INCLUDED_WHEN_COMMON_FILTERS_MATCH',
+        v1WithExplicitVersion1: 'INCLUDED_WHEN_COMMON_FILTERS_MATCH',
+        v1WithAnyV2OnlyFilter: 'NEVER_MATCH',
+        unknownHistoricalValue: 'NEVER_SYNTHETICALLY_MATCH_CLASS_CONTEXT_OR_REASON',
+        combination: 'ALL_SUPPLIED_FILTERS_ARE_COMBINED_WITH_AND',
+        cursorAndSnapshotBinding: 'EXACT_FILTER_SET_AND_VALUES',
+        orderPaginationSnapshotLimitsMasking: 'IDENTICAL_FOR_V1_AND_V2',
+      },
+    },
+    auditReasons: {
+      auditLogOperations: {
+        resetAdminPassword: {
+          source: 'SERVER_FIXED',
+          reasonCode: 'ACCOUNT_RECOVERY',
+        },
+        createAdminRecoveryCase: {
+          source: 'VALIDATED_CLIENT_ONLY',
+          allowedReasonCodes: ['ACCOUNT_RECOVERY', 'SECURITY_RESPONSE'],
+        },
+        approveAdminRecoveryCase: {
+          source: 'VALIDATED_CLIENT_ONLY',
+          allowedReasonCodes: ['ACCOUNT_RECOVERY', 'SECURITY_RESPONSE'],
+        },
+        listAdminAuditLogs: {
+          source: 'SERVER_FIXED',
+          reasonCode: 'AUDIT_EXPORT',
+        },
+        createAdminAuditLogExport: {
+          source: 'VALIDATED_CLIENT_ONLY',
+          allowedReasonCodes: ['AUDIT_EXPORT'],
+        },
+        getAdminAuditLogExport: {
+          source: 'SERVER_FIXED',
+          reasonCode: 'AUDIT_EXPORT',
+        },
+        downloadAdminAuditLogExport: {
+          source: 'SERVER_FIXED',
+          reasonCode: 'AUDIT_EXPORT',
+        },
+        createAdminInvitation: {
+          source: 'VALIDATED_CLIENT_ONLY',
+          allowedReasonCodes: ['INVITATION_ADMINISTRATION'],
+        },
+        changeAdminUserRole: {
+          source: 'VALIDATED_CLIENT_ONLY',
+          allowedReasonCodes: ['ROLE_ADMINISTRATION'],
+        },
+        changeAdminUserStatus: {
+          source: 'VALIDATED_CLIENT_ONLY',
+          allowedReasonCodes: ['STATUS_ADMINISTRATION', 'SECURITY_RESPONSE'],
+        },
+      },
+      validatedClientRule: {
+        acceptedPath: 'USE_EXACT_EXPLICIT_ALLOWED_VALUE_NO_ENUM_FIRST_NO_DEFAULT',
+        missingOrInvalidAfterProof: {
+          source: 'SERVER_FIXED_REJECTION',
+          reasonCode: 'SECURITY_RESPONSE',
+          operatorReason: null,
+          invalidClientTextReuse: 'FORBIDDEN',
+        },
+      },
+      systemTransitions: {
+        PASSWORD_RESET_NOTIFICATION_DELIVERY_SYSTEM_AUDIT: {
+          systemOrigin: 'PUBLIC_PASSWORD_RESET',
+          validatedSource: 'PASSWORD_RESET_REQUEST_ADMIN_SECURITY_EVENT_AND_OUTBOX',
+          reasonCode: 'ACCOUNT_RECOVERY',
+        },
+        INVITATION_NOTIFICATION_DELIVERY_SYSTEM_AUDIT: {
+          systemOrigin: 'ADMIN_DELEGATION',
+          validatedSource: 'CREATE_ADMIN_INVITATION_AUDIT_AND_OUTBOX',
+          reasonCode: 'INVITATION_ADMINISTRATION',
+        },
+        EXPORT_BUILD_SYSTEM_AUDIT: {
+          systemOrigin: 'ADMIN_DELEGATION',
+          validatedSource: 'CREATE_ADMIN_AUDIT_LOG_EXPORT_AUDIT',
+          reasonCode: 'AUDIT_EXPORT',
+        },
+        EXPORT_EXPIRY_SYSTEM_AUDIT: {
+          systemOrigin: 'AUTONOMOUS',
+          validatedSource: 'EXPORT_EXPIRY_CLOCK',
+          reasonCode: 'AUDIT_EXPORT',
+        },
+        RECOVERY_CASE_SERVER_CANCELLATION_SYSTEM_AUDIT: {
+          systemOrigin: 'ADMIN_DELEGATION',
+          validatedSource: 'ALLOWLISTED_CREATE_RECOVERY_OR_ROLE_STATUS_AUDIT',
+          reasonCode: 'ACCOUNT_RECOVERY',
+        },
+        RECOVERY_CASE_SERVER_EXPIRATION_SYSTEM_AUDIT: {
+          systemOrigin: 'AUTONOMOUS',
+          validatedSource: 'RECOVERY_CASE_EXPIRY_CLOCK',
+          reasonCode: 'ACCOUNT_RECOVERY',
+        },
+        ADMIN_BOOTSTRAP_SYSTEM_AUDIT: {
+          systemOrigin: 'AUTONOMOUS',
+          validatedSource: 'BOOTSTRAP_CLI_SINGLETON_GUARD',
+          reasonCode: 'SECURITY_RESPONSE',
+        },
+      },
+      transitionSelection: 'EXACT_VALIDATED_SERVER_ORIGIN_NEVER_CLIENT_FREE_TEXT',
+      systemTransitionOperatorReason: null,
+      nonAuditLogOperations: {
+        ADMIN_SECURITY_EVENT: ['requestAdminPasswordReset', 'acceptAdminInvitation'],
+        NONE: ['listAdminRecoveryCases', 'getAdminRecoveryCase', 'listAdminUsers'],
+      },
+      beforeProofFailures: 'ADMIN_SECURITY_EVENT_WITHOUT_SQL_AUDIT_REASON',
+      legacyReasonStorage: 'EXACT_SERVER_LITERAL_C2_RUNTIME_NEVER_CLIENT_TEXT_NOT_PROJECTED',
+    },
     auditExport: {
       filterSemantics: 'ALL_SUPPLIED_FILTERS_ARE_COMBINED_WITH_AND',
       snapshot: 'IMMUTABLE',
@@ -564,6 +705,24 @@ export const adminC2ContractPolicies = {
       forbiddenFields: ['SECRET', 'RAW_EMAIL', 'RAW_IP', 'FREE_FORM_JUSTIFICATION'],
       unknownField: 'OMIT_OR_MASK',
       keySeparation: ['ED25519_SIGNATURE', 'JWT', 'STORAGE_ENCRYPTION'],
+      contentSha256: {
+        algorithm: 'SHA-256',
+        encoding: 'LOWERCASE_HEX_64',
+        input: 'EXACT_FINAL_ZIP_ARTIFACT_BYTES',
+        includes: ['ALL_ZIP_BYTES', 'manifest.json', 'manifest.sig'],
+        computed: 'AFTER_FINAL_ZIP_ASSEMBLY_BEFORE_STORAGE_ENCRYPTION',
+        mustEqual: ['POST_DECRYPTION_PLAINTEXT_BYTES', 'EXACT_DOWNLOAD_RESPONSE_BODY_BYTES'],
+        excludes: [
+          'STORAGE_CIPHERTEXT',
+          'MANIFEST_ONLY',
+          'PAYLOADS_ONLY',
+          'HTTP_HEADERS',
+          'HTTP_TRANSPORT_FRAMING',
+        ],
+        readyArtifact: 'IMMUTABLE_NO_RECOMPRESSION_NO_RECONSTRUCTION_AT_DOWNLOAD',
+        expiredState: 'HASH_PRESERVED_AFTER_DERIVED_STORAGE_DELETION',
+        selfReference: 'contentSha256_FORBIDDEN_INSIDE_ZIP_AND_MANIFEST',
+      },
       productionProvider: 'NOT_QUALIFIED',
       sourceOfTruth: 'POSTGRESQL',
       worker: 'BOUNDED_IDEMPOTENT_CLAIMS_AND_RETRIES',
@@ -1971,7 +2130,7 @@ export const adminSecurityOperations = [
       {
         name: 'actorAdminUserId',
         required: false,
-        schema: 'Identifier',
+        schema: 'string',
         format: null,
       },
       {
@@ -1989,7 +2148,7 @@ export const adminSecurityOperations = [
       {
         name: 'entityId',
         required: false,
-        schema: 'Identifier',
+        schema: 'string',
         format: null,
       },
       {
@@ -2002,6 +2161,30 @@ export const adminSecurityOperations = [
         name: 'createdTo',
         required: false,
         schema: 'Timestamp',
+        format: null,
+      },
+      {
+        name: 'auditVersion',
+        required: false,
+        schema: 'integer',
+        format: null,
+      },
+      {
+        name: 'auditEventClass',
+        required: false,
+        schema: 'string',
+        format: null,
+      },
+      {
+        name: 'auditContext',
+        required: false,
+        schema: 'AdminAuditContext',
+        format: null,
+      },
+      {
+        name: 'auditReasonCode',
+        required: false,
+        schema: 'AdminReasonCode',
         format: null,
       },
     ],
@@ -3262,8 +3445,40 @@ export type AdminRecoveryCasePage = {
 
 export type AdminAuditContext = 'ADMIN_SESSION' | 'ADMIN_RECOVERY' | 'SYSTEM';
 
-export type AdminAuditLogEntry =
+export type AdminAuditLogEntry = AdminAuditLogEntryV1 | AdminAuditLogEntryV2;
+
+export type AdminAuditLogEntryV1 = {
+  readonly version: 1;
+  readonly eventId: string;
+  readonly action: string;
+  readonly eventClass: null;
+  readonly context: null;
+  readonly actorAdminUserId: string;
+  readonly subjectAdminUserId: null;
+  readonly delegatedByAdminUserId: null;
+  readonly adminSessionId: string;
+  readonly adminRecoveryContextId: null;
+  readonly systemExecutionRefHash: null;
+  readonly entityType: string;
+  readonly entityId: string;
+  readonly maskedBefore: {
+    readonly [key: string]: string | number | boolean | null;
+  } | null;
+  readonly maskedAfter: {
+    readonly [key: string]: string | number | boolean | null;
+  } | null;
+  readonly reasonCode: null;
+  readonly operatorReason: null;
+  readonly requestId: string;
+  readonly causationEventId: null;
+  readonly causationSecurityEventId: null;
+  readonly createdAt: Timestamp;
+  readonly legacyReasonRedacted: true;
+};
+
+export type AdminAuditLogEntryV2 =
   | ({
+      readonly version: 2;
       readonly eventId: Identifier;
       readonly action: string;
       readonly eventClass: 'LOGIN' | 'SESSION' | 'EXPORT' | 'BUSINESS';
@@ -3298,6 +3513,7 @@ export type AdminAuditLogEntry =
       readonly delegatedByAdminUserId: null;
     })
   | ({
+      readonly version: 2;
       readonly eventId: Identifier;
       readonly action: string;
       readonly eventClass: 'LOGIN' | 'SESSION' | 'EXPORT' | 'BUSINESS';
@@ -3332,6 +3548,7 @@ export type AdminAuditLogEntry =
       readonly delegatedByAdminUserId: null;
     })
   | ({
+      readonly version: 2;
       readonly eventId: Identifier;
       readonly action: string;
       readonly eventClass: 'LOGIN' | 'SESSION' | 'EXPORT' | 'BUSINESS';
@@ -3400,10 +3617,14 @@ export type AdminAuditLogPage = {
 export type AdminAuditExportRequest = {
   readonly from: Timestamp;
   readonly to: Timestamp;
-  readonly actorAdminUserId?: Identifier;
+  readonly actorAdminUserId?: string;
   readonly action?: string;
   readonly entityType?: string;
-  readonly entityId?: Identifier;
+  readonly entityId?: string;
+  readonly auditVersion?: 1 | 2;
+  readonly auditEventClass?: 'LOGIN' | 'SESSION' | 'EXPORT' | 'BUSINESS';
+  readonly auditContext?: AdminAuditContext;
+  readonly auditReasonCode?: AdminReasonCode;
   readonly reasonCode: AdminReasonCode;
   readonly operatorReason: string;
 };

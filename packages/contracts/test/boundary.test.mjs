@@ -114,6 +114,18 @@ test('the generated boundary materializes the complete C2-P0 policy', () => {
   assert.match(policies, /maximumEntries: 10000/);
   assert.match(policies, /maximumUncompressedUtf8Bytes: 26214400/);
   assert.match(policies, /truncation: 'FORBIDDEN'/);
+  assert.match(policies, /entrySchema: 'AdminAuditLogEntry'/);
+  assert.match(policies, /v1WithAnyV2OnlyFilter: 'NEVER_MATCH'/);
+  assert.match(policies, /rawLegacyReason:/);
+  assert.match(policies, /OMITTED_AT_POSTGRESQL_COLUMN_ALLOWLIST_NEVER_READ_NEVER_DELIVERED/);
+  assert.match(policies, /source: 'SERVER_FIXED_REJECTION'/);
+  assert.match(policies, /reasonCode: 'SECURITY_RESPONSE'/);
+  assert.match(policies, /systemOrigin: 'PUBLIC_PASSWORD_RESET'/);
+  assert.match(policies, /systemOrigin: 'ADMIN_DELEGATION'/);
+  assert.match(policies, /systemOrigin: 'AUTONOMOUS'/);
+  assert.match(policies, /input: 'EXACT_FINAL_ZIP_ARTIFACT_BYTES'/);
+  assert.match(policies, /EXACT_DOWNLOAD_RESPONSE_BODY_BYTES/);
+  assert.match(policies, /contentSha256_FORBIDDEN_INSIDE_ZIP_AND_MANIFEST/);
   assert.match(policies, /typedSecurityEventField: 'causationSecurityEventId'/);
   assert.match(policies, /sourceRecordType: 'AdminSecurityEvent'/);
   assert.match(policies, /workerAuditOrigin: 'PUBLIC_PASSWORD_RESET'/);
@@ -136,6 +148,12 @@ test('audit evidence is generated as a strict discriminated execution-context un
   )?.[1];
 
   assert.ok(audit);
+  assert.match(audit, /AdminAuditLogEntryV1 \| AdminAuditLogEntryV2/);
+  assert.match(audit, /export type AdminAuditLogEntryV1/);
+  assert.match(audit, /readonly version: 1;/);
+  assert.match(audit, /readonly legacyReasonRedacted: true;/);
+  assert.match(audit, /export type AdminAuditLogEntryV2/);
+  assert.match(audit, /readonly version: 2;/);
   assert.match(audit, /readonly context: 'ADMIN_SESSION';/);
   assert.match(audit, /readonly context: 'ADMIN_RECOVERY';/);
   assert.match(audit, /readonly context: 'SYSTEM';/);
@@ -153,6 +171,19 @@ test('audit evidence is generated as a strict discriminated execution-context un
   assert.match(audit, /readonly entityType: string;/);
   assert.match(audit, /readonly maskedBefore:/);
   assert.match(audit, /readonly requestId: string;/);
+  assert.doesNotMatch(audit, /readonly legacyReason:/);
+});
+
+test('audit export types distinguish entry filters from the creation reason', () => {
+  const source = readFileSync(new URL('../src/generated/audio-pilot.ts', import.meta.url), 'utf8');
+  const request = /export type AdminAuditExportRequest = \{([\s\S]*?)\n\};/.exec(source)?.[1];
+
+  assert.ok(request);
+  assert.match(request, /readonly auditVersion\?: 1 \| 2;/);
+  assert.match(request, /readonly auditEventClass\?:/);
+  assert.match(request, /readonly auditContext\?: AdminAuditContext;/);
+  assert.match(request, /readonly auditReasonCode\?: AdminReasonCode;/);
+  assert.match(request, /readonly reasonCode: AdminReasonCode;/);
 });
 
 test('admin recovery-code types expose selector and verifier but no stored hash', () => {

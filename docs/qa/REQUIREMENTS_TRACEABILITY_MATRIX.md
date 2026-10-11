@@ -738,3 +738,17 @@ Référence : [ADR-026](../adr/ADR-026-admin-security-c2-runtime-contract.md),
 | C2-R2-08 | Préserver surface et runtime       | 60/67/137; aucun Prisma, migration, dépendance, workflow, Docker ou runtime C2/C3                                                                     | Scope preserved           |
 | C2-R2-09 | Gouvernance pré-écriture           | identité dépôt/PR/branche/base/head/titre/candidat vérifiée avant écriture et comparaison API binaire après; incident PR #50 gardé en deux écritures  | Traced                    |
 | C2-R2-10 | Intégration future explicite       | `app.module.ts` et `app.factory.ts` mentionnés comme chemins à autoriser littéralement si nécessaires                                                 | Traced                    |
+
+## S1.2-03C2-P0-R3 — traçabilité F1/F2/F3
+
+| ID       | Exigence                           | Preuve R3                                                                                            | État             |
+| -------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------- |
+| C2-R3-01 | Représenter réellement AuditLog v1 | branche v1 avec identifiants historiques non UUID et textes >120, nullités physiques, aucun backfill | Verified locally |
+| C2-R3-02 | Ne jamais livrer legacyReason      | colonne exclue de l'allowlist, propriété absente, canari raw rejeté, indicateur de projection vrai   | Verified locally |
+| C2-R3-03 | Préserver v2 et causalité R2       | non-nullité classe/contexte/motif, trois contextes, trois branches SYSTEM                            | Verified locally |
+| C2-R3-04 | Aligner liste/export et filtres    | même `AdminAuditLogEntry`, v1 incluse par défaut, trois filtres v2-only sans attribution synthétique | Verified locally |
+| C2-R3-05 | Fixer tous les motifs AuditLog C2  | dix producteurs HTTP, sept transitions SYSTEM, sources/valeurs exactes, NONE/SecurityEvent séparés   | Verified locally |
+| C2-R3-06 | Fermer le rejet du motif client    | après preuve : SECURITY_RESPONSE, operatorReason null, texte invalide non copié, aucun enum-first    | Verified locally |
+| C2-R3-07 | Hasher le ZIP final exact          | fixture ZIP, hash attendu, round-trip chiffré, mutation détectée, manifeste seul refusé              | Verified locally |
+| C2-R3-08 | Préserver le profil signé          | manifeste JCS/JWS Ed25519 R4 et hashes par entrée inchangés, aucune autoréférence                    | Verified locally |
+| C2-R3-09 | Préserver la surface et le scope   | 60 chemins, 67 opérations, 139 schémas ; aucun runtime/Prisma/migration/dépendance/workflow          | Scope preserved  |

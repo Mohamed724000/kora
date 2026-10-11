@@ -861,3 +861,17 @@ Dans cet instantané antérieur à toute publication, R2 reste local, non index�
 non commité et non publié; tout état Git/GitHub postérieur fait foi. Les
 fournisseurs de production sont NON QUALIFIÉS, la politique OSS reste différée
 et C3 n'est pas commencé.
+
+## S1.2-03C2-P0-R3 — gel contractuel local — 2026-10-11
+
+R3 ferme localement F1/F2/F3 avant toute implémentation C2a/C2b : projection
+AuditLog v1/v2 sans fuite du motif historique, filtres liste/export cohérents,
+table exhaustive des motifs serveur/client et hash du ZIP final complet. La
+surface reste 60 chemins et 67 opérations ; elle passe à 139 schémas pour
+nommer explicitement les deux branches de projection.
+
+Le lot ne touche ni runtime, Prisma, migration, provisioning, dépendance,
+lockfile, workflow, Infrastructure ou interface. Il reste non indexé, non
+commit et non publié. C2a/C2b nécessitent toujours un mandat runtime distinct ;
+C3 n'est pas commencé, les fournisseurs restent NON QUALIFIÉS, OSS différée et
+la cause Docker historique NON CONCLUSIVE.
