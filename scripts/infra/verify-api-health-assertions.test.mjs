@@ -6,6 +6,7 @@ import {
   assertOwnerRoleRejected,
   capturedOutputSummary,
   phaseErrorDiagnostic,
+  stopApiForCleanup,
 } from "./verify-api-health-assertions.mjs";
 import { interpretDockerCommandResult } from "./lib.mjs";
 
@@ -221,6 +222,36 @@ test("distingue un statut numerique et une erreur de finally", () => {
   assert.match(cleanup, /phase=finally cleanup_error=/u);
   assert.match(cleanup, /status=unknown/u);
   assert.doesNotMatch(cleanup, /redis start failed/u);
+});
+
+test("capture un echec injecte de stopChild sans retry ni fuite", async () => {
+  const secret = "stop-api-secret";
+  const diagnostics = [];
+  let calls = 0;
+  const stopped = await stopApiForCleanup({
+    child: { pid: 4242 },
+    log: (diagnostic) => diagnostics.push(diagnostic),
+    secrets: [secret],
+    stopChild: async () => {
+      calls += 1;
+      throw Object.assign(
+        new Error(`stop failed ${secret} postgresql://private-dsn`),
+        { signal: "SIGTERM", status: null },
+      );
+    },
+  });
+
+  assert.equal(stopped, false);
+  assert.equal(calls, 1);
+  assert.equal(diagnostics.length, 1);
+  assert.match(
+    diagnostics[0],
+    /^phase=finally cleanup_error=.*status=unknown; signal=SIGTERM; action=stop_api$/u,
+  );
+  assert.match(diagnostics[0], /<redacted-secret>/u);
+  assert.match(diagnostics[0], /<redacted-database-url>/u);
+  assert.doesNotMatch(diagnostics[0], new RegExp(secret, "u"));
+  assert.doesNotThrow(() => assertNoSensitiveValue(diagnostics[0], [secret]));
 });
 
 test("preserve une erreur de spawn Docker avec sorties nulles", () => {

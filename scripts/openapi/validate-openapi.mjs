@@ -998,7 +998,7 @@ const REQUIRED_ADMIN_SECURITY_POLICY = {
   auditEvidence:
     "ENTITY_MASKED_BEFORE_AFTER_REQUEST_CORRELATION_CAUSATION_AND_OPTIONAL_DELEGATION",
   systemAuditCausality:
-    "AUTONOMOUS_HAS_NULL_CAUSATION_AND_DELEGATOR_DELEGATED_REQUIRES_BOTH",
+    "EXACTLY_ONE_OF_AUTONOMOUS_ADMIN_DELEGATION_OR_PUBLIC_PASSWORD_RESET_SECURITY_EVENT_CAUSATION",
   operatorReason: { field: "operatorReason", errorReason: "REQUIRED" },
   passwordReset:
     "OPAQUE_CSPRNG_128_BIT_MANUAL_ENTRY_NO_URL_NO_ORACLE_REVOKE_SESSIONS_PRESERVE_TOTP_AND_RECOVERY_CODES",
@@ -1145,7 +1145,7 @@ const REQUIRED_ADMIN_C2_UNAVAILABILITY_POLICY = {
 };
 
 const REQUIRED_ADMIN_C2_CONTRACT_POLICY_SHA256 =
-  "c9f512d64e62f1dd7a055259fa9dfd15f8d5e1cf9401ce2d2c48dc3dda3b5baa";
+  "65b12df86f5b65711adb07aa3586e997d9db6b27b2a974fe4920b5996ce5a684";
 
 const REQUIRED_ADMIN_C2_STEP_UP_PURPOSES = new Map([
   ["approveAdminRecoveryCase", "RECOVERY_APPROVAL"],
@@ -1167,6 +1167,189 @@ const REQUIRED_ADMIN_C2_JSON_OPERATIONS = [
   "changeAdminUserRole",
   "changeAdminUserStatus",
 ];
+
+export const ADMIN_C2_EXACT_OPERATION_ERRORS = Object.freeze({
+  requestAdminPasswordReset: [
+    "VALIDATION_ERROR",
+    "RATE_LIMITED",
+    "SERVICE_UNAVAILABLE",
+  ],
+  resetAdminPassword: [
+    "VALIDATION_ERROR",
+    "ADMIN_RECOVERY_INVALID",
+    "RATE_LIMITED",
+    "SERVICE_UNAVAILABLE",
+  ],
+  createAdminRecoveryCase: [
+    "VALIDATION_ERROR",
+    "AUTH_REQUIRED",
+    "FORBIDDEN",
+    "IDEMPOTENCY_CONFLICT",
+    "SERVICE_UNAVAILABLE",
+  ],
+  listAdminRecoveryCases: [
+    "VALIDATION_ERROR",
+    "AUTH_REQUIRED",
+    "FORBIDDEN",
+    "SERVICE_UNAVAILABLE",
+  ],
+  getAdminRecoveryCase: [
+    "AUTH_REQUIRED",
+    "FORBIDDEN",
+    "RECOVERY_CASE_NOT_FOUND",
+    "SERVICE_UNAVAILABLE",
+  ],
+  approveAdminRecoveryCase: [
+    "VALIDATION_ERROR",
+    "AUTH_REQUIRED",
+    "FORBIDDEN",
+    "RECOVERY_CASE_NOT_FOUND",
+    "RECOVERY_CASE_CONFLICT",
+    "IDEMPOTENCY_CONFLICT",
+    "RECOVERY_CASE_EXPIRED",
+    "SERVICE_UNAVAILABLE",
+  ],
+  listAdminAuditLogs: [
+    "VALIDATION_ERROR",
+    "AUTH_REQUIRED",
+    "FORBIDDEN",
+    "SERVICE_UNAVAILABLE",
+  ],
+  createAdminAuditLogExport: [
+    "VALIDATION_ERROR",
+    "AUTH_REQUIRED",
+    "FORBIDDEN",
+    "IDEMPOTENCY_CONFLICT",
+    "SERVICE_UNAVAILABLE",
+  ],
+  getAdminAuditLogExport: [
+    "AUTH_REQUIRED",
+    "FORBIDDEN",
+    "AUDIT_EXPORT_NOT_FOUND",
+    "SERVICE_UNAVAILABLE",
+  ],
+  downloadAdminAuditLogExport: [
+    "AUTH_REQUIRED",
+    "FORBIDDEN",
+    "AUDIT_EXPORT_NOT_FOUND",
+    "AUDIT_EXPORT_NOT_READY",
+    "AUDIT_EXPORT_EXPIRED",
+    "SERVICE_UNAVAILABLE",
+  ],
+  createAdminInvitation: [
+    "VALIDATION_ERROR",
+    "AUTH_REQUIRED",
+    "FORBIDDEN",
+    "IDEMPOTENCY_CONFLICT",
+    "SERVICE_UNAVAILABLE",
+  ],
+  acceptAdminInvitation: [
+    "VALIDATION_ERROR",
+    "ADMIN_INVITATION_INVALID",
+    "RATE_LIMITED",
+    "SERVICE_UNAVAILABLE",
+  ],
+  listAdminUsers: [
+    "VALIDATION_ERROR",
+    "AUTH_REQUIRED",
+    "FORBIDDEN",
+    "SERVICE_UNAVAILABLE",
+  ],
+  changeAdminUserRole: [
+    "VALIDATION_ERROR",
+    "AUTH_REQUIRED",
+    "FORBIDDEN",
+    "ADMIN_USER_NOT_FOUND",
+    "IDEMPOTENCY_CONFLICT",
+    "LAST_SUPER_ADMIN_PROTECTED",
+    "SERVICE_UNAVAILABLE",
+  ],
+  changeAdminUserStatus: [
+    "VALIDATION_ERROR",
+    "AUTH_REQUIRED",
+    "FORBIDDEN",
+    "ADMIN_USER_NOT_FOUND",
+    "IDEMPOTENCY_CONFLICT",
+    "LAST_SUPER_ADMIN_PROTECTED",
+    "SERVICE_UNAVAILABLE",
+  ],
+});
+
+const REQUIRED_ADMIN_C2_ERROR_STATUSES = Object.freeze({
+  VALIDATION_ERROR: 400,
+  ADMIN_RECOVERY_INVALID: 400,
+  ADMIN_INVITATION_INVALID: 400,
+  AUTH_REQUIRED: 401,
+  FORBIDDEN: 403,
+  ADMIN_USER_NOT_FOUND: 404,
+  AUDIT_EXPORT_NOT_FOUND: 404,
+  RECOVERY_CASE_NOT_FOUND: 404,
+  AUDIT_EXPORT_NOT_READY: 409,
+  IDEMPOTENCY_CONFLICT: 409,
+  LAST_SUPER_ADMIN_PROTECTED: 409,
+  RECOVERY_CASE_CONFLICT: 409,
+  AUDIT_EXPORT_EXPIRED: 410,
+  RECOVERY_CASE_EXPIRED: 410,
+  RATE_LIMITED: 429,
+  SERVICE_UNAVAILABLE: 503,
+});
+
+const REQUIRED_ADMIN_SYSTEM_AUDIT_CAUSALITY = {
+  typedSecurityEventField: "causationSecurityEventId",
+  clientSupplied: false,
+  sourceOfTruth: "DURABLE_SERVER_CREATED_STATE_ONLY",
+  origins: {
+    AUTONOMOUS: {
+      causationEventId: "NULL",
+      causationSecurityEventId: "NULL",
+      delegatedByAdminUserId: "NULL",
+    },
+    ADMIN_DELEGATION: {
+      causationEventId: "AUDIT_LOG_ID_REQUIRED",
+      causationSecurityEventId: "NULL",
+      delegatedByAdminUserId: "ADMIN_USER_ID_REQUIRED",
+    },
+    PUBLIC_PASSWORD_RESET: {
+      causationEventId: "NULL",
+      causationSecurityEventId: "ADMIN_SECURITY_EVENT_ID_REQUIRED",
+      delegatedByAdminUserId: "NULL",
+    },
+  },
+  publicPasswordReset: {
+    initiatingOperationId: "requestAdminPasswordReset",
+    authentication: "PUBLIC_NO_AUTHENTICATED_ACTOR",
+    sourceRecordType: "AdminSecurityEvent",
+    sourceAction: "requestAdminPasswordReset",
+    sourceEventClass: "LOGIN",
+    sourceEntityType: "ADMIN_PASSWORD_RESET_REQUEST",
+    atomicCreation: "RESET_REQUEST_ENCRYPTED_OUTBOX_AND_SECURITY_EVENT",
+    workerAuditOrigin: "PUBLIC_PASSWORD_RESET",
+    workerValidation: [
+      "SOURCE_RECORD_TYPE",
+      "SOURCE_ACTION",
+      "SOURCE_EVENT_CLASS",
+      "SOURCE_ENTITY_TYPE",
+      "RESET_REQUEST_BINDING",
+      "OUTBOX_BINDING",
+    ],
+    forbiddenDelegatorSources: [
+      "REQUESTED_EMAIL",
+      "RECIPIENT_ACCOUNT",
+      "SUBJECT_ADMIN_USER_ID",
+      "CLIENT_DECLARED_IDENTITY",
+    ],
+    publicResponseCausalityDisclosure: "FORBIDDEN",
+    autonomousReclassification: "FORBIDDEN",
+  },
+};
+
+const REQUIRED_ADMIN_ASYNCHRONOUS_AUDIT = {
+  action: "DISTINCT_FROM_INITIATING_HTTP_OPERATION_ID",
+  context: "SYSTEM",
+  causality:
+    "EXACTLY_ONE_OF_AUTONOMOUS_ADMIN_DELEGATION_OR_PUBLIC_PASSWORD_RESET",
+  origins: ["AUTONOMOUS", "ADMIN_DELEGATION", "PUBLIC_PASSWORD_RESET"],
+};
 
 const REQUIRED_ADMIN_C2_PAGINATED_OPERATIONS = [
   "listAdminRecoveryCases",
@@ -1504,6 +1687,15 @@ function fail(message) {
 function stableEqual(actual, expected) {
   return (
     JSON.stringify([...actual].sort()) === JSON.stringify([...expected].sort())
+  );
+}
+
+function orderedEqual(actual, expected) {
+  return (
+    Array.isArray(actual) &&
+    Array.isArray(expected) &&
+    actual.length === expected.length &&
+    actual.every((value, index) => value === expected[index])
   );
 }
 
@@ -2452,6 +2644,22 @@ export function validateSchemaInstance(document, schemaName, instance) {
       if (!types.includes("null")) fail(`${location} does not allow null`);
       return;
     }
+    if (Array.isArray(schema.oneOf)) {
+      const matches = schema.oneOf.filter((branch) => {
+        try {
+          validate(branch, value, location);
+          return true;
+        } catch {
+          return false;
+        }
+      }).length;
+      if (matches !== 1) {
+        fail(`${location} must match exactly one oneOf branch`);
+      }
+    }
+    if (types.length === 1 && types[0] === "null") {
+      fail(`${location} only allows null`);
+    }
     if (schema.const !== undefined && value !== schema.const) {
       fail(`${location} must equal its const value`);
     }
@@ -3159,6 +3367,64 @@ function validateAdminSecurityContract(document) {
     fail("admin-security inventory must lock 12 C1 and 15 C2 operations");
   }
 
+  const c2Policy = document["x-kora-admin-c2-contract-policy"] ?? {};
+  const resetRequestPolicy =
+    c2Policy.operationMatrix?.requestAdminPasswordReset;
+  const resetRequestSchema =
+    document.components.schemas.AdminPasswordResetRequest;
+  const forbiddenClientCausalityFields = [
+    "actorAdminUserId",
+    "causationEventId",
+    "causationSecurityEventId",
+    "delegatedByAdminUserId",
+    "subjectAdminUserId",
+  ];
+  if (
+    JSON.stringify(c2Policy.systemAuditCausality ?? {}) !==
+      JSON.stringify(REQUIRED_ADMIN_SYSTEM_AUDIT_CAUSALITY) ||
+    JSON.stringify(c2Policy.asynchronousAudit ?? {}) !==
+      JSON.stringify(REQUIRED_ADMIN_ASYNCHRONOUS_AUDIT) ||
+    !stableEqual(resetRequestPolicy?.roles ?? null, []) ||
+    resetRequestPolicy?.serverProof !== "NO_AUDIT_CONTEXT" ||
+    resetRequestPolicy?.successSink !== "ADMIN_SECURITY_EVENT" ||
+    resetRequestPolicy?.atomicity !==
+      "RESET_REQUEST_ENCRYPTED_OUTBOX_AND_SECURITY_EVENT" ||
+    !stableEqual(resetRequestPolicy?.asynchronousTransitions ?? [], [
+      "NOTIFICATION_DELIVERY_SYSTEM_AUDIT",
+    ]) ||
+    forbiddenClientCausalityFields.some(
+      (field) => resetRequestSchema?.properties?.[field] !== undefined,
+    )
+  ) {
+    fail(
+      "public password reset must create durable server-only typed AdminSecurityEvent causality without a fabricated administrator",
+    );
+  }
+
+  if (
+    !orderedEqual(
+      Object.keys(ADMIN_C2_EXACT_OPERATION_ERRORS),
+      REQUIRED_ADMIN_C2_OPERATION_IDS,
+    )
+  ) {
+    fail("exact C2 error table must cover all fifteen operations in order");
+  }
+  for (const [operationId, expectedErrors] of Object.entries(
+    ADMIN_C2_EXACT_OPERATION_ERRORS,
+  )) {
+    const actualErrors = document["x-kora-operation-errors"]?.[operationId];
+    if (!orderedEqual(actualErrors ?? [], expectedErrors)) {
+      fail(`${operationId} must preserve its exact C2 error list`);
+    }
+  }
+  for (const [errorCode, expectedStatus] of Object.entries(
+    REQUIRED_ADMIN_C2_ERROR_STATUSES,
+  )) {
+    if (document["x-kora-error-statuses"]?.[errorCode] !== expectedStatus) {
+      fail(`${errorCode} must preserve its exact C2 HTTP status`);
+    }
+  }
+
   if (
     JSON.stringify(document["x-kora-admin-failure-audit-sinks"] ?? {}) !==
       JSON.stringify(Object.fromEntries(REQUIRED_ADMIN_FAILURE_AUDIT_SINKS)) ||
@@ -3645,6 +3911,7 @@ function validateAdminSecurityContract(document) {
     "adminRecoveryContextId",
     "adminSessionId",
     "causationEventId",
+    "causationSecurityEventId",
     "context",
     "createdAt",
     "delegatedByAdminUserId",
@@ -3661,6 +3928,8 @@ function validateAdminSecurityContract(document) {
     "systemExecutionRefHash",
   ];
   const [sessionAudit, recoveryAudit, systemAudit] = audit.oneOf ?? [];
+  const [autonomousAudit, delegatedAudit, publicResetAudit] =
+    systemAudit?.oneOf ?? [];
   if (
     !isExactObjectSchema(audit, auditProperties, auditProperties) ||
     audit.oneOf?.length !== 3 ||
@@ -3672,22 +3941,29 @@ function validateAdminSecurityContract(document) {
     sessionAudit?.properties?.adminSessionId?.type !== "string" ||
     sessionAudit?.properties?.adminRecoveryContextId?.type !== "null" ||
     sessionAudit?.properties?.systemExecutionRefHash?.type !== "null" ||
+    sessionAudit?.properties?.causationSecurityEventId?.type !== "null" ||
     sessionAudit?.properties?.delegatedByAdminUserId?.type !== "null" ||
     recoveryAudit?.properties?.actorAdminUserId?.type !== "string" ||
     recoveryAudit?.properties?.adminSessionId?.type !== "null" ||
     recoveryAudit?.properties?.adminRecoveryContextId?.type !== "string" ||
     recoveryAudit?.properties?.systemExecutionRefHash?.type !== "null" ||
+    recoveryAudit?.properties?.causationSecurityEventId?.type !== "null" ||
     recoveryAudit?.properties?.delegatedByAdminUserId?.type !== "null" ||
     systemAudit?.properties?.actorAdminUserId?.type !== "null" ||
     systemAudit?.properties?.adminSessionId?.type !== "null" ||
     systemAudit?.properties?.adminRecoveryContextId?.type !== "null" ||
     systemAudit?.properties?.systemExecutionRefHash?.type !== "string" ||
-    systemAudit?.oneOf?.length !== 2 ||
-    systemAudit.oneOf[0]?.properties?.causationEventId?.type !== "null" ||
-    systemAudit.oneOf[0]?.properties?.delegatedByAdminUserId?.type !== "null" ||
-    systemAudit.oneOf[1]?.properties?.causationEventId?.type !== "string" ||
-    systemAudit.oneOf[1]?.properties?.delegatedByAdminUserId?.type !==
-      "string" ||
+    audit.properties?.causationSecurityEventId?.format !== "uuid" ||
+    systemAudit?.oneOf?.length !== 3 ||
+    autonomousAudit?.properties?.causationEventId?.type !== "null" ||
+    autonomousAudit?.properties?.causationSecurityEventId?.type !== "null" ||
+    autonomousAudit?.properties?.delegatedByAdminUserId?.type !== "null" ||
+    delegatedAudit?.properties?.causationEventId?.type !== "string" ||
+    delegatedAudit?.properties?.causationSecurityEventId?.type !== "null" ||
+    delegatedAudit?.properties?.delegatedByAdminUserId?.type !== "string" ||
+    publicResetAudit?.properties?.causationEventId?.type !== "null" ||
+    publicResetAudit?.properties?.causationSecurityEventId?.type !== "string" ||
+    publicResetAudit?.properties?.delegatedByAdminUserId?.type !== "null" ||
     !stableEqual(audit.properties?.eventClass?.enum ?? [], [
       "LOGIN",
       "SESSION",
@@ -3701,7 +3977,7 @@ function validateAdminSecurityContract(document) {
     audit.properties?.maskedAfter?.["x-kora-pii-redacted"] !== true
   ) {
     fail(
-      "AuditLog must encode the complete ADR-004/019 evidence and strict ADR-025 discriminated context",
+      "AuditLog must encode the complete ADR-004/019 evidence, strict ADR-025 context and three exclusive SYSTEM causality origins",
     );
   }
 

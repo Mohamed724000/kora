@@ -68,6 +68,40 @@ une action SYSTEM distincte et une causalité explicite; elles ne réutilisent
 pas l’action HTTP. Les snapshots sont des projections masquées positives,
 adaptées à l’action. Les champs inconnus sont omis ou masqués.
 
+### Causalité SYSTEM typée
+
+Un `AuditLog` SYSTEM conserve `systemExecutionRefHash`, un acteur nul et
+exactement une des trois origines suivantes :
+
+1. autonome : aucun événement causal et aucun administrateur délégant ;
+2. délégation administrateur prouvée : `causationEventId` référence un
+   `AuditLog` légitime et `delegatedByAdminUserId` est obligatoire ;
+3. continuation du reset public : `causationSecurityEventId` référence
+   l'`AdminSecurityEvent` initial, sans `causationEventId` ni délégant.
+
+Pour `requestAdminPasswordReset`, l'événement initial `LOGIN` d'action
+`requestAdminPasswordReset`, la demande durable et l'outbox chiffré sont créés
+atomiquement. Le worker de notification revalide le type `AdminSecurityEvent`,
+l'action, la classe, l'entité `ADMIN_PASSWORD_RESET_REQUEST` et les liaisons à
+la demande et à l'outbox avant d'écrire son action SYSTEM. Un identifiant
+arbitraire ne suffit pas. Cette livraison ne peut pas être requalifiée en
+action autonome et aucun délégant n'est déduit de l'e-mail, du destinataire,
+de `subjectAdminUserId` ou d'une identité client. La réponse publique conserve
+l'anti-énumération et n'expose aucun identifiant interne de causalité.
+
+Le futur modèle SQL ajoutera une colonne nullable
+`AuditLog.causationSecurityEventId` de même type que
+`AdminSecurityEvent.id`, une clé étrangère `ON DELETE RESTRICT ON UPDATE
+RESTRICT`, et une contrainte CHECK imposant les trois combinaisons exclusives
+ci-dessus lorsque `context = SYSTEM`; hors SYSTEM, ce nouveau champ reste nul.
+La relation `causationEventId -> AuditLog.id` existante reste distincte. La
+demande de reset et l'outbox devront conserver une liaison non commandable par
+le client vers l'événement source. Le writer de demande pourra insérer dans
+les trois stores dans une seule transaction; le worker aura seulement le
+SELECT des colonnes de liaison requises et l'INSERT sans RETURNING dans
+`AuditLog`, jamais UPDATE/DELETE sur les sinks. Prisma, migration, rôles et
+grants restent inchangés dans P0/R2 et exigent un mandat runtime littéral.
+
 ### Password reset et séparation des recovery contexts
 
 Le succès de resetAdminPassword utilise AuditLog en contexte ADMIN_RECOVERY;
@@ -101,6 +135,34 @@ AdminSecurityEvent, zéro AuditLog, cookie, secret ou mutation métier.
 ADMIN_RECOVERY_INVALID reste un rejet métier distinct. Les 413, 415, URIError,
 autres familles, autres routes, GET et préfixes ne sont pas reclassés. Une
 panne du recorder rend un 503 neutre, sans retry, fallback ou double sink.
+
+### Listes d'erreurs C2 exactes
+
+L'ordre et le contenu sont normatifs; ajout, retrait, doublon, substitution ou
+changement du statut canonique sont interdits :
+
+| operationId                 | Codes exacts                                                                                                                                                  |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| requestAdminPasswordReset   | VALIDATION_ERROR, RATE_LIMITED, SERVICE_UNAVAILABLE                                                                                                           |
+| resetAdminPassword          | VALIDATION_ERROR, ADMIN_RECOVERY_INVALID, RATE_LIMITED, SERVICE_UNAVAILABLE                                                                                   |
+| createAdminRecoveryCase     | VALIDATION_ERROR, AUTH_REQUIRED, FORBIDDEN, IDEMPOTENCY_CONFLICT, SERVICE_UNAVAILABLE                                                                         |
+| listAdminRecoveryCases      | VALIDATION_ERROR, AUTH_REQUIRED, FORBIDDEN, SERVICE_UNAVAILABLE                                                                                               |
+| getAdminRecoveryCase        | AUTH_REQUIRED, FORBIDDEN, RECOVERY_CASE_NOT_FOUND, SERVICE_UNAVAILABLE                                                                                        |
+| approveAdminRecoveryCase    | VALIDATION_ERROR, AUTH_REQUIRED, FORBIDDEN, RECOVERY_CASE_NOT_FOUND, RECOVERY_CASE_CONFLICT, IDEMPOTENCY_CONFLICT, RECOVERY_CASE_EXPIRED, SERVICE_UNAVAILABLE |
+| listAdminAuditLogs          | VALIDATION_ERROR, AUTH_REQUIRED, FORBIDDEN, SERVICE_UNAVAILABLE                                                                                               |
+| createAdminAuditLogExport   | VALIDATION_ERROR, AUTH_REQUIRED, FORBIDDEN, IDEMPOTENCY_CONFLICT, SERVICE_UNAVAILABLE                                                                         |
+| getAdminAuditLogExport      | AUTH_REQUIRED, FORBIDDEN, AUDIT_EXPORT_NOT_FOUND, SERVICE_UNAVAILABLE                                                                                         |
+| downloadAdminAuditLogExport | AUTH_REQUIRED, FORBIDDEN, AUDIT_EXPORT_NOT_FOUND, AUDIT_EXPORT_NOT_READY, AUDIT_EXPORT_EXPIRED, SERVICE_UNAVAILABLE                                           |
+| createAdminInvitation       | VALIDATION_ERROR, AUTH_REQUIRED, FORBIDDEN, IDEMPOTENCY_CONFLICT, SERVICE_UNAVAILABLE                                                                         |
+| acceptAdminInvitation       | VALIDATION_ERROR, ADMIN_INVITATION_INVALID, RATE_LIMITED, SERVICE_UNAVAILABLE                                                                                 |
+| listAdminUsers              | VALIDATION_ERROR, AUTH_REQUIRED, FORBIDDEN, SERVICE_UNAVAILABLE                                                                                               |
+| changeAdminUserRole         | VALIDATION_ERROR, AUTH_REQUIRED, FORBIDDEN, ADMIN_USER_NOT_FOUND, IDEMPOTENCY_CONFLICT, LAST_SUPER_ADMIN_PROTECTED, SERVICE_UNAVAILABLE                       |
+| changeAdminUserStatus       | VALIDATION_ERROR, AUTH_REQUIRED, FORBIDDEN, ADMIN_USER_NOT_FOUND, IDEMPOTENCY_CONFLICT, LAST_SUPER_ADMIN_PROTECTED, SERVICE_UNAVAILABLE                       |
+
+Les statuts canoniques restent : validation et rejets métier indiqués à 400,
+AUTH_REQUIRED à 401, FORBIDDEN à 403, NOT_FOUND à 404, conflits à 409,
+expirations à 410, RATE_LIMITED à 429 et SERVICE_UNAVAILABLE à 503. Une erreur
+de même statut ne peut pas remplacer un code normatif.
 
 ### Livraison, mots de passe et e-mails
 
@@ -203,10 +265,12 @@ applicatifs, Flutter et navigateur sont **NON EXÉCUTÉES** dans P0.
 
 ## Conséquences
 
-- Le générateur expose adminC2ContractPolicies et les 27 opérations.
+- Le générateur expose adminC2ContractPolicies, les listes/statuts exacts C2
+  et les 27 opérations.
 - Le validateur verrouille sémantiquement la politique C2 et refuse les
   affaiblissements de 503, purpose, sink/contexte, preuve client, XOR reset,
-  carte JSON, curseur, bornes export, signature et qualification fournisseur.
+  causalité SYSTEM typée, listes d'erreurs, carte JSON, curseur, bornes export,
+  signature et qualification fournisseur.
 - L’inventaire reste 60/67/137; les cinq retraits historiques de SUPPORT
   restent inchangés.
 - Toute implémentation C2 exige un mandat distinct, une migration littérale,

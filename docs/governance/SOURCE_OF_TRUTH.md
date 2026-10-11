@@ -2,12 +2,13 @@
 
 Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-03C1 FUSIONNÉ DANS MAIN AU
 MERGE dc97eeef72c4e299988ed19d66460011a8551cf3, NON DÉPLOYÉ — PR #50
-FERMÉE/FUSIONNÉE ET QUATRE WORKFLOWS PUSH/MAIN VERTS — S1.2-03C2-P0
-PRÉREQUIS CONTRACTUEL VALIDÉ, RUNTIME NON IMPLÉMENTÉ — FOURNISSEURS DE
-PRODUCTION NON QUALIFIÉS — C3 NOT STARTED**
+FERMÉE/FUSIONNÉE ET QUATRE WORKFLOWS PUSH/MAIN VERTS — S1.2-03C2-P0/R1
+PUBLIÉS DANS LA DRAFT PR #51 — INSTANTANÉ LOCAL PRÉPUBLICATION R2 DU
+2026-10-11, L'ÉTAT GIT/GITHUB POSTÉRIEUR FAISANT FOI — RUNTIME NON IMPLÉMENTÉ
+— FOURNISSEURS DE PRODUCTION NON QUALIFIÉS — C3 NOT STARTED**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-10-09
+Dernière réconciliation documentaire : 2026-10-11
 
 ## Hiérarchie normative
 
@@ -929,3 +930,41 @@ publié; toute publication ultérieure fait foi dans Git et GitHub. PostgreSQL,
 Redis, Docker, HTTP réel, builds applicatifs, Flutter et navigateur sont NON
 EXÉCUTÉS. Les fournisseurs de notification, HIBP, export et clés de production
 sont NON QUALIFIÉS; la politique OSS reste différée et C3 reste Not started.
+
+## Instantané local prépublication S1.2-03C2-P0-R2 — 2026-10-10
+
+La revue cumulative P0/R1 a bloqué l'intégration contractuelle sur la causalité
+du worker de notification issu du reset public et a relevé deux durcissements
+LOW. R2 conserve 60 chemins, 67 opérations et 137 schémas tout en ajoutant au
+type existant `AdminAuditLogEntry` le lien nullable
+`causationSecurityEventId`. Les trois origines SYSTEM sont exclusives :
+autonome, délégation prouvée vers `AuditLog`, ou continuation du reset public
+vers `AdminSecurityEvent`. Aucun acteur ou délégant n'est déduit d'une donnée
+client et aucun identifiant interne n'est exposé par la réponse publique.
+
+Le contrat décrit la future FK, le CHECK XOR, les liaisons atomiques et les ACL
+minimales, mais ne modifie ni Prisma, migration, rôle, compte ou provisioning.
+Les listes d'erreurs des quinze opérations C2 et leurs statuts sont exacts et
+générés. Le nettoyage Infrastructure capture séparément une exception de
+`stopChild`, sans retry ni faux succès. Les surfaces d'intégration
+`apps/api/src/app.module.ts` et `apps/api/src/app.factory.ts` restent hors R2 et
+devront être autorisées explicitement si un futur runtime les requiert.
+
+La première campagne combinée R2 à 329/331 reste NON-PASS; après correction du
+helper de type null, la reprise passe 331/331. Les gates techniques passent :
+OpenAPI 60/67/137, adversarial 324/324, boundary et Contracts 8/8,
+format/lint/typecheck/build Contracts, génération exacte, Infrastructure
+14/14, tooling 459/459 et scanner officiel sur 388 fichiers avec historique,
+52 sources immuables et six scripts qualifiés. L'échec Infrastructure
+historique reste conservé et sa cause Docker demeure NON CONCLUSIVE.
+
+Le contrôle GitHub pré-écriture futur doit figer dépôt, numéro de PR, état,
+branche, base/head, titre et candidat UTF-8 avec taille/hash, puis effectuer
+une relecture API binaire et une comparaison exacte. L'incident PR #50 reste
+décrit honnêtement comme une édition erronée puis une restauration corrective,
+pas comme une écriture unique conforme.
+
+Dans cet instantané antérieur à toute publication, R2 est local, non indexé,
+non commité et non publié; tout état Git/GitHub postérieur fait foi. Aucun
+runtime C2/C3 n'est commencé. Les fournisseurs de production restent NON
+QUALIFIÉS et la politique OSS reste différée.

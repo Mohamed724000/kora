@@ -74,6 +74,23 @@ export function phaseErrorDiagnostic(phase, label, error, secrets) {
   return `phase=${phase} ${label}=${diagnosticErrorSummary(error, secrets)}`;
 }
 
+export async function stopApiForCleanup({
+  child,
+  log = console.error,
+  secrets,
+  stopChild,
+}) {
+  try {
+    await stopChild(child);
+    return true;
+  } catch (error) {
+    log(
+      `${phaseErrorDiagnostic("finally", "cleanup_error", error, secrets)}; action=stop_api`,
+    );
+    return false;
+  }
+}
+
 export function assertNoSensitiveValue(serialized, secrets) {
   for (const secret of secrets) {
     if (serialized.includes(secret)) {

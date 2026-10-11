@@ -114,6 +114,16 @@ test('the generated boundary materializes the complete C2-P0 policy', () => {
   assert.match(policies, /maximumEntries: 10000/);
   assert.match(policies, /maximumUncompressedUtf8Bytes: 26214400/);
   assert.match(policies, /truncation: 'FORBIDDEN'/);
+  assert.match(policies, /typedSecurityEventField: 'causationSecurityEventId'/);
+  assert.match(policies, /sourceRecordType: 'AdminSecurityEvent'/);
+  assert.match(policies, /workerAuditOrigin: 'PUBLIC_PASSWORD_RESET'/);
+  assert.match(policies, /autonomousReclassification: 'FORBIDDEN'/);
+  assert.match(policies, /operationErrors:/);
+  assert.match(policies, /requestAdminPasswordReset: \[/);
+  assert.match(policies, /ADMIN_RECOVERY_INVALID/);
+  assert.match(policies, /LAST_SUPER_ADMIN_PROTECTED/);
+  assert.match(policies, /errorStatuses:/);
+  assert.match(policies, /SERVICE_UNAVAILABLE: 503/);
   assert.match(policies, /notificationProvider: 'NOT_QUALIFIED'/);
   assert.match(policies, /runtimeImplemented: false/);
   assert.doesNotMatch(policies, /signedUrl: true|passwordSent: true|fullHashSent: true/i);
@@ -136,6 +146,8 @@ test('audit evidence is generated as a strict discriminated execution-context un
   assert.match(audit, /readonly systemExecutionRefHash: string;/);
   assert.match(audit, /readonly causationEventId: null;/);
   assert.match(audit, /readonly causationEventId: string;/);
+  assert.match(audit, /readonly causationSecurityEventId: null;/);
+  assert.match(audit, /readonly causationSecurityEventId: string;/);
   assert.match(audit, /readonly delegatedByAdminUserId: null;/);
   assert.match(audit, /readonly delegatedByAdminUserId: string;/);
   assert.match(audit, /readonly entityType: string;/);

@@ -141,8 +141,24 @@ export function buildAdminC1ContractPolicies(document) {
 }
 
 export function buildAdminC2ContractPolicies(document) {
+  const operationIds =
+    document["x-kora-admin-c2-unavailability-policy"]?.operationIds ?? [];
+  const operationErrors = Object.fromEntries(
+    operationIds.map((operationId) => [
+      operationId,
+      document["x-kora-operation-errors"]?.[operationId] ?? [],
+    ]),
+  );
+  const errorCodes = [...new Set(Object.values(operationErrors).flat())];
   return {
     contract: document["x-kora-admin-c2-contract-policy"],
+    operationErrors,
+    errorStatuses: Object.fromEntries(
+      errorCodes.map((errorCode) => [
+        errorCode,
+        document["x-kora-error-statuses"]?.[errorCode] ?? null,
+      ]),
+    ),
     unavailability: document["x-kora-admin-c2-unavailability-policy"],
   };
 }

@@ -723,3 +723,18 @@ GitHub.
 Référence : [ADR-026](../adr/ADR-026-admin-security-c2-runtime-contract.md),
 [architecture C2](../architecture/SLICE_1_2_03C2_ADMIN_SECURITY_RUNTIME.md) et
 [rapport P0](SLICE_1_2_03C2_ADMIN_SECURITY_CONTRACT_REPORT.md).
+
+## S1.2-03C2-P0-R2 — remédiation locale
+
+| ID       | Exigence                           | Preuve R2                                                                                                                                             | État                      |
+| -------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| C2-R2-01 | Trois origines SYSTEM exclusives   | schéma existant avec branches autonome, AuditLog+délégant et AdminSecurityEvent sans délégant; trois fixtures valides et combinaisons mixtes refusées | Verified locally          |
+| C2-R2-02 | Reset public sans acteur fabriqué  | politique transversale PUBLIC, source AdminSecurityEvent LOGIN/action/entité exactes, liaisons demande/outbox et champs client interdits              | Verified locally          |
+| C2-R2-03 | SQL/ACL futurs précis sans runtime | FK `causationSecurityEventId`, CHECK exclusif, RESTRICT, permissions writer/worker minimales documentées; Prisma inchangé                             | Contract verified locally |
+| C2-R2-04 | Quinze listes d'erreurs exactes    | table normative et statuts; retrait, ajout, doublon, substitution de même statut et statut erroné refusés                                             | Verified locally          |
+| C2-R2-05 | Contrat généré                     | causalité typée et table erreurs/statuts matérialisées uniquement par le générateur officiel                                                          | Verified locally          |
+| C2-R2-06 | Nettoyage stopChild                | exception injectée, un seul appel, diagnostic assaini `phase=finally cleanup_error ... action=stop_api`, retour d'échec                               | Verified locally          |
+| C2-R2-07 | Préserver R1 historique            | erreur principale/logs séparés; échec CI et cause Docker NON CONCLUSIVE conservés                                                                     | Preserved                 |
+| C2-R2-08 | Préserver surface et runtime       | 60/67/137; aucun Prisma, migration, dépendance, workflow, Docker ou runtime C2/C3                                                                     | Scope preserved           |
+| C2-R2-09 | Gouvernance pré-écriture           | identité dépôt/PR/branche/base/head/titre/candidat vérifiée avant écriture et comparaison API binaire après; incident PR #50 gardé en deux écritures  | Traced                    |
+| C2-R2-10 | Intégration future explicite       | `app.module.ts` et `app.factory.ts` mentionnés comme chemins à autoriser littéralement si nécessaires                                                 | Traced                    |

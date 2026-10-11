@@ -2,9 +2,11 @@
 
 Périmètre durable couvert : **BASELINE À S1.2-03B FUSIONNÉES + S1.2-03C1
 FUSIONNÉ DANS MAIN AU MERGE
-dc97eeef72c4e299988ed19d66460011a8551cf3, NON DÉPLOYÉ + S1.2-03C2-P0
-CONTRACTUEL LOCAL, RUNTIME NON IMPLÉMENTÉ — FOURNISSEURS DE PRODUCTION NON
-QUALIFIÉS — C3 NOT STARTED**.
+dc97eeef72c4e299988ed19d66460011a8551cf3, NON DÉPLOYÉ + S1.2-03C2-P0/R1
+PUBLIÉS DANS LA DRAFT PR #51 + INSTANTANÉ CONTRACTUEL R2 LOCAL
+PRÉPUBLICATION DU 2026-10-11, L'ÉTAT GIT/GITHUB POSTÉRIEUR FAISANT FOI,
+RUNTIME NON IMPLÉMENTÉ — FOURNISSEURS DE PRODUCTION NON QUALIFIÉS — C3 NOT
+STARTED**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
 commit, push ou changement GitHub S1.1 n’avait encore été effectué : il s’agit
@@ -1176,3 +1178,17 @@ mais aucun déploiement n’est affirmé. Dans l’instantané de validation loc
 antérieur à sa publication, P0 était non indexé, non commité et non publié;
 toute publication ultérieure fait foi dans Git et GitHub. Il n’autorise ni
 C2a/C2b runtime, C3, politique OSS, fournisseur ou déploiement.
+
+## Durcissement contractuel S1.2-03C2-P0-R2 — 2026-10-10
+
+| Menace                                      | Contrôle R2                                                                                                                                           | Preuve locale                                                                 | Limite résiduelle                   |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------- |
+| Délégant fabriqué pour le reset public      | branche SYSTEM dédiée avec `causationSecurityEventId`, acteur et délégant nuls; e-mail, destinataire, sujet et identité client interdits comme preuve | politique transversale, schéma exclusif et mutations adversariales            | modèle SQL/runtime NON EXÉCUTÉS     |
+| Source causale arbitraire ou incompatible   | worker obligé de valider type AdminSecurityEvent, action, classe LOGIN, entité reset et liaisons demande/outbox                                       | mutations mauvais type et causalité perdue refusées                           | worker réel NON IMPLÉMENTÉ          |
+| Sources AuditLog et SecurityEvent combinées | trois combinaisons SYSTEM exclusives; causalité mixte et délégant interdit/manquant refusés                                                           | trois fixtures valides et trois invalides                                     | CHECK/FK futurs NON MATÉRIALISÉS    |
+| Dérive silencieuse des erreurs C2           | listes et statuts exacts des quinze opérations, indépendants de l'égalité des seuls statuts                                                           | retrait, ajout même statut, doublon, substitution et statut incorrect refusés | réponses HTTP runtime NON EXÉCUTÉES |
+| Échec de stop API masquant le postflight    | exception `stopChild` assainie, phase/action explicites, un appel, code d'échec conservé                                                              | injection sans Docker, Infrastructure ciblée 14/14                            | arrêt réel exceptionnel NON REJOUÉ  |
+
+Les fournisseurs restent NON QUALIFIÉS, Prisma et les permissions restent
+inchangés, Docker/HTTP/PostgreSQL/Redis ne sont pas rejoués et aucun runtime
+C2/C3 n'est commencé.

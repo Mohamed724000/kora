@@ -841,3 +841,23 @@ et clés sont NON QUALIFIÉS, OSS reste différée et C3 reste Not started.
 
 La publication contractuelle de P0 reste séparée de toute autorisation
 d’implémentation C2a ou C2b.
+
+## S1.2-03C2-P0-R2 — instantané local prépublication — 2026-10-10
+
+R2 ferme localement le finding de causalité SYSTEM du reset public et les deux
+durcissements LOW. Le contrat conserve 60/67/137 et matérialise trois branches
+SYSTEM exclusives, dont `causationSecurityEventId -> AdminSecurityEvent` pour
+la continuation publique sans délégant. Il verrouille les quinze listes
+d'erreurs exactes et structure l'échec de `stopChild` dans le `finally`.
+
+La première campagne combinée 329/331 reste NON-PASS; la reprise causale passe
+331/331. OpenAPI, génération, Contracts, Infrastructure ciblée et tooling sont
+verts localement. Ce gel ne modifie ni Prisma, migration, dépendance, workflow,
+Compose ou runtime. C2a/C2b restent à autoriser séparément; leurs mandats
+devront citer `app.module.ts` et `app.factory.ts` si ces points d'intégration
+sont nécessaires.
+
+Dans cet instantané antérieur à toute publication, R2 reste local, non indexé,
+non commité et non publié; tout état Git/GitHub postérieur fait foi. Les
+fournisseurs de production sont NON QUALIFIÉS, la politique OSS reste différée
+et C3 n'est pas commencé.

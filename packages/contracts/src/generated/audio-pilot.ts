@@ -631,10 +631,59 @@ export const adminC2ContractPolicies = {
         ],
       },
     },
+    systemAuditCausality: {
+      typedSecurityEventField: 'causationSecurityEventId',
+      clientSupplied: false,
+      sourceOfTruth: 'DURABLE_SERVER_CREATED_STATE_ONLY',
+      origins: {
+        AUTONOMOUS: {
+          causationEventId: 'NULL',
+          causationSecurityEventId: 'NULL',
+          delegatedByAdminUserId: 'NULL',
+        },
+        ADMIN_DELEGATION: {
+          causationEventId: 'AUDIT_LOG_ID_REQUIRED',
+          causationSecurityEventId: 'NULL',
+          delegatedByAdminUserId: 'ADMIN_USER_ID_REQUIRED',
+        },
+        PUBLIC_PASSWORD_RESET: {
+          causationEventId: 'NULL',
+          causationSecurityEventId: 'ADMIN_SECURITY_EVENT_ID_REQUIRED',
+          delegatedByAdminUserId: 'NULL',
+        },
+      },
+      publicPasswordReset: {
+        initiatingOperationId: 'requestAdminPasswordReset',
+        authentication: 'PUBLIC_NO_AUTHENTICATED_ACTOR',
+        sourceRecordType: 'AdminSecurityEvent',
+        sourceAction: 'requestAdminPasswordReset',
+        sourceEventClass: 'LOGIN',
+        sourceEntityType: 'ADMIN_PASSWORD_RESET_REQUEST',
+        atomicCreation: 'RESET_REQUEST_ENCRYPTED_OUTBOX_AND_SECURITY_EVENT',
+        workerAuditOrigin: 'PUBLIC_PASSWORD_RESET',
+        workerValidation: [
+          'SOURCE_RECORD_TYPE',
+          'SOURCE_ACTION',
+          'SOURCE_EVENT_CLASS',
+          'SOURCE_ENTITY_TYPE',
+          'RESET_REQUEST_BINDING',
+          'OUTBOX_BINDING',
+        ],
+        forbiddenDelegatorSources: [
+          'REQUESTED_EMAIL',
+          'RECIPIENT_ACCOUNT',
+          'SUBJECT_ADMIN_USER_ID',
+          'CLIENT_DECLARED_IDENTITY',
+        ],
+        publicResponseCausalityDisclosure: 'FORBIDDEN',
+        autonomousReclassification: 'FORBIDDEN',
+      },
+    },
     asynchronousAudit: {
       action: 'DISTINCT_FROM_INITIATING_HTTP_OPERATION_ID',
       context: 'SYSTEM',
-      causality: 'REQUIRES_CAUSATION_EVENT_ID_AND_DELEGATED_BY_ADMIN_USER_ID',
+      causality: 'EXACTLY_ONE_OF_AUTONOMOUS_ADMIN_DELEGATION_OR_PUBLIC_PASSWORD_RESET',
+      origins: ['AUTONOMOUS', 'ADMIN_DELEGATION', 'PUBLIC_PASSWORD_RESET'],
     },
     productionQualification: {
       notificationProvider: 'NOT_QUALIFIED',
@@ -643,6 +692,116 @@ export const adminC2ContractPolicies = {
       signatureKeyProvider: 'NOT_QUALIFIED',
       runtimeImplemented: false,
     },
+  },
+  operationErrors: {
+    requestAdminPasswordReset: ['VALIDATION_ERROR', 'RATE_LIMITED', 'SERVICE_UNAVAILABLE'],
+    resetAdminPassword: [
+      'VALIDATION_ERROR',
+      'ADMIN_RECOVERY_INVALID',
+      'RATE_LIMITED',
+      'SERVICE_UNAVAILABLE',
+    ],
+    createAdminRecoveryCase: [
+      'VALIDATION_ERROR',
+      'AUTH_REQUIRED',
+      'FORBIDDEN',
+      'IDEMPOTENCY_CONFLICT',
+      'SERVICE_UNAVAILABLE',
+    ],
+    listAdminRecoveryCases: [
+      'VALIDATION_ERROR',
+      'AUTH_REQUIRED',
+      'FORBIDDEN',
+      'SERVICE_UNAVAILABLE',
+    ],
+    getAdminRecoveryCase: [
+      'AUTH_REQUIRED',
+      'FORBIDDEN',
+      'RECOVERY_CASE_NOT_FOUND',
+      'SERVICE_UNAVAILABLE',
+    ],
+    approveAdminRecoveryCase: [
+      'VALIDATION_ERROR',
+      'AUTH_REQUIRED',
+      'FORBIDDEN',
+      'RECOVERY_CASE_NOT_FOUND',
+      'RECOVERY_CASE_CONFLICT',
+      'IDEMPOTENCY_CONFLICT',
+      'RECOVERY_CASE_EXPIRED',
+      'SERVICE_UNAVAILABLE',
+    ],
+    listAdminAuditLogs: ['VALIDATION_ERROR', 'AUTH_REQUIRED', 'FORBIDDEN', 'SERVICE_UNAVAILABLE'],
+    createAdminAuditLogExport: [
+      'VALIDATION_ERROR',
+      'AUTH_REQUIRED',
+      'FORBIDDEN',
+      'IDEMPOTENCY_CONFLICT',
+      'SERVICE_UNAVAILABLE',
+    ],
+    getAdminAuditLogExport: [
+      'AUTH_REQUIRED',
+      'FORBIDDEN',
+      'AUDIT_EXPORT_NOT_FOUND',
+      'SERVICE_UNAVAILABLE',
+    ],
+    downloadAdminAuditLogExport: [
+      'AUTH_REQUIRED',
+      'FORBIDDEN',
+      'AUDIT_EXPORT_NOT_FOUND',
+      'AUDIT_EXPORT_NOT_READY',
+      'AUDIT_EXPORT_EXPIRED',
+      'SERVICE_UNAVAILABLE',
+    ],
+    createAdminInvitation: [
+      'VALIDATION_ERROR',
+      'AUTH_REQUIRED',
+      'FORBIDDEN',
+      'IDEMPOTENCY_CONFLICT',
+      'SERVICE_UNAVAILABLE',
+    ],
+    acceptAdminInvitation: [
+      'VALIDATION_ERROR',
+      'ADMIN_INVITATION_INVALID',
+      'RATE_LIMITED',
+      'SERVICE_UNAVAILABLE',
+    ],
+    listAdminUsers: ['VALIDATION_ERROR', 'AUTH_REQUIRED', 'FORBIDDEN', 'SERVICE_UNAVAILABLE'],
+    changeAdminUserRole: [
+      'VALIDATION_ERROR',
+      'AUTH_REQUIRED',
+      'FORBIDDEN',
+      'ADMIN_USER_NOT_FOUND',
+      'IDEMPOTENCY_CONFLICT',
+      'LAST_SUPER_ADMIN_PROTECTED',
+      'SERVICE_UNAVAILABLE',
+    ],
+    changeAdminUserStatus: [
+      'VALIDATION_ERROR',
+      'AUTH_REQUIRED',
+      'FORBIDDEN',
+      'ADMIN_USER_NOT_FOUND',
+      'IDEMPOTENCY_CONFLICT',
+      'LAST_SUPER_ADMIN_PROTECTED',
+      'SERVICE_UNAVAILABLE',
+    ],
+  },
+  errorStatuses: {
+    VALIDATION_ERROR: 400,
+    RATE_LIMITED: 429,
+    SERVICE_UNAVAILABLE: 503,
+    ADMIN_RECOVERY_INVALID: 400,
+    AUTH_REQUIRED: 401,
+    FORBIDDEN: 403,
+    IDEMPOTENCY_CONFLICT: 409,
+    RECOVERY_CASE_NOT_FOUND: 404,
+    RECOVERY_CASE_CONFLICT: 409,
+    RECOVERY_CASE_EXPIRED: 410,
+    AUDIT_EXPORT_NOT_FOUND: 404,
+    AUDIT_EXPORT_NOT_READY: 409,
+    AUDIT_EXPORT_EXPIRED: 410,
+    ADMIN_INVITATION_INVALID: 400,
+    ADMIN_USER_NOT_FOUND: 404,
+    LAST_SUPER_ADMIN_PROTECTED: 409,
   },
   unavailability: {
     operationIds: [
@@ -3127,6 +3286,7 @@ export type AdminAuditLogEntry =
       readonly operatorReason: string | null;
       readonly requestId: string;
       readonly causationEventId: string | null;
+      readonly causationSecurityEventId: string | null;
       readonly createdAt: Timestamp;
     } & {
       readonly context: 'ADMIN_SESSION';
@@ -3134,6 +3294,7 @@ export type AdminAuditLogEntry =
       readonly adminSessionId: string;
       readonly adminRecoveryContextId: null;
       readonly systemExecutionRefHash: null;
+      readonly causationSecurityEventId: null;
       readonly delegatedByAdminUserId: null;
     })
   | ({
@@ -3159,6 +3320,7 @@ export type AdminAuditLogEntry =
       readonly operatorReason: string | null;
       readonly requestId: string;
       readonly causationEventId: string | null;
+      readonly causationSecurityEventId: string | null;
       readonly createdAt: Timestamp;
     } & {
       readonly context: 'ADMIN_RECOVERY';
@@ -3166,6 +3328,7 @@ export type AdminAuditLogEntry =
       readonly adminSessionId: null;
       readonly adminRecoveryContextId: string;
       readonly systemExecutionRefHash: null;
+      readonly causationSecurityEventId: null;
       readonly delegatedByAdminUserId: null;
     })
   | ({
@@ -3191,6 +3354,7 @@ export type AdminAuditLogEntry =
       readonly operatorReason: string | null;
       readonly requestId: string;
       readonly causationEventId: string | null;
+      readonly causationSecurityEventId: string | null;
       readonly createdAt: Timestamp;
     } & (
       | ({
@@ -3201,6 +3365,7 @@ export type AdminAuditLogEntry =
           readonly systemExecutionRefHash: string;
         } & {
           readonly causationEventId: null;
+          readonly causationSecurityEventId: null;
           readonly delegatedByAdminUserId: null;
         })
       | ({
@@ -3211,7 +3376,19 @@ export type AdminAuditLogEntry =
           readonly systemExecutionRefHash: string;
         } & {
           readonly causationEventId: string;
+          readonly causationSecurityEventId: null;
           readonly delegatedByAdminUserId: string;
+        })
+      | ({
+          readonly context: 'SYSTEM';
+          readonly actorAdminUserId: null;
+          readonly adminSessionId: null;
+          readonly adminRecoveryContextId: null;
+          readonly systemExecutionRefHash: string;
+        } & {
+          readonly causationEventId: null;
+          readonly causationSecurityEventId: string;
+          readonly delegatedByAdminUserId: null;
         })
     ));
 

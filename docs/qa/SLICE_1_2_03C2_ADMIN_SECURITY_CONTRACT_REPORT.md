@@ -1,9 +1,10 @@
 # Rapport S1.2-03C2-P0 — Admin Security Contract Prerequisite
 
-Statut : **INSTANTANÉ DE VALIDATION LOCALE PRÉPUBLICATION — NON COMMITÉE — NON
-PUBLIÉE**
+Statut : **P0/R1 PUBLIÉS DANS LA DRAFT PR #51 — INSTANTANÉ LOCAL
+PRÉPUBLICATION R2 DU 2026-10-11, NON INDEXÉ, NON COMMITÉ ET NON PUBLIÉ —
+L'ÉTAT GIT/GITHUB POSTÉRIEUR FAIT FOI**
 
-Date : 2026-10-09
+Dernière réconciliation : 2026-10-11
 
 ## Préflight et bootstrap
 
@@ -157,3 +158,68 @@ Ces résultats locaux ne requalifient pas l’échec CI historique. La PR #51
 reste Draft; aucun succès CI R1 futur n’est affirmé à cet instant. Les
 fournisseurs de production restent **NON QUALIFIÉS**, la politique OSS reste
 différée et aucun runtime C2/C3 n’est commencé.
+
+## Remédiation locale R2 — causalité typée et durcissement contractuel
+
+Le préflight R2 retrouve exactement le head R1
+`07b610886853f858d0c4e2c7ecc7c8730d2fc3ff`, son parent et son arbre, la Draft
+PR #51 et son corps de 5 060 octets, les quatre runs R1 au vert, les onze
+worktrees propres et la PR #50 fusionnée avec son corps R12 restauré. Aucune
+divergence n'a été observée avant édition.
+
+R2 ferme les trois findings de la revue cumulative :
+
+- `AdminAuditLogEntry` conserve les trois contextes historiques et ajoute
+  `causationSecurityEventId` sans nouveau schéma. SYSTEM possède exactement les
+  branches autonome, délégation administrateur via `AuditLog`, et continuation
+  du reset public via `AdminSecurityEvent` ;
+- la demande publique, son événement initial et l'outbox restent atomiques. Le
+  worker revalide type, action, classe, entité et liaisons serveur; aucun
+  identifiant causal, acteur ou délégant ne vient du client ;
+- les quinze listes d'erreurs C2 et leurs statuts sont comparés exactement et
+  dans l'ordre normatif. Les mutations retrait, ajout, doublon, permutation,
+  substitution de même statut et statut incorrect sont refusées ;
+- l'exception de `stopChild` est assainie et rapportée comme
+  `phase=finally cleanup_error ...; action=stop_api`, sans retry, faux succès ni
+  remplacement de l'erreur principale.
+
+La surface reste 60 chemins, 67 opérations et 137 schémas. Prisma, migration,
+runtime C1/C2/C3, dépendances, lockfile, workflow, Compose et provisioning ne
+sont pas modifiés. Les futures surfaces `app.module.ts` et `app.factory.ts`
+devront être autorisées littéralement si le mandat runtime en a besoin.
+
+La première campagne combinée OpenAPI/boundary R2 reste **NON-PASS** à
+329/331 : le nouveau helper de fixture ne rejetait pas encore une valeur non
+nulle face à `type: null`, ce qui faussait deux assertions de branche. La
+correction est limitée à ce contrôle de type; la reprise passe 331/331. Les
+résultats techniques finaux observés avant réconciliation documentaire sont :
+
+- OpenAPI 60/67/137 et 39 modèles Prisma préservés ;
+- tests adversariaux 324/324 et boundary 8/8 ;
+- génération officielle exacte ;
+- Contracts format, lint, typecheck, 8/8 tests et build ;
+- Infrastructure ciblée 14/14, dont l'injection `stopChild` ;
+- `test:tooling` 459/459 ;
+- scanner officiel : 388 fichiers, historique actif, 52 sources immuables et
+  six scripts d'installation qualifiés.
+
+Deux essais du harnais de preuve restent distincts des gates produit et sont
+conservés sans les renommer PASS. Le premier contrôle statique a terminé au
+code 1 parce que son `trim()` supprimait l'espace initial de la première ligne
+Git porcelain; le contrôle corrigé passe sans changement du gel. Le premier
+manifeste PowerShell, bien que valide ligne par ligne, utilisait un ordre de tri
+culturel et produisait l'agrégat `f00599e6…`; sa comparaison reste NON-PASS.
+Après tri ordinal explicite, les méthodes Node et PowerShell produisent, sur le
+gel antérieur à la présente correction documentaire, les mêmes 2 068 octets et
+l'agrégat
+`782b5e7921c7aaffeff45e2fcf96280cded48f70e910dc39cda5129d17e310df`.
+
+La tentative post-review 034 termine au code 1 avec ses stdout et stderr
+capturés vides. Faute de diagnostic archivé dans cette enveloppe, elle reste
+**NON CONCLUSIVE** et ne prouve pas que Prettier a démarré. La reprise 035 écrit
+les seuls fichiers ciblés, puis le contrôle 036 confirme leur formatage; ces
+deux commandes terminent au code 0 et constituent la preuve finale.
+
+L'échec Infrastructure historique reste distinct et sa cause Docker reste
+**NON CONCLUSIVE**. Aucun Docker, HTTP réel, PostgreSQL/Redis, build applicatif
+ou Flutter n'est exécuté par R2.

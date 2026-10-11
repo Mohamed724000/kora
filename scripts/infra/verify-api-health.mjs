@@ -19,6 +19,7 @@ import {
   assertOwnerRoleRejected,
   capturedOutputSummary,
   phaseErrorDiagnostic,
+  stopApiForCleanup,
 } from "./verify-api-health-assertions.mjs";
 
 const applicationPath = resolve(
@@ -514,6 +515,11 @@ try {
     }
   }
   if (api !== undefined) {
-    await stopChild(api);
+    const stopped = await stopApiForCleanup({
+      child: api,
+      secrets: sensitiveValues,
+      stopChild,
+    });
+    if (!stopped) process.exitCode = 1;
   }
 }

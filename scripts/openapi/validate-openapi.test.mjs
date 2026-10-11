@@ -24,6 +24,7 @@ import {
 } from "./artist-earning-allocation.mjs";
 
 import {
+  ADMIN_C2_EXACT_OPERATION_ERRORS,
   ADMIN_STRUCTURAL_VALIDATION_OPERATIONS,
   ADMIN_SECURITY_CONTRACTS,
   EXPECTED_PATHS,
@@ -55,6 +56,32 @@ function adminSecurityOperation(document, operationId) {
   );
   assert.ok(contract, `fixture must include ${operationId}`);
   return document.paths[contract.path][contract.method];
+}
+
+function adminSystemAuditFixture(overrides = {}) {
+  return {
+    eventId: "00000000-0000-4000-8000-000000000001",
+    action: "deliverAdminPasswordResetNotification",
+    eventClass: "LOGIN",
+    context: "SYSTEM",
+    actorAdminUserId: null,
+    subjectAdminUserId: null,
+    delegatedByAdminUserId: null,
+    adminSessionId: null,
+    adminRecoveryContextId: null,
+    systemExecutionRefHash: "a".repeat(64),
+    entityType: "ADMIN_PASSWORD_RESET_DELIVERY",
+    entityId: "00000000-0000-4000-8000-000000000002",
+    maskedBefore: null,
+    maskedAfter: null,
+    reasonCode: sourceDocument.components.schemas.AdminReasonCode.enum[0],
+    operatorReason: null,
+    requestId: "request-r2-system-audit",
+    causationEventId: null,
+    causationSecurityEventId: null,
+    createdAt: "2026-10-10T00:00:00.000Z",
+    ...overrides,
+  };
 }
 
 function base64UrlNoPadding(value) {
@@ -2887,6 +2914,9 @@ test("materializes the complete C2-P0 contract policy in generated metadata", ()
   const operations = buildAdminSecurityOperations(sourceDocument);
 
   assert.equal(Object.keys(policies.contract.operationMatrix).length, 15);
+  assert.deepEqual(policies.operationErrors, ADMIN_C2_EXACT_OPERATION_ERRORS);
+  assert.equal(policies.errorStatuses.VALIDATION_ERROR, 400);
+  assert.equal(policies.errorStatuses.SERVICE_UNAVAILABLE, 503);
   assert.equal(policies.unavailability.operationIds.length, 15);
   assert.equal(policies.unavailability.errorCode, "SERVICE_UNAVAILABLE");
   assert.equal(
@@ -2925,6 +2955,109 @@ test("materializes the complete C2-P0 contract policy in generated metadata", ()
         deliverySlice === "S1.2-03C2" && serviceUnavailable !== null,
     ).length,
     15,
+  );
+});
+
+test("accepts exactly the three valid SYSTEM causality origins", () => {
+  const autonomous = adminSystemAuditFixture();
+  const delegated = adminSystemAuditFixture({
+    causationEventId: "00000000-0000-4000-8000-000000000003",
+    delegatedByAdminUserId: "00000000-0000-4000-8000-000000000004",
+  });
+  const publicReset = adminSystemAuditFixture({
+    causationSecurityEventId: "00000000-0000-4000-8000-000000000005",
+  });
+
+  for (const audit of [autonomous, delegated, publicReset]) {
+    assert.equal(
+      validateSchemaInstance(sourceDocument, "AdminAuditLogEntry", audit),
+      true,
+    );
+  }
+});
+
+for (const [name, audit] of [
+  [
+    "two causal sources simultaneously",
+    adminSystemAuditFixture({
+      causationEventId: "00000000-0000-4000-8000-000000000003",
+      causationSecurityEventId: "00000000-0000-4000-8000-000000000005",
+      delegatedByAdminUserId: "00000000-0000-4000-8000-000000000004",
+    }),
+  ],
+  [
+    "missing delegator for AuditLog causation",
+    adminSystemAuditFixture({
+      causationEventId: "00000000-0000-4000-8000-000000000003",
+    }),
+  ],
+  [
+    "forbidden delegator for public-reset causation",
+    adminSystemAuditFixture({
+      causationSecurityEventId: "00000000-0000-4000-8000-000000000005",
+      delegatedByAdminUserId: "00000000-0000-4000-8000-000000000004",
+    }),
+  ],
+]) {
+  test(`rejects SYSTEM causality with ${name}`, () => {
+    assert.throws(
+      () => validateSchemaInstance(sourceDocument, "AdminAuditLogEntry", audit),
+      /must match exactly one oneOf branch/u,
+    );
+  });
+}
+
+for (const [name, mutate] of [
+  [
+    "a removed exact error",
+    (document) => document["x-kora-operation-errors"].listAdminUsers.pop(),
+  ],
+  [
+    "an added same-status error",
+    (document) =>
+      document["x-kora-operation-errors"].requestAdminPasswordReset.push(
+        "ADMIN_RECOVERY_CODE_INVALID",
+      ),
+  ],
+  [
+    "a duplicated error",
+    (document) =>
+      document["x-kora-operation-errors"].createAdminInvitation.push(
+        "SERVICE_UNAVAILABLE",
+      ),
+  ],
+  [
+    "a substituted same-status error",
+    (document) => {
+      document["x-kora-operation-errors"].resetAdminPassword[1] =
+        "ADMIN_RECOVERY_CODE_INVALID";
+    },
+  ],
+  [
+    "a permuted error order",
+    (document) => {
+      const errors =
+        document["x-kora-operation-errors"].approveAdminRecoveryCase;
+      [errors[3], errors[4]] = [errors[4], errors[3]];
+    },
+  ],
+]) {
+  test(`rejects the C2 error table with ${name}`, () => {
+    const document = documentFixture();
+    mutate(document);
+    assert.throws(
+      () => validateOpenApiDocument(document),
+      /must preserve its exact C2 error list/u,
+    );
+  });
+}
+
+test("rejects an incorrect exact C2 error status", () => {
+  const document = documentFixture();
+  document["x-kora-error-statuses"].ADMIN_USER_NOT_FOUND = 409;
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /ADMIN_USER_NOT_FOUND must preserve its exact C2 HTTP status/u,
   );
 });
 
@@ -3300,6 +3433,51 @@ const adminSecurityMutations = [
     "autonomous SYSTEM audit forced to invent causation",
     (document) => {
       document.components.schemas.AdminAuditLogEntry.oneOf[2].oneOf.shift();
+    },
+  ],
+  [
+    "SYSTEM audit combines AuditLog and AdminSecurityEvent causality",
+    (document) => {
+      document.components.schemas.AdminAuditLogEntry.oneOf[2].oneOf[2].properties.causationEventId =
+        {
+          type: "string",
+          format: "uuid",
+        };
+    },
+  ],
+  [
+    "public reset SYSTEM audit fabricates a delegating administrator",
+    (document) => {
+      document.components.schemas.AdminAuditLogEntry.oneOf[2].oneOf[2].properties.delegatedByAdminUserId =
+        {
+          type: "string",
+          format: "uuid",
+        };
+    },
+  ],
+  [
+    "public reset worker accepts the wrong causal record type",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].systemAuditCausality.publicPasswordReset.sourceRecordType = "AuditLog";
+    },
+  ],
+  [
+    "public reset delivery loses causality by autonomous reclassification",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].systemAuditCausality.publicPasswordReset.workerAuditOrigin =
+        "AUTONOMOUS";
+    },
+  ],
+  [
+    "client input becomes trusted SYSTEM causality",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].systemAuditCausality.clientSupplied = true;
     },
   ],
   [

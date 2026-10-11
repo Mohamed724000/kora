@@ -34,10 +34,22 @@ cible. Ils ne sont jamais fusionnés. Les actions sensibles portent également
 Chaque entrée conserve aussi une classe `LOGIN`, `SESSION`, `EXPORT` ou
 `BUSINESS`, l'entité, les valeurs avant/après masquées, le `requestId`, une
 causalité éventuelle et l'administrateur délégant lorsqu'un traitement
-`SYSTEM` prolonge une demande humaine. Un traitement système garde un acteur
-nul. S'il est autonome, `delegatedByAdminUserId` et `causationEventId` sont
-tous deux nuls ; s'il prolonge une demande humaine, ces deux champs sont
-obligatoires ensemble et préservent la chaîne de preuve sans usurpation.
+`SYSTEM` prolonge une demande humaine. Un traitement système garde toujours un
+acteur nul et choisit exactement une origine :
+
+- autonome : `causationEventId`, `causationSecurityEventId` et
+  `delegatedByAdminUserId` sont nuls ;
+- délégation administrateur prouvée : `causationEventId` référence un
+  `AuditLog`, `delegatedByAdminUserId` est obligatoire et
+  `causationSecurityEventId` est nul ;
+- continuation du reset public : `causationSecurityEventId` référence
+  l'`AdminSecurityEvent` initial, tandis que `causationEventId` et
+  `delegatedByAdminUserId` sont nuls.
+
+Ces trois branches sont exclusives. Le lien de sécurité n'est jamais fourni
+par le client : il provient de l'état durable créé côté serveur. Une adresse
+e-mail, le compte destinataire, `subjectAdminUserId` ou une identité déclarée
+par le client ne prouvent jamais un administrateur délégant.
 
 Les événements sans contexte d'audit prouvé, succès ou échec, sont écrits dans
 un futur `AdminSecurityEvent`, et non dans `AuditLog`, puisqu'aucun acteur

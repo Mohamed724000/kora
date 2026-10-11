@@ -45,9 +45,33 @@ main.
 | changeAdminUserStatus       | session + SUPER_ADMIN            | STATUS_CHANGE     | STATUS_ADMINISTRATION ou SECURITY_RESPONSE, raison requise | AuditLog / AuditLog                   | même operationId / BUSINESS / admin user     |
 
 Tout échec avant preuve produit exactement un AdminSecurityEvent. Les actions
-SYSTEM de worker sont distinctes de l’operationId HTTP et lient leur événement
-causal ainsi que l’administrateur délégant. Les snapshots before/after sont des
-projections masquées positives propres à l’action.
+SYSTEM de worker sont distinctes de l’operationId HTTP. Elles sont soit
+autonomes, soit causées par un `AuditLog` avec administrateur délégant prouvé,
+soit causées par l'`AdminSecurityEvent` d'un reset public via
+`causationSecurityEventId`, sans administrateur délégant. Les snapshots
+before/after sont des projections masquées positives propres à l’action.
+
+### Continuation SYSTEM du reset public
+
+La transaction de demande crée ensemble le reset durable, l'outbox chiffré et
+l'`AdminSecurityEvent` initial. Aucun des identifiants de liaison ne traverse
+la réponse publique. Le worker charge ces liaisons depuis PostgreSQL et refuse
+une source dont le type, l'action `requestAdminPasswordReset`, la classe
+`LOGIN`, l'entité `ADMIN_PASSWORD_RESET_REQUEST`, la demande ou l'outbox ne
+correspond pas. Il ne peut ni accepter un identifiant client, ni déduire un
+acteur depuis l'e-mail, le compte destinataire ou `subjectAdminUserId`, ni
+reclasser la livraison en SYSTEM autonome.
+
+Le futur SQL conserve deux clés étrangères distinctes :
+`causationEventId -> AuditLog.id` pour une délégation administrateur et
+`causationSecurityEventId -> AdminSecurityEvent.id` pour le reset public, avec
+`RESTRICT` en suppression/mise à jour. Un CHECK impose exactement
+`null/null/null`, `AuditLog/null/admin` ou
+`null/AdminSecurityEvent/null` pour les trois branches SYSTEM; le nouveau lien
+est nul hors SYSTEM. Le worker lit seulement les colonnes de validation de la
+source/demande/outbox et insère l'audit sans RETURNING. Le writer de demande
+insère atomiquement les trois enregistrements. Aucun UPDATE/DELETE de sink ni
+élargissement du reader C1 n'est permis.
 
 ## États et atomicité
 
@@ -191,6 +215,9 @@ Allowlist C2b proposée :
 Ces listes sont des propositions de décision future, non des autorisations de
 runtime. Aucun wildcard n’est utilisé. Aucun chemin de migration n’est nommé :
 le futur mandat doit fournir son chemin littéral exact, sans timestamp inventé.
+Si leur modification est nécessaire, `apps/api/src/app.module.ts` et
+`apps/api/src/app.factory.ts` devront eux aussi être nommés littéralement dans
+ce mandat runtime; ils ne sont pas autorisés ni modifiés par P0/R2.
 
 ## Identités et ACL PostgreSQL futures
 
