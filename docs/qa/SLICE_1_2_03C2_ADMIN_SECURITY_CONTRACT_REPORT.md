@@ -1,9 +1,9 @@
 # Rapport S1.2-03C2-P0 — Admin Security Contract Prerequisite
 
-Statut : **P0/R1/R2/R3/R4 PUBLIÉS DANS LA DRAFT PR #51 AU HEAD
-0f607d3965579497ac04a74bd6bd9fb20c876fa6 — R4 CI : INFRASTRUCTURE EN
-ÉCHEC, TROIS AUTRES WORKFLOWS EN SUCCÈS — R5 REQUALIFIÉ LOCALEMENT ET EN
-PRÉPARATION DE PUBLICATION, NON PUBLIÉ — RUNTIME NON IMPLÉMENTÉ**
+Statut : **P0/R1–R5 PUBLIÉS DANS LA DRAFT PR #51 AU HEAD
+7d0e0e01f2618dab59d2e21d0091892f98c7b6ae — QUATRE WORKFLOWS R5 EN
+SUCCÈS — R6 QUALIFIÉ LOCALEMENT ET AUTORISÉ POUR PUBLICATION SOUS GATES,
+CI R6 NON ACQUISE — RUNTIME NON IMPLÉMENTÉ**
 
 Dernière réconciliation : 2026-10-13
 
@@ -485,3 +485,76 @@ push, rerun, édition de PR, Ready, approval, merge, tag, release ou déploiemen
 n’a été effectué. La PR #51 reste Draft et son corps inchangé. Fournisseurs
 **NON QUALIFIÉS**, politique OSS différée, incident Redis distinct
 **NON CONCLUSIVE**, runtime C2/C3 non commencé.
+
+## S1.2-03C2-P0-R6 — transaction client disposal contract — 2026-10-13
+
+R5 est publié au commit `7d0e0e01f2618dab59d2e21d0091892f98c7b6ae`,
+parent `0f607d3965579497ac04a74bd6bd9fb20c876fa6`, arbre
+`3212cb4d119e2d440b155a1aef4e83f0aebb5ce5`. Les runs Infrastructure
+`38437635773`, Launcher Windows `38437635822`, Security `38437635803` et
+Quality Linux `38437635804` sont tous terminés en succès, tentative 1, sur ce
+head. La PR #51 reste ouverte, Draft et non fusionnée.
+
+La revue terminale a maintenu **BLOCK** sur le devenir du client après échec
+pré-COMMIT et rollback non confirmé, ainsi que sur une contradiction du corps
+PR entre l’historique P0 et l’état R5. R6 ferme localement la première lacune
+par un contrat exécutable applicable à tous les futurs writers C2 : `BEGIN`,
+rollback et accusé de COMMIT bornés à 2 000 ms, callback après BEGIN confirmé,
+et réutilisation seulement après réponse terminale, `ReadyForQuery=I` causal
+post-commande du même client utilisable. Tout client acquis qui ne satisfait
+pas ce prédicat est détruit exactement une fois.
+
+La tentative de COMMIT est marquée avant l’appel driver. Une perte, deadline ou
+absence d’accusé après ce point est exclusivement `COMMIT_UNKNOWN`, sans
+rollback, replay ou second sink et avec réconciliation durable. Un rejet
+serveur confirmé reste connu non commité ; un succès confirmé reste durable
+même si le client doit ensuite être détruit. Les settles tardifs ne produisent
+ni reclassification, réponse ou release. Le retry d’un job ne permet jamais de
+rejouer une mutation inconnue. Six traces et vingt et une mutations
+adversariales couvrent ces branches.
+
+| Gate R6                                        | Résultat local                                                         |
+| ---------------------------------------------- | ---------------------------------------------------------------------- |
+| OpenAPI                                        | PASS — 60 chemins, 67 opérations, 141 schémas                          |
+| Mutations adversariales                        | PASS — 373/373                                                         |
+| Boundary généré                                | PASS — 10/10                                                           |
+| Génération exacte                              | PASS — généré courant byte-for-byte                                    |
+| Contracts format/lint/typecheck/tests/build    | PASS — 10/10 tests                                                     |
+| Tooling                                        | PASS — 522/522, zéro échec et zéro skip                                |
+| Scanner officiel                               | PASS — 388 fichiers, history=true, 52 immuables, six scripts qualifiés |
+| Prettier et intégrité statique                 | PASS — allowlist, modes, index, UTF-8/LF, liens et diff-check          |
+| PostgreSQL/Redis/Docker/HTTP/Flutter/App build | NON EXÉCUTÉS — hors mandat R6                                          |
+
+Un diagnostic intermédiaire a lancé les tests avant de régénérer le contrat :
+il reste **NON-PASS**, 372/373, avec pour seul échec l’identité byte-for-byte du
+généré encore antérieur. La commande a ensuite régénéré officiellement le
+fichier et le boundary a passé 10/10, mais cette suite ne requalifie pas le
+résultat rouge. La reprise qualifiante finale respecte l’ordre génération,
+validation exacte, adversarial puis boundary et archive chaque code séparément.
+
+La surface demeure 60 chemins, 67 opérations et 141 schémas. R6 ne modifie
+aucun runtime, writer, Prisma, migration, dépendance, lockfile, workflow ou
+infrastructure. Les validations locales R6 et les revues finales sont
+consignées dans l’archive de preuve externe ; leur résultat final fait foi sur
+toute formulation préparatoire de ce rapport. Le candidat complet du corps PR
+est également hors dépôt et n’est pas publié. R6 reste non indexé, non commité
+et non publié ; aucun changement GitHub, rerun, Ready, approval, merge, tag,
+release ou déploiement n’est effectué. Fournisseurs **NON QUALIFIÉS**, OSS
+différée et runtime C2/C3 non commencé.
+
+### Clôture probatoire et préparation de publication R6
+
+La perte du premier brouillon de corps PR de 22 937 octets, jamais publié, est
+close sous le statut exact **ACCEPTED WITH CTO WAIVER — R6 UNPUBLISHED DRAFT
+ONLY**. Le constat 085 et l'arbitrage 093 restent historiques et ne deviennent
+pas PASS rétroactivement. Cette dérogation ne couvre ni le gel technique final,
+ni le candidat final, ni une sortie de validation finale.
+
+Le préflight de publication frais reproduit deux manifestes byte-identiques de
+SHA-256 `9dd5135bb54852bfdbcbf009c671d41038a2c4359371ac457ec4d777f9353047`,
+un patch de 84 021 octets de SHA-256
+`78b648e27e794e2a86b99461c5167da8e2b035b494371d7749fe5bd207ef502a`
+et le candidat final hors dépôt de 26 378 octets de SHA-256
+`a0dea526007cb7104938d0ccabf7bb561e327402c42e18c8b5133de8fbc0e849`.
+Ces valeurs qualifient l'entrée de publication ; elles n'anticipent aucun
+résultat CI R6 ni aucune édition du corps live de la PR #51.

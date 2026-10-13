@@ -2,11 +2,12 @@
 
 Périmètre durable couvert : **BASELINE À S1.2-03B FUSIONNÉES + S1.2-03C1
 FUSIONNÉ DANS MAIN AU MERGE
-dc97eeef72c4e299988ed19d66460011a8551cf3, NON DÉPLOYÉ + S1.2-03C2-P0/R1/R2/R3
+dc97eeef72c4e299988ed19d66460011a8551cf3, NON DÉPLOYÉ + S1.2-03C2-P0/R1–R5
 PUBLIÉS DANS LA DRAFT PR #51 AU HEAD
-dc420336d52c791b8876fa30e6ee76f0a5251bea + R4 VALIDÉ LOCALEMENT DANS
-L’INSTANTANÉ PRÉPUBLICATION DU 2026-10-13, RUNTIME NON IMPLÉMENTÉ —
-FOURNISSEURS DE PRODUCTION NON QUALIFIÉS — C3 NOT STARTED**.
+7d0e0e01f2618dab59d2e21d0091892f98c7b6ae + R6 QUALIFIÉ LOCALEMENT ET
+AUTORISÉ POUR PUBLICATION SOUS GATES, CI R6 NON ACQUISE AU 2026-10-13,
+RUNTIME NON IMPLÉMENTÉ — FOURNISSEURS DE PRODUCTION NON QUALIFIÉS — C3 NOT
+STARTED**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
 commit, push ou changement GitHub S1.1 n’avait encore été effectué : il s’agit
@@ -1227,3 +1228,26 @@ provider. Docker, PostgreSQL/Redis et HTTP réel restent NON EXÉCUTÉS.
 Les deux lacunes historiques d’archivage restent **ACCEPTED WITH CTO WAIVER —
 HISTORICAL EVIDENCE ONLY**. Cette dérogation ne couvre aucune preuve FINAL7 et
 ne réduit aucune limite résiduelle de ce modèle.
+
+## Fermeture contractuelle S1.2-03C2-P0-R6 — 2026-10-13
+
+| Menace                                         | Contrôle R6                                                                                                                                                    | Preuve contractuelle                                                         | Limite résiduelle                     |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------- |
+| Client `T`/`E` réintroduit dans le pool        | callback seulement après BEGIN confirmé ; réutilisation après réponse terminale et `ReadyForQuery=I` post-commande du même client utilisable                   | policy générée, traces et mutation de stale `I`                              | writers C2 NON IMPLÉMENTÉS            |
+| BEGIN suspendu ou résultat inconnu             | borne monotone 2 000 ms ; aucun callback/retry ; discard physique exactement une fois                                                                          | policy BEGIN et mutations confirmation/disposition                           | panne réseau réelle NON EXÉCUTÉE      |
+| Rollback rejeté, suspendu ou connexion perdue  | discard/destruction de la connexion physique exactement une fois ; terminaison tardive seulement observée                                                      | trois traces fermées et mutations absence de discard/deadline/double release | timeout réseau réel NON EXÉCUTÉ       |
+| Erreur primaire masquée                        | erreurs primaire et rollback conservées séparément dans une observation assainie ; aucune fuite publique                                                       | mutation perte de l'erreur primaire                                          | observabilité runtime NON IMPLÉMENTÉE |
+| COMMIT suspendu ou faux rollback après inconnu | tentative marquée avant driver, accusé borné à 2 000 ms ; branche exclusive, discard unique, aucun rollback tenté/affirmé, late settle sans reclassification   | trace COMMIT_UNKNOWN et mutations deadline/exclusivité/faux rollback         | reconciliation runtime NON TESTÉE     |
+| Replay ou double sink après issue inconnue     | aucun retry aveugle, replay de mutation ou second sink ; une reprise de job autorisée par la machine d'état ne vaut jamais permission de replay d'une mutation | mutations replay/second sink et règle de frontière des jobs                  | exécution distribuée NON TESTÉE       |
+
+La preuve C1 R6 existante démontre la classe de risque et reste consultée en
+lecture seule ; elle n'est pas présentée comme un test du futur runtime C2. R6
+ne modifie aucun writer, Prisma, migration, ACL, workflow, dépendance ou
+lockfile. Les fournisseurs restent **NON QUALIFIÉS** et C2/C3 runtime ne sont
+pas commencés.
+
+La publication R6 est autorisée sous gates à partir de ce gel local sans
+réduire ces limites résiduelles. La dérogation **ACCEPTED WITH CTO WAIVER — R6
+UNPUBLISHED DRAFT ONLY** couvre uniquement un premier brouillon de corps PR
+jamais publié ; elle ne couvre aucun octet technique final, candidat final ou
+résultat de validation. Aucune CI R6 n'est acquise au présent gel.

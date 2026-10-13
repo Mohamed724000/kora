@@ -1,7 +1,8 @@
 # S1.2-03C2 — Admin Security Runtime Contract
 
-Statut : **P0/R1/R2/R3 PUBLIÉS DANS LA DRAFT PR #51 — R4 VALIDÉ LOCALEMENT,
-INSTANTANÉ PRÉPUBLICATION DU 2026-10-13 — RUNTIME NON IMPLÉMENTÉ**
+Statut : **P0/R1–R5 PUBLIÉS DANS LA DRAFT PR #51 — R6 QUALIFIÉ LOCALEMENT
+ET AUTORISÉ POUR PUBLICATION SOUS GATES, CI R6 NON ACQUISE AU 2026-10-13 —
+RUNTIME NON IMPLÉMENTÉ**
 
 Date : 2026-10-12
 
@@ -116,8 +117,9 @@ URIError, GET, autres routes, préfixes et autres erreurs traversent inchangés.
 
 Les 27 opérations Admin déclarent le même 503 fermé. Pour C2, un échec du
 recorder, d’une dépendance requise ou d’une durabilité critique retourne ce 503
-sans fuite. Rollback confirmé et issue COMMIT inconnue restent distincts;
-aucune issue inconnue n’est retentée aveuglément.
+sans fuite. Rollback confirmé, rollback non confirmé et issue COMMIT inconnue
+restent trois branches distinctes; aucune issue inconnue n’est retentée
+aveuglément.
 
 ## Notification et compromission du mot de passe
 
@@ -237,9 +239,11 @@ lots runtime.
 
 Avant toute publication runtime : migration littérale, tests PostgreSQL des
 deux orientations de membership, ACL et absence de droits implicites; preuves
-HTTP réelles des 15 opérations; concurrence, idempotence, rollback et COMMIT
-inconnu; Redis/worker/outbox; provider adapters et failure modes; scanner,
-licences, audits et builds applicables.
+HTTP réelles des 15 opérations; concurrence et idempotence; rollback confirmé,
+rejeté, suspendu et connexion perdue; borne monotone, état ReadyForQuery,
+discard exactement une fois et absence de double release; COMMIT inconnu sans
+rollback affirmé ni replay; Redis/worker/outbox; provider adapters et failure
+modes; scanner, licences, audits et builds applicables.
 
 Dans P0, PostgreSQL, Redis, Docker, HTTP réel, API build, Flutter, navigateur
 et fournisseurs sont **NON EXÉCUTÉS**.
@@ -355,3 +359,37 @@ début confirmé.
 R4 conserve 60 chemins et 67 opérations, porte le compteur à 141 schémas et
 ne modifie ni runtime, Prisma, migration, rôle, dépendance, workflow ou
 provider. C2a/C2b et C3 restent non commencés.
+
+## R6 — frontière transactionnelle BEGIN/callback/ROLLBACK/COMMIT/release
+
+La politique `transactionClientDisposal` s'applique à tout futur writer C2,
+qu'il soit appelé par HTTP, bootstrap, outbox, job ou transition SYSTEM. Elle
+ne constitue pas une implémentation runtime.
+
+La séquence autorisée est fermée : `BEGIN`, callback, puis soit rollback avant
+release après échec pré-COMMIT, soit COMMIT après succès du callback. `BEGIN`
+est borné à 2 000 ms et doit être confirmé avant le callback ; rejet explicite
+avec `ReadyForQuery=I` post-commande sur le même client permet seul une release
+réutilisable, tandis que deadline/perte/accusé inconnu impose un discard unique.
+Le rollback dispose de la même borne monotone. Seule une confirmation avant la
+borne, suivie du `ReadyForQuery=I` causal post-rollback sur le même client et
+d'un client utilisable, autorise une release réutilisable unique. `T`, `E`,
+état inconnu, rejet, suspension ou perte de connexion imposent le discard de la
+connexion physique exactement une fois. Une terminaison tardive reste observée
+mais ne peut ni rendre le client réutilisable ni déclencher une seconde release.
+
+L'erreur primaire et les erreurs ou issues terminales de `BEGIN`/rollback
+restent distinctes. Le 503 public est neutre, sans fuite, retry de transaction
+ou second sink. La tentative de COMMIT est marquée avant l'appel driver et son
+accusé est borné à 2 000 ms. Perte, deadline ou accusé inconnu après ce point
+est exclusivement `COMMIT_UNKNOWN`, détruit le client exactement une fois,
+n'exécute aucun rollback, n'en affirme aucun et interdit tout replay de
+mutation. Un settle tardif ne reclassifie ni ne produit réponse, release ou
+replay. La réconciliation de l'état durable précède toute continuation.
+
+Cette dernière règle ne change pas les reprises export existantes : scheduler,
+reclaim, watchdog, lease, fencing et budget peuvent autoriser une nouvelle
+tentative de machine d'état, jamais le rejeu d'une mutation au résultat inconnu.
+Les six traces normatives — rollback confirmé, rollback rejeté, rollback
+suspendu, connexion perdue, COMMIT confirmé et COMMIT inconnu — sont générées
+depuis OpenAPI et soumises aux mutations adversariales R6.

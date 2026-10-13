@@ -772,3 +772,18 @@ sept findings restent fermés par les preuves FINAL7, qui ne sont pas couvertes
 par la dérogation. Seules les deux lacunes historiques d’archivage ont le
 statut **ACCEPTED WITH CTO WAIVER — HISTORICAL EVIDENCE ONLY** ; aucun artefact
 absent ni résultat NON-PASS n’est reconstruit ou requalifié.
+
+## S1.2-03C2-P0-R6 — disposition du client transactionnel
+
+| ID       | Exigence                                  | Preuve R6                                                                                                                        | État                    |
+| -------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| C2-R6-01 | Fermer BEGIN avant callback               | BEGIN borné 2 000 ms ; callback après confirmation ; issue inconnue destructrice sans retry ; late settle sans callback          | Contracted locally      |
+| C2-R6-02 | Détruire toute connexion non réutilisable | rejet, deadline, perte de connexion ou état `T`/`E`/inconnu → discard physique exactement une fois ; late settle observationnel  | Contracted locally      |
+| C2-R6-03 | Préserver erreurs et cardinalité          | issues BEGIN/primaire/rollback/COMMIT séparées ; libération exactement une ; défaut vers discard                                 | Contracted locally      |
+| C2-R6-04 | Séparer COMMIT_UNKNOWN                    | tentative marquée avant driver, accusé borné 2 000 ms ; perte post-tentative exclusivement inconnue, sans rollback/replay        | Contracted locally      |
+| C2-R6-05 | Fermer le retry des jobs                  | aucune politique de retry ne permet de rejouer une mutation dont le résultat est inconnu                                         | Contracted locally      |
+| C2-R6-06 | Couvrir les six branches terminales       | six traces exactes ; perte de connexion strictement pré-COMMIT ; succès confirmé distinct de la disposition du client            | Contracted locally      |
+| C2-R6-07 | Refuser les régressions adversariales     | vingt et une mutations ciblent liveness, BEGIN, bornes, `I` causal, disposition, exclusivité, erreurs, rollback, replay et sink  | Verified by local tests |
+| C2-R6-08 | Préserver surface et frontière            | 60 chemins, 67 opérations, 141 schémas ; aucun runtime/Prisma/migration/dépendance/workflow                                      | Scope preserved         |
+| C2-R6-09 | Préserver la preuve sous dérogation       | premier brouillon jamais publié couvert seul par waiver ; constats BLOCK historiques inchangés ; gel et candidat finaux exclus   | Waiver scope verified   |
+| C2-R6-10 | Qualifier l'entrée de publication         | manifestes indépendants identiques ; patch 84 021 octets ; candidat final 26 378 octets ; publication sous gates, CI non acquise | Preflight verified      |

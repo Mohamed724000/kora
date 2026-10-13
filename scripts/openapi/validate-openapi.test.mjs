@@ -3012,6 +3012,101 @@ test("materializes the complete C2-P0 contract policy in generated metadata", ()
   assert.equal(policies.unavailability.operationIds.length, 15);
   assert.equal(policies.unavailability.errorCode, "SERVICE_UNAVAILABLE");
   assert.equal(
+    policies.unavailability.rollbackUnconfirmedClientDisposition,
+    "DISCARD_PHYSICAL_CONNECTION_EXACTLY_ONCE",
+  );
+  assert.equal(
+    policies.unavailability.commitUnknownClientDisposition,
+    "DISCARD_PHYSICAL_CONNECTION_EXACTLY_ONCE_NO_ROLLBACK_CLAIM_NO_MUTATION_REPLAY",
+  );
+  const disposal = policies.contract.transactionClientDisposal;
+  assert.deepEqual(disposal.scope, [
+    "HTTP",
+    "BOOTSTRAP",
+    "OUTBOX",
+    "JOBS",
+    "SYSTEM_TRANSITIONS",
+  ]);
+  assert.equal(disposal.appliesTo, "ALL_FUTURE_C2_WRITERS");
+  assert.equal(disposal.runtimeImplementedInP0R6, false);
+  assert.equal(
+    disposal.acquisitionAndCallbackLiveness.unboundedAcquisitionOrCallback,
+    "FORBIDDEN",
+  );
+  assert.equal(
+    disposal.acquisitionAndCallbackLiveness.deadlineValuesInP0R6,
+    "NOT_DEFINED_NO_RUNTIME_AUTHORIZED",
+  );
+  assert.equal(disposal.begin.deadlineMilliseconds, 2000);
+  assert.equal(disposal.begin.deadlineClock, "MONOTONIC_ELAPSED");
+  assert.equal(disposal.begin.callbackAllowedWhen, "BEGIN_CONFIRMED");
+  assert.equal(
+    disposal.begin.unconfirmedDisposition,
+    "DISCARD_PHYSICAL_CONNECTION_EXACTLY_ONCE",
+  );
+  assert.equal(disposal.rollback.deadlineMilliseconds, 2000);
+  assert.equal(disposal.rollback.deadlineClock, "MONOTONIC_ELAPSED");
+  assert.equal(
+    disposal.rollback.requiredWhen,
+    "ANY_FAILURE_OR_ABORT_AFTER_BEGIN_CONFIRMED_BEFORE_COMMIT_ATTEMPT",
+  );
+  assert.equal(
+    disposal.rollback.reuseAllowedWhen,
+    "ROLLBACK_CONFIRMED_BEFORE_DEADLINE_AND_POST_COMMAND_READY_FOR_QUERY_IDLE_SAME_CLIENT_AND_CLIENT_USABLE",
+  );
+  assert.deepEqual(disposal.rollback.reusableReadyForQueryStates, ["I"]);
+  assert.deepEqual(disposal.rollback.discardReadyForQueryStates, [
+    "T",
+    "E",
+    "UNKNOWN",
+  ]);
+  assert.equal(disposal.release.totalCardinality, "EXACTLY_ONCE");
+  assert.equal(
+    disposal.release.discard,
+    "PUBLIC_POOL_CLIENT_DESTROY_OR_EQUIVALENT_PHYSICAL_CONNECTION_DISCARD",
+  );
+  assert.equal(disposal.errors.primary, "PRESERVE_SEPARATELY");
+  assert.equal(disposal.commit.acknowledgementDeadlineMilliseconds, 2000);
+  assert.equal(disposal.commit.deadlineClock, "MONOTONIC_ELAPSED");
+  assert.equal(
+    disposal.commit.successOtherwiseDisposition,
+    "DISCARD_PHYSICAL_CONNECTION_EXACTLY_ONCE_WITH_SUCCESS_RESPONSE_PRESERVED",
+  );
+  assert.equal(
+    disposal.commit.explicitServerRejection,
+    "CONFIRMED_NOT_COMMITTED_NEUTRAL_503_NO_ROLLBACK_AFTER_COMMIT_ATTEMPT_NO_REPLAY",
+  );
+  assert.equal(
+    disposal.commit.lateSettlement,
+    "OBSERVE_ONLY_NO_RECLASSIFICATION_NO_RESPONSE_NO_RELEASE_NO_REPLAY",
+  );
+  assert.equal(
+    disposal.phaseExclusivity.postCommitAttemptConnectionLoss,
+    "COMMIT_UNKNOWN_EXCLUSIVELY",
+  );
+  assert.equal(
+    disposal.release.defaultForAcquiredClientNotMeetingReusablePredicate,
+    "DISCARD_PHYSICAL_CONNECTION_EXACTLY_ONCE",
+  );
+  assert.equal(
+    disposal.errors.commit,
+    "PRESERVE_SEPARATELY_AS_ERROR_OR_TERMINAL_OUTCOME",
+  );
+  assert.equal(disposal.phaseExclusivity.overlap, "FORBIDDEN");
+  assert.equal(disposal.commitUnknown.rollbackClaim, "FORBIDDEN");
+  assert.equal(disposal.commitUnknown.mutationReplay, "FORBIDDEN");
+  assert.deepEqual(
+    disposal.contractualTraces.map(({ name }) => name),
+    [
+      "CALLBACK_FAILED_ROLLBACK_CONFIRMED",
+      "ROLLBACK_REJECTED",
+      "ROLLBACK_SUSPENDED",
+      "CONNECTION_LOST",
+      "COMMIT_CONFIRMED",
+      "COMMIT_UNKNOWN",
+    ],
+  );
+  assert.equal(
     policies.contract.operationMatrix.approveAdminRecoveryCase.stepUpPurpose,
     "RECOVERY_APPROVAL",
   );
@@ -5162,6 +5257,186 @@ const adminSecurityMutations = [
       document[
         "x-kora-admin-c2-contract-policy"
       ].productionQualification.notificationProvider = "QUALIFIED";
+    },
+  ],
+  [
+    "C2 transaction disposal omits physical connection discard",
+    (document) => {
+      delete document["x-kora-admin-c2-contract-policy"]
+        .transactionClientDisposal.release.discard;
+    },
+  ],
+  [
+    "C2 rollback rejection returns a reusable client",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.contractualTraces.find(
+        ({ name }) => name === "ROLLBACK_REJECTED",
+      ).clientDisposition = "REUSABLE_SINGLE_RELEASE";
+    },
+  ],
+  [
+    "C2 rollback loses its monotonic deadline",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.rollback.deadlineMilliseconds = null;
+    },
+  ],
+  [
+    "C2 transaction client permits double release",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.release.totalCardinality = "AT_LEAST_ONCE";
+    },
+  ],
+  [
+    "C2 rollback failure drops the primary error",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.errors.primary =
+        "REPLACE_WITH_ROLLBACK_ERROR";
+    },
+  ],
+  [
+    "C2 unknown commit falsely claims rollback",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.commitUnknown.rollbackClaim = "CONFIRMED";
+    },
+  ],
+  [
+    "C2 state-machine retry replays an unknown mutation",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.jobRetryBoundary =
+        "STATE_MACHINE_RETRY_AUTHORIZES_UNKNOWN_MUTATION_REPLAY";
+    },
+  ],
+  [
+    "C2 rollback failure emits a contradictory second sink",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.publicFailure.secondSink = "AUDIT_LOG";
+    },
+  ],
+  [
+    "C2 callback starts without confirmed BEGIN",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.begin.callbackAllowedWhen = "BEGIN_ATTEMPTED";
+    },
+  ],
+  [
+    "C2 unknown BEGIN outcome returns a reusable client",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.begin.unconfirmedDisposition =
+        "POOL_RELEASE_REUSABLE";
+    },
+  ],
+  [
+    "C2 connection loss overlaps pre-COMMIT and COMMIT_UNKNOWN",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.phaseExclusivity.postCommitAttemptConnectionLoss =
+        "PRE_COMMIT_OR_COMMIT_UNKNOWN";
+    },
+  ],
+  [
+    "C2 COMMIT acknowledgement loses its monotonic deadline",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.commit.acknowledgementDeadlineMilliseconds =
+        null;
+    },
+  ],
+  [
+    "C2 transaction reuse accepts a stale ReadyForQuery I",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.rollback.reuseAllowedWhen =
+        "ROLLBACK_CONFIRMED_AND_ANY_OBSERVED_IDLE_STATE";
+    },
+  ],
+  [
+    "C2 unknown BEGIN late settlement starts the callback",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.begin.lateSettlement =
+        "START_CALLBACK_AFTER_LATE_CONFIRMATION";
+    },
+  ],
+  [
+    "C2 confirmed COMMIT with unusable client becomes COMMIT_UNKNOWN",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.commit.successOtherwiseDisposition =
+        "RECLASSIFY_COMMIT_UNKNOWN";
+    },
+  ],
+  [
+    "C2 explicit server COMMIT rejection is treated as unknown",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.commit.explicitServerRejection =
+        "COMMIT_UNKNOWN";
+    },
+  ],
+  [
+    "C2 rollback is limited to callback failures",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.rollback.requiredWhen =
+        "CALLBACK_FAILED_BEFORE_COMMIT";
+    },
+  ],
+  [
+    "C2 COMMIT terminal error is not preserved",
+    (document) => {
+      delete document["x-kora-admin-c2-contract-policy"]
+        .transactionClientDisposal.errors.commit;
+    },
+  ],
+  [
+    "C2 acquired client without reusable proof has no default discard",
+    (document) => {
+      delete document["x-kora-admin-c2-contract-policy"]
+        .transactionClientDisposal.release
+        .defaultForAcquiredClientNotMeetingReusablePredicate;
+    },
+  ],
+  [
+    "C2 future writer permits unbounded pool acquisition or callback",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.acquisitionAndCallbackLiveness.unboundedAcquisitionOrCallback =
+        "ALLOWED";
+    },
+  ],
+  [
+    "C2 callback deadline permits post-deadline queries",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.acquisitionAndCallbackLiveness.postDeadlineCallbackQuery =
+        "ALLOWED";
     },
   ],
   [

@@ -1,8 +1,9 @@
 # ADR-026 — Admin Security C2 Runtime Contract
 
 Statut : **ACCEPTED POUR LE PRÉREQUIS CONTRACTUEL S1.2-03C2-P0 — RUNTIME NON
-IMPLÉMENTÉ — P0/R1/R2/R3 PUBLIÉS ; R4 VALIDÉ LOCALEMENT DANS L’INSTANTANÉ
-PRÉPUBLICATION DU 2026-10-13**
+IMPLÉMENTÉ — P0/R1–R5 PUBLIÉS DANS LA DRAFT PR #51 ; R6 QUALIFIÉ
+LOCALEMENT ET AUTORISÉ POUR PUBLICATION SOUS GATES, CI R6 NON ACQUISE AU
+2026-10-13**
 
 Date : 2026-10-12
 
@@ -473,3 +474,61 @@ La reprise existe déjà dans `AdminAuthService.login`
 avec mot de passe valide reçoit un nouveau préauth
 `FIRST_TOTP_ENROLLMENT` de dix minutes. Ce chemin couvre une réponse perdue et
 un premier contexte expiré ; aucun endpoint C1 n'est ajouté ou modifié.
+
+## Amendement R6 — cycle terminal du client transactionnel
+
+La règle suivante est normative pour tous les futurs writers C2 : opérations
+HTTP, bootstrap, outbox, jobs et transitions SYSTEM. R6 n'implémente aucun de
+ces writers et ne transforme pas la preuve C1 existante en test d'un runtime
+C2.
+
+`BEGIN` possède une borne monotone stricte de 2 000 ms et doit être confirmé
+avant toute invocation du callback. Un rejet explicite ne permet une release
+réutilisable que si le même client reçoit ensuite le `ReadyForQuery=I`
+post-commande et reste utilisable. Deadline, perte de connexion ou accusé
+inconnu imposent le discard physique exactement une fois, sans callback ni
+retry de transaction.
+
+Après `BEGIN` confirmé, un callback échoué avant toute tentative de `COMMIT`
+impose un `ROLLBACK`. Un client n'est réutilisable que si ce rollback est
+confirmé avant une borne monotone stricte de 2 000 ms, si le même client reçoit
+le `ReadyForQuery=I` causal post-rollback et s'il reste utilisable. Un état
+`I` antérieur ne vaut pas confirmation. Les états `T`, `E` et inconnu
+interdisent tout retour réutilisable au pool.
+
+Un `ROLLBACK` rejeté, encore suspendu à l'expiration de la borne ou rendu non
+confirmable par une perte de connexion détruit ou écarte la connexion physique
+exactement une fois. Le mécanisme terminal attendu est l'API publique de
+destruction du client de pool, ou une primitive équivalente qui garantit
+l'exclusion définitive de cette connexion ; une résolution tardive est seulement
+observée, sans réutilisation ni seconde libération. Sur tous les chemins, la
+libération totale reste exactement une : soit réutilisable après confirmation
+idle, soit destructive.
+
+L'erreur primaire et l'erreur ou issue terminale de `BEGIN`/rollback sont
+conservées séparément dans l'observation opérationnelle assainie. Aucune réponse
+publique ne les divulgue, aucun succès de rollback n'est affirmé sans
+confirmation, aucune transaction n'est retentée aveuglément et aucun second
+sink contradictoire n'est créé. La réponse d'indisponibilité reste le 503
+neutre fermé.
+
+Avant d'appeler le driver, le writer marque la tentative de `COMMIT`. Son accusé
+est borné à 2 000 ms sur horloge monotone. La réutilisation exige confirmation
+avant la borne, `ReadyForQuery=I` post-COMMIT reçu sur le même client et client
+utilisable. Toute deadline, perte de connexion ou perte d'accusé après ce point
+est exclusivement `COMMIT_UNKNOWN` : aucun rollback n'est tenté ou affirmé, le
+client est détruit exactement une fois, la mutation n'est jamais rejouée et
+l'état durable est réconcilié avant toute action ultérieure autorisée par la
+machine d'état. Une résolution tardive est observée sans reclassification,
+réponse, release ou replay. Une nouvelle tentative de job autorisée par lease,
+fencing, deadline et budget ne donne jamais la permission de rejouer une
+mutation dont le résultat est inconnu.
+
+| Trace                               | ROLLBACK / COMMIT                   | État autorisé avant release   | Disposition terminale                                  | Réponse / reprise                                        |
+| ----------------------------------- | ----------------------------------- | ----------------------------- | ------------------------------------------------------ | -------------------------------------------------------- |
+| callback échoué + rollback confirmé | rollback confirmé avant 2 000 ms    | `I` post-rollback même client | release réutilisable unique                            | 503 neutre, aucun retry ni second sink                   |
+| rollback rejeté                     | rollback non confirmé               | inconnu                       | discard/destruction physique exactement une fois       | 503 neutre, erreurs primaire/rollback séparées           |
+| rollback suspendu                   | deadline monotone 2 000 ms dépassée | inconnu                       | discard unique ; résolution tardive seulement observée | 503 neutre, aucune seconde release                       |
+| connexion perdue                    | rollback pré-COMMIT non confirmable | inconnu                       | discard/destruction physique exactement une fois       | 503 neutre, COMMIT non tenté, aucun replay               |
+| COMMIT confirmé                     | commit confirmé avant 2 000 ms      | `I` post-COMMIT même client   | release réutilisable unique                            | réponse de succès de l'opération                         |
+| COMMIT inconnu                      | accusé non confirmé avant 2 000 ms  | inconnu                       | discard/destruction physique exactement une fois       | 503 neutre, aucun rollback, réconciliation, aucun replay |

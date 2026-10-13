@@ -2,11 +2,10 @@
 
 Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-03C1 FUSIONNÉ DANS MAIN AU
 MERGE dc97eeef72c4e299988ed19d66460011a8551cf3, NON DÉPLOYÉ — PR #50
-FERMÉE/FUSIONNÉE — S1.2-03C2-P0/R1/R2/R3 PUBLIÉS DANS LA DRAFT PR #51 AU
-HEAD dc420336d52c791b8876fa30e6ee76f0a5251bea — R4 VALIDÉ LOCALEMENT SOUS
-DÉROGATION PROBATOIRE HISTORIQUE BORNÉE, INSTANTANÉ PRÉPUBLICATION DU
-2026-10-13 — RUNTIME NON IMPLÉMENTÉ — FOURNISSEURS DE PRODUCTION NON
-QUALIFIÉS — C3 NOT STARTED**
+FERMÉE/FUSIONNÉE — S1.2-03C2-P0/R1–R5 PUBLIÉS DANS LA DRAFT PR #51 AU HEAD
+7d0e0e01f2618dab59d2e21d0091892f98c7b6ae — R6 QUALIFIÉ LOCALEMENT ET
+AUTORISÉ POUR PUBLICATION SOUS GATES, CI R6 NON ACQUISE — RUNTIME NON
+IMPLÉMENTÉ — FOURNISSEURS DE PRODUCTION NON QUALIFIÉS — C3 NOT STARTED**
 
 Date d’effet : 2026-07-28
 Dernière réconciliation documentaire : 2026-10-13
@@ -1048,3 +1047,56 @@ EVIDENCE ONLY**. Cette dérogation ne couvre ni FINAL7, ni ses preuves finales,
 ni un nouvel échec d’audit, de publication, de CI ou d’intégrité GitHub. Aucun
 artefact historique absent n’est reconstruit et aucune tentative NON-PASS
 n’est requalifiée.
+
+## S1.2-03C2-P0-R5 publié et R6 contractuel local — 2026-10-13
+
+R5 est publié dans la Draft PR #51 au commit
+`7d0e0e01f2618dab59d2e21d0091892f98c7b6ae`, arbre
+`3212cb4d119e2d440b155a1aef4e83f0aebb5ce5`. Les quatre workflows de cette
+publication sont terminés en succès sur ce head exact : Infrastructure
+`38437635773`, Launcher Windows `38437635822`, Security `38437635803` et
+Quality Linux `38437635804`. La PR reste ouverte, Draft et non fusionnée.
+
+La revue terminale post-R5 a identifié une lacune **HIGH** dans le contrat de
+disposition du client transactionnel. R6 exige désormais, pour tous les futurs
+writers C2 HTTP, bootstrap, outbox, jobs et transitions SYSTEM : `BEGIN`,
+rollback et accusé de COMMIT bornés à 2 000 ms sur horloge monotone ; callback
+seulement après BEGIN confirmé ; retour au pool uniquement après réponse
+terminale, `ReadyForQuery=I` causal post-commande du même client utilisable ;
+destruction physique exactement une fois après rejet non idle, deadline,
+connexion perdue, accusé inconnu ou état `T`/`E`/inconnu ; conservation
+distincte des erreurs et issues terminales ; libération totale exactement une
+fois.
+
+La tentative de COMMIT est marquée avant l’appel driver. Toute perte, deadline
+ou absence d’accusé après ce point est exclusivement `COMMIT_UNKNOWN` :
+destruction sans rollback, replay ou second sink, settle tardif sans
+reclassification, réponse ou release, puis réconciliation durable. Un rejet
+serveur confirmé reste un résultat non commité connu ; un COMMIT confirmé reste
+durable même si le client devient inutilisable et doit être détruit. Un retry de
+job ne vaut jamais autorisation de rejouer une mutation au résultat inconnu.
+Six traces normatives et vingt et une mutations adversariales ferment ces
+invariants.
+
+La qualification locale R6 passe OpenAPI 60/67/141, 373/373 tests
+adversariaux, boundary 10/10, génération exacte, Contracts
+format/lint/typecheck/tests/build avec 10/10 tests, tooling 522/522, scanner
+officiel sur 388 fichiers avec historique, Prettier ciblé et contrôles
+d’intégrité statiques. PostgreSQL, Redis, Docker, HTTP réel, Flutter, APK et
+builds applicatifs sont **NON EXÉCUTÉS** pour R6. Ces résultats sont locaux et
+ne constituent ni une publication ni une CI R6.
+
+R6 reste local, non indexé, non commité et non publié. Il n’implémente aucun
+runtime et ne modifie ni Prisma, migration, rôle, provider, dépendance,
+lockfile, workflow ou infrastructure. Le candidat de corps PR est conservé
+hors dépôt et la PR live n’est pas modifiée. La dérogation R4 demeure limitée
+aux preuves historiques qu’elle nomme et ne couvre pas R6. Fournisseurs de
+production **NON QUALIFIÉS**, OSS différée et runtime C2/C3 non commencé.
+
+Cet état local constitue désormais le gel d'entrée qualifié de la publication
+R6 autorisée sous gates. La perte du premier brouillon de corps PR, jamais
+publié, est couverte uniquement par **ACCEPTED WITH CTO WAIVER — R6
+UNPUBLISHED DRAFT ONLY** ; les constats historiques BLOCK restent inchangés et
+la dérogation ne couvre ni les octets techniques finaux, ni le candidat final,
+ni une preuve de validation. Au présent gel documentaire, aucune CI R6 n'est
+encore acquise et le corps live de la PR #51 reste inchangé.
