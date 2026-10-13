@@ -1,10 +1,11 @@
 # Rapport S1.2-03C2-P0 — Admin Security Contract Prerequisite
 
-Statut : **P0/R1 PUBLIÉS DANS LA DRAFT PR #51 — INSTANTANÉ LOCAL
-PRÉPUBLICATION R2 DU 2026-10-11, NON INDEXÉ, NON COMMITÉ ET NON PUBLIÉ —
-L'ÉTAT GIT/GITHUB POSTÉRIEUR FAIT FOI**
+Statut : **P0/R1/R2/R3 PUBLIÉS DANS LA DRAFT PR #51 AU HEAD
+dc420336d52c791b8876fa30e6ee76f0a5251bea — R4 VALIDÉ LOCALEMENT SOUS
+DÉROGATION PROBATOIRE HISTORIQUE BORNÉE, INSTANTANÉ PRÉPUBLICATION DU
+2026-10-13 — RUNTIME NON IMPLÉMENTÉ**
 
-Dernière réconciliation : 2026-10-11
+Dernière réconciliation : 2026-10-13
 
 ## Préflight et bootstrap
 
@@ -253,3 +254,40 @@ ajouté. R3 ne modifie ni runtime, Prisma, migration, provisioning, dépendance,
 lockfile, workflow ou Infrastructure. Les résultats complets et le double
 manifeste du gel sont consignés dans le rapport terminal d'exécution ; les
 sorties intermédiaires non-PASS restent conservées comme telles.
+
+## Qualification locale R4 — 2026-10-12
+
+| Finding                 | Fermeture contractuelle                                                                                                                                                                                                                                                                                                                            | Régression exécutable                                                                                                   | État         |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------ |
+| F1 résultat/provenance  | v3 C2 SUCCESS/null ou REJECTED/code fermé par trigger ; enum égal à l'image des mappings ; v1/v2 historique UNKNOWN sans inférence                                                                                                                                                                                                                 | branches valides/invalides, mappings mutés et historique v2                                                             | CLOSED local |
+| F2 texte libre          | operatorReason null + indicateur sur v1/v2/v3, stockage non réécrit                                                                                                                                                                                                                                                                                | canaris email, téléphone, secret, texte libre refusés                                                                   | CLOSED local |
+| F3 preuve/autorisations | preuve serveur, authz, métier, phases et sinks séparés sur 15 opérations                                                                                                                                                                                                                                                                           | mutations cookie, rôle, step-up, intégrité, pré-preuve                                                                  | CLOSED local |
+| F4 sources SYSTEM       | sept prédicats typés, ressource liée par action ; annulations create/role/status + audits SYSTEM dans la transaction initiatrice                                                                                                                                                                                                                   | chaque propriété, égalité de ressource et ensemble sourceAction→transaction mutés                                       | CLOSED local |
+| F5 export               | machine fermée, lease/fence/CAS owner, deadline immuable 600 s, trois tentatives initiale incluse, backoff CAS 30/120 s avec révocation owner/lease, reclaim seulement avant deadline, watchdog prioritaire à ou après deadline, PUT stale invisible/orphelin, quatre branches unknown-commit dont PROCESSING à reprise conditionnelle, read lease | six fixtures concurrence + douze retry/deadline + quatre d'éligibilité COMMIT inconnu, audits download/expiry distincts | CLOSED local |
+| F6 invitation           | consume + PENDING_MFA + credential Argon2id + préauth 10 min + SecurityEvent atomiques ; livraison cookie inconnue admise ; reprise C1                                                                                                                                                                                                             | cinq failureBoundaryTraces + enveloppe/nextStep                                                                         | CLOSED local |
+| F7 historique           | DDL réel consigné, JSONB v1 accepte toute valeur JSON sans borne/forme inventée, overflow explicite sans résultat partiel                                                                                                                                                                                                                          | v1 vide, courte, surlongue, >50 clés, objet imbriqué, tableau et scalaires                                              | CLOSED local |
+
+Le validateur exerce `allOf` en plus des unions exclusives. Le générateur
+parenthèse les intersections `allOf` afin que la causalité outcome/failureCode
+s'applique aux trois contextes v3, et le boundary test verrouille cette forme.
+La surface finale R4 est 60 chemins, 67 opérations et 141 schémas.
+
+Les candidats intermédiaires ne sont pas requalifiés rétroactivement : les
+validations OpenAPI 01–07, le contrôle générateur pré-écriture attendu, les
+suites OpenAPI 01–02, boundary 01–02 et les passages de formatage rejetés
+restent `NON-PASS` dans le ledger append-only avec les empreintes de leurs
+sorties. Les PASS ultérieurs attestent uniquement le gel corrigé ; ils ne sont
+pas présentés comme le premier essai.
+
+Les deux lacunes historiques — candidats rejetés perdus avant archivage et
+sortie PowerShell 5 non capturée — conservent le statut **ACCEPTED WITH CTO
+WAIVER — HISTORICAL EVIDENCE ONLY**. Cette dérogation ne couvre aucune preuve
+FINAL7, aucun nouvel échec et ne reconstruit aucun artefact absent. Les sept
+findings F1–F7 restent fermés par les preuves propres au gel FINAL7.
+
+Ce rapport ne qualifie aucun runtime : PostgreSQL/Redis, Docker, HTTP réel,
+Prisma/migration, providers et builds applicatifs sont NON EXÉCUTÉS. Dans
+l’instantané prépublication final du 2026-10-13, R4 était local, non indexé,
+non commité et non publié ; toute publication ultérieure fait foi dans Git et
+GitHub. La cause Docker historique reste NON CONCLUSIVE ; fournisseurs de
+production NON QUALIFIÉS, OSS différée, runtime C2/C3 non commencé.

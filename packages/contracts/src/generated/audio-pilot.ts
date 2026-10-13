@@ -141,26 +141,52 @@ export const adminC2ContractPolicies = {
     operationMatrix: {
       requestAdminPasswordReset: {
         roles: [],
-        serverProof: 'NO_AUDIT_CONTEXT',
         stepUpPurpose: null,
         stepUpApplicability: 'NOT_APPLICABLE',
         clientReasonCodes: [],
         operatorReason: 'NOT_APPLICABLE',
         auditContext: null,
         successSink: 'ADMIN_SECURITY_EVENT',
-        failureBeforeProof: 'ADMIN_SECURITY_EVENT',
-        failureAfterProof: 'ADMIN_SECURITY_EVENT',
         action: 'requestAdminPasswordReset',
         eventClass: 'LOGIN',
         entityType: 'ADMIN_PASSWORD_RESET_REQUEST',
         maskedSnapshots: ['REDACTED_SUBJECT_DIGEST', 'DELIVERY_REQUEST_STATE'],
         atomicity: 'RESET_REQUEST_ENCRYPTED_OUTBOX_AND_SECURITY_EVENT',
         asynchronousTransitions: ['PASSWORD_RESET_NOTIFICATION_DELIVERY_SYSTEM_AUDIT'],
+        auditContextProof: 'NONE_PUBLIC_NO_AUDIT_CONTEXT',
+        authorizationChecks: [],
+        postProofBusinessChecks: ['ELIGIBLE_ACCOUNT_CHECK_WITHOUT_ORACLE'],
+        phaseOrder: [
+          'INPUT',
+          'AUDIT_CONTEXT_PROOF',
+          'AUTHORIZATION_CHECKS',
+          'POST_PROOF_BUSINESS_CHECKS',
+          'MUTATION_OR_SNAPSHOT',
+          'AUDIT',
+          'COMMIT',
+          'RESPONSE',
+          'CONTINUATION',
+        ],
+        failureSinks: {
+          beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED',
+          roleDeniedAfterProof: 'NOT_APPLICABLE',
+          stepUpAbsentAfterProof: 'NOT_APPLICABLE',
+          stepUpExpiredAfterProof: 'NOT_APPLICABLE',
+          stepUpInvalidAfterProof: 'NOT_APPLICABLE',
+          integrityRejectedAfterProof: 'NOT_APPLICABLE',
+          dependencyUnavailable: {
+            beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED_IF_DURABILITY_CONFIRMED',
+            afterCompleteProof: 'NOT_APPLICABLE_NO_PROVEN_AUDIT_CONTEXT',
+            response: 'NEUTRAL_503_SERVICE_UNAVAILABLE',
+            durabilityRule: 'IF_REQUIRED_SINK_COMMIT_NOT_CONFIRMED_ROLLBACK_OR_NO_DURABILITY_CLAIM',
+          },
+          sinkUnavailable: 'ROLLBACK_NEUTRAL_503_NO_FALLBACK_NO_DURABLE_AUDIT_CLAIM',
+          commitUnknown: 'NEUTRAL_503_NO_SECOND_SINK_RECONCILE_DURABLE_STATE',
+          businessRejectedAfterProof: 'ADMIN_SECURITY_EVENT_FAILED',
+        },
       },
       resetAdminPassword: {
         roles: [],
-        serverProof:
-          'SERVER_VERIFIED_PASSWORD_RESET_CONTEXT_BOUND_TO_ACTIVE_ADMIN_USER_NOT_EXPIRED_NOT_CONSUMED_NOT_REVOKED_CLIENT_INPUT_NEVER_SUFFICIENT',
         proofPurpose: 'PASSWORD_RESET',
         forbiddenProofPurpose: 'MFA_RECOVERY',
         stepUpPurpose: null,
@@ -169,8 +195,6 @@ export const adminC2ContractPolicies = {
         operatorReason: 'NOT_APPLICABLE',
         auditContext: 'ADMIN_RECOVERY',
         successSink: 'AUDIT_LOG',
-        failureBeforeProof: 'ADMIN_SECURITY_EVENT',
-        failureAfterProof: 'AUDIT_LOG',
         action: 'resetAdminPassword',
         eventClass: 'LOGIN',
         entityType: 'ADMIN_USER',
@@ -182,76 +206,193 @@ export const adminC2ContractPolicies = {
         atomicity:
           'CONSUME_RESET_CONTEXT_CHANGE_PASSWORD_INCREMENT_AUTHORIZATION_VERSION_REVOKE_SESSIONS_AND_AUDIT',
         asynchronousTransitions: [],
+        auditContextProof:
+          'SERVER_VERIFIED_RECOVERY_CONTEXT_ACTOR_BINDING_ACTIVE_NOT_EXPIRED_NOT_CONSUMED_NOT_REVOKED',
+        authorizationChecks: ['PASSWORD_RESET_PURPOSE_AND_SUBJECT_ELIGIBILITY'],
+        postProofBusinessChecks: ['NEW_PASSWORD_POLICY_AND_HIBP_FAIL_CLOSED'],
+        phaseOrder: [
+          'INPUT',
+          'AUDIT_CONTEXT_PROOF',
+          'AUTHORIZATION_CHECKS',
+          'POST_PROOF_BUSINESS_CHECKS',
+          'MUTATION_OR_SNAPSHOT',
+          'AUDIT',
+          'COMMIT',
+          'RESPONSE',
+          'CONTINUATION',
+        ],
+        failureSinks: {
+          beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED',
+          roleDeniedAfterProof: 'NOT_APPLICABLE',
+          stepUpAbsentAfterProof: 'NOT_APPLICABLE',
+          stepUpExpiredAfterProof: 'NOT_APPLICABLE',
+          stepUpInvalidAfterProof: 'NOT_APPLICABLE',
+          integrityRejectedAfterProof: 'NOT_APPLICABLE',
+          dependencyUnavailable: {
+            beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED_IF_DURABILITY_CONFIRMED',
+            afterCompleteProof: 'AUDIT_LOG_REJECTED_IF_DURABILITY_CONFIRMED',
+            response: 'NEUTRAL_503_SERVICE_UNAVAILABLE',
+            durabilityRule: 'IF_REQUIRED_SINK_COMMIT_NOT_CONFIRMED_ROLLBACK_OR_NO_DURABILITY_CLAIM',
+          },
+          sinkUnavailable: 'ROLLBACK_NEUTRAL_503_NO_FALLBACK_NO_DURABLE_AUDIT_CLAIM',
+          commitUnknown: 'NEUTRAL_503_NO_SECOND_SINK_RECONCILE_DURABLE_STATE',
+          businessRejectedAfterProof: 'AUDIT_LOG_REJECTED',
+        },
       },
       createAdminRecoveryCase: {
         roles: ['SUPER_ADMIN', 'SUPPORT'],
-        serverProof: 'ACTIVE_ADMIN_SESSION_ROLE_AND_AUTHORIZATION_VERSION_RELOADED',
         stepUpPurpose: null,
         stepUpApplicability: 'NOT_APPLICABLE',
         clientReasonCodes: ['ACCOUNT_RECOVERY', 'SECURITY_RESPONSE'],
         operatorReason: 'REQUIRED',
         auditContext: 'ADMIN_SESSION',
         successSink: 'AUDIT_LOG',
-        failureBeforeProof: 'ADMIN_SECURITY_EVENT',
-        failureAfterProof: 'AUDIT_LOG',
         action: 'createAdminRecoveryCase',
         eventClass: 'BUSINESS',
         entityType: 'ADMIN_RECOVERY_CASE',
         maskedSnapshots: ['CASE_STATE', 'SUBJECT_ADMIN_USER_ID'],
-        atomicity: 'CANCEL_OLDER_PENDING_CREATE_CASE_RECORD_IDEMPOTENCY_AND_AUDIT',
-        asynchronousTransitions: [
-          'RECOVERY_CASE_SERVER_CANCELLATION_SYSTEM_AUDIT',
-          'RECOVERY_CASE_SERVER_EXPIRATION_SYSTEM_AUDIT',
+        atomicity:
+          'CANCEL_OLDER_PENDING_WITH_SYSTEM_AUDITS_CREATE_CASE_RECORD_IDEMPOTENCY_AND_INITIATING_AUDIT_IN_ONE_POSTGRESQL_TRANSACTION',
+        asynchronousTransitions: ['RECOVERY_CASE_SERVER_EXPIRATION_SYSTEM_AUDIT'],
+        transactionalSystemTransitions: ['RECOVERY_CASE_SERVER_CANCELLATION_SYSTEM_AUDIT'],
+        auditContextProof:
+          'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
+        authorizationChecks: ['ROLE_ONE_OF_SUPER_ADMIN_SUPPORT'],
+        postProofBusinessChecks: [
+          'SUBJECT_ELIGIBLE_DISTINCT_AND_REASON_VALID',
+          'IDEMPOTENCY_PAYLOAD_MATCH',
         ],
+        phaseOrder: [
+          'INPUT',
+          'AUDIT_CONTEXT_PROOF',
+          'AUTHORIZATION_CHECKS',
+          'POST_PROOF_BUSINESS_CHECKS',
+          'MUTATION_OR_SNAPSHOT',
+          'AUDIT',
+          'COMMIT',
+          'RESPONSE',
+          'CONTINUATION',
+        ],
+        failureSinks: {
+          beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED',
+          roleDeniedAfterProof: 'AUDIT_LOG_REJECTED',
+          stepUpAbsentAfterProof: 'NOT_APPLICABLE',
+          stepUpExpiredAfterProof: 'NOT_APPLICABLE',
+          stepUpInvalidAfterProof: 'NOT_APPLICABLE',
+          integrityRejectedAfterProof: 'NOT_APPLICABLE',
+          dependencyUnavailable: {
+            beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED_IF_DURABILITY_CONFIRMED',
+            afterCompleteProof: 'AUDIT_LOG_REJECTED_IF_DURABILITY_CONFIRMED',
+            response: 'NEUTRAL_503_SERVICE_UNAVAILABLE',
+            durabilityRule: 'IF_REQUIRED_SINK_COMMIT_NOT_CONFIRMED_ROLLBACK_OR_NO_DURABILITY_CLAIM',
+          },
+          sinkUnavailable: 'ROLLBACK_NEUTRAL_503_NO_FALLBACK_NO_DURABLE_AUDIT_CLAIM',
+          commitUnknown: 'NEUTRAL_503_NO_SECOND_SINK_RECONCILE_DURABLE_STATE',
+          businessRejectedAfterProof: 'AUDIT_LOG_REJECTED',
+        },
       },
       listAdminRecoveryCases: {
         roles: ['SUPER_ADMIN', 'SUPPORT'],
-        serverProof: 'ACTIVE_ADMIN_SESSION_ROLE_AND_AUTHORIZATION_VERSION_RELOADED',
         stepUpPurpose: null,
         stepUpApplicability: 'NOT_APPLICABLE',
         clientReasonCodes: [],
         operatorReason: 'NOT_APPLICABLE',
         auditContext: 'ADMIN_SESSION',
         successSink: 'NONE',
-        failureBeforeProof: 'ADMIN_SECURITY_EVENT',
-        failureAfterProof: 'NONE',
         action: 'listAdminRecoveryCases',
         eventClass: 'BUSINESS',
         entityType: 'ADMIN_RECOVERY_CASE_SNAPSHOT',
         maskedSnapshots: ['SAFE_PROJECTION_DIGEST'],
         atomicity: 'MATERIALIZED_SAFE_SNAPSHOT_READ',
         asynchronousTransitions: [],
+        auditContextProof:
+          'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
+        authorizationChecks: ['ROLE_ONE_OF_SUPER_ADMIN_SUPPORT'],
+        postProofBusinessChecks: ['FILTER_CURSOR_AND_SNAPSHOT_LIMITS'],
+        phaseOrder: [
+          'INPUT',
+          'AUDIT_CONTEXT_PROOF',
+          'AUTHORIZATION_CHECKS',
+          'POST_PROOF_BUSINESS_CHECKS',
+          'MUTATION_OR_SNAPSHOT',
+          'AUDIT',
+          'COMMIT',
+          'RESPONSE',
+          'CONTINUATION',
+        ],
+        failureSinks: {
+          beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED',
+          roleDeniedAfterProof: 'NONE',
+          stepUpAbsentAfterProof: 'NOT_APPLICABLE',
+          stepUpExpiredAfterProof: 'NOT_APPLICABLE',
+          stepUpInvalidAfterProof: 'NOT_APPLICABLE',
+          integrityRejectedAfterProof: 'NOT_APPLICABLE',
+          dependencyUnavailable: {
+            beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED_IF_DURABILITY_CONFIRMED',
+            afterCompleteProof: 'NONE_NEUTRAL_503_NO_DURABLE_AUDIT',
+            response: 'NEUTRAL_503_SERVICE_UNAVAILABLE',
+            durabilityRule: 'IF_REQUIRED_SINK_COMMIT_NOT_CONFIRMED_ROLLBACK_OR_NO_DURABILITY_CLAIM',
+          },
+          sinkUnavailable: 'NOT_APPLICABLE_NO_DURABLE_AUDIT_SINK',
+          commitUnknown: 'READ_ONLY_SNAPSHOT_CONFIRMATION_UNKNOWN_NEUTRAL_503_NO_RETRY',
+          businessRejectedAfterProof: 'NONE',
+        },
       },
       getAdminRecoveryCase: {
         roles: ['SUPER_ADMIN', 'SUPPORT'],
-        serverProof: 'ACTIVE_ADMIN_SESSION_ROLE_AND_AUTHORIZATION_VERSION_RELOADED',
         stepUpPurpose: null,
         stepUpApplicability: 'NOT_APPLICABLE',
         clientReasonCodes: [],
         operatorReason: 'NOT_APPLICABLE',
         auditContext: 'ADMIN_SESSION',
         successSink: 'NONE',
-        failureBeforeProof: 'ADMIN_SECURITY_EVENT',
-        failureAfterProof: 'NONE',
         action: 'getAdminRecoveryCase',
         eventClass: 'BUSINESS',
         entityType: 'ADMIN_RECOVERY_CASE',
         maskedSnapshots: ['SAFE_CASE_PROJECTION'],
         atomicity: 'READ_ONLY',
         asynchronousTransitions: [],
+        auditContextProof:
+          'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
+        authorizationChecks: ['ROLE_ONE_OF_SUPER_ADMIN_SUPPORT'],
+        postProofBusinessChecks: ['CASE_VISIBLE_OR_NEUTRAL_NOT_FOUND'],
+        phaseOrder: [
+          'INPUT',
+          'AUDIT_CONTEXT_PROOF',
+          'AUTHORIZATION_CHECKS',
+          'POST_PROOF_BUSINESS_CHECKS',
+          'MUTATION_OR_SNAPSHOT',
+          'AUDIT',
+          'COMMIT',
+          'RESPONSE',
+          'CONTINUATION',
+        ],
+        failureSinks: {
+          beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED',
+          roleDeniedAfterProof: 'NONE',
+          stepUpAbsentAfterProof: 'NOT_APPLICABLE',
+          stepUpExpiredAfterProof: 'NOT_APPLICABLE',
+          stepUpInvalidAfterProof: 'NOT_APPLICABLE',
+          integrityRejectedAfterProof: 'NOT_APPLICABLE',
+          dependencyUnavailable: {
+            beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED_IF_DURABILITY_CONFIRMED',
+            afterCompleteProof: 'NONE_NEUTRAL_503_NO_DURABLE_AUDIT',
+            response: 'NEUTRAL_503_SERVICE_UNAVAILABLE',
+            durabilityRule: 'IF_REQUIRED_SINK_COMMIT_NOT_CONFIRMED_ROLLBACK_OR_NO_DURABILITY_CLAIM',
+          },
+          sinkUnavailable: 'NOT_APPLICABLE_NO_DURABLE_AUDIT_SINK',
+          commitUnknown: 'NOT_APPLICABLE_NO_DURABLE_WRITE',
+          businessRejectedAfterProof: 'NONE',
+        },
       },
       approveAdminRecoveryCase: {
         roles: ['SUPER_ADMIN'],
-        serverProof:
-          'ACTIVE_ADMIN_SESSION_ROLE_AUTHORIZATION_VERSION_AND_FRESH_TOTP_STEP_UP_RELOADED',
         stepUpPurpose: 'RECOVERY_APPROVAL',
         stepUpApplicability: 'REQUIRED',
         clientReasonCodes: ['ACCOUNT_RECOVERY', 'SECURITY_RESPONSE'],
         operatorReason: 'REQUIRED',
         auditContext: 'ADMIN_SESSION',
         successSink: 'AUDIT_LOG',
-        failureBeforeProof: 'ADMIN_SECURITY_EVENT',
-        failureAfterProof: 'AUDIT_LOG',
         action: 'approveAdminRecoveryCase',
         eventClass: 'BUSINESS',
         entityType: 'ADMIN_RECOVERY_CASE',
@@ -259,93 +400,242 @@ export const adminC2ContractPolicies = {
         atomicity:
           'CONSUME_CASE_RESET_SUBJECT_TO_PENDING_MFA_REVOKE_SECURITY_MATERIAL_RECORD_IDEMPOTENCY_AND_AUDIT',
         asynchronousTransitions: [],
+        auditContextProof:
+          'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
+        authorizationChecks: ['ROLE_ONE_OF_SUPER_ADMIN', 'FRESH_STEP_UP_RECOVERY_APPROVAL'],
+        postProofBusinessChecks: [
+          'CASE_PENDING_NOT_EXPIRED_CREATOR_APPROVER_SUBJECT_DISTINCT',
+          'SUBJECT_ELIGIBLE_AND_REASON_VALID',
+          'IDEMPOTENCY_PAYLOAD_MATCH',
+        ],
+        phaseOrder: [
+          'INPUT',
+          'AUDIT_CONTEXT_PROOF',
+          'AUTHORIZATION_CHECKS',
+          'POST_PROOF_BUSINESS_CHECKS',
+          'MUTATION_OR_SNAPSHOT',
+          'AUDIT',
+          'COMMIT',
+          'RESPONSE',
+          'CONTINUATION',
+        ],
+        failureSinks: {
+          beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED',
+          roleDeniedAfterProof: 'AUDIT_LOG_REJECTED',
+          stepUpAbsentAfterProof: 'AUDIT_LOG_REJECTED',
+          stepUpExpiredAfterProof: 'AUDIT_LOG_REJECTED',
+          stepUpInvalidAfterProof: 'AUDIT_LOG_REJECTED',
+          integrityRejectedAfterProof: 'NOT_APPLICABLE',
+          dependencyUnavailable: {
+            beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED_IF_DURABILITY_CONFIRMED',
+            afterCompleteProof: 'AUDIT_LOG_REJECTED_IF_DURABILITY_CONFIRMED',
+            response: 'NEUTRAL_503_SERVICE_UNAVAILABLE',
+            durabilityRule: 'IF_REQUIRED_SINK_COMMIT_NOT_CONFIRMED_ROLLBACK_OR_NO_DURABILITY_CLAIM',
+          },
+          sinkUnavailable: 'ROLLBACK_NEUTRAL_503_NO_FALLBACK_NO_DURABLE_AUDIT_CLAIM',
+          commitUnknown: 'NEUTRAL_503_NO_SECOND_SINK_RECONCILE_DURABLE_STATE',
+          businessRejectedAfterProof: 'AUDIT_LOG_REJECTED',
+        },
       },
       listAdminAuditLogs: {
         roles: ['SUPER_ADMIN'],
-        serverProof: 'ACTIVE_ADMIN_SESSION_ROLE_AND_AUTHORIZATION_VERSION_RELOADED',
         stepUpPurpose: null,
         stepUpApplicability: 'NOT_APPLICABLE',
         clientReasonCodes: [],
         operatorReason: 'NOT_APPLICABLE',
         auditContext: 'ADMIN_SESSION',
         successSink: 'AUDIT_LOG',
-        failureBeforeProof: 'ADMIN_SECURITY_EVENT',
-        failureAfterProof: 'AUDIT_LOG',
         action: 'listAdminAuditLogs',
         eventClass: 'EXPORT',
         entityType: 'AUDIT_LOG_SNAPSHOT',
         maskedSnapshots: ['FILTER_DIGEST', 'SNAPSHOT_BOUNDS'],
         atomicity: 'MATERIALIZE_SNAPSHOT_BEFORE_AUDIT_READ_EVENT_TO_EXCLUDE_SELF',
         asynchronousTransitions: [],
+        auditContextProof:
+          'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
+        authorizationChecks: ['ROLE_ONE_OF_SUPER_ADMIN'],
+        postProofBusinessChecks: ['FILTER_CURSOR_SNAPSHOT_AND_PROJECTION_BUDGET'],
+        phaseOrder: [
+          'INPUT',
+          'AUDIT_CONTEXT_PROOF',
+          'AUTHORIZATION_CHECKS',
+          'POST_PROOF_BUSINESS_CHECKS',
+          'MUTATION_OR_SNAPSHOT',
+          'AUDIT',
+          'COMMIT',
+          'RESPONSE',
+          'CONTINUATION',
+        ],
+        failureSinks: {
+          beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED',
+          roleDeniedAfterProof: 'AUDIT_LOG_REJECTED',
+          stepUpAbsentAfterProof: 'NOT_APPLICABLE',
+          stepUpExpiredAfterProof: 'NOT_APPLICABLE',
+          stepUpInvalidAfterProof: 'NOT_APPLICABLE',
+          integrityRejectedAfterProof: 'NOT_APPLICABLE',
+          dependencyUnavailable: {
+            beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED_IF_DURABILITY_CONFIRMED',
+            afterCompleteProof: 'AUDIT_LOG_REJECTED_IF_DURABILITY_CONFIRMED',
+            response: 'NEUTRAL_503_SERVICE_UNAVAILABLE',
+            durabilityRule: 'IF_REQUIRED_SINK_COMMIT_NOT_CONFIRMED_ROLLBACK_OR_NO_DURABILITY_CLAIM',
+          },
+          sinkUnavailable: 'ROLLBACK_NEUTRAL_503_NO_FALLBACK_NO_DURABLE_AUDIT_CLAIM',
+          commitUnknown: 'NEUTRAL_503_NO_SECOND_SINK_RECONCILE_DURABLE_STATE',
+          businessRejectedAfterProof: 'AUDIT_LOG_REJECTED',
+        },
       },
       createAdminAuditLogExport: {
         roles: ['SUPER_ADMIN'],
-        serverProof:
-          'ACTIVE_ADMIN_SESSION_ROLE_AUTHORIZATION_VERSION_AND_FRESH_TOTP_STEP_UP_RELOADED',
         stepUpPurpose: 'AUDIT_EXPORT',
         stepUpApplicability: 'REQUIRED',
         clientReasonCodes: ['AUDIT_EXPORT'],
         operatorReason: 'REQUIRED',
         auditContext: 'ADMIN_SESSION',
         successSink: 'AUDIT_LOG',
-        failureBeforeProof: 'ADMIN_SECURITY_EVENT',
-        failureAfterProof: 'AUDIT_LOG',
         action: 'createAdminAuditLogExport',
         eventClass: 'EXPORT',
         entityType: 'ADMIN_AUDIT_EXPORT',
         maskedSnapshots: ['FILTER_DIGEST', 'EXPORT_STATE'],
         atomicity: 'CREATE_IMMUTABLE_SNAPSHOT_EXPORT_JOB_RECORD_IDEMPOTENCY_AND_AUDIT',
         asynchronousTransitions: ['EXPORT_BUILD_SYSTEM_AUDIT', 'EXPORT_EXPIRY_SYSTEM_AUDIT'],
+        auditContextProof:
+          'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
+        authorizationChecks: ['ROLE_ONE_OF_SUPER_ADMIN', 'FRESH_STEP_UP_AUDIT_EXPORT'],
+        postProofBusinessChecks: [
+          'FILTER_SNAPSHOT_REASON_AND_IDEMPOTENCY',
+          'EXPORT_BUDGET_DECLARED',
+        ],
+        phaseOrder: [
+          'INPUT',
+          'AUDIT_CONTEXT_PROOF',
+          'AUTHORIZATION_CHECKS',
+          'POST_PROOF_BUSINESS_CHECKS',
+          'MUTATION_OR_SNAPSHOT',
+          'AUDIT',
+          'COMMIT',
+          'RESPONSE',
+          'CONTINUATION',
+        ],
+        failureSinks: {
+          beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED',
+          roleDeniedAfterProof: 'AUDIT_LOG_REJECTED',
+          stepUpAbsentAfterProof: 'AUDIT_LOG_REJECTED',
+          stepUpExpiredAfterProof: 'AUDIT_LOG_REJECTED',
+          stepUpInvalidAfterProof: 'AUDIT_LOG_REJECTED',
+          integrityRejectedAfterProof: 'NOT_APPLICABLE',
+          dependencyUnavailable: {
+            beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED_IF_DURABILITY_CONFIRMED',
+            afterCompleteProof: 'AUDIT_LOG_REJECTED_IF_DURABILITY_CONFIRMED',
+            response: 'NEUTRAL_503_SERVICE_UNAVAILABLE',
+            durabilityRule: 'IF_REQUIRED_SINK_COMMIT_NOT_CONFIRMED_ROLLBACK_OR_NO_DURABILITY_CLAIM',
+          },
+          sinkUnavailable: 'ROLLBACK_NEUTRAL_503_NO_FALLBACK_NO_DURABLE_AUDIT_CLAIM',
+          commitUnknown: 'NEUTRAL_503_NO_SECOND_SINK_RECONCILE_DURABLE_STATE',
+          businessRejectedAfterProof: 'AUDIT_LOG_REJECTED',
+        },
       },
       getAdminAuditLogExport: {
         roles: ['SUPER_ADMIN'],
-        serverProof: 'ACTIVE_ADMIN_SESSION_ROLE_AND_AUTHORIZATION_VERSION_RELOADED',
         stepUpPurpose: null,
         stepUpApplicability: 'NOT_APPLICABLE',
         clientReasonCodes: [],
         operatorReason: 'NOT_APPLICABLE',
         auditContext: 'ADMIN_SESSION',
         successSink: 'AUDIT_LOG',
-        failureBeforeProof: 'ADMIN_SECURITY_EVENT',
-        failureAfterProof: 'AUDIT_LOG',
         action: 'getAdminAuditLogExport',
         eventClass: 'EXPORT',
         entityType: 'ADMIN_AUDIT_EXPORT',
         maskedSnapshots: ['EXPORT_STATE', 'INTEGRITY_METADATA'],
         atomicity: 'AUDIT_DURABLE_BEFORE_RESPONSE',
         asynchronousTransitions: [],
+        auditContextProof:
+          'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
+        authorizationChecks: ['ROLE_ONE_OF_SUPER_ADMIN'],
+        postProofBusinessChecks: ['EXPORT_VISIBLE_OR_NEUTRAL_NOT_FOUND'],
+        phaseOrder: [
+          'INPUT',
+          'AUDIT_CONTEXT_PROOF',
+          'AUTHORIZATION_CHECKS',
+          'POST_PROOF_BUSINESS_CHECKS',
+          'MUTATION_OR_SNAPSHOT',
+          'AUDIT',
+          'COMMIT',
+          'RESPONSE',
+          'CONTINUATION',
+        ],
+        failureSinks: {
+          beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED',
+          roleDeniedAfterProof: 'AUDIT_LOG_REJECTED',
+          stepUpAbsentAfterProof: 'NOT_APPLICABLE',
+          stepUpExpiredAfterProof: 'NOT_APPLICABLE',
+          stepUpInvalidAfterProof: 'NOT_APPLICABLE',
+          integrityRejectedAfterProof: 'NOT_APPLICABLE',
+          dependencyUnavailable: {
+            beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED_IF_DURABILITY_CONFIRMED',
+            afterCompleteProof: 'AUDIT_LOG_REJECTED_IF_DURABILITY_CONFIRMED',
+            response: 'NEUTRAL_503_SERVICE_UNAVAILABLE',
+            durabilityRule: 'IF_REQUIRED_SINK_COMMIT_NOT_CONFIRMED_ROLLBACK_OR_NO_DURABILITY_CLAIM',
+          },
+          sinkUnavailable: 'ROLLBACK_NEUTRAL_503_NO_FALLBACK_NO_DURABLE_AUDIT_CLAIM',
+          commitUnknown: 'NEUTRAL_503_NO_SECOND_SINK_RECONCILE_DURABLE_STATE',
+          businessRejectedAfterProof: 'AUDIT_LOG_REJECTED',
+        },
       },
       downloadAdminAuditLogExport: {
         roles: ['SUPER_ADMIN'],
-        serverProof:
-          'ACTIVE_ADMIN_SESSION_ROLE_AUTHORIZATION_VERSION_FRESH_TOTP_STEP_UP_AND_EXPORT_INTEGRITY_RELOADED',
         stepUpPurpose: 'AUDIT_EXPORT',
         stepUpApplicability: 'REQUIRED',
         clientReasonCodes: [],
         operatorReason: 'NOT_APPLICABLE',
         auditContext: 'ADMIN_SESSION',
         successSink: 'AUDIT_LOG',
-        failureBeforeProof: 'ADMIN_SECURITY_EVENT',
-        failureAfterProof: 'AUDIT_LOG',
         action: 'downloadAdminAuditLogExport',
         eventClass: 'EXPORT',
         entityType: 'ADMIN_AUDIT_EXPORT',
         maskedSnapshots: ['EXPORT_STATE', 'INTEGRITY_METADATA'],
         atomicity: 'AUTHORIZATION_STEP_UP_INTEGRITY_AND_AUDIT_DURABLE_BEFORE_FIRST_BYTE',
         asynchronousTransitions: [],
+        auditContextProof:
+          'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
+        authorizationChecks: ['ROLE_ONE_OF_SUPER_ADMIN', 'FRESH_STEP_UP_AUDIT_EXPORT'],
+        postProofBusinessChecks: ['EXPORT_READY_NOT_EXPIRED', 'CONTENT_HASH_AND_JWS_INTEGRITY'],
+        phaseOrder: [
+          'INPUT',
+          'AUDIT_CONTEXT_PROOF',
+          'AUTHORIZATION_CHECKS',
+          'POST_PROOF_BUSINESS_CHECKS',
+          'MUTATION_OR_SNAPSHOT',
+          'AUDIT',
+          'COMMIT',
+          'RESPONSE',
+          'CONTINUATION',
+        ],
+        failureSinks: {
+          beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED',
+          roleDeniedAfterProof: 'AUDIT_LOG_REJECTED',
+          stepUpAbsentAfterProof: 'AUDIT_LOG_REJECTED',
+          stepUpExpiredAfterProof: 'AUDIT_LOG_REJECTED',
+          stepUpInvalidAfterProof: 'AUDIT_LOG_REJECTED',
+          integrityRejectedAfterProof: 'AUDIT_LOG_REJECTED',
+          dependencyUnavailable: {
+            beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED_IF_DURABILITY_CONFIRMED',
+            afterCompleteProof: 'AUDIT_LOG_REJECTED_IF_DURABILITY_CONFIRMED',
+            response: 'NEUTRAL_503_SERVICE_UNAVAILABLE',
+            durabilityRule: 'IF_REQUIRED_SINK_COMMIT_NOT_CONFIRMED_ROLLBACK_OR_NO_DURABILITY_CLAIM',
+          },
+          sinkUnavailable: 'ROLLBACK_NEUTRAL_503_NO_FALLBACK_NO_DURABLE_AUDIT_CLAIM',
+          commitUnknown: 'NEUTRAL_503_NO_SECOND_SINK_RECONCILE_DURABLE_STATE',
+          businessRejectedAfterProof: 'AUDIT_LOG_REJECTED',
+        },
       },
       createAdminInvitation: {
         roles: ['SUPER_ADMIN'],
-        serverProof:
-          'ACTIVE_ADMIN_SESSION_ROLE_AUTHORIZATION_VERSION_AND_FRESH_TOTP_STEP_UP_RELOADED',
         stepUpPurpose: 'INVITATION',
         stepUpApplicability: 'REQUIRED',
         clientReasonCodes: ['INVITATION_ADMINISTRATION'],
         operatorReason: 'REQUIRED',
         auditContext: 'ADMIN_SESSION',
         successSink: 'AUDIT_LOG',
-        failureBeforeProof: 'ADMIN_SECURITY_EVENT',
-        failureAfterProof: 'AUDIT_LOG',
         action: 'createAdminInvitation',
         eventClass: 'BUSINESS',
         entityType: 'ADMIN_INVITATION',
@@ -353,82 +643,317 @@ export const adminC2ContractPolicies = {
         atomicity:
           'REVOKE_PRIOR_VALID_INVITATION_CREATE_INVITATION_ENCRYPTED_OUTBOX_RECORD_IDEMPOTENCY_AND_AUDIT',
         asynchronousTransitions: ['INVITATION_NOTIFICATION_DELIVERY_SYSTEM_AUDIT'],
+        auditContextProof:
+          'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
+        authorizationChecks: ['ROLE_ONE_OF_SUPER_ADMIN', 'FRESH_STEP_UP_INVITATION'],
+        postProofBusinessChecks: [
+          'EMAIL_COLLISION_AND_ROLE_REASON_VALID',
+          'PASSWORD_PROVIDER_NOT_APPLICABLE',
+          'IDEMPOTENCY_PAYLOAD_MATCH',
+        ],
+        phaseOrder: [
+          'INPUT',
+          'AUDIT_CONTEXT_PROOF',
+          'AUTHORIZATION_CHECKS',
+          'POST_PROOF_BUSINESS_CHECKS',
+          'MUTATION_OR_SNAPSHOT',
+          'AUDIT',
+          'COMMIT',
+          'RESPONSE',
+          'CONTINUATION',
+        ],
+        failureSinks: {
+          beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED',
+          roleDeniedAfterProof: 'AUDIT_LOG_REJECTED',
+          stepUpAbsentAfterProof: 'AUDIT_LOG_REJECTED',
+          stepUpExpiredAfterProof: 'AUDIT_LOG_REJECTED',
+          stepUpInvalidAfterProof: 'AUDIT_LOG_REJECTED',
+          integrityRejectedAfterProof: 'NOT_APPLICABLE',
+          dependencyUnavailable: {
+            beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED_IF_DURABILITY_CONFIRMED',
+            afterCompleteProof: 'AUDIT_LOG_REJECTED_IF_DURABILITY_CONFIRMED',
+            response: 'NEUTRAL_503_SERVICE_UNAVAILABLE',
+            durabilityRule: 'IF_REQUIRED_SINK_COMMIT_NOT_CONFIRMED_ROLLBACK_OR_NO_DURABILITY_CLAIM',
+          },
+          sinkUnavailable: 'ROLLBACK_NEUTRAL_503_NO_FALLBACK_NO_DURABLE_AUDIT_CLAIM',
+          commitUnknown: 'NEUTRAL_503_NO_SECOND_SINK_RECONCILE_DURABLE_STATE',
+          businessRejectedAfterProof: 'AUDIT_LOG_REJECTED',
+        },
       },
       acceptAdminInvitation: {
         roles: [],
-        serverProof: 'NO_AUDIT_CONTEXT_PUBLIC_SINGLE_USE_INVITATION_CHECK',
         stepUpPurpose: null,
         stepUpApplicability: 'NOT_APPLICABLE',
         clientReasonCodes: [],
         operatorReason: 'NOT_APPLICABLE',
         auditContext: null,
         successSink: 'ADMIN_SECURITY_EVENT',
-        failureBeforeProof: 'ADMIN_SECURITY_EVENT',
-        failureAfterProof: 'ADMIN_SECURITY_EVENT',
         action: 'acceptAdminInvitation',
         eventClass: 'BUSINESS',
         entityType: 'ADMIN_INVITATION',
         maskedSnapshots: ['INVITATION_STATE', 'PENDING_MFA_ACCOUNT_STATE'],
-        atomicity: 'CONSUME_INVITATION_CREATE_PENDING_MFA_ACCOUNT_AND_SECURITY_EVENT',
+        atomicity:
+          'CONSUME_INVITATION_CREATE_PENDING_MFA_ACCOUNT_CREATE_ARGON2ID_PASSWORD_CREDENTIAL_CREATE_FIRST_TOTP_ENROLLMENT_PREAUTH_10_MINUTES_AND_SECURITY_EVENT',
         asynchronousTransitions: [],
+        auditContextProof: 'NONE_PUBLIC_NO_AUDIT_CONTEXT',
+        authorizationChecks: [],
+        postProofBusinessChecks: [
+          'INVITATION_ACTIVE_SINGLE_USE_EMAIL_COLLISION_FREE',
+          'PASSWORD_POLICY_AND_HIBP_FAIL_CLOSED',
+        ],
+        phaseOrder: [
+          'INPUT',
+          'AUDIT_CONTEXT_PROOF',
+          'AUTHORIZATION_CHECKS',
+          'POST_PROOF_BUSINESS_CHECKS',
+          'MUTATION_OR_SNAPSHOT',
+          'AUDIT',
+          'COMMIT',
+          'RESPONSE',
+          'CONTINUATION',
+        ],
+        failureSinks: {
+          beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED',
+          roleDeniedAfterProof: 'NOT_APPLICABLE',
+          stepUpAbsentAfterProof: 'NOT_APPLICABLE',
+          stepUpExpiredAfterProof: 'NOT_APPLICABLE',
+          stepUpInvalidAfterProof: 'NOT_APPLICABLE',
+          integrityRejectedAfterProof: 'NOT_APPLICABLE',
+          dependencyUnavailable: {
+            beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED_IF_DURABILITY_CONFIRMED',
+            afterCompleteProof: 'NOT_APPLICABLE_NO_PROVEN_AUDIT_CONTEXT',
+            response: 'NEUTRAL_503_SERVICE_UNAVAILABLE',
+            durabilityRule: 'IF_REQUIRED_SINK_COMMIT_NOT_CONFIRMED_ROLLBACK_OR_NO_DURABILITY_CLAIM',
+          },
+          sinkUnavailable: 'ROLLBACK_NEUTRAL_503_NO_FALLBACK_NO_DURABLE_AUDIT_CLAIM',
+          commitUnknown: 'NEUTRAL_503_NO_SECOND_SINK_RECONCILE_DURABLE_STATE',
+          businessRejectedAfterProof: 'ADMIN_SECURITY_EVENT_FAILED',
+        },
       },
       listAdminUsers: {
         roles: ['SUPER_ADMIN'],
-        serverProof: 'ACTIVE_ADMIN_SESSION_ROLE_AND_AUTHORIZATION_VERSION_RELOADED',
         stepUpPurpose: null,
         stepUpApplicability: 'NOT_APPLICABLE',
         clientReasonCodes: [],
         operatorReason: 'NOT_APPLICABLE',
         auditContext: 'ADMIN_SESSION',
         successSink: 'NONE',
-        failureBeforeProof: 'ADMIN_SECURITY_EVENT',
-        failureAfterProof: 'NONE',
         action: 'listAdminUsers',
         eventClass: 'BUSINESS',
         entityType: 'ADMIN_USER_SNAPSHOT',
         maskedSnapshots: ['SAFE_USER_PROJECTION_DIGEST'],
         atomicity: 'MATERIALIZED_SAFE_SNAPSHOT_READ',
         asynchronousTransitions: [],
+        auditContextProof:
+          'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
+        authorizationChecks: ['ROLE_ONE_OF_SUPER_ADMIN'],
+        postProofBusinessChecks: ['FILTER_CURSOR_AND_SNAPSHOT_LIMITS'],
+        phaseOrder: [
+          'INPUT',
+          'AUDIT_CONTEXT_PROOF',
+          'AUTHORIZATION_CHECKS',
+          'POST_PROOF_BUSINESS_CHECKS',
+          'MUTATION_OR_SNAPSHOT',
+          'AUDIT',
+          'COMMIT',
+          'RESPONSE',
+          'CONTINUATION',
+        ],
+        failureSinks: {
+          beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED',
+          roleDeniedAfterProof: 'NONE',
+          stepUpAbsentAfterProof: 'NOT_APPLICABLE',
+          stepUpExpiredAfterProof: 'NOT_APPLICABLE',
+          stepUpInvalidAfterProof: 'NOT_APPLICABLE',
+          integrityRejectedAfterProof: 'NOT_APPLICABLE',
+          dependencyUnavailable: {
+            beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED_IF_DURABILITY_CONFIRMED',
+            afterCompleteProof: 'NONE_NEUTRAL_503_NO_DURABLE_AUDIT',
+            response: 'NEUTRAL_503_SERVICE_UNAVAILABLE',
+            durabilityRule: 'IF_REQUIRED_SINK_COMMIT_NOT_CONFIRMED_ROLLBACK_OR_NO_DURABILITY_CLAIM',
+          },
+          sinkUnavailable: 'NOT_APPLICABLE_NO_DURABLE_AUDIT_SINK',
+          commitUnknown: 'READ_ONLY_SNAPSHOT_CONFIRMATION_UNKNOWN_NEUTRAL_503_NO_RETRY',
+          businessRejectedAfterProof: 'NONE',
+        },
       },
       changeAdminUserRole: {
         roles: ['SUPER_ADMIN'],
-        serverProof:
-          'ACTIVE_ADMIN_SESSION_ROLE_AUTHORIZATION_VERSION_AND_FRESH_TOTP_STEP_UP_RELOADED',
         stepUpPurpose: 'ROLE_CHANGE',
         stepUpApplicability: 'REQUIRED',
         clientReasonCodes: ['ROLE_ADMINISTRATION'],
         operatorReason: 'REQUIRED',
         auditContext: 'ADMIN_SESSION',
         successSink: 'AUDIT_LOG',
-        failureBeforeProof: 'ADMIN_SECURITY_EVENT',
-        failureAfterProof: 'AUDIT_LOG',
         action: 'changeAdminUserRole',
         eventClass: 'BUSINESS',
         entityType: 'ADMIN_USER',
         maskedSnapshots: ['ROLE', 'AUTHORIZATION_VERSION', 'SESSION_REVOCATION_STATE'],
         atomicity:
-          'CHANGE_ROLE_INCREMENT_AUTHORIZATION_VERSION_REVOKE_SESSIONS_RECORD_IDEMPOTENCY_AND_AUDIT',
+          'CHANGE_ROLE_INCREMENT_AUTHORIZATION_VERSION_REVOKE_SESSIONS_CANCEL_PENDING_RECOVERY_CASES_WITH_SYSTEM_AUDITS_RECORD_IDEMPOTENCY_AND_INITIATING_AUDIT_IN_ONE_POSTGRESQL_TRANSACTION',
         asynchronousTransitions: [],
+        transactionalSystemTransitions: ['RECOVERY_CASE_SERVER_CANCELLATION_SYSTEM_AUDIT'],
+        auditContextProof:
+          'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
+        authorizationChecks: ['ROLE_ONE_OF_SUPER_ADMIN', 'FRESH_STEP_UP_ROLE_CHANGE'],
+        postProofBusinessChecks: [
+          'TARGET_EXISTS_LAST_SUPER_ADMIN_PROTECTION_AND_REASON_VALID',
+          'IDEMPOTENCY_PAYLOAD_MATCH',
+        ],
+        phaseOrder: [
+          'INPUT',
+          'AUDIT_CONTEXT_PROOF',
+          'AUTHORIZATION_CHECKS',
+          'POST_PROOF_BUSINESS_CHECKS',
+          'MUTATION_OR_SNAPSHOT',
+          'AUDIT',
+          'COMMIT',
+          'RESPONSE',
+          'CONTINUATION',
+        ],
+        failureSinks: {
+          beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED',
+          roleDeniedAfterProof: 'AUDIT_LOG_REJECTED',
+          stepUpAbsentAfterProof: 'AUDIT_LOG_REJECTED',
+          stepUpExpiredAfterProof: 'AUDIT_LOG_REJECTED',
+          stepUpInvalidAfterProof: 'AUDIT_LOG_REJECTED',
+          integrityRejectedAfterProof: 'NOT_APPLICABLE',
+          dependencyUnavailable: {
+            beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED_IF_DURABILITY_CONFIRMED',
+            afterCompleteProof: 'AUDIT_LOG_REJECTED_IF_DURABILITY_CONFIRMED',
+            response: 'NEUTRAL_503_SERVICE_UNAVAILABLE',
+            durabilityRule: 'IF_REQUIRED_SINK_COMMIT_NOT_CONFIRMED_ROLLBACK_OR_NO_DURABILITY_CLAIM',
+          },
+          sinkUnavailable: 'ROLLBACK_NEUTRAL_503_NO_FALLBACK_NO_DURABLE_AUDIT_CLAIM',
+          commitUnknown: 'NEUTRAL_503_NO_SECOND_SINK_RECONCILE_DURABLE_STATE',
+          businessRejectedAfterProof: 'AUDIT_LOG_REJECTED',
+        },
       },
       changeAdminUserStatus: {
         roles: ['SUPER_ADMIN'],
-        serverProof:
-          'ACTIVE_ADMIN_SESSION_ROLE_AUTHORIZATION_VERSION_AND_FRESH_TOTP_STEP_UP_RELOADED',
         stepUpPurpose: 'STATUS_CHANGE',
         stepUpApplicability: 'REQUIRED',
         clientReasonCodes: ['STATUS_ADMINISTRATION', 'SECURITY_RESPONSE'],
         operatorReason: 'REQUIRED',
         auditContext: 'ADMIN_SESSION',
         successSink: 'AUDIT_LOG',
-        failureBeforeProof: 'ADMIN_SECURITY_EVENT',
-        failureAfterProof: 'AUDIT_LOG',
         action: 'changeAdminUserStatus',
         eventClass: 'BUSINESS',
         entityType: 'ADMIN_USER',
         maskedSnapshots: ['STATUS', 'AUTHORIZATION_VERSION', 'SESSION_REVOCATION_STATE'],
         atomicity:
-          'CHANGE_STATUS_INCREMENT_AUTHORIZATION_VERSION_REVOKE_SESSIONS_RECORD_IDEMPOTENCY_AND_AUDIT',
+          'CHANGE_STATUS_INCREMENT_AUTHORIZATION_VERSION_REVOKE_SESSIONS_CANCEL_PENDING_RECOVERY_CASES_WITH_SYSTEM_AUDITS_RECORD_IDEMPOTENCY_AND_INITIATING_AUDIT_IN_ONE_POSTGRESQL_TRANSACTION',
         asynchronousTransitions: [],
+        transactionalSystemTransitions: ['RECOVERY_CASE_SERVER_CANCELLATION_SYSTEM_AUDIT'],
+        auditContextProof:
+          'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
+        authorizationChecks: ['ROLE_ONE_OF_SUPER_ADMIN', 'FRESH_STEP_UP_STATUS_CHANGE'],
+        postProofBusinessChecks: [
+          'TARGET_EXISTS_LAST_SUPER_ADMIN_PROTECTION_AND_REASON_VALID',
+          'IDEMPOTENCY_PAYLOAD_MATCH',
+        ],
+        phaseOrder: [
+          'INPUT',
+          'AUDIT_CONTEXT_PROOF',
+          'AUTHORIZATION_CHECKS',
+          'POST_PROOF_BUSINESS_CHECKS',
+          'MUTATION_OR_SNAPSHOT',
+          'AUDIT',
+          'COMMIT',
+          'RESPONSE',
+          'CONTINUATION',
+        ],
+        failureSinks: {
+          beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED',
+          roleDeniedAfterProof: 'AUDIT_LOG_REJECTED',
+          stepUpAbsentAfterProof: 'AUDIT_LOG_REJECTED',
+          stepUpExpiredAfterProof: 'AUDIT_LOG_REJECTED',
+          stepUpInvalidAfterProof: 'AUDIT_LOG_REJECTED',
+          integrityRejectedAfterProof: 'NOT_APPLICABLE',
+          dependencyUnavailable: {
+            beforeCompleteProof: 'ADMIN_SECURITY_EVENT_FAILED_IF_DURABILITY_CONFIRMED',
+            afterCompleteProof: 'AUDIT_LOG_REJECTED_IF_DURABILITY_CONFIRMED',
+            response: 'NEUTRAL_503_SERVICE_UNAVAILABLE',
+            durabilityRule: 'IF_REQUIRED_SINK_COMMIT_NOT_CONFIRMED_ROLLBACK_OR_NO_DURABILITY_CLAIM',
+          },
+          sinkUnavailable: 'ROLLBACK_NEUTRAL_503_NO_FALLBACK_NO_DURABLE_AUDIT_CLAIM',
+          commitUnknown: 'NEUTRAL_503_NO_SECOND_SINK_RECONCILE_DURABLE_STATE',
+          businessRejectedAfterProof: 'AUDIT_LOG_REJECTED',
+        },
+      },
+    },
+    failureCodeByTrigger: {
+      scope: 'ADMIN_AUDIT_LOG_V3_REJECTED_ONLY',
+      successRule: 'SUCCESS_REQUIRES_FAILURE_CODE_NULL',
+      rejectionRule: 'REJECTED_REQUIRES_EXACT_NON_NULL_FAILURE_CODE_FROM_THIS_TABLE',
+      nonAuditLogRule: 'ADMIN_SECURITY_EVENT_AND_NONE_SINK_OPERATIONS_MUST_NOT_CREATE_AUDIT_LOG_V3',
+      globalAuditLogV3: {
+        ROLE_DENIED_AFTER_COMPLETE_PROOF: 'FORBIDDEN',
+        STEP_UP_ABSENT_AFTER_COMPLETE_PROOF: 'STEP_UP_REQUIRED',
+        STEP_UP_EXPIRED_AFTER_COMPLETE_PROOF: 'STEP_UP_EXPIRED',
+        STEP_UP_INVALID_AFTER_COMPLETE_PROOF: 'STEP_UP_INVALID',
+        INTEGRITY_REJECTED_AFTER_COMPLETE_PROOF: 'INTEGRITY_REJECTED',
+        DEPENDENCY_UNAVAILABLE_AFTER_COMPLETE_PROOF: 'DEPENDENCY_UNAVAILABLE',
+        AUDIT_SINK_UNAVAILABLE: 'NO_V3_RECORD_COMMIT_POSSIBLE_RETURN_NEUTRAL_503',
+      },
+      businessByOperation: {
+        requestAdminPasswordReset: 'NOT_APPLICABLE_ADMIN_SECURITY_EVENT',
+        resetAdminPassword: {
+          PASSWORD_RESET_PURPOSE_OR_SUBJECT_NOT_AUTHORIZED: 'FORBIDDEN',
+          NEW_PASSWORD_POLICY_REJECTED: 'VALIDATION_ERROR',
+          HIBP_UNAVAILABLE: 'DEPENDENCY_UNAVAILABLE',
+          RECOVERY_CONTEXT_INVALID: 'NOT_APPLICABLE_BEFORE_COMPLETE_PROOF',
+        },
+        createAdminRecoveryCase: {
+          SUBJECT_ELIGIBILITY_DISTINCTNESS_OR_REASON_REJECTED: 'VALIDATION_ERROR',
+          IDEMPOTENCY_PAYLOAD_MISMATCH: 'IDEMPOTENCY_CONFLICT',
+        },
+        listAdminRecoveryCases: 'NOT_APPLICABLE_NONE_SINK',
+        getAdminRecoveryCase: 'NOT_APPLICABLE_NONE_SINK',
+        approveAdminRecoveryCase: {
+          CASE_NOT_FOUND: 'RESOURCE_NOT_FOUND',
+          CASE_NOT_PENDING_OR_DISTINCTNESS_CONFLICT: 'RESOURCE_CONFLICT',
+          CASE_EXPIRED: 'RESOURCE_EXPIRED',
+          SUBJECT_ELIGIBILITY_OR_REASON_REJECTED: 'VALIDATION_ERROR',
+          IDEMPOTENCY_PAYLOAD_MISMATCH: 'IDEMPOTENCY_CONFLICT',
+        },
+        listAdminAuditLogs: {
+          FILTER_OR_CURSOR_REJECTED: 'VALIDATION_ERROR',
+          PROJECTION_BUDGET_EXCEEDED: 'PROJECTION_BUDGET_EXCEEDED',
+        },
+        createAdminAuditLogExport: {
+          FILTER_SNAPSHOT_OR_REASON_REJECTED: 'VALIDATION_ERROR',
+          IDEMPOTENCY_PAYLOAD_MISMATCH: 'IDEMPOTENCY_CONFLICT',
+          EXPORT_BUDGET_EXCEEDED: 'PROJECTION_BUDGET_EXCEEDED',
+        },
+        getAdminAuditLogExport: {
+          EXPORT_NOT_FOUND: 'RESOURCE_NOT_FOUND',
+        },
+        downloadAdminAuditLogExport: {
+          EXPORT_NOT_FOUND: 'RESOURCE_NOT_FOUND',
+          EXPORT_NOT_READY: 'RESOURCE_CONFLICT',
+          EXPORT_EXPIRED: 'RESOURCE_EXPIRED',
+          CONTENT_HASH_OR_JWS_INVALID: 'INTEGRITY_REJECTED',
+        },
+        createAdminInvitation: {
+          EMAIL_COLLISION: 'RESOURCE_CONFLICT',
+          ROLE_REASON_OR_PROVIDER_REJECTED: 'VALIDATION_ERROR',
+          IDEMPOTENCY_PAYLOAD_MISMATCH: 'IDEMPOTENCY_CONFLICT',
+        },
+        acceptAdminInvitation: 'NOT_APPLICABLE_ADMIN_SECURITY_EVENT',
+        listAdminUsers: 'NOT_APPLICABLE_NONE_SINK',
+        changeAdminUserRole: {
+          TARGET_NOT_FOUND: 'RESOURCE_NOT_FOUND',
+          LAST_SUPER_ADMIN_PROTECTED: 'RESOURCE_CONFLICT',
+          REASON_REJECTED: 'VALIDATION_ERROR',
+          IDEMPOTENCY_PAYLOAD_MISMATCH: 'IDEMPOTENCY_CONFLICT',
+        },
+        changeAdminUserStatus: {
+          TARGET_NOT_FOUND: 'RESOURCE_NOT_FOUND',
+          LAST_SUPER_ADMIN_PROTECTED: 'RESOURCE_CONFLICT',
+          REASON_REJECTED: 'VALIDATION_ERROR',
+          IDEMPOTENCY_PAYLOAD_MISMATCH: 'IDEMPOTENCY_CONFLICT',
+        },
       },
     },
     passwordReset: {
@@ -550,14 +1075,14 @@ export const adminC2ContractPolicies = {
       snapshotLifetimeMinutes: 15,
       maximumEntries: 10000,
       maximumUtf8Bytes: 26214400,
-      overflow: 'EXPLICIT_RESTRICT_FILTERS_NO_TRUNCATION',
+      overflow: 'NEUTRAL_503_SERVICE_UNAVAILABLE_NO_PARTIAL_PAGE_REDUCE_FILTERS',
       auditSnapshotRule: 'MATERIALIZE_BEFORE_AUDIT_READ_EVENT_NO_SELF_INCLUSION',
       retentionMeaning: 'TECHNICAL_ONLY_NOT_LEGAL',
     },
     auditProjection: {
       entrySchema: 'AdminAuditLogEntry',
       versionDiscriminator: 'version',
-      exclusiveVersions: [1, 2],
+      exclusiveVersions: [1, 2, 3],
       listAndExportProjection: 'EXACT_SAME_VERSIONED_SCHEMA_AND_MASKING',
       legacyV1: {
         physicalVersion: 1,
@@ -568,6 +1093,15 @@ export const adminC2ContractPolicies = {
         legacyReasonRedacted: true,
         masking: 'POSITIVE_ALLOWLIST_BY_ACTION',
         projectionIndicatorIsHistoricalMetadata: false,
+        representability:
+          'NO_UUID_OR_LENGTH_REQUIREMENT_ON_TEXT_IDENTIFIERS_ANY_JSON_VALUE_FOR_MASKED_COLUMNS_AND_NO_PROJECTION_TRUNCATION',
+        physicalDdlFacts: {
+          nonEmpty: ['action', 'entityType', 'entityId', 'legacyReason'],
+          requestIdLength: '8_TO_128_IN_CURRENT_BASELINE_CHECK',
+          unboundedMaximum: ['action', 'entityType', 'entityId', 'legacyReason'],
+          identifierFormat: 'UNCONSTRAINED_TEXT',
+          snapshotJsonShape: 'UNCONSTRAINED_JSONB',
+        },
       },
       v2: {
         physicalVersion: 2,
@@ -584,14 +1118,32 @@ export const adminC2ContractPolicies = {
           semantics: 'SAME_TIME_RANGE_WITH_SURFACE_SPECIFIC_NAMES',
         },
         version: 'auditVersion',
-        v2Only: ['auditEventClass', 'auditContext', 'auditReasonCode'],
-        v1WithoutVersionOrV2OnlyFilters: 'INCLUDED_WHEN_COMMON_FILTERS_MATCH',
+        v1WithoutVersionOrTypedOnlyFilters: 'INCLUDED_WHEN_COMMON_FILTERS_MATCH',
         v1WithExplicitVersion1: 'INCLUDED_WHEN_COMMON_FILTERS_MATCH',
-        v1WithAnyV2OnlyFilter: 'NEVER_MATCH',
         unknownHistoricalValue: 'NEVER_SYNTHETICALLY_MATCH_CLASS_CONTEXT_OR_REASON',
         combination: 'ALL_SUPPLIED_FILTERS_ARE_COMBINED_WITH_AND',
         cursorAndSnapshotBinding: 'EXACT_FILTER_SET_AND_VALUES',
-        orderPaginationSnapshotLimitsMasking: 'IDENTICAL_FOR_V1_AND_V2',
+        orderPaginationSnapshotLimitsMasking: 'IDENTICAL_FOR_V1_V2_AND_V3',
+        typedVersions: [2, 3],
+        typedOnly: ['auditEventClass', 'auditContext', 'auditReasonCode'],
+        v1WithAnyTypedFilter: 'NEVER_MATCH',
+        v2Outcome: 'ALWAYS_UNKNOWN_NO_OUTCOME_OR_FAILURE_FILTER_MATCH',
+        v3Outcome: 'EXPLICIT_OUTCOME_AND_NORMATIVE_FAILURE_CODE',
+      },
+      operatorReason: {
+        durableStorage: 'PRESERVED_WHEN_REQUIRED',
+        listAndExport: 'ALWAYS_NULL_WITH_OPERATOR_REASON_REDACTED_TRUE',
+        presentationTransformOnly: true,
+        durableMutation: false,
+        forbiddenCanaries: ['EMAIL', 'PHONE', 'SECRET', 'FREE_TEXT'],
+      },
+      historicalOutcome: 'UNKNOWN_WITH_HISTORICAL_UNKNOWN_PROVENANCE_NO_ACTION_OR_REASON_INFERENCE',
+      budgetOverflow: {
+        truncate: false,
+        omitRow: false,
+        fabricateValue: false,
+        list: 'NEUTRAL_503_SERVICE_UNAVAILABLE_NO_PARTIAL_PAGE_REDUCE_FILTERS',
+        export: 'FAILED_WITH_PROJECTION_BUDGET_EXCEEDED_NO_PARTIAL_ARTIFACT',
       },
     },
     auditReasons: {
@@ -734,6 +1286,810 @@ export const adminC2ContractPolicies = {
         'DURABLE_AUDIT',
       ],
       streamFailure: 'INTERRUPT_STREAM_NO_JSON_NO_FALSE_COMPLETION_AUDIT',
+      stateMachine: {
+        initial: 'PENDING',
+        transitions: {
+          PENDING: ['PROCESSING'],
+          PROCESSING: ['READY', 'FAILED', 'PROCESSING'],
+          READY: ['EXPIRED'],
+          FAILED: [],
+          EXPIRED: [],
+        },
+        leaseReclaimCondition:
+          'STATE_PROCESSING_OWNER_CURRENT_NEXT_ATTEMPT_AT_NULL_LEASE_EXPIRED_ATTEMPTS_REMAIN_AND_NOW_BEFORE_IMMUTABLE_ATTEMPT_DEADLINE',
+        leaseReclaimEffect:
+          'BEFORE_ATTEMPT_DEADLINE_CAS_CURRENT_GENERATION_ATTEMPT_ID_AND_OWNER_CLEAR_OWNER_SET_NEXT_ATTEMPT_AT_TO_EXPIRED_LEASE_TIME_THEN_DUE_OWNER_NULL_CLAIM_INCREMENTS_GENERATION_AND_REPLACES_ATTEMPT_ID',
+        forbidden: ['PENDING_TO_READY', 'FAILED_TO_PROCESSING', 'EXPIRED_TO_READY'],
+      },
+      workerProtocol: {
+        leaseSeconds: 120,
+        leaseRenewalSeconds: 30,
+        maximumProcessingSecondsPerAttempt: 600,
+        maximumAttempts: 3,
+        maximumAttemptsSemantics: 'INCLUDES_INITIAL_ATTEMPT_1',
+        retryBackoffSecondsByNextAttempt: {
+          '2': 30,
+          '3': 120,
+        },
+        retryableFailureClasses: [
+          'TRANSIENT_DEPENDENCY_UNAVAILABLE',
+          'PROCESS_TIMEOUT_BEFORE_TERMINAL_CAS',
+          'LEASE_HEARTBEAT_LOST_WHILE_CURRENT_FENCE',
+        ],
+        terminalFailureCodeByClass: {
+          PROJECTION_BUDGET_EXCEEDED: 'PROJECTION_BUDGET_EXCEEDED',
+          INTEGRITY_FAILED: 'INTEGRITY_FAILED',
+          NON_RETRYABLE_DEPENDENCY_UNAVAILABLE: 'DEPENDENCY_UNAVAILABLE',
+          RETRYABLE_FAILURE_AT_MAXIMUM_ATTEMPT: 'RETRY_BUDGET_EXHAUSTED',
+          CRASH_OR_HANG_AT_MAXIMUM_ATTEMPT: 'RETRY_BUDGET_EXHAUSTED',
+        },
+        knownRetryableFailure:
+          'CAS_PROCESSING_CURRENT_GENERATION_ATTEMPT_ID_AND_OWNER_LEASE_ACTIVE_NEXT_ATTEMPT_AT_NULL_AND_NOW_BEFORE_IMMUTABLE_ATTEMPT_DEADLINE_CLEAR_OWNER_AND_LEASE_KEEP_PROCESSING_SET_NEXT_ATTEMPT_AT_NOW_PLUS_BACKOFF_FOR_NEXT_ATTEMPT_NO_AUDIT',
+        crashOrHang:
+          'IF_NEXT_ATTEMPT_AT_NOT_NULL_FOLLOW_SCHEDULE_ELSE_IF_NOW_GTE_IMMUTABLE_ATTEMPT_DEADLINE_USE_ATTEMPT_DEADLINE_WATCHDOG_ELSE_AT_LEASE_EXPIRY_BEFORE_ATTEMPT_DEADLINE_CAS_CURRENT_GENERATION_ATTEMPT_ID_AND_OWNER_IF_ATTEMPTS_REMAIN_CLEAR_OWNER_SET_NEXT_ATTEMPT_AT_TO_LEASE_EXPIRY_THEN_DUE_OWNER_NULL_CLAIM_ELSE_TO_FAILED_RETRY_BUDGET_EXHAUSTED_AND_SINGLE_SYSTEM_AUDIT_IN_ONE_TRANSACTION',
+        claim:
+          'POSTGRESQL_CAS_PROCESSING_OWNER_NULL_ATTEMPTS_REMAIN_AND_NOW_GTE_NEXT_ATTEMPT_AT_INCREMENT_GENERATION_AND_ATTEMPT_NUMBER_REPLACE_ATTEMPT_ID_SET_ATTEMPT_STARTED_AT_NOW_AND_IMMUTABLE_ATTEMPT_DEADLINE_NOW_PLUS_600_SECONDS_SET_LEASE_EXPIRES_AT_MIN_NOW_PLUS_120_SECONDS_ATTEMPT_DEADLINE',
+        leaseRenewal:
+          'CAS_CURRENT_GENERATION_ATTEMPT_ID_AND_OWNER_WHILE_LEASE_ACTIVE_NEXT_ATTEMPT_AT_NULL_AND_NOW_BEFORE_IMMUTABLE_ATTEMPT_DEADLINE_SET_LEASE_EXPIRES_AT_MIN_NOW_PLUS_120_SECONDS_ATTEMPT_DEADLINE_NEVER_EXTEND_ATTEMPT_DEADLINE',
+        attemptDeadlineExpiry:
+          'WATCHDOG_AT_OR_AFTER_IMMUTABLE_ATTEMPT_DEADLINE_REJECT_READY_FAILED_AND_RENEW_THEN_CAS_PROCESSING_CURRENT_GENERATION_ATTEMPT_ID_AND_OWNER_IF_ATTEMPTS_REMAIN_CLEAR_OWNER_AND_LEASE_SET_NEXT_ATTEMPT_AT_NOW_PLUS_BACKOFF_NO_AUDIT_ELSE_TO_FAILED_RETRY_BUDGET_EXHAUSTED_AND_SINGLE_SYSTEM_AUDIT_IN_ONE_TRANSACTION',
+        fencingToken: 'MONOTONIC_GENERATION_PLUS_RANDOM_ATTEMPT_ID',
+        staleWorker:
+          'CANNOT_CAS_RETRY_SCHEDULE_READY_OR_FAILED_CANNOT_PUBLISH_METADATA_VISIBILITY_OR_AUDIT_AFTER_FENCE_CHANGE',
+        stalePutCompletion:
+          'AN_ALREADY_STARTED_PUT_MAY_FINISH_ONLY_AT_ITS_IMMUTABLE_EXPORT_GENERATION_ATTEMPT_STAGING_KEY_REMAINS_INVISIBLE_AND_BECOMES_TARGETED_ORPHAN',
+        stableIdentity: 'EXPORT_ID_ATTEMPT_ID_GENERATION_AND_IMMUTABLE_STAGING_OBJECT_KEY',
+        order: [
+          'CLAIM',
+          'BUILD_PAYLOADS',
+          'BUILD_JCS_MANIFEST',
+          'SIGN_JWS_ED25519',
+          'ASSEMBLE_FINAL_ZIP',
+          'HASH_FINAL_ZIP',
+          'ENCRYPT_AND_UPLOAD_STAGING_OBJECT',
+          'READ_BACK_DECRYPT_VERIFY_HASH_AND_JWS',
+          'POSTGRESQL_CAS_READY_METADATA_AND_SYSTEM_AUDIT_IN_ONE_TRANSACTION',
+          'CONFIRM_COMMIT_BEFORE_VISIBILITY',
+        ],
+        readyTransaction:
+          'CAS_PROCESSING_CURRENT_GENERATION_ATTEMPT_ID_AND_OWNER_LEASE_ACTIVE_NEXT_ATTEMPT_AT_NULL_AND_NOW_BEFORE_IMMUTABLE_ATTEMPT_DEADLINE_TO_READY_PLUS_OBJECT_METADATA_CONTENT_SHA256_SIGNATURE_KEY_ID_AND_SINGLE_SYSTEM_AUDIT',
+        distributedTransaction: false,
+        uploadSucceededThenCrash:
+          'STAGING_OBJECT_REMAINS_INVISIBLE_RECONCILE_FROM_POSTGRESQL_AND_VERIFIED_OBJECT',
+        commitUnknown:
+          'READ_POSTGRESQL_BY_EXPORT_ID_AND_GENERATION_IF_READY_MATCHES_STOP_IF_FAILED_MATCHES_STOP_AND_VERIFY_FAILURE_CODE_AND_SINGLE_AUDIT_IF_PROCESSING_SAME_FENCE_RESUME_TERMINAL_CAS_ONLY_WHILE_CURRENT_OWNER_LEASE_ACTIVE_NEXT_ATTEMPT_AT_NULL_AND_NOW_BEFORE_ATTEMPT_DEADLINE_ELSE_FOLLOW_SCHEDULED_RETRY_LEASE_EXPIRY_RECLAIM_OR_DEADLINE_WATCHDOG_IF_STALE_MARK_TARGETED_ORPHAN_NO_BLIND_RETRY',
+        orphanDeletion:
+          'ONLY_STAGING_OBJECT_PROVEN_UNREFERENCED_NOT_READ_LEASED_AND_OLDER_THAN_24_HOURS',
+        duplicatePrevention:
+          'UNIQUE_EXPORT_ID_TERMINAL_GENERATION_SYSTEM_ACTION_AND_CAS_PREVENT_DOUBLE_READY_FAILED_PUBLICATION_OR_AUDIT',
+        failedTransaction:
+          'CAS_PROCESSING_CURRENT_GENERATION_ATTEMPT_ID_AND_OWNER_LEASE_ACTIVE_NEXT_ATTEMPT_AT_NULL_AND_NOW_BEFORE_IMMUTABLE_ATTEMPT_DEADLINE_TO_FAILED_PLUS_CLOSED_EXPORT_FAILURE_CODE_AND_SINGLE_SYSTEM_AUDIT_IN_ONE_TRANSACTION',
+        nonTerminalRetryAudit: 'NO_AUDIT_LOG_FOR_NON_TERMINAL_RETRY',
+        terminalFailureAuditUniqueness: 'EXPORT_ID+FAILED_GENERATION+SYSTEM_ACTION',
+      },
+      downloadExpirationArbitration: {
+        authorizationBeforeFirstByte: true,
+        acquireReadLease:
+          'POSTGRESQL_CAS_READY_NOT_EXPIRED_VERIFIED_OBJECT_AND_STEP_UP_BEFORE_SUCCESS_AUDIT',
+        readLeaseSeconds: 300,
+        readLeaseHeartbeatSeconds: 30,
+        maximumProtectedReadSeconds: 900,
+        newOpenAfterExpiry: 'REJECT_AUDIT_EXPORT_EXPIRED',
+        expiryWithActiveRead:
+          'CAS_READY_TO_EXPIRED_WITH_SYSTEM_AUDIT_THEN_DEFER_OBJECT_DELETE_UNTIL_ALL_VALID_READ_LEASES_RELEASE_OR_EXPIRE',
+        release: 'EXPLICIT_ON_COMPLETE_OR_INTERRUPT',
+        crashRecovery: 'LEASE_TIMEOUT_THEN_TARGETED_DELETE_ELIGIBILITY_RECHECK',
+        successMeaning:
+          'AUTHORIZATION_READ_LEASE_AND_BEGINNING_DURABLY_RECORDED_NOT_CLIENT_RECEIPT',
+        terminalObservation:
+          'SEPARATE_OPERATIONAL_COMPLETE_INTERRUPTED_OR_UNKNOWN_NEVER_REWRITES_APPEND_ONLY_AUDIT',
+      },
+      unknownCommitReconciliationBranches: [
+        {
+          durableState: 'READY_MATCHING_GENERATION',
+          requiredAction: 'STOP_RETURN_DURABLE_READY_NO_RETRY',
+          terminalAudit: 'EXACTLY_ONE_SUCCESS',
+          resumeCas: false,
+        },
+        {
+          durableState: 'FAILED_MATCHING_GENERATION',
+          requiredAction: 'STOP_RETURN_DURABLE_FAILED_WITH_CLOSED_FAILURE_CODE_NO_RETRY',
+          terminalAudit: 'EXACTLY_ONE_REJECTED_WITH_MAPPED_FAILURE_CODE',
+          resumeCas: false,
+        },
+        {
+          durableState: 'PROCESSING_SAME_FENCE',
+          requiredAction:
+            'IF_CURRENT_ATTEMPT_ID_AND_OWNER_LEASE_ACTIVE_NEXT_ATTEMPT_AT_NULL_AND_NOW_BEFORE_IMMUTABLE_ATTEMPT_DEADLINE_RESUME_SINGLE_FENCED_CAS_FROM_VERIFIED_STAGING_STATE_ELSE_NO_TERMINAL_CAS_FOLLOW_EXISTING_RETRY_SCHEDULE_OR_LEASE_EXPIRY_RECLAIM_OR_ATTEMPT_DEADLINE_WATCHDOG',
+          terminalAudit: 'NONE_UNTIL_TERMINAL_CAS',
+          resumeCas: 'CONDITIONAL',
+          terminalEligibility:
+            'CURRENT_ATTEMPT_ID_AND_OWNER_LEASE_ACTIVE_NEXT_ATTEMPT_AT_NULL_AND_NOW_BEFORE_IMMUTABLE_ATTEMPT_DEADLINE',
+          ineligibleAction:
+            'NO_TERMINAL_CAS_FOLLOW_EXISTING_RETRY_SCHEDULE_OR_LEASE_EXPIRY_RECLAIM_OR_ATTEMPT_DEADLINE_WATCHDOG',
+        },
+        {
+          durableState: 'STALE_FENCE_OR_DIFFERENT_GENERATION',
+          requiredAction: 'STOP_NO_MUTATION_PUBLICATION_OR_AUDIT_NEVER_TOUCH_CURRENT_OBJECT',
+          terminalAudit: 'NONE_BY_STALE_WORKER',
+          resumeCas: false,
+          stagingRule:
+            'OLD_STAGING_ONLY_TARGETED_CLEANUP_ELIGIBLE_AFTER_UNREFERENCED_NO_READ_LEASE_AND_24_HOURS',
+        },
+      ],
+      unknownCommitEligibilityTraces: [
+        {
+          name: 'SAME_FENCE_ACTIVE_OWNER_LEASE_AND_DEADLINE_RESUMES_TERMINAL_CAS',
+          initial: {
+            currentOwner: true,
+            leaseExpiresAt: 120,
+            nextAttemptAt: null,
+            attemptDeadline: 600,
+            now: 119,
+          },
+          expectedAction: 'RESUME_TERMINAL_CAS',
+        },
+        {
+          name: 'SAME_FENCE_SCHEDULED_RETRY_DOES_NOT_RESUME_TERMINAL_CAS',
+          initial: {
+            currentOwner: false,
+            leaseExpiresAt: null,
+            nextAttemptAt: 30,
+            attemptDeadline: 600,
+            now: 10,
+          },
+          expectedAction: 'FOLLOW_SCHEDULED_RETRY',
+        },
+        {
+          name: 'SAME_FENCE_EXPIRED_LEASE_FOLLOWS_RECLAIM',
+          initial: {
+            currentOwner: true,
+            leaseExpiresAt: 120,
+            nextAttemptAt: null,
+            attemptDeadline: 600,
+            now: 120,
+          },
+          expectedAction: 'FOLLOW_LEASE_EXPIRY_RECLAIM',
+        },
+        {
+          name: 'SAME_FENCE_ATTEMPT_DEADLINE_FOLLOWS_WATCHDOG',
+          initial: {
+            currentOwner: true,
+            leaseExpiresAt: 600,
+            nextAttemptAt: null,
+            attemptDeadline: 600,
+            now: 600,
+          },
+          expectedAction: 'FOLLOW_ATTEMPT_DEADLINE_WATCHDOG',
+        },
+      ],
+      contractualTraces: [
+        {
+          name: 'TWO_WORKERS_ONLY_ONE_CAS_CLAIM',
+          initial: {
+            state: 'PENDING',
+            generation: 0,
+          },
+          events: [
+            {
+              type: 'CLAIM',
+              worker: 'A',
+              expectedGeneration: 0,
+            },
+            {
+              type: 'CLAIM',
+              worker: 'B',
+              expectedGeneration: 0,
+            },
+          ],
+          expected: {
+            state: 'PROCESSING',
+            generation: 1,
+            owner: 'A',
+            visible: false,
+            auditCount: 0,
+          },
+        },
+        {
+          name: 'EXPIRED_LEASE_RECLAIM_INCREMENTS_FENCE',
+          initial: {
+            state: 'PROCESSING',
+            generation: 1,
+            owner: 'A',
+            leaseExpired: true,
+          },
+          events: [
+            {
+              type: 'CLAIM',
+              worker: 'B',
+              expectedGeneration: 1,
+            },
+          ],
+          expected: {
+            state: 'PROCESSING',
+            generation: 2,
+            owner: 'B',
+            visible: false,
+            auditCount: 0,
+          },
+        },
+        {
+          name: 'LATE_OLD_WORKER_REJECTED_BY_FENCE',
+          initial: {
+            state: 'PROCESSING',
+            generation: 2,
+            owner: 'B',
+          },
+          events: [
+            {
+              type: 'PUBLISH',
+              worker: 'A',
+              expectedGeneration: 1,
+            },
+          ],
+          expected: {
+            state: 'PROCESSING',
+            generation: 2,
+            owner: 'B',
+            visible: false,
+            auditCount: 0,
+          },
+        },
+        {
+          name: 'CRASH_AFTER_UPLOAD_RECONCILES_STAGING_OBJECT',
+          initial: {
+            state: 'PROCESSING',
+            generation: 1,
+            owner: 'A',
+          },
+          events: [
+            {
+              type: 'UPLOAD_STAGING',
+              worker: 'A',
+              expectedGeneration: 1,
+            },
+            {
+              type: 'CRASH',
+              worker: 'A',
+            },
+            {
+              type: 'CLAIM',
+              worker: 'B',
+              expectedGeneration: 1,
+            },
+            {
+              type: 'RECONCILE_STAGING',
+              worker: 'B',
+              expectedGeneration: 2,
+            },
+            {
+              type: 'UPLOAD_STAGING',
+              worker: 'B',
+              expectedGeneration: 2,
+            },
+            {
+              type: 'PUBLISH',
+              worker: 'B',
+              expectedGeneration: 2,
+            },
+          ],
+          expected: {
+            state: 'READY',
+            generation: 2,
+            owner: 'B',
+            visible: true,
+            auditCount: 1,
+            targetedOrphans: ['A:1'],
+          },
+        },
+        {
+          name: 'UNKNOWN_COMMIT_READS_DURABLE_STATE_BEFORE_ACTION',
+          initial: {
+            state: 'PROCESSING',
+            generation: 1,
+            owner: 'A',
+            stagingVerified: true,
+            currentStaging: 'A:1',
+          },
+          events: [
+            {
+              type: 'COMMIT_READY',
+              worker: 'A',
+              expectedGeneration: 1,
+              ack: 'UNKNOWN',
+            },
+            {
+              type: 'READ_DURABLE',
+              worker: 'A',
+              expectedGeneration: 1,
+            },
+          ],
+          expected: {
+            state: 'READY',
+            generation: 1,
+            owner: 'A',
+            visible: true,
+            auditCount: 1,
+          },
+        },
+        {
+          name: 'CONCURRENT_EXPIRY_DOWNLOAD_PROTECTS_ACQUIRED_READ_AND_REJECTS_NEW_OPEN',
+          initial: {
+            state: 'READY',
+            generation: 1,
+            visible: true,
+            downloadAuditCount: 0,
+            expiryAuditCount: 0,
+          },
+          events: [
+            {
+              type: 'ACQUIRE_READ',
+              reader: 'R1',
+            },
+            {
+              type: 'AUDIT_DOWNLOAD_COMMIT',
+              reader: 'R1',
+            },
+            {
+              type: 'BEGIN_STREAM',
+              reader: 'R1',
+            },
+            {
+              type: 'EXPIRE_READY',
+            },
+            {
+              type: 'EXPIRE_READY',
+            },
+            {
+              type: 'OPEN_READ',
+              reader: 'R2',
+            },
+            {
+              type: 'COMPLETE_READ',
+              reader: 'R1',
+            },
+          ],
+          expected: {
+            state: 'EXPIRED',
+            generation: 1,
+            owner: null,
+            visible: false,
+            auditCount: 2,
+            downloadAuditCount: 1,
+            expiryAuditCount: 1,
+            completedReaders: ['R1'],
+            streamingReaders: ['R1'],
+            rejectedReaders: ['R2'],
+          },
+        },
+      ],
+      retryContractualTraces: [
+        {
+          name: 'KNOWN_RETRYABLE_FAILURE_SCHEDULES_ATTEMPT_2',
+          initial: {
+            state: 'PROCESSING',
+            generation: 1,
+            attemptNumber: 1,
+            owner: 'A',
+            now: 0,
+          },
+          events: [
+            {
+              type: 'KNOWN_FAILURE',
+              worker: 'A',
+              expectedGeneration: 1,
+              failureClass: 'TRANSIENT_DEPENDENCY_UNAVAILABLE',
+            },
+          ],
+          expected: {
+            state: 'PROCESSING',
+            generation: 1,
+            attemptNumber: 1,
+            owner: null,
+            nextAttemptAt: 30,
+            visible: false,
+            auditCount: 0,
+          },
+        },
+        {
+          name: 'RETRY_BEFORE_DEADLINE_REJECTED_THEN_DUE_CLAIM_ACCEPTED',
+          initial: {
+            state: 'PROCESSING',
+            generation: 1,
+            attemptNumber: 1,
+            owner: null,
+            nextAttemptAt: 30,
+          },
+          events: [
+            {
+              type: 'CLAIM_RETRY',
+              worker: 'B',
+              now: 29,
+              expectedGeneration: 1,
+            },
+            {
+              type: 'CLAIM_RETRY',
+              worker: 'B',
+              now: 30,
+              expectedGeneration: 1,
+            },
+          ],
+          expected: {
+            state: 'PROCESSING',
+            generation: 2,
+            attemptNumber: 2,
+            owner: 'B',
+            nextAttemptAt: null,
+            rejectedClaims: 1,
+            visible: false,
+            auditCount: 0,
+          },
+        },
+        {
+          name: 'SCHEDULED_RETRY_REVOKES_OLD_WORKER_BEFORE_NEXT_CLAIM',
+          initial: {
+            state: 'PROCESSING',
+            generation: 1,
+            attemptNumber: 1,
+            owner: 'A',
+            leaseExpiresAt: 120,
+            attemptDeadline: 600,
+            now: 0,
+          },
+          events: [
+            {
+              type: 'KNOWN_FAILURE',
+              worker: 'A',
+              expectedGeneration: 1,
+              failureClass: 'TRANSIENT_DEPENDENCY_UNAVAILABLE',
+              now: 0,
+            },
+            {
+              type: 'PUT_COMPLETE',
+              worker: 'A',
+              expectedGeneration: 1,
+              now: 10,
+            },
+            {
+              type: 'COMMIT_READY',
+              worker: 'A',
+              expectedGeneration: 1,
+              expectedAttemptNumber: 1,
+              now: 10,
+            },
+            {
+              type: 'CLAIM_RETRY',
+              worker: 'B',
+              now: 30,
+              expectedGeneration: 1,
+            },
+          ],
+          expected: {
+            state: 'PROCESSING',
+            generation: 2,
+            attemptNumber: 2,
+            owner: 'B',
+            nextAttemptAt: null,
+            visible: false,
+            auditCount: 0,
+            terminalCasRejected: 1,
+            targetedOrphans: ['A:1'],
+          },
+        },
+        {
+          name: 'TERMINAL_CAS_BEFORE_ATTEMPT_DEADLINE_ACCEPTED',
+          initial: {
+            state: 'PROCESSING',
+            generation: 1,
+            attemptNumber: 1,
+            owner: 'A',
+            leaseExpiresAt: 600,
+            attemptDeadline: 600,
+            nextAttemptAt: null,
+          },
+          events: [
+            {
+              type: 'COMMIT_READY',
+              worker: 'A',
+              expectedGeneration: 1,
+              expectedAttemptNumber: 1,
+              now: 599,
+            },
+          ],
+          expected: {
+            state: 'READY',
+            generation: 1,
+            attemptNumber: 1,
+            owner: null,
+            visible: true,
+            auditCount: 1,
+            terminalCasRejected: 0,
+          },
+        },
+        {
+          name: 'TERMINAL_CAS_AT_ATTEMPT_DEADLINE_REJECTED_AND_TIMEOUT_SCHEDULED',
+          initial: {
+            state: 'PROCESSING',
+            generation: 1,
+            attemptNumber: 1,
+            owner: 'A',
+            leaseExpiresAt: 600,
+            attemptDeadline: 600,
+            nextAttemptAt: null,
+          },
+          events: [
+            {
+              type: 'COMMIT_READY',
+              worker: 'A',
+              expectedGeneration: 1,
+              expectedAttemptNumber: 1,
+              now: 600,
+            },
+            {
+              type: 'ATTEMPT_DEADLINE',
+              worker: 'A',
+              expectedGeneration: 1,
+              expectedAttemptNumber: 1,
+              now: 600,
+            },
+          ],
+          expected: {
+            state: 'PROCESSING',
+            generation: 1,
+            attemptNumber: 1,
+            owner: null,
+            nextAttemptAt: 630,
+            visible: false,
+            auditCount: 0,
+            terminalCasRejected: 1,
+            timeoutCount: 1,
+          },
+        },
+        {
+          name: 'LEASE_AND_DEADLINE_COLLISION_PRIORITIZES_WATCHDOG_BACKOFF',
+          initial: {
+            state: 'PROCESSING',
+            generation: 1,
+            attemptNumber: 1,
+            owner: 'A',
+            leaseExpiresAt: 600,
+            attemptDeadline: 600,
+            nextAttemptAt: null,
+          },
+          events: [
+            {
+              type: 'CRASH',
+              worker: 'A',
+              now: 10,
+            },
+            {
+              type: 'CLAIM_AFTER_CRASH',
+              worker: 'B',
+              now: 600,
+              expectedGeneration: 1,
+            },
+            {
+              type: 'ATTEMPT_DEADLINE',
+              worker: 'A',
+              expectedGeneration: 1,
+              expectedAttemptNumber: 1,
+              now: 600,
+            },
+          ],
+          expected: {
+            state: 'PROCESSING',
+            generation: 1,
+            attemptNumber: 1,
+            owner: null,
+            nextAttemptAt: 630,
+            rejectedClaims: 1,
+            visible: false,
+            auditCount: 0,
+            timeoutCount: 1,
+          },
+        },
+        {
+          name: 'THIRD_ATTEMPT_DEADLINE_TIMEOUT_FAILS_WITH_UNIQUE_AUDIT',
+          initial: {
+            state: 'PROCESSING',
+            generation: 3,
+            attemptNumber: 3,
+            owner: 'C',
+            leaseExpiresAt: 1800,
+            attemptDeadline: 1800,
+            nextAttemptAt: null,
+          },
+          events: [
+            {
+              type: 'CRASH',
+              worker: 'C',
+              now: 1700,
+            },
+            {
+              type: 'CLAIM_AFTER_CRASH',
+              worker: 'D',
+              now: 1800,
+              expectedGeneration: 3,
+            },
+            {
+              type: 'ATTEMPT_DEADLINE',
+              worker: 'C',
+              expectedGeneration: 3,
+              expectedAttemptNumber: 3,
+              now: 1800,
+            },
+          ],
+          expected: {
+            state: 'FAILED',
+            generation: 3,
+            attemptNumber: 3,
+            owner: null,
+            failureCode: 'RETRY_BUDGET_EXHAUSTED',
+            visible: false,
+            auditCount: 1,
+            rejectedClaims: 1,
+            timeoutCount: 1,
+          },
+        },
+        {
+          name: 'THIRD_ATTEMPT_CRASH_BEFORE_DEADLINE_FAILS_WITH_UNIQUE_AUDIT',
+          initial: {
+            state: 'PROCESSING',
+            generation: 3,
+            attemptNumber: 3,
+            owner: 'C',
+            leaseExpiresAt: 120,
+            attemptDeadline: 600,
+            nextAttemptAt: null,
+          },
+          events: [
+            {
+              type: 'CRASH',
+              worker: 'C',
+              now: 10,
+            },
+            {
+              type: 'CLAIM_AFTER_CRASH',
+              worker: 'D',
+              now: 120,
+              expectedGeneration: 3,
+            },
+          ],
+          expected: {
+            state: 'FAILED',
+            generation: 3,
+            attemptNumber: 3,
+            owner: null,
+            failureCode: 'RETRY_BUDGET_EXHAUSTED',
+            visible: false,
+            auditCount: 1,
+            rejectedClaims: 0,
+          },
+        },
+        {
+          name: 'NON_RETRYABLE_FAILURE_TERMINATES',
+          initial: {
+            state: 'PROCESSING',
+            generation: 1,
+            attemptNumber: 1,
+            owner: 'A',
+          },
+          events: [
+            {
+              type: 'KNOWN_FAILURE',
+              worker: 'A',
+              expectedGeneration: 1,
+              failureClass: 'INTEGRITY_FAILED',
+            },
+          ],
+          expected: {
+            state: 'FAILED',
+            generation: 1,
+            attemptNumber: 1,
+            owner: null,
+            failureCode: 'INTEGRITY_FAILED',
+            visible: false,
+            auditCount: 1,
+          },
+        },
+        {
+          name: 'THIRD_RETRYABLE_FAILURE_EXHAUSTS_BUDGET',
+          initial: {
+            state: 'PROCESSING',
+            generation: 3,
+            attemptNumber: 3,
+            owner: 'C',
+          },
+          events: [
+            {
+              type: 'KNOWN_FAILURE',
+              worker: 'C',
+              expectedGeneration: 3,
+              failureClass: 'TRANSIENT_DEPENDENCY_UNAVAILABLE',
+            },
+          ],
+          expected: {
+            state: 'FAILED',
+            generation: 3,
+            attemptNumber: 3,
+            owner: null,
+            failureCode: 'RETRY_BUDGET_EXHAUSTED',
+            visible: false,
+            auditCount: 1,
+          },
+        },
+        {
+          name: 'STALE_SCHEDULE_CAS_REJECTED_AND_OLD_PUT_ORPHANED',
+          initial: {
+            state: 'PROCESSING',
+            generation: 2,
+            attemptNumber: 2,
+            owner: 'B',
+          },
+          events: [
+            {
+              type: 'PUT_COMPLETE',
+              worker: 'A',
+              expectedGeneration: 1,
+            },
+            {
+              type: 'SCHEDULE_RETRY',
+              worker: 'A',
+              expectedGeneration: 1,
+            },
+          ],
+          expected: {
+            state: 'PROCESSING',
+            generation: 2,
+            attemptNumber: 2,
+            owner: 'B',
+            visible: false,
+            auditCount: 0,
+            retryScheduleRejected: true,
+            targetedOrphans: ['A:1'],
+          },
+        },
+        {
+          name: 'CRASH_WAITS_FOR_LEASE_EXPIRY_THEN_DUE_CLAIM',
+          initial: {
+            state: 'PROCESSING',
+            generation: 1,
+            attemptNumber: 1,
+            owner: 'A',
+            leaseExpiresAt: 120,
+            attemptDeadline: 600,
+          },
+          events: [
+            {
+              type: 'CRASH',
+              worker: 'A',
+              now: 10,
+            },
+            {
+              type: 'CLAIM_AFTER_CRASH',
+              worker: 'B',
+              now: 119,
+              expectedGeneration: 1,
+            },
+            {
+              type: 'CLAIM_AFTER_CRASH',
+              worker: 'B',
+              now: 120,
+              expectedGeneration: 1,
+            },
+          ],
+          expected: {
+            state: 'PROCESSING',
+            generation: 2,
+            attemptNumber: 2,
+            owner: 'B',
+            nextAttemptAt: null,
+            rejectedClaims: 1,
+            visible: false,
+            auditCount: 0,
+          },
+        },
+      ],
     },
     bootstrap: {
       interface: 'DEDICATED_CLI_OUTSIDE_OPENAPI',
@@ -850,6 +2206,575 @@ export const adminC2ContractPolicies = {
       exportStorageProvider: 'NOT_QUALIFIED',
       signatureKeyProvider: 'NOT_QUALIFIED',
       runtimeImplemented: false,
+    },
+    operationExecutionMatrix: {
+      requestAdminPasswordReset: {
+        input: 'JSON_EMAIL',
+        auditContextProof: 'NONE_PUBLIC_NO_AUDIT_CONTEXT',
+        authorizationChecks: [],
+        postProofBusinessChecks: ['ELIGIBLE_ACCOUNT_CHECK_WITHOUT_ORACLE'],
+        mutationOrSnapshot: 'RESET_REQUEST_ENCRYPTED_OUTBOX',
+        audit: 'ADMIN_SECURITY_EVENT',
+        commit: 'POSTGRESQL_CONFIRMATION_REQUIRED_BEFORE_SUCCESS_OR_SECRET',
+        response: 'AFTER_CONFIRMED_COMMIT',
+        continuation: 'PASSWORD_RESET_NOTIFICATION_DELIVERY_SYSTEM_AUDIT',
+      },
+      resetAdminPassword: {
+        input: 'JSON_PASSWORD_RESET_CONTEXT_AND_NEW_PASSWORD',
+        auditContextProof:
+          'SERVER_VERIFIED_RECOVERY_CONTEXT_ACTOR_BINDING_ACTIVE_NOT_EXPIRED_NOT_CONSUMED_NOT_REVOKED',
+        authorizationChecks: ['PASSWORD_RESET_PURPOSE_AND_SUBJECT_ELIGIBILITY'],
+        postProofBusinessChecks: ['NEW_PASSWORD_POLICY_AND_HIBP_FAIL_CLOSED'],
+        mutationOrSnapshot:
+          'PASSWORD_AUTHORIZATION_VERSION_SESSION_REVOCATION_AND_CONTEXT_CONSUMPTION',
+        audit: 'AUDIT_LOG',
+        commit: 'POSTGRESQL_CONFIRMATION_REQUIRED_BEFORE_SUCCESS_OR_SECRET',
+        response: 'AFTER_CONFIRMED_COMMIT',
+        continuation: 'NONE',
+      },
+      createAdminRecoveryCase: {
+        input: 'JSON_SUBJECT_REASON_AND_IDEMPOTENCY_KEY',
+        auditContextProof:
+          'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
+        authorizationChecks: ['ROLE_ONE_OF_SUPER_ADMIN_SUPPORT'],
+        postProofBusinessChecks: [
+          'SUBJECT_ELIGIBLE_DISTINCT_AND_REASON_VALID',
+          'IDEMPOTENCY_PAYLOAD_MATCH',
+        ],
+        mutationOrSnapshot: 'CANCEL_OLDER_PENDING_CREATE_CASE_AND_IDEMPOTENCY_IN_ONE_TRANSACTION',
+        audit: 'INITIATING_AUDIT_LOG_AND_ONE_SYSTEM_CANCELLATION_AUDIT_PER_CANCELLED_CASE',
+        commit: 'POSTGRESQL_CONFIRMATION_REQUIRED_BEFORE_SUCCESS_OR_SECRET',
+        response: 'AFTER_CONFIRMED_COMMIT',
+        continuation: 'RECOVERY_CASE_SERVER_EXPIRATION_SYSTEM_AUDIT',
+        transactionalSystemEffects: 'RECOVERY_CASE_SERVER_CANCELLATION_SYSTEM_AUDIT',
+      },
+      listAdminRecoveryCases: {
+        input: 'QUERY_FILTERS_CURSOR_LIMIT',
+        auditContextProof:
+          'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
+        authorizationChecks: ['ROLE_ONE_OF_SUPER_ADMIN_SUPPORT'],
+        postProofBusinessChecks: ['FILTER_CURSOR_AND_SNAPSHOT_LIMITS'],
+        mutationOrSnapshot: 'IMMUTABLE_RECOVERY_CASE_SNAPSHOT',
+        audit: 'NONE',
+        commit: 'READ_ONLY_TRANSACTION_SNAPSHOT_CONFIRMATION',
+        response: 'AFTER_CONFIRMED_COMMIT',
+        continuation: 'NONE',
+      },
+      getAdminRecoveryCase: {
+        input: 'PATH_RECOVERY_CASE_ID',
+        auditContextProof:
+          'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
+        authorizationChecks: ['ROLE_ONE_OF_SUPER_ADMIN_SUPPORT'],
+        postProofBusinessChecks: ['CASE_VISIBLE_OR_NEUTRAL_NOT_FOUND'],
+        mutationOrSnapshot: 'READ_RECOVERY_CASE',
+        audit: 'NONE',
+        commit: 'NOT_APPLICABLE_NO_DURABLE_WRITE',
+        response: 'AFTER_SUCCESSFUL_READ_AND_COMPLETE_SERVER_CHECKS',
+        continuation: 'NONE',
+      },
+      approveAdminRecoveryCase: {
+        input: 'PATH_CASE_JSON_REASON_STEP_UP_AND_IDEMPOTENCY_KEY',
+        auditContextProof:
+          'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
+        authorizationChecks: ['ROLE_ONE_OF_SUPER_ADMIN', 'FRESH_STEP_UP_RECOVERY_APPROVAL'],
+        postProofBusinessChecks: [
+          'CASE_PENDING_NOT_EXPIRED_CREATOR_APPROVER_SUBJECT_DISTINCT',
+          'SUBJECT_ELIGIBLE_AND_REASON_VALID',
+          'IDEMPOTENCY_PAYLOAD_MATCH',
+        ],
+        mutationOrSnapshot: 'CASE_APPROVAL_SUBJECT_RESET_AND_IDEMPOTENCY',
+        audit: 'AUDIT_LOG',
+        commit: 'POSTGRESQL_CONFIRMATION_REQUIRED_BEFORE_SUCCESS_OR_SECRET',
+        response: 'AFTER_CONFIRMED_COMMIT',
+        continuation: 'NONE',
+      },
+      listAdminAuditLogs: {
+        input: 'QUERY_FILTERS_CURSOR_LIMIT',
+        auditContextProof:
+          'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
+        authorizationChecks: ['ROLE_ONE_OF_SUPER_ADMIN'],
+        postProofBusinessChecks: ['FILTER_CURSOR_SNAPSHOT_AND_PROJECTION_BUDGET'],
+        mutationOrSnapshot: 'IMMUTABLE_AUDIT_SNAPSHOT_BEFORE_READ_AUDIT',
+        audit: 'AUDIT_LOG',
+        commit: 'POSTGRESQL_CONFIRMATION_REQUIRED_BEFORE_SUCCESS_OR_SECRET',
+        response: 'AFTER_CONFIRMED_COMMIT',
+        continuation: 'NONE',
+      },
+      createAdminAuditLogExport: {
+        input: 'JSON_FILTERS_REASON_STEP_UP_AND_IDEMPOTENCY_KEY',
+        auditContextProof:
+          'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
+        authorizationChecks: ['ROLE_ONE_OF_SUPER_ADMIN', 'FRESH_STEP_UP_AUDIT_EXPORT'],
+        postProofBusinessChecks: [
+          'FILTER_SNAPSHOT_REASON_AND_IDEMPOTENCY',
+          'EXPORT_BUDGET_DECLARED',
+        ],
+        mutationOrSnapshot: 'EXPORT_SNAPSHOT_JOB_AND_IDEMPOTENCY',
+        audit: 'AUDIT_LOG',
+        commit: 'POSTGRESQL_CONFIRMATION_REQUIRED_BEFORE_SUCCESS_OR_SECRET',
+        response: 'AFTER_CONFIRMED_COMMIT',
+        continuation: 'EXPORT_BUILD_SYSTEM_AUDIT+EXPORT_EXPIRY_SYSTEM_AUDIT',
+      },
+      getAdminAuditLogExport: {
+        input: 'PATH_EXPORT_ID',
+        auditContextProof:
+          'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
+        authorizationChecks: ['ROLE_ONE_OF_SUPER_ADMIN'],
+        postProofBusinessChecks: ['EXPORT_VISIBLE_OR_NEUTRAL_NOT_FOUND'],
+        mutationOrSnapshot: 'READ_EXPORT_STATE',
+        audit: 'AUDIT_LOG',
+        commit: 'POSTGRESQL_CONFIRMATION_REQUIRED_BEFORE_SUCCESS_OR_SECRET',
+        response: 'AFTER_CONFIRMED_COMMIT',
+        continuation: 'NONE',
+      },
+      downloadAdminAuditLogExport: {
+        input: 'PATH_EXPORT_ID',
+        auditContextProof:
+          'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
+        authorizationChecks: ['ROLE_ONE_OF_SUPER_ADMIN', 'FRESH_STEP_UP_AUDIT_EXPORT'],
+        postProofBusinessChecks: ['EXPORT_READY_NOT_EXPIRED', 'CONTENT_HASH_AND_JWS_INTEGRITY'],
+        mutationOrSnapshot: 'ACQUIRE_BOUNDED_READ_LEASE_AND_VERIFY_ARTIFACT',
+        audit: 'AUDIT_LOG',
+        commit: 'POSTGRESQL_CONFIRMATION_REQUIRED_BEFORE_SUCCESS_OR_SECRET',
+        response: 'BEGIN_STREAM_ONLY_AFTER_DURABLE_SUCCESS_AUDIT_AND_READ_LEASE',
+        continuation: 'NONE',
+      },
+      createAdminInvitation: {
+        input: 'JSON_EMAIL_ROLE_REASON_STEP_UP_AND_IDEMPOTENCY_KEY',
+        auditContextProof:
+          'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
+        authorizationChecks: ['ROLE_ONE_OF_SUPER_ADMIN', 'FRESH_STEP_UP_INVITATION'],
+        postProofBusinessChecks: [
+          'EMAIL_COLLISION_AND_ROLE_REASON_VALID',
+          'PASSWORD_PROVIDER_NOT_APPLICABLE',
+          'IDEMPOTENCY_PAYLOAD_MATCH',
+        ],
+        mutationOrSnapshot: 'REVOKE_PRIOR_CREATE_INVITATION_ENCRYPTED_OUTBOX_AND_IDEMPOTENCY',
+        audit: 'AUDIT_LOG',
+        commit: 'POSTGRESQL_CONFIRMATION_REQUIRED_BEFORE_SUCCESS_OR_SECRET',
+        response: 'AFTER_CONFIRMED_COMMIT',
+        continuation: 'INVITATION_NOTIFICATION_DELIVERY_SYSTEM_AUDIT',
+      },
+      acceptAdminInvitation: {
+        input: 'JSON_INVITATION_CODE_AND_PASSWORD',
+        auditContextProof: 'NONE_PUBLIC_NO_AUDIT_CONTEXT',
+        authorizationChecks: [],
+        postProofBusinessChecks: [
+          'INVITATION_ACTIVE_SINGLE_USE_EMAIL_COLLISION_FREE',
+          'PASSWORD_POLICY_AND_HIBP_FAIL_CLOSED',
+        ],
+        mutationOrSnapshot:
+          'CONSUME_INVITATION_CREATE_PENDING_MFA_PASSWORD_CREDENTIAL_AND_FIRST_TOTP_PREAUTH',
+        audit: 'ADMIN_SECURITY_EVENT',
+        commit: 'POSTGRESQL_CONFIRMATION_REQUIRED_BEFORE_SUCCESS_OR_SECRET',
+        response: 'AFTER_CONFIRMED_COMMIT',
+        continuation: 'NONE',
+      },
+      listAdminUsers: {
+        input: 'QUERY_FILTERS_CURSOR_LIMIT',
+        auditContextProof:
+          'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
+        authorizationChecks: ['ROLE_ONE_OF_SUPER_ADMIN'],
+        postProofBusinessChecks: ['FILTER_CURSOR_AND_SNAPSHOT_LIMITS'],
+        mutationOrSnapshot: 'IMMUTABLE_ADMIN_USER_SNAPSHOT',
+        audit: 'NONE',
+        commit: 'READ_ONLY_TRANSACTION_SNAPSHOT_CONFIRMATION',
+        response: 'AFTER_CONFIRMED_COMMIT',
+        continuation: 'NONE',
+      },
+      changeAdminUserRole: {
+        input: 'PATH_ADMIN_USER_JSON_ROLE_REASON_STEP_UP_AND_IDEMPOTENCY_KEY',
+        auditContextProof:
+          'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
+        authorizationChecks: ['ROLE_ONE_OF_SUPER_ADMIN', 'FRESH_STEP_UP_ROLE_CHANGE'],
+        postProofBusinessChecks: [
+          'TARGET_EXISTS_LAST_SUPER_ADMIN_PROTECTION_AND_REASON_VALID',
+          'IDEMPOTENCY_PAYLOAD_MATCH',
+        ],
+        mutationOrSnapshot:
+          'ROLE_AUTHORIZATION_VERSION_SESSION_REVOCATION_PENDING_CASE_CANCELLATION_AND_IDEMPOTENCY_IN_ONE_TRANSACTION',
+        audit: 'INITIATING_AUDIT_LOG_AND_ONE_SYSTEM_CANCELLATION_AUDIT_PER_CANCELLED_CASE',
+        commit: 'POSTGRESQL_CONFIRMATION_REQUIRED_BEFORE_SUCCESS_OR_SECRET',
+        response: 'AFTER_CONFIRMED_COMMIT',
+        continuation: 'NONE',
+        transactionalSystemEffects: 'RECOVERY_CASE_SERVER_CANCELLATION_SYSTEM_AUDIT',
+      },
+      changeAdminUserStatus: {
+        input: 'PATH_ADMIN_USER_JSON_STATUS_REASON_STEP_UP_AND_IDEMPOTENCY_KEY',
+        auditContextProof:
+          'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
+        authorizationChecks: ['ROLE_ONE_OF_SUPER_ADMIN', 'FRESH_STEP_UP_STATUS_CHANGE'],
+        postProofBusinessChecks: [
+          'TARGET_EXISTS_LAST_SUPER_ADMIN_PROTECTION_AND_REASON_VALID',
+          'IDEMPOTENCY_PAYLOAD_MATCH',
+        ],
+        mutationOrSnapshot:
+          'STATUS_AUTHORIZATION_VERSION_SESSION_REVOCATION_PENDING_CASE_CANCELLATION_AND_IDEMPOTENCY_IN_ONE_TRANSACTION',
+        audit: 'INITIATING_AUDIT_LOG_AND_ONE_SYSTEM_CANCELLATION_AUDIT_PER_CANCELLED_CASE',
+        commit: 'POSTGRESQL_CONFIRMATION_REQUIRED_BEFORE_SUCCESS_OR_SECRET',
+        response: 'AFTER_CONFIRMED_COMMIT',
+        continuation: 'NONE',
+        transactionalSystemEffects: 'RECOVERY_CASE_SERVER_CANCELLATION_SYSTEM_AUDIT',
+      },
+    },
+    auditOutcome: {
+      newC2Values: ['SUCCESS', 'REJECTED'],
+      success: 'OUTCOME_SUCCESS_FAILURE_CODE_NULL',
+      rejection: 'OUTCOME_REJECTED_NORMATIVE_NON_NULL_FAILURE_CODE',
+      forbidden: [
+        'SUCCESS_WITH_FAILURE_CODE',
+        'REJECTED_WITHOUT_FAILURE_CODE',
+        'ARBITRARY_FAILURE_CODE',
+      ],
+      historicalV1AndExistingV2C1: {
+        outcome: 'UNKNOWN',
+        failureCode: null,
+        provenance: 'HISTORICAL_UNKNOWN',
+        rewrite: false,
+        backfill: false,
+        inferFromReasonCode: false,
+        defaultSuccess: false,
+        verifiedHistoricalActionClassificationTable: [],
+      },
+      downloadSuccess: 'AUTHORIZATION_READ_LEASE_AND_BEGINNING_DURABLY_RECORDED_NOT_CLIENT_RECEIPT',
+      downloadTerminalObservation:
+        'SEPARATE_NON_AUDIT_OPERATIONAL_OBSERVATION_COMPLETE_INTERRUPTED_OR_UNKNOWN',
+      socketCloseProvesReceipt: false,
+      unknownCommit: 'NO_CONTRADICTORY_SUCCESS_OR_REJECTION_RECONCILE_FIRST',
+      futureDatabaseConstraint:
+        'C2_ONLY_STRICT_CHECK_NOT_CLAIMED_PRESENT_IN_CURRENT_PRISMA_OR_MIGRATIONS',
+    },
+    systemSourcePredicates: {
+      PASSWORD_RESET_NOTIFICATION_DELIVERY_SYSTEM_AUDIT: {
+        sourceType: 'AdminSecurityEvent',
+        sourceVersion: 'C1_TYPED',
+        sourceAction: 'requestAdminPasswordReset',
+        sourceEventClass: 'LOGIN',
+        sourceOutcome: 'SUCCEEDED',
+        sourceFailureCode: null,
+        action: 'deliverAdminPasswordResetNotification',
+        eventClass: 'LOGIN',
+        context: 'SYSTEM',
+        outcome: 'SUCCESS',
+        actorAdminUserId: null,
+        entityType: 'ADMIN_PASSWORD_RESET_REQUEST',
+        resourceBinding: 'RESET_REQUEST_ID',
+        requiredLinks: ['SECURITY_EVENT_REQUEST_ID', 'RESET_REQUEST_ID', 'OUTBOX_ID', 'JOB_ID'],
+        delegatedByRule: 'NULL_PUBLIC_NO_ADMIN_ACTOR',
+        uniquenessKey: 'OUTBOX_ID+SYSTEM_ACTION',
+        invalidSources: [
+          'UNRELATED_RECORD',
+          'OUTCOME_FAILED',
+          'MISSING_REQUIRED_LINK',
+          'DELEGATOR_ACTOR_MISMATCH',
+        ],
+        sourceContext: 'NOT_APPLICABLE_ADMIN_SECURITY_EVENT',
+        sourceOutcomeProvenance: 'C1_TYPED_SECURITY_EVENT',
+      },
+      INVITATION_NOTIFICATION_DELIVERY_SYSTEM_AUDIT: {
+        sourceType: 'AuditLog',
+        sourceVersion: 3,
+        sourceAction: 'createAdminInvitation',
+        sourceEventClass: 'BUSINESS',
+        sourceOutcome: 'SUCCESS',
+        action: 'deliverAdminInvitationNotification',
+        eventClass: 'BUSINESS',
+        context: 'SYSTEM',
+        outcome: 'SUCCESS',
+        actorAdminUserId: null,
+        entityType: 'ADMIN_INVITATION',
+        resourceBinding: 'INVITATION_ID',
+        requiredLinks: ['CAUSATION_AUDIT_ID', 'INVITATION_ID', 'OUTBOX_ID', 'JOB_ID'],
+        delegatedByRule: 'EQUALS_CAUSAL_AUDIT_ACTOR_ADMIN_USER_ID',
+        uniquenessKey: 'OUTBOX_ID+SYSTEM_ACTION',
+        invalidSources: [
+          'UNRELATED_RECORD',
+          'HISTORICAL_V1',
+          'OUTCOME_UNKNOWN',
+          'OUTCOME_REJECTED',
+          'MISSING_REQUIRED_LINK',
+          'DELEGATOR_ACTOR_MISMATCH',
+        ],
+        sourceContext: 'ADMIN_SESSION',
+        sourceOutcomeProvenance: 'EXPLICIT_C2',
+        sourceFailureCode: null,
+        sourceResourceEquality: 'CAUSAL_AUDIT_ENTITY_ID_EQUALS_INVITATION_ID',
+      },
+      EXPORT_BUILD_SYSTEM_AUDIT: {
+        sourceType: 'AuditLog',
+        sourceVersion: 3,
+        sourceAction: 'createAdminAuditLogExport',
+        sourceEventClass: 'EXPORT',
+        sourceOutcome: 'SUCCESS',
+        action: 'buildAdminAuditLogExport',
+        eventClass: 'EXPORT',
+        context: 'SYSTEM',
+        actorAdminUserId: null,
+        entityType: 'ADMIN_AUDIT_EXPORT',
+        resourceBinding: 'EXPORT_ID',
+        requiredLinks: ['CAUSATION_AUDIT_ID', 'EXPORT_ID', 'JOB_ID', 'ATTEMPT_ID'],
+        delegatedByRule: 'EQUALS_CAUSAL_AUDIT_ACTOR_ADMIN_USER_ID',
+        uniquenessKey: 'EXPORT_ID+TERMINAL_GENERATION+SYSTEM_ACTION',
+        invalidSources: [
+          'UNRELATED_RECORD',
+          'HISTORICAL_V1',
+          'OUTCOME_UNKNOWN',
+          'OUTCOME_REJECTED',
+          'MISSING_REQUIRED_LINK',
+          'DELEGATOR_ACTOR_MISMATCH',
+        ],
+        sourceContext: 'ADMIN_SESSION',
+        sourceOutcomeProvenance: 'EXPLICIT_C2',
+        sourceFailureCode: null,
+        sourceResourceEquality: 'CAUSAL_AUDIT_ENTITY_ID_EQUALS_EXPORT_ID',
+        resultOutcomes: {
+          READY: {
+            outcome: 'SUCCESS',
+            failureCode: null,
+          },
+          FAILED: {
+            outcome: 'REJECTED',
+            failureCodeByExportFailureCode: {
+              RETRY_BUDGET_EXHAUSTED: 'DEPENDENCY_UNAVAILABLE',
+              PROJECTION_BUDGET_EXCEEDED: 'PROJECTION_BUDGET_EXCEEDED',
+              INTEGRITY_FAILED: 'INTEGRITY_REJECTED',
+              DEPENDENCY_UNAVAILABLE: 'DEPENDENCY_UNAVAILABLE',
+            },
+          },
+        },
+      },
+      EXPORT_EXPIRY_SYSTEM_AUDIT: {
+        sourceType: 'SERVER_STATE',
+        sourceVersion: 'EXPORT_READY_V1',
+        sourceAction: 'READY_EXPIRY_CLOCK',
+        sourceEventClass: 'EXPORT',
+        sourceOutcome: 'READY_CONFIRMED',
+        action: 'expireAdminAuditLogExport',
+        eventClass: 'EXPORT',
+        context: 'SYSTEM',
+        outcome: 'SUCCESS',
+        actorAdminUserId: null,
+        entityType: 'ADMIN_AUDIT_EXPORT',
+        resourceBinding: 'EXPORT_ID',
+        requiredLinks: ['EXPORT_ID', 'READY_GENERATION', 'EXPIRES_AT'],
+        delegatedByRule: 'NULL_AUTONOMOUS',
+        uniquenessKey: 'EXPORT_ID+EXPIRED_GENERATION+SYSTEM_ACTION',
+        invalidSources: [
+          'UNRELATED_RECORD',
+          'STATE_NOT_READY',
+          'GENERATION_MISMATCH',
+          'MISSING_REQUIRED_LINK',
+        ],
+        sourceContext: 'NOT_APPLICABLE_SERVER_STATE',
+        sourceOutcomeProvenance: 'DURABLE_SERVER_STATE',
+        sourceFailureCode: null,
+      },
+      RECOVERY_CASE_SERVER_CANCELLATION_SYSTEM_AUDIT: {
+        sourceType: 'AuditLog',
+        sourceVersion: 3,
+        sourceActions: ['createAdminRecoveryCase', 'changeAdminUserRole', 'changeAdminUserStatus'],
+        sourceEventClass: 'BUSINESS',
+        sourceOutcome: 'SUCCESS',
+        action: 'cancelAdminRecoveryCase',
+        eventClass: 'BUSINESS',
+        context: 'SYSTEM',
+        outcome: 'SUCCESS',
+        actorAdminUserId: null,
+        entityType: 'ADMIN_RECOVERY_CASE',
+        resourceBinding: 'CANCELLED_RECOVERY_CASE_ID',
+        exactRequiredLinksByAction: {
+          createAdminRecoveryCase: [
+            'CAUSATION_AUDIT_ID',
+            'SUPERSEDING_RECOVERY_CASE_ID',
+            'CANCELLED_RECOVERY_CASE_ID',
+            'STATE_GENERATION',
+          ],
+          changeAdminUserRole: [
+            'CAUSATION_AUDIT_ID',
+            'SUBJECT_ADMIN_USER_ID',
+            'CANCELLED_RECOVERY_CASE_ID',
+            'STATE_GENERATION',
+          ],
+          changeAdminUserStatus: [
+            'CAUSATION_AUDIT_ID',
+            'SUBJECT_ADMIN_USER_ID',
+            'CANCELLED_RECOVERY_CASE_ID',
+            'STATE_GENERATION',
+          ],
+        },
+        delegatedByRule: 'EQUALS_CAUSAL_AUDIT_ACTOR_ADMIN_USER_ID',
+        uniquenessKey: 'CANCELLED_RECOVERY_CASE_ID+CANCELLED_GENERATION+SYSTEM_ACTION',
+        invalidSources: [
+          'UNRELATED_RECORD',
+          'HISTORICAL_V1',
+          'OUTCOME_UNKNOWN',
+          'OUTCOME_REJECTED',
+          'MISSING_REQUIRED_LINK',
+          'DELEGATOR_ACTOR_MISMATCH',
+        ],
+        sourceContext: 'ADMIN_SESSION',
+        sourceOutcomeProvenance: 'EXPLICIT_C2',
+        sourceFailureCode: null,
+        executionModeByAction: {
+          createAdminRecoveryCase: 'SAME_POSTGRESQL_TRANSACTION_BEFORE_RESPONSE',
+          changeAdminUserRole: 'SAME_POSTGRESQL_TRANSACTION_BEFORE_RESPONSE',
+          changeAdminUserStatus: 'SAME_POSTGRESQL_TRANSACTION_BEFORE_RESPONSE',
+        },
+        transactionalCardinality:
+          'EXACTLY_ONE_SYSTEM_AUDIT_PER_CANCELLED_PENDING_CASE_ZERO_WHEN_NO_CASE_MATCHES',
+        sourceResourceBindingByAction: {
+          createAdminRecoveryCase: {
+            causalAuditEntityId: 'SUPERSEDING_RECOVERY_CASE_ID',
+            systemAuditEntityId: 'CANCELLED_RECOVERY_CASE_ID',
+            relation: 'DISTINCT_SUPERSEDING_AND_CANCELLED_CASE_IDS',
+          },
+          changeAdminUserRole: {
+            causalAuditEntityId: 'SUBJECT_ADMIN_USER_ID',
+            systemAuditEntityId: 'CANCELLED_RECOVERY_CASE_ID',
+            relation: 'CANCELLED_CASE_SUBJECT_EQUALS_CAUSAL_ADMIN_USER_ID',
+          },
+          changeAdminUserStatus: {
+            causalAuditEntityId: 'SUBJECT_ADMIN_USER_ID',
+            systemAuditEntityId: 'CANCELLED_RECOVERY_CASE_ID',
+            relation: 'CANCELLED_CASE_SUBJECT_EQUALS_CAUSAL_ADMIN_USER_ID',
+          },
+        },
+      },
+      RECOVERY_CASE_SERVER_EXPIRATION_SYSTEM_AUDIT: {
+        sourceType: 'SERVER_STATE',
+        sourceVersion: 'RECOVERY_CASE_PENDING_V1',
+        sourceAction: 'PENDING_EXPIRY_CLOCK',
+        sourceEventClass: 'BUSINESS',
+        sourceOutcome: 'PENDING_CONFIRMED',
+        action: 'expireAdminRecoveryCase',
+        eventClass: 'BUSINESS',
+        context: 'SYSTEM',
+        outcome: 'SUCCESS',
+        actorAdminUserId: null,
+        entityType: 'ADMIN_RECOVERY_CASE',
+        resourceBinding: 'RECOVERY_CASE_ID',
+        requiredLinks: ['RECOVERY_CASE_ID', 'STATE_GENERATION', 'EXPIRES_AT'],
+        delegatedByRule: 'NULL_AUTONOMOUS',
+        uniquenessKey: 'RECOVERY_CASE_ID+EXPIRED_GENERATION+SYSTEM_ACTION',
+        invalidSources: [
+          'UNRELATED_RECORD',
+          'STATE_NOT_PENDING',
+          'GENERATION_MISMATCH',
+          'MISSING_REQUIRED_LINK',
+        ],
+        sourceContext: 'NOT_APPLICABLE_SERVER_STATE',
+        sourceOutcomeProvenance: 'DURABLE_SERVER_STATE',
+        sourceFailureCode: null,
+      },
+      ADMIN_BOOTSTRAP_SYSTEM_AUDIT: {
+        sourceType: 'SERVER_STATE',
+        sourceVersion: 'BOOTSTRAP_GUARD_V1',
+        sourceAction: 'BOOTSTRAP_SINGLETON_GUARD',
+        sourceEventClass: 'BUSINESS',
+        sourceOutcome: 'GUARD_ACQUIRED',
+        action: 'bootstrapAdminUser',
+        eventClass: 'BUSINESS',
+        context: 'SYSTEM',
+        outcome: 'SUCCESS',
+        actorAdminUserId: null,
+        entityType: 'ADMIN_USER',
+        resourceBinding: 'BOOTSTRAPPED_ADMIN_USER_ID',
+        requiredLinks: ['BOOTSTRAP_GUARD_ID', 'ADMIN_USER_ID'],
+        delegatedByRule: 'NULL_AUTONOMOUS',
+        uniquenessKey: 'BOOTSTRAP_GUARD_ID+SYSTEM_ACTION',
+        invalidSources: [
+          'UNRELATED_RECORD',
+          'BOOTSTRAP_GUARD_NOT_ACQUIRED',
+          'ADMIN_USER_ID_MISMATCH',
+          'MISSING_REQUIRED_LINK',
+        ],
+        sourceContext: 'NOT_APPLICABLE_SERVER_STATE',
+        sourceOutcomeProvenance: 'DURABLE_SERVER_STATE',
+        sourceFailureCode: null,
+      },
+    },
+    invitationAcceptance: {
+      transaction: [
+        'CONSUME_INVITATION',
+        'CREATE_ADMIN_USER_PENDING_MFA',
+        'CREATE_ARGON2ID_PASSWORD_CREDENTIAL',
+        'CREATE_FIRST_TOTP_ENROLLMENT_PREAUTH_10_MINUTES',
+        'WRITE_ADMIN_SECURITY_EVENT',
+      ],
+      preCommitFailure: 'NO_DURABLE_CONSUMPTION_USER_PASSWORD_CREDENTIAL_PREAUTH_OR_SECURITY_EVENT',
+      cookie: 'ISSUE_ONLY_AFTER_CONFIRMED_COMMIT',
+      commitUnknown: 'NEUTRAL_503_NO_COOKIE_NO_BLIND_RETRY_RECONCILE_BY_LOGIN',
+      failureBoundaryTraces: [
+        {
+          name: 'PRE_COMMIT_FAILURE',
+          commit: 'NOT_COMMITTED',
+          durableEffects: [],
+          cookieIssued: false,
+          automaticRetry: false,
+        },
+        {
+          name: 'CONFIRMED_COMMIT',
+          commit: 'CONFIRMED',
+          durableEffects: [
+            'INVITATION_CONSUMED',
+            'USER_PENDING_MFA',
+            'PASSWORD_CREDENTIAL_CREATED',
+            'FIRST_TOTP_PREAUTH',
+            'ADMIN_SECURITY_EVENT',
+          ],
+          cookieIssued: true,
+          automaticRetry: false,
+        },
+        {
+          name: 'UNKNOWN_COMMIT',
+          commit: 'UNKNOWN',
+          durableEffects: 'UNKNOWN_UNTIL_RECONCILIATION',
+          cookieIssued: false,
+          automaticRetry: false,
+          reconciliation: 'LOGIN_READS_DURABLE_USER_STATE_NO_BLIND_ACCEPT_RETRY',
+        },
+        {
+          name: 'LOST_RESPONSE_AFTER_CONFIRMED_COMMIT',
+          commit: 'CONFIRMED',
+          durableEffects: [
+            'INVITATION_CONSUMED',
+            'USER_PENDING_MFA',
+            'PASSWORD_CREDENTIAL_CREATED',
+            'FIRST_TOTP_PREAUTH',
+            'ADMIN_SECURITY_EVENT',
+          ],
+          preauthState: 'VALID_OR_EVENTUALLY_EXPIRES',
+          cookieDelivery: 'UNKNOWN',
+          usablePreauthCookie: 'UNKNOWN',
+          automaticRetry: false,
+          recovery: 'AdminAuthService.login_CREATES_NEW_FIRST_TOTP_PREAUTH_10_MINUTES',
+        },
+        {
+          name: 'EXPIRED_FIRST_TOTP_PREAUTH',
+          commit: 'CONFIRMED',
+          durableEffects: [
+            'INVITATION_CONSUMED',
+            'USER_PENDING_MFA',
+            'PASSWORD_CREDENTIAL_CREATED',
+            'FIRST_TOTP_PREAUTH_EXPIRED',
+            'ADMIN_SECURITY_EVENT',
+          ],
+          preauthState: 'EXPIRED_REPLACED_ONLY_AFTER_PASSWORD_LOGIN',
+          cookieDelivery: 'UNKNOWN',
+          usablePreauthCookie: false,
+          automaticRetry: false,
+          recovery: 'AdminAuthService.login_CREATES_NEW_FIRST_TOTP_PREAUTH_10_MINUTES',
+        },
+      ],
+      recoveryPath: {
+        operationId: 'loginAdmin',
+        runtimeSymbol: 'AdminAuthService.login',
+        sourcePath: 'apps/api/src/admin-auth/admin-auth.service.ts',
+        eligibility: 'PENDING_MFA_WITH_VALID_PASSWORD',
+        result: 'NEW_FIRST_TOTP_ENROLLMENT_PREAUTH_10_MINUTES',
+        appliesTo: ['LOST_ACCEPT_RESPONSE', 'EXPIRED_FIRST_TOTP_PREAUTH'],
+        newEndpoint: false,
+      },
     },
   },
   operationErrors: {
@@ -1759,7 +3684,7 @@ export const adminSecurityOperations = [
     totpCounterPolicy: null,
     transactionalEffects: [],
     auditSink: 'ADMIN_SECURITY_EVENT',
-    auditContextProof: null,
+    auditContextProof: 'NONE_PUBLIC_NO_AUDIT_CONTEXT',
     failureAuditSink: 'ADMIN_SECURITY_EVENT',
     rateLimitProfile: 'RECOVERY',
     fetchMetadataPolicy: null,
@@ -1809,7 +3734,8 @@ export const adminSecurityOperations = [
     totpCounterPolicy: null,
     transactionalEffects: [],
     auditSink: 'AUDIT_LOG',
-    auditContextProof: null,
+    auditContextProof:
+      'SERVER_VERIFIED_RECOVERY_CONTEXT_ACTOR_BINDING_ACTIVE_NOT_EXPIRED_NOT_CONSUMED_NOT_REVOKED',
     failureAuditSink: 'AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT',
     rateLimitProfile: 'RECOVERY',
     fetchMetadataPolicy: null,
@@ -1859,7 +3785,7 @@ export const adminSecurityOperations = [
     totpCounterPolicy: null,
     transactionalEffects: [],
     auditSink: 'AUDIT_LOG',
-    auditContextProof: null,
+    auditContextProof: 'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
     failureAuditSink: 'AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT',
     rateLimitProfile: null,
     fetchMetadataPolicy: null,
@@ -1921,7 +3847,7 @@ export const adminSecurityOperations = [
     totpCounterPolicy: null,
     transactionalEffects: [],
     auditSink: 'NONE',
-    auditContextProof: null,
+    auditContextProof: 'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
     failureAuditSink: 'NONE_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT',
     rateLimitProfile: null,
     fetchMetadataPolicy: null,
@@ -1981,7 +3907,7 @@ export const adminSecurityOperations = [
     totpCounterPolicy: null,
     transactionalEffects: [],
     auditSink: 'NONE',
-    auditContextProof: null,
+    auditContextProof: 'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
     failureAuditSink: 'NONE_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT',
     rateLimitProfile: null,
     fetchMetadataPolicy: null,
@@ -2028,7 +3954,7 @@ export const adminSecurityOperations = [
     totpCounterPolicy: null,
     transactionalEffects: [],
     auditSink: 'AUDIT_LOG',
-    auditContextProof: null,
+    auditContextProof: 'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
     failureAuditSink: 'AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT',
     rateLimitProfile: null,
     fetchMetadataPolicy: null,
@@ -2090,7 +4016,7 @@ export const adminSecurityOperations = [
     totpCounterPolicy: null,
     transactionalEffects: [],
     auditSink: 'AUDIT_LOG',
-    auditContextProof: null,
+    auditContextProof: 'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
     failureAuditSink: 'AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT',
     rateLimitProfile: null,
     fetchMetadataPolicy: null,
@@ -2210,7 +4136,7 @@ export const adminSecurityOperations = [
     totpCounterPolicy: null,
     transactionalEffects: [],
     auditSink: 'AUDIT_LOG',
-    auditContextProof: null,
+    auditContextProof: 'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
     failureAuditSink: 'AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT',
     rateLimitProfile: null,
     fetchMetadataPolicy: null,
@@ -2272,7 +4198,7 @@ export const adminSecurityOperations = [
     totpCounterPolicy: null,
     transactionalEffects: [],
     auditSink: 'AUDIT_LOG',
-    auditContextProof: null,
+    auditContextProof: 'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
     failureAuditSink: 'AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT',
     rateLimitProfile: null,
     fetchMetadataPolicy: null,
@@ -2319,7 +4245,7 @@ export const adminSecurityOperations = [
     totpCounterPolicy: null,
     transactionalEffects: [],
     auditSink: 'AUDIT_LOG',
-    auditContextProof: null,
+    auditContextProof: 'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
     failureAuditSink: 'AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT',
     rateLimitProfile: null,
     fetchMetadataPolicy: null,
@@ -2392,7 +4318,7 @@ export const adminSecurityOperations = [
     totpCounterPolicy: null,
     transactionalEffects: [],
     auditSink: 'AUDIT_LOG',
-    auditContextProof: null,
+    auditContextProof: 'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
     failureAuditSink: 'AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT',
     rateLimitProfile: null,
     fetchMetadataPolicy: null,
@@ -2454,7 +4380,7 @@ export const adminSecurityOperations = [
     totpCounterPolicy: null,
     transactionalEffects: [],
     auditSink: 'ADMIN_SECURITY_EVENT',
-    auditContextProof: null,
+    auditContextProof: 'NONE_PUBLIC_NO_AUDIT_CONTEXT',
     failureAuditSink: 'ADMIN_SECURITY_EVENT',
     rateLimitProfile: 'RECOVERY',
     fetchMetadataPolicy: null,
@@ -2485,7 +4411,7 @@ export const adminSecurityOperations = [
     response: {
       status: '200',
       mediaType: 'application/json',
-      schema: 'AdminPreAuthEnvelope',
+      schema: 'AdminInvitationAcceptedPreAuthEnvelope',
       headers: ['Set-Cookie', 'Cache-Control', 'X-Content-Type-Options'],
     },
   },
@@ -2504,7 +4430,7 @@ export const adminSecurityOperations = [
     totpCounterPolicy: null,
     transactionalEffects: [],
     auditSink: 'NONE',
-    auditContextProof: null,
+    auditContextProof: 'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
     failureAuditSink: 'NONE_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT',
     rateLimitProfile: null,
     fetchMetadataPolicy: null,
@@ -2564,7 +4490,7 @@ export const adminSecurityOperations = [
     totpCounterPolicy: null,
     transactionalEffects: [],
     auditSink: 'AUDIT_LOG',
-    auditContextProof: null,
+    auditContextProof: 'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
     failureAuditSink: 'AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT',
     rateLimitProfile: null,
     fetchMetadataPolicy: null,
@@ -2626,7 +4552,7 @@ export const adminSecurityOperations = [
     totpCounterPolicy: null,
     transactionalEffects: [],
     auditSink: 'AUDIT_LOG',
-    auditContextProof: null,
+    auditContextProof: 'SERVER_VERIFIED_SESSION_USER_JTI_AUTHORIZATION_VERSION_ACTIVE_NOT_REVOKED',
     failureAuditSink: 'AUDIT_LOG_IF_CONTEXT_PROVEN_ELSE_ADMIN_SECURITY_EVENT',
     rateLimitProfile: null,
     fetchMetadataPolicy: null,
@@ -3170,7 +5096,7 @@ export type UpsertAudioContentRequest = {
 
 export type PublishAudioContentRequest = {
   readonly reason: string;
-  readonly requiredMediaAssets: ReadonlyArray<RequiredReadyMediaAsset>;
+  readonly requiredMediaAssets: ReadonlyArray<RequiredReadyMediaAsset> & unknown & unknown;
 };
 
 export type RequiredReadyMediaAsset = {
@@ -3445,7 +5371,7 @@ export type AdminRecoveryCasePage = {
 
 export type AdminAuditContext = 'ADMIN_SESSION' | 'ADMIN_RECOVERY' | 'SYSTEM';
 
-export type AdminAuditLogEntry = AdminAuditLogEntryV1 | AdminAuditLogEntryV2;
+export type AdminAuditLogEntry = AdminAuditLogEntryV1 | AdminAuditLogEntryV2 | AdminAuditLogEntryV3;
 
 export type AdminAuditLogEntryV1 = {
   readonly version: 1;
@@ -3461,12 +5387,24 @@ export type AdminAuditLogEntryV1 = {
   readonly systemExecutionRefHash: null;
   readonly entityType: string;
   readonly entityId: string;
-  readonly maskedBefore: {
-    readonly [key: string]: string | number | boolean | null;
-  } | null;
-  readonly maskedAfter: {
-    readonly [key: string]: string | number | boolean | null;
-  } | null;
+  readonly maskedBefore:
+    | {
+        readonly [key: string]: unknown;
+      }
+    | ReadonlyArray<unknown>
+    | string
+    | number
+    | boolean
+    | null;
+  readonly maskedAfter:
+    | {
+        readonly [key: string]: unknown;
+      }
+    | ReadonlyArray<unknown>
+    | string
+    | number
+    | boolean
+    | null;
   readonly reasonCode: null;
   readonly operatorReason: null;
   readonly requestId: string;
@@ -3474,6 +5412,10 @@ export type AdminAuditLogEntryV1 = {
   readonly causationSecurityEventId: null;
   readonly createdAt: Timestamp;
   readonly legacyReasonRedacted: true;
+  readonly outcome: 'UNKNOWN';
+  readonly failureCode: null;
+  readonly outcomeProvenance: 'HISTORICAL_UNKNOWN';
+  readonly operatorReasonRedacted: true;
 };
 
 export type AdminAuditLogEntryV2 =
@@ -3498,11 +5440,15 @@ export type AdminAuditLogEntryV2 =
         readonly [key: string]: string | number | boolean | null;
       } | null;
       readonly reasonCode: AdminReasonCode;
-      readonly operatorReason: string | null;
+      readonly operatorReason: null;
       readonly requestId: string;
       readonly causationEventId: string | null;
       readonly causationSecurityEventId: string | null;
       readonly createdAt: Timestamp;
+      readonly outcome: 'UNKNOWN';
+      readonly failureCode: null;
+      readonly outcomeProvenance: 'HISTORICAL_UNKNOWN';
+      readonly operatorReasonRedacted: true;
     } & {
       readonly context: 'ADMIN_SESSION';
       readonly actorAdminUserId: string;
@@ -3533,11 +5479,15 @@ export type AdminAuditLogEntryV2 =
         readonly [key: string]: string | number | boolean | null;
       } | null;
       readonly reasonCode: AdminReasonCode;
-      readonly operatorReason: string | null;
+      readonly operatorReason: null;
       readonly requestId: string;
       readonly causationEventId: string | null;
       readonly causationSecurityEventId: string | null;
       readonly createdAt: Timestamp;
+      readonly outcome: 'UNKNOWN';
+      readonly failureCode: null;
+      readonly outcomeProvenance: 'HISTORICAL_UNKNOWN';
+      readonly operatorReasonRedacted: true;
     } & {
       readonly context: 'ADMIN_RECOVERY';
       readonly actorAdminUserId: string;
@@ -3568,11 +5518,15 @@ export type AdminAuditLogEntryV2 =
         readonly [key: string]: string | number | boolean | null;
       } | null;
       readonly reasonCode: AdminReasonCode;
-      readonly operatorReason: string | null;
+      readonly operatorReason: null;
       readonly requestId: string;
       readonly causationEventId: string | null;
       readonly causationSecurityEventId: string | null;
       readonly createdAt: Timestamp;
+      readonly outcome: 'UNKNOWN';
+      readonly failureCode: null;
+      readonly outcomeProvenance: 'HISTORICAL_UNKNOWN';
+      readonly operatorReasonRedacted: true;
     } & (
       | ({
           readonly context: 'SYSTEM';
@@ -3621,7 +5575,7 @@ export type AdminAuditExportRequest = {
   readonly action?: string;
   readonly entityType?: string;
   readonly entityId?: string;
-  readonly auditVersion?: 1 | 2;
+  readonly auditVersion?: 1 | 2 | 3;
   readonly auditEventClass?: 'LOGIN' | 'SESSION' | 'EXPORT' | 'BUSINESS';
   readonly auditContext?: AdminAuditContext;
   readonly auditReasonCode?: AdminReasonCode;
@@ -3639,11 +5593,18 @@ export type AdminAuditExport =
       readonly expiresAt: string | null;
       readonly contentSha256: string | null;
       readonly signatureKeyId: string | null;
+      readonly failureCode:
+        | 'RETRY_BUDGET_EXHAUSTED'
+        | 'PROJECTION_BUDGET_EXCEEDED'
+        | 'INTEGRITY_FAILED'
+        | 'DEPENDENCY_UNAVAILABLE'
+        | null;
     } & {
       readonly state: 'READY' | 'EXPIRED';
       readonly expiresAt: string;
       readonly contentSha256: string;
       readonly signatureKeyId: string;
+      readonly failureCode: null;
     })
   | ({
       readonly exportId: Identifier;
@@ -3652,11 +5613,42 @@ export type AdminAuditExport =
       readonly expiresAt: string | null;
       readonly contentSha256: string | null;
       readonly signatureKeyId: string | null;
+      readonly failureCode:
+        | 'RETRY_BUDGET_EXHAUSTED'
+        | 'PROJECTION_BUDGET_EXCEEDED'
+        | 'INTEGRITY_FAILED'
+        | 'DEPENDENCY_UNAVAILABLE'
+        | null;
     } & {
-      readonly state: 'PENDING' | 'PROCESSING' | 'FAILED';
+      readonly state: 'PENDING' | 'PROCESSING';
       readonly expiresAt: null;
       readonly contentSha256: null;
       readonly signatureKeyId: null;
+      readonly failureCode: null;
+    })
+  | ({
+      readonly exportId: Identifier;
+      readonly state: AdminAuditExportState;
+      readonly createdAt: Timestamp;
+      readonly expiresAt: string | null;
+      readonly contentSha256: string | null;
+      readonly signatureKeyId: string | null;
+      readonly failureCode:
+        | 'RETRY_BUDGET_EXHAUSTED'
+        | 'PROJECTION_BUDGET_EXCEEDED'
+        | 'INTEGRITY_FAILED'
+        | 'DEPENDENCY_UNAVAILABLE'
+        | null;
+    } & {
+      readonly state: 'FAILED';
+      readonly expiresAt: null;
+      readonly contentSha256: null;
+      readonly signatureKeyId: null;
+      readonly failureCode:
+        | 'RETRY_BUDGET_EXHAUSTED'
+        | 'PROJECTION_BUDGET_EXCEEDED'
+        | 'INTEGRITY_FAILED'
+        | 'DEPENDENCY_UNAVAILABLE';
     });
 
 export type AdminAuditExportEnvelope = {
@@ -3712,4 +5704,185 @@ export type AdminStatusChangeRequest = {
   readonly status: 'ACTIVE' | 'SUSPENDED' | 'DISABLED';
   readonly reasonCode: AdminReasonCode;
   readonly operatorReason: string;
+};
+
+export type AdminAuditLogEntryV3 = (
+  | ({
+      readonly version: 3;
+      readonly eventId: Identifier;
+      readonly action: string;
+      readonly eventClass: 'LOGIN' | 'SESSION' | 'EXPORT' | 'BUSINESS';
+      readonly context: AdminAuditContext;
+      readonly actorAdminUserId: string | null;
+      readonly subjectAdminUserId: string | null;
+      readonly delegatedByAdminUserId: string | null;
+      readonly adminSessionId: string | null;
+      readonly adminRecoveryContextId: string | null;
+      readonly systemExecutionRefHash: string | null;
+      readonly entityType: string;
+      readonly entityId: Identifier;
+      readonly maskedBefore: {
+        readonly [key: string]: string | number | boolean | null;
+      } | null;
+      readonly maskedAfter: {
+        readonly [key: string]: string | number | boolean | null;
+      } | null;
+      readonly reasonCode: AdminReasonCode;
+      readonly operatorReason: null;
+      readonly requestId: string;
+      readonly causationEventId: string | null;
+      readonly causationSecurityEventId: string | null;
+      readonly createdAt: Timestamp;
+      readonly outcome: 'SUCCESS' | 'REJECTED';
+      readonly failureCode: string | null;
+      readonly outcomeProvenance: 'EXPLICIT_C2';
+      readonly operatorReasonRedacted: true;
+    } & {
+      readonly context: 'ADMIN_SESSION';
+      readonly actorAdminUserId: string;
+      readonly adminSessionId: string;
+      readonly adminRecoveryContextId: null;
+      readonly systemExecutionRefHash: null;
+      readonly causationSecurityEventId: null;
+      readonly delegatedByAdminUserId: null;
+    })
+  | ({
+      readonly version: 3;
+      readonly eventId: Identifier;
+      readonly action: string;
+      readonly eventClass: 'LOGIN' | 'SESSION' | 'EXPORT' | 'BUSINESS';
+      readonly context: AdminAuditContext;
+      readonly actorAdminUserId: string | null;
+      readonly subjectAdminUserId: string | null;
+      readonly delegatedByAdminUserId: string | null;
+      readonly adminSessionId: string | null;
+      readonly adminRecoveryContextId: string | null;
+      readonly systemExecutionRefHash: string | null;
+      readonly entityType: string;
+      readonly entityId: Identifier;
+      readonly maskedBefore: {
+        readonly [key: string]: string | number | boolean | null;
+      } | null;
+      readonly maskedAfter: {
+        readonly [key: string]: string | number | boolean | null;
+      } | null;
+      readonly reasonCode: AdminReasonCode;
+      readonly operatorReason: null;
+      readonly requestId: string;
+      readonly causationEventId: string | null;
+      readonly causationSecurityEventId: string | null;
+      readonly createdAt: Timestamp;
+      readonly outcome: 'SUCCESS' | 'REJECTED';
+      readonly failureCode: string | null;
+      readonly outcomeProvenance: 'EXPLICIT_C2';
+      readonly operatorReasonRedacted: true;
+    } & {
+      readonly context: 'ADMIN_RECOVERY';
+      readonly actorAdminUserId: string;
+      readonly adminSessionId: null;
+      readonly adminRecoveryContextId: string;
+      readonly systemExecutionRefHash: null;
+      readonly causationSecurityEventId: null;
+      readonly delegatedByAdminUserId: null;
+    })
+  | ({
+      readonly version: 3;
+      readonly eventId: Identifier;
+      readonly action: string;
+      readonly eventClass: 'LOGIN' | 'SESSION' | 'EXPORT' | 'BUSINESS';
+      readonly context: AdminAuditContext;
+      readonly actorAdminUserId: string | null;
+      readonly subjectAdminUserId: string | null;
+      readonly delegatedByAdminUserId: string | null;
+      readonly adminSessionId: string | null;
+      readonly adminRecoveryContextId: string | null;
+      readonly systemExecutionRefHash: string | null;
+      readonly entityType: string;
+      readonly entityId: Identifier;
+      readonly maskedBefore: {
+        readonly [key: string]: string | number | boolean | null;
+      } | null;
+      readonly maskedAfter: {
+        readonly [key: string]: string | number | boolean | null;
+      } | null;
+      readonly reasonCode: AdminReasonCode;
+      readonly operatorReason: null;
+      readonly requestId: string;
+      readonly causationEventId: string | null;
+      readonly causationSecurityEventId: string | null;
+      readonly createdAt: Timestamp;
+      readonly outcome: 'SUCCESS' | 'REJECTED';
+      readonly failureCode: string | null;
+      readonly outcomeProvenance: 'EXPLICIT_C2';
+      readonly operatorReasonRedacted: true;
+    } & (
+      | ({
+          readonly context: 'SYSTEM';
+          readonly actorAdminUserId: null;
+          readonly adminSessionId: null;
+          readonly adminRecoveryContextId: null;
+          readonly systemExecutionRefHash: string;
+        } & {
+          readonly causationEventId: null;
+          readonly causationSecurityEventId: null;
+          readonly delegatedByAdminUserId: null;
+        })
+      | ({
+          readonly context: 'SYSTEM';
+          readonly actorAdminUserId: null;
+          readonly adminSessionId: null;
+          readonly adminRecoveryContextId: null;
+          readonly systemExecutionRefHash: string;
+        } & {
+          readonly causationEventId: string;
+          readonly causationSecurityEventId: null;
+          readonly delegatedByAdminUserId: string;
+        })
+      | ({
+          readonly context: 'SYSTEM';
+          readonly actorAdminUserId: null;
+          readonly adminSessionId: null;
+          readonly adminRecoveryContextId: null;
+          readonly systemExecutionRefHash: string;
+        } & {
+          readonly causationEventId: null;
+          readonly causationSecurityEventId: string;
+          readonly delegatedByAdminUserId: null;
+        })
+    ))
+) &
+  (
+    | {
+        readonly outcome: 'SUCCESS';
+        readonly failureCode: null;
+        readonly outcomeProvenance: 'EXPLICIT_C2';
+        readonly [key: string]: unknown;
+      }
+    | {
+        readonly outcome: 'REJECTED';
+        readonly failureCode:
+          | 'VALIDATION_ERROR'
+          | 'FORBIDDEN'
+          | 'STEP_UP_REQUIRED'
+          | 'STEP_UP_EXPIRED'
+          | 'STEP_UP_INVALID'
+          | 'INTEGRITY_REJECTED'
+          | 'DEPENDENCY_UNAVAILABLE'
+          | 'IDEMPOTENCY_CONFLICT'
+          | 'RESOURCE_NOT_FOUND'
+          | 'RESOURCE_CONFLICT'
+          | 'RESOURCE_EXPIRED'
+          | 'PROJECTION_BUDGET_EXCEEDED';
+        readonly outcomeProvenance: 'EXPLICIT_C2';
+        readonly [key: string]: unknown;
+      }
+  );
+
+export type AdminInvitationAcceptedPreAuthEnvelope = {
+  readonly data: {
+    readonly challengeId: Identifier;
+    readonly expiresAt: Timestamp;
+    readonly nextStep: 'FIRST_TOTP_ENROLLMENT';
+  };
+  readonly meta: ResponseMeta;
 };

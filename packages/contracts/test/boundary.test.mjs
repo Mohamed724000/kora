@@ -115,7 +115,50 @@ test('the generated boundary materializes the complete C2-P0 policy', () => {
   assert.match(policies, /maximumUncompressedUtf8Bytes: 26214400/);
   assert.match(policies, /truncation: 'FORBIDDEN'/);
   assert.match(policies, /entrySchema: 'AdminAuditLogEntry'/);
-  assert.match(policies, /v1WithAnyV2OnlyFilter: 'NEVER_MATCH'/);
+  assert.match(policies, /v1WithAnyTypedFilter: 'NEVER_MATCH'/);
+  assert.match(policies, /exclusiveVersions: \[1, 2, 3\]/);
+  assert.match(policies, /newC2Values: \['SUCCESS', 'REJECTED'\]/);
+  assert.match(policies, /outcome: 'UNKNOWN'/);
+  assert.match(policies, /provenance: 'HISTORICAL_UNKNOWN'/);
+  assert.match(policies, /listAndExport: 'ALWAYS_NULL_WITH_OPERATOR_REASON_REDACTED_TRUE'/);
+  assert.match(
+    policies,
+    /STATE_PROCESSING_OWNER_CURRENT_NEXT_ATTEMPT_AT_NULL_LEASE_EXPIRED_ATTEMPTS_REMAIN_AND_NOW_BEFORE_IMMUTABLE_ATTEMPT_DEADLINE/,
+  );
+  assert.match(
+    policies,
+    /IF_NEXT_ATTEMPT_AT_NOT_NULL_FOLLOW_SCHEDULE_ELSE_IF_NOW_GTE_IMMUTABLE_ATTEMPT_DEADLINE_USE_ATTEMPT_DEADLINE_WATCHDOG/,
+  );
+  assert.match(policies, /INCREMENT_GENERATION_AND_ATTEMPT_NUMBER_REPLACE_ATTEMPT_ID/);
+  assert.match(policies, /IMMUTABLE_ATTEMPT_DEADLINE_NOW_PLUS_600_SECONDS/);
+  assert.match(policies, /NEXT_ATTEMPT_AT_NULL_AND_NOW_BEFORE_IMMUTABLE_ATTEMPT_DEADLINE/);
+  assert.doesNotMatch(policies, /serverProof:/);
+  assert.doesNotMatch(policies, /failureBeforeProof:|failureAfterProof:/);
+  assert.match(policies, /POST_PROOF_BUSINESS_CHECKS/);
+  assert.match(policies, /ADMIN_SECURITY_EVENT_FAILED_IF_DURABILITY_CONFIRMED/);
+  assert.match(policies, /AUDIT_LOG_REJECTED_IF_DURABILITY_CONFIRMED/);
+  assert.match(policies, /failureCodeByTrigger:/);
+  assert.match(policies, /PASSWORD_RESET_PURPOSE_OR_SUBJECT_NOT_AUTHORIZED: 'FORBIDDEN'/);
+  assert.match(
+    policies,
+    /ADMIN_SECURITY_EVENT_AND_NONE_SINK_OPERATIONS_MUST_NOT_CREATE_AUDIT_LOG_V3/,
+  );
+  assert.match(policies, /transactionalSystemTransitions:/);
+  assert.match(policies, /SAME_POSTGRESQL_TRANSACTION_BEFORE_RESPONSE/);
+  assert.match(policies, /DISTINCT_SUPERSEDING_AND_CANCELLED_CASE_IDS/);
+  assert.match(policies, /fencingToken:/);
+  assert.match(policies, /distributedTransaction: false/);
+  assert.match(policies, /READY_MATCHING_GENERATION/);
+  assert.match(policies, /FAILED_MATCHING_GENERATION/);
+  assert.match(policies, /PROCESSING_SAME_FENCE/);
+  assert.match(policies, /STALE_FENCE_OR_DIFFERENT_GENERATION/);
+  assert.match(policies, /STOP_NO_MUTATION_PUBLICATION_OR_AUDIT_NEVER_TOUCH_CURRENT_OBJECT/);
+  assert.match(policies, /AUDIT_DOWNLOAD_COMMIT/);
+  assert.match(policies, /BEGIN_STREAM/);
+  assert.match(policies, /CREATE_FIRST_TOTP_ENROLLMENT_PREAUTH_10_MINUTES/);
+  assert.match(policies, /runtimeSymbol: 'AdminAuthService\.login'/);
+  assert.match(policies, /cookieDelivery: 'UNKNOWN'/);
+  assert.match(policies, /usablePreauthCookie: 'UNKNOWN'/);
   assert.match(policies, /rawLegacyReason:/);
   assert.match(policies, /OMITTED_AT_POSTGRESQL_COLUMN_ALLOWLIST_NEVER_READ_NEVER_DELIVERED/);
   assert.match(policies, /source: 'SERVER_FIXED_REJECTION'/);
@@ -146,14 +189,27 @@ test('audit evidence is generated as a strict discriminated execution-context un
   const audit = /export type AdminAuditLogEntry =([\s\S]*?)export type AdminAuditLogPage/.exec(
     source,
   )?.[1];
+  const auditV3 =
+    /export type AdminAuditLogEntryV3 =([\s\S]*?)export type AdminInvitationAcceptedPreAuthEnvelope/.exec(
+      source,
+    )?.[1];
 
   assert.ok(audit);
-  assert.match(audit, /AdminAuditLogEntryV1 \| AdminAuditLogEntryV2/);
+  assert.ok(auditV3);
+  assert.match(audit, /AdminAuditLogEntryV1 \| AdminAuditLogEntryV2 \| AdminAuditLogEntryV3/);
   assert.match(audit, /export type AdminAuditLogEntryV1/);
   assert.match(audit, /readonly version: 1;/);
   assert.match(audit, /readonly legacyReasonRedacted: true;/);
   assert.match(audit, /export type AdminAuditLogEntryV2/);
   assert.match(audit, /readonly version: 2;/);
+  assert.match(auditV3, /readonly version: 3;/);
+  assert.match(audit, /readonly outcome: 'UNKNOWN';/);
+  assert.match(auditV3, /readonly outcome: 'SUCCESS';/);
+  assert.match(auditV3, /readonly outcome: 'REJECTED';/);
+  assert.match(auditV3, /readonly failureCode: null;/);
+  assert.match(auditV3, /readonly outcomeProvenance: 'EXPLICIT_C2';/);
+  assert.match(audit, /readonly operatorReason: null;/);
+  assert.match(audit, /readonly operatorReasonRedacted: true;/);
   assert.match(audit, /readonly context: 'ADMIN_SESSION';/);
   assert.match(audit, /readonly context: 'ADMIN_RECOVERY';/);
   assert.match(audit, /readonly context: 'SYSTEM';/);
@@ -179,11 +235,31 @@ test('audit export types distinguish entry filters from the creation reason', ()
   const request = /export type AdminAuditExportRequest = \{([\s\S]*?)\n\};/.exec(source)?.[1];
 
   assert.ok(request);
-  assert.match(request, /readonly auditVersion\?: 1 \| 2;/);
+  assert.match(request, /readonly auditVersion\?: 1 \| 2 \| 3;/);
   assert.match(request, /readonly auditEventClass\?:/);
   assert.match(request, /readonly auditContext\?: AdminAuditContext;/);
   assert.match(request, /readonly auditReasonCode\?: AdminReasonCode;/);
   assert.match(request, /readonly reasonCode: AdminReasonCode;/);
+});
+
+test('generated export and invitation boundaries preserve R4 failure-state and pre-auth causality', () => {
+  const source = readFileSync(new URL('../src/generated/audio-pilot.ts', import.meta.url), 'utf8');
+  const auditExport =
+    /export type AdminAuditExport =([\s\S]*?)export type AdminAuditExportEnvelope/.exec(
+      source,
+    )?.[1];
+  const invitation = /export type AdminInvitationAcceptedPreAuthEnvelope = \{([\s\S]*?)\n\};/.exec(
+    source,
+  )?.[1];
+
+  assert.ok(auditExport);
+  assert.ok(invitation);
+  assert.match(auditExport, /readonly state: 'FAILED';/);
+  assert.match(auditExport, /'PROJECTION_BUDGET_EXCEEDED'/);
+  assert.match(auditExport, /readonly state: 'PENDING' \| 'PROCESSING';/);
+  assert.match(auditExport, /readonly state: 'READY' \| 'EXPIRED';/);
+  assert.match(invitation, /readonly nextStep: 'FIRST_TOTP_ENROLLMENT';/);
+  assert.doesNotMatch(invitation, /MFA_RECOVERY|AdminSession/);
 });
 
 test('admin recovery-code types expose selector and verifier but no stored hash', () => {

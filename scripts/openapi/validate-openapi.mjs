@@ -329,7 +329,11 @@ export const ADMIN_SECURITY_CONTRACTS = Object.freeze([
     stepUp: false,
     idempotent: false,
     request: "AdminInvitationAcceptRequest",
-    success: ["200", "application/json", "AdminPreAuthEnvelope"],
+    success: [
+      "200",
+      "application/json",
+      "AdminInvitationAcceptedPreAuthEnvelope",
+    ],
     headers: ["Set-Cookie", "Cache-Control", "X-Content-Type-Options"],
   },
   {
@@ -553,6 +557,8 @@ const EXPECTED_SCHEMAS = [
   "AdminUserPage",
   "AdminRoleChangeRequest",
   "AdminStatusChangeRequest",
+  "AdminAuditLogEntryV3",
+  "AdminInvitationAcceptedPreAuthEnvelope",
 ];
 
 const EXPECTED_OPERATIONS = new Map([
@@ -1272,7 +1278,7 @@ const REQUIRED_ADMIN_C2_UNAVAILABILITY_POLICY = {
 };
 
 const REQUIRED_ADMIN_C2_CONTRACT_POLICY_SHA256 =
-  "3847d3f86f00c4a2cd6334c93b69574b342529409b882322f5d5b9363fbb0ed7";
+  "889bd4b905a1605eb436b4441d8acd5427de2e143dea062f29b0501148ba36a2";
 
 const REQUIRED_ADMIN_C2_STEP_UP_PURPOSES = new Map([
   ["approveAdminRecoveryCase", "RECOVERY_APPROVAL"],
@@ -1682,6 +1688,9 @@ const REQUIRED_STATE_MACHINES = {
   },
   MediaWebhookInbox: {
     states: ["RECEIVED", "PROCESSING", "PROCESSED", "REJECTED"],
+  },
+  AdminAuditExport: {
+    states: ["PENDING", "PROCESSING", "READY", "FAILED", "EXPIRED"],
   },
 };
 
@@ -2766,7 +2775,13 @@ function validateAuthenticationContract(document) {
 export function validateSchemaInstance(document, schemaName, instance) {
   function validate(schemaValue, value, location) {
     const schema = dereference(document, schemaValue);
-    const types = Array.isArray(schema.type) ? schema.type : [schema.type];
+    const types = Array.isArray(schema.type)
+      ? schema.type
+      : schema.type === undefined
+        ? schema.properties
+          ? ["object"]
+          : []
+        : [schema.type];
     if (value === null) {
       if (!types.includes("null")) fail(`${location} does not allow null`);
       return;
@@ -2784,6 +2799,9 @@ export function validateSchemaInstance(document, schemaName, instance) {
         fail(`${location} must match exactly one oneOf branch`);
       }
     }
+    for (const branch of schema.allOf ?? []) {
+      validate(branch, value, location);
+    }
     if (types.length === 1 && types[0] === "null") {
       fail(`${location} only allows null`);
     }
@@ -2793,9 +2811,19 @@ export function validateSchemaInstance(document, schemaName, instance) {
     if (schema.enum && !schema.enum.includes(value)) {
       fail(`${location} must belong to its enum`);
     }
-    if (types.includes("object") || schema.properties) {
-      if (typeof value !== "object" || Array.isArray(value))
-        fail(`${location} must be an object`);
+    const actualType = Array.isArray(value)
+      ? "array"
+      : typeof value === "number" && Number.isInteger(value)
+        ? "integer"
+        : typeof value;
+    if (
+      types.length > 0 &&
+      !types.includes(actualType) &&
+      !(actualType === "integer" && types.includes("number"))
+    ) {
+      fail(`${location} must have one of its declared types`);
+    }
+    if (actualType === "object") {
       for (const required of schema.required ?? []) {
         if (!(required in value))
           fail(`${location} is missing required property ${required}`);
@@ -2812,16 +2840,16 @@ export function validateSchemaInstance(document, schemaName, instance) {
       }
       return;
     }
-    if (types.includes("array")) {
-      if (!Array.isArray(value)) fail(`${location} must be an array`);
-      for (const [index, child] of value.entries())
-        validate(schema.items, child, `${location}[${index}]`);
+    if (actualType === "array") {
+      if (schema.items) {
+        for (const [index, child] of value.entries())
+          validate(schema.items, child, `${location}[${index}]`);
+      }
       return;
     }
     if (types.includes("integer") && !Number.isInteger(value))
       fail(`${location} must be an integer`);
-    if (types.includes("string")) {
-      if (typeof value !== "string") fail(`${location} must be a string`);
+    if (actualType === "string") {
       if (schema.minLength !== undefined && value.length < schema.minLength)
         fail(`${location} is shorter than ${schema.minLength}`);
       if (schema.maxLength !== undefined && value.length > schema.maxLength)
@@ -2832,8 +2860,6 @@ export function validateSchemaInstance(document, schemaName, instance) {
       )
         fail(`${location} does not match its required pattern`);
     }
-    if (types.includes("boolean") && typeof value !== "boolean")
-      fail(`${location} must be a boolean`);
   }
 
   validate(document.components.schemas[schemaName], instance, schemaName);
@@ -3512,7 +3538,12 @@ function validateAdminSecurityContract(document) {
     JSON.stringify(c2Policy.asynchronousAudit ?? {}) !==
       JSON.stringify(REQUIRED_ADMIN_ASYNCHRONOUS_AUDIT) ||
     !stableEqual(resetRequestPolicy?.roles ?? null, []) ||
-    resetRequestPolicy?.serverProof !== "NO_AUDIT_CONTEXT" ||
+    resetRequestPolicy?.serverProof !== undefined ||
+    Object.values(c2Policy.operationMatrix ?? {}).some((policy) =>
+      ["serverProof", "failureBeforeProof", "failureAfterProof"].some((field) =>
+        Object.hasOwn(policy, field),
+      ),
+    ) ||
     resetRequestPolicy?.successSink !== "ADMIN_SECURITY_EVENT" ||
     resetRequestPolicy?.atomicity !==
       "RESET_REQUEST_ENCRYPTED_OUTBOX_AND_SECURITY_EVENT" ||
@@ -3537,6 +3568,85 @@ function validateAdminSecurityContract(document) {
     );
   }
   const matrix = c2Policy.operationMatrix ?? {};
+  const downloadAuditExportPolicy = matrix.downloadAdminAuditLogExport;
+  if (
+    !orderedEqual(downloadAuditExportPolicy?.authorizationChecks ?? [], [
+      "ROLE_ONE_OF_SUPER_ADMIN",
+      "FRESH_STEP_UP_AUDIT_EXPORT",
+    ]) ||
+    !orderedEqual(downloadAuditExportPolicy?.postProofBusinessChecks ?? [], [
+      "EXPORT_READY_NOT_EXPIRED",
+      "CONTENT_HASH_AND_JWS_INTEGRITY",
+    ])
+  ) {
+    fail(
+      "download audit export must keep role and step-up authorization distinct from state and integrity business checks",
+    );
+  }
+  const exportWorker = c2Policy.auditExport?.workerProtocol ?? {};
+  const exportStateMachine = c2Policy.auditExport?.stateMachine ?? {};
+  const sameFenceUnknownCommit = (
+    c2Policy.auditExport?.unknownCommitReconciliationBranches ?? []
+  ).find((branch) => branch.durableState === "PROCESSING_SAME_FENCE");
+  if (
+    exportStateMachine.leaseReclaimCondition !==
+      "STATE_PROCESSING_OWNER_CURRENT_NEXT_ATTEMPT_AT_NULL_LEASE_EXPIRED_ATTEMPTS_REMAIN_AND_NOW_BEFORE_IMMUTABLE_ATTEMPT_DEADLINE" ||
+    exportStateMachine.leaseReclaimEffect !==
+      "BEFORE_ATTEMPT_DEADLINE_CAS_CURRENT_GENERATION_ATTEMPT_ID_AND_OWNER_CLEAR_OWNER_SET_NEXT_ATTEMPT_AT_TO_EXPIRED_LEASE_TIME_THEN_DUE_OWNER_NULL_CLAIM_INCREMENTS_GENERATION_AND_REPLACES_ATTEMPT_ID" ||
+    exportWorker.leaseSeconds !== 120 ||
+    exportWorker.leaseRenewalSeconds !== 30 ||
+    exportWorker.maximumProcessingSecondsPerAttempt !== 600 ||
+    exportWorker.maximumAttempts !== 3 ||
+    exportWorker.maximumAttemptsSemantics !== "INCLUDES_INITIAL_ATTEMPT_1" ||
+    JSON.stringify(exportWorker.retryBackoffSecondsByNextAttempt ?? {}) !==
+      JSON.stringify({ 2: 30, 3: 120 }) ||
+    !orderedEqual(exportWorker.retryableFailureClasses ?? [], [
+      "TRANSIENT_DEPENDENCY_UNAVAILABLE",
+      "PROCESS_TIMEOUT_BEFORE_TERMINAL_CAS",
+      "LEASE_HEARTBEAT_LOST_WHILE_CURRENT_FENCE",
+    ]) ||
+    JSON.stringify(exportWorker.terminalFailureCodeByClass ?? {}) !==
+      JSON.stringify({
+        PROJECTION_BUDGET_EXCEEDED: "PROJECTION_BUDGET_EXCEEDED",
+        INTEGRITY_FAILED: "INTEGRITY_FAILED",
+        NON_RETRYABLE_DEPENDENCY_UNAVAILABLE: "DEPENDENCY_UNAVAILABLE",
+        RETRYABLE_FAILURE_AT_MAXIMUM_ATTEMPT: "RETRY_BUDGET_EXHAUSTED",
+        CRASH_OR_HANG_AT_MAXIMUM_ATTEMPT: "RETRY_BUDGET_EXHAUSTED",
+      }) ||
+    exportWorker.knownRetryableFailure !==
+      "CAS_PROCESSING_CURRENT_GENERATION_ATTEMPT_ID_AND_OWNER_LEASE_ACTIVE_NEXT_ATTEMPT_AT_NULL_AND_NOW_BEFORE_IMMUTABLE_ATTEMPT_DEADLINE_CLEAR_OWNER_AND_LEASE_KEEP_PROCESSING_SET_NEXT_ATTEMPT_AT_NOW_PLUS_BACKOFF_FOR_NEXT_ATTEMPT_NO_AUDIT" ||
+    exportWorker.crashOrHang !==
+      "IF_NEXT_ATTEMPT_AT_NOT_NULL_FOLLOW_SCHEDULE_ELSE_IF_NOW_GTE_IMMUTABLE_ATTEMPT_DEADLINE_USE_ATTEMPT_DEADLINE_WATCHDOG_ELSE_AT_LEASE_EXPIRY_BEFORE_ATTEMPT_DEADLINE_CAS_CURRENT_GENERATION_ATTEMPT_ID_AND_OWNER_IF_ATTEMPTS_REMAIN_CLEAR_OWNER_SET_NEXT_ATTEMPT_AT_TO_LEASE_EXPIRY_THEN_DUE_OWNER_NULL_CLAIM_ELSE_TO_FAILED_RETRY_BUDGET_EXHAUSTED_AND_SINGLE_SYSTEM_AUDIT_IN_ONE_TRANSACTION" ||
+    exportWorker.claim !==
+      "POSTGRESQL_CAS_PROCESSING_OWNER_NULL_ATTEMPTS_REMAIN_AND_NOW_GTE_NEXT_ATTEMPT_AT_INCREMENT_GENERATION_AND_ATTEMPT_NUMBER_REPLACE_ATTEMPT_ID_SET_ATTEMPT_STARTED_AT_NOW_AND_IMMUTABLE_ATTEMPT_DEADLINE_NOW_PLUS_600_SECONDS_SET_LEASE_EXPIRES_AT_MIN_NOW_PLUS_120_SECONDS_ATTEMPT_DEADLINE" ||
+    exportWorker.leaseRenewal !==
+      "CAS_CURRENT_GENERATION_ATTEMPT_ID_AND_OWNER_WHILE_LEASE_ACTIVE_NEXT_ATTEMPT_AT_NULL_AND_NOW_BEFORE_IMMUTABLE_ATTEMPT_DEADLINE_SET_LEASE_EXPIRES_AT_MIN_NOW_PLUS_120_SECONDS_ATTEMPT_DEADLINE_NEVER_EXTEND_ATTEMPT_DEADLINE" ||
+    exportWorker.attemptDeadlineExpiry !==
+      "WATCHDOG_AT_OR_AFTER_IMMUTABLE_ATTEMPT_DEADLINE_REJECT_READY_FAILED_AND_RENEW_THEN_CAS_PROCESSING_CURRENT_GENERATION_ATTEMPT_ID_AND_OWNER_IF_ATTEMPTS_REMAIN_CLEAR_OWNER_AND_LEASE_SET_NEXT_ATTEMPT_AT_NOW_PLUS_BACKOFF_NO_AUDIT_ELSE_TO_FAILED_RETRY_BUDGET_EXHAUSTED_AND_SINGLE_SYSTEM_AUDIT_IN_ONE_TRANSACTION" ||
+    exportWorker.readyTransaction !==
+      "CAS_PROCESSING_CURRENT_GENERATION_ATTEMPT_ID_AND_OWNER_LEASE_ACTIVE_NEXT_ATTEMPT_AT_NULL_AND_NOW_BEFORE_IMMUTABLE_ATTEMPT_DEADLINE_TO_READY_PLUS_OBJECT_METADATA_CONTENT_SHA256_SIGNATURE_KEY_ID_AND_SINGLE_SYSTEM_AUDIT" ||
+    exportWorker.failedTransaction !==
+      "CAS_PROCESSING_CURRENT_GENERATION_ATTEMPT_ID_AND_OWNER_LEASE_ACTIVE_NEXT_ATTEMPT_AT_NULL_AND_NOW_BEFORE_IMMUTABLE_ATTEMPT_DEADLINE_TO_FAILED_PLUS_CLOSED_EXPORT_FAILURE_CODE_AND_SINGLE_SYSTEM_AUDIT_IN_ONE_TRANSACTION" ||
+    exportWorker.commitUnknown !==
+      "READ_POSTGRESQL_BY_EXPORT_ID_AND_GENERATION_IF_READY_MATCHES_STOP_IF_FAILED_MATCHES_STOP_AND_VERIFY_FAILURE_CODE_AND_SINGLE_AUDIT_IF_PROCESSING_SAME_FENCE_RESUME_TERMINAL_CAS_ONLY_WHILE_CURRENT_OWNER_LEASE_ACTIVE_NEXT_ATTEMPT_AT_NULL_AND_NOW_BEFORE_ATTEMPT_DEADLINE_ELSE_FOLLOW_SCHEDULED_RETRY_LEASE_EXPIRY_RECLAIM_OR_DEADLINE_WATCHDOG_IF_STALE_MARK_TARGETED_ORPHAN_NO_BLIND_RETRY" ||
+    sameFenceUnknownCommit?.requiredAction !==
+      "IF_CURRENT_ATTEMPT_ID_AND_OWNER_LEASE_ACTIVE_NEXT_ATTEMPT_AT_NULL_AND_NOW_BEFORE_IMMUTABLE_ATTEMPT_DEADLINE_RESUME_SINGLE_FENCED_CAS_FROM_VERIFIED_STAGING_STATE_ELSE_NO_TERMINAL_CAS_FOLLOW_EXISTING_RETRY_SCHEDULE_OR_LEASE_EXPIRY_RECLAIM_OR_ATTEMPT_DEADLINE_WATCHDOG" ||
+    sameFenceUnknownCommit?.resumeCas !== "CONDITIONAL" ||
+    sameFenceUnknownCommit?.terminalEligibility !==
+      "CURRENT_ATTEMPT_ID_AND_OWNER_LEASE_ACTIVE_NEXT_ATTEMPT_AT_NULL_AND_NOW_BEFORE_IMMUTABLE_ATTEMPT_DEADLINE" ||
+    sameFenceUnknownCommit?.ineligibleAction !==
+      "NO_TERMINAL_CAS_FOLLOW_EXISTING_RETRY_SCHEDULE_OR_LEASE_EXPIRY_RECLAIM_OR_ATTEMPT_DEADLINE_WATCHDOG" ||
+    c2Policy.auditExport?.unknownCommitEligibilityTraces?.length !== 4 ||
+    exportWorker.staleWorker !==
+      "CANNOT_CAS_RETRY_SCHEDULE_READY_OR_FAILED_CANNOT_PUBLISH_METADATA_VISIBILITY_OR_AUDIT_AFTER_FENCE_CHANGE" ||
+    exportWorker.stalePutCompletion !==
+      "AN_ALREADY_STARTED_PUT_MAY_FINISH_ONLY_AT_ITS_IMMUTABLE_EXPORT_GENERATION_ATTEMPT_STAGING_KEY_REMAINS_INVISIBLE_AND_BECOMES_TARGETED_ORPHAN" ||
+    c2Policy.auditExport?.retryContractualTraces?.length !== 12
+  ) {
+    fail(
+      "audit export retries must preserve exact scheduling, terminal classification, fencing and stale PUT orphan rules; policies must be exact",
+    );
+  }
   const actualAuditLogOperations = Object.entries(matrix)
     .filter(([, policy]) => policy?.successSink === "AUDIT_LOG")
     .map(([operationId]) => operationId);
@@ -3581,20 +3691,133 @@ function validateAdminSecurityContract(document) {
       fail(`${sink} C2 operations must not receive a SQL AuditLog reason`);
     }
   }
+  const publicSecurityEventOperations = new Set(
+    REQUIRED_ADMIN_C2_AUDIT_REASONS.nonAuditLogOperations.ADMIN_SECURITY_EVENT,
+  );
+  const noAuditLogOperations = new Set(
+    REQUIRED_ADMIN_C2_AUDIT_REASONS.nonAuditLogOperations.NONE,
+  );
+  for (const [operationId, operationPolicy] of Object.entries(matrix)) {
+    const failureSinks = operationPolicy.failureSinks ?? {};
+    const expectedBusinessSink = requiredAuditLogOperations.includes(
+      operationId,
+    )
+      ? "AUDIT_LOG_REJECTED"
+      : publicSecurityEventOperations.has(operationId)
+        ? "ADMIN_SECURITY_EVENT_FAILED"
+        : "NONE";
+    if (
+      failureSinks.businessRejectedAfterProof !== expectedBusinessSink ||
+      (noAuditLogOperations.has(operationId) &&
+        JSON.stringify(failureSinks).includes("AUDIT_LOG_REJECTED"))
+    ) {
+      fail(
+        `${operationId} post-proof business rejection must preserve its exact AuditLog, AdminSecurityEvent or NONE sink`,
+      );
+    }
+  }
+  const readOnlyFailureContracts = {
+    listAdminRecoveryCases: {
+      commit: "READ_ONLY_TRANSACTION_SNAPSHOT_CONFIRMATION",
+      commitUnknown:
+        "READ_ONLY_SNAPSHOT_CONFIRMATION_UNKNOWN_NEUTRAL_503_NO_RETRY",
+    },
+    getAdminRecoveryCase: {
+      commit: "NOT_APPLICABLE_NO_DURABLE_WRITE",
+      commitUnknown: "NOT_APPLICABLE_NO_DURABLE_WRITE",
+      response: "AFTER_SUCCESSFUL_READ_AND_COMPLETE_SERVER_CHECKS",
+    },
+    listAdminUsers: {
+      commit: "READ_ONLY_TRANSACTION_SNAPSHOT_CONFIRMATION",
+      commitUnknown:
+        "READ_ONLY_SNAPSHOT_CONFIRMATION_UNKNOWN_NEUTRAL_503_NO_RETRY",
+    },
+  };
+  for (const [operationId, expected] of Object.entries(
+    readOnlyFailureContracts,
+  )) {
+    const failureSinks = matrix[operationId]?.failureSinks ?? {};
+    if (
+      c2Policy.operationExecutionMatrix?.[operationId]?.commit !==
+        expected.commit ||
+      (expected.response !== undefined &&
+        c2Policy.operationExecutionMatrix?.[operationId]?.response !==
+          expected.response) ||
+      failureSinks.roleDeniedAfterProof !== "NONE" ||
+      failureSinks.businessRejectedAfterProof !== "NONE" ||
+      failureSinks.dependencyUnavailable?.afterCompleteProof !==
+        "NONE_NEUTRAL_503_NO_DURABLE_AUDIT" ||
+      failureSinks.sinkUnavailable !== "NOT_APPLICABLE_NO_DURABLE_AUDIT_SINK" ||
+      failureSinks.commitUnknown !== expected.commitUnknown
+    ) {
+      fail(`${operationId} read-only NONE sink and commit contract must agree`);
+    }
+  }
   const declaredAsyncTransitions = Object.values(matrix).flatMap(
     (policy) => policy?.asynchronousTransitions ?? [],
   );
   const expectedAsyncTransitions = Object.keys(
     REQUIRED_ADMIN_C2_AUDIT_REASONS.systemTransitions,
-  ).filter((name) => name !== "ADMIN_BOOTSTRAP_SYSTEM_AUDIT");
+  ).filter(
+    (name) =>
+      name !== "ADMIN_BOOTSTRAP_SYSTEM_AUDIT" &&
+      name !== "RECOVERY_CASE_SERVER_CANCELLATION_SYSTEM_AUDIT",
+  );
   if (
     !orderedEqual(
-      [...declaredAsyncTransitions].sort(),
+      [...new Set(declaredAsyncTransitions)].sort(),
       [...expectedAsyncTransitions].sort(),
     )
   ) {
     fail(
       "C2 asynchronous and bootstrap AuditLog transitions must be exhaustive and origin-specific",
+    );
+  }
+  for (const [operationId, operationPolicy] of Object.entries(matrix)) {
+    const transitions = operationPolicy?.asynchronousTransitions ?? [];
+    const expectedContinuation = transitions.length
+      ? transitions.join("+")
+      : "NONE";
+    if (
+      c2Policy.operationExecutionMatrix?.[operationId]?.continuation !==
+      expectedContinuation
+    ) {
+      fail(
+        `${operationId} continuation must match its asynchronous transitions`,
+      );
+    }
+    const transactionalTransitions =
+      operationPolicy?.transactionalSystemTransitions ?? [];
+    const expectedTransactionalEffects = transactionalTransitions.length
+      ? transactionalTransitions.join("+")
+      : undefined;
+    if (
+      c2Policy.operationExecutionMatrix?.[operationId]
+        ?.transactionalSystemEffects !== expectedTransactionalEffects
+    ) {
+      fail(
+        `${operationId} transactional SYSTEM effects must match its declared transitions`,
+      );
+    }
+  }
+  const cancellationPredicate =
+    c2Policy.systemSourcePredicates
+      ?.RECOVERY_CASE_SERVER_CANCELLATION_SYSTEM_AUDIT ?? {};
+  const cancellationDeclaringOperations = Object.entries(matrix)
+    .filter(([, policy]) =>
+      (policy?.transactionalSystemTransitions ?? []).includes(
+        "RECOVERY_CASE_SERVER_CANCELLATION_SYSTEM_AUDIT",
+      ),
+    )
+    .map(([operationId]) => operationId);
+  if (
+    !stableEqual(
+      cancellationDeclaringOperations,
+      cancellationPredicate.sourceActions ?? [],
+    )
+  ) {
+    fail(
+      "recovery-case cancellation source actions must exactly match declaring operations",
     );
   }
 
@@ -3737,6 +3960,7 @@ function validateAdminSecurityContract(document) {
       fail(`${contract.operationId} request schema or JSON policy has drifted`);
     }
     if (contract.slice === "S1.2-03C2") {
+      const operationPolicy = matrix[contract.operationId];
       const expectedStepUpPurpose =
         REQUIRED_ADMIN_C2_STEP_UP_PURPOSES.get(contract.operationId) ?? null;
       if (
@@ -3755,6 +3979,28 @@ function validateAdminSecurityContract(document) {
       ) {
         fail(
           `${contract.operationId} C2 malformed JSON mapping must remain exact`,
+        );
+      }
+      if (
+        operation["x-kora-audit-context-proof"] !==
+          operationPolicy?.auditContextProof ||
+        !stableEqual(
+          operation["x-kora-authorization-checks"] ?? [],
+          operationPolicy?.authorizationChecks ?? [],
+        ) ||
+        !stableEqual(
+          operation["x-kora-post-proof-business-checks"] ?? [],
+          operationPolicy?.postProofBusinessChecks ?? [],
+        ) ||
+        !stableEqual(
+          operation["x-kora-contract-phase-order"] ?? [],
+          operationPolicy?.phaseOrder ?? [],
+        ) ||
+        JSON.stringify(operation["x-kora-failure-sinks"] ?? {}) !==
+          JSON.stringify(operationPolicy?.failureSinks ?? {})
+      ) {
+        fail(
+          `${contract.operationId} must separate audit-context proof, authorization, business checks, phases and sinks`,
         );
       }
       if (
@@ -3816,6 +4062,7 @@ function validateAdminSecurityContract(document) {
       );
     }
     if (
+      contract.slice === "S1.2-03C1" &&
       !contextualEnrollmentAudit &&
       operation["x-kora-audit-context-proof"] !== undefined
     ) {
@@ -4104,7 +4351,8 @@ function validateAdminSecurityContract(document) {
   const audit = document.components.schemas.AdminAuditLogEntry;
   const auditV1 = document.components.schemas.AdminAuditLogEntryV1;
   const auditV2 = document.components.schemas.AdminAuditLogEntryV2;
-  const auditV2Required = [
+  const auditV3 = document.components.schemas.AdminAuditLogEntryV3;
+  const auditTypedRequired = [
     "action",
     "actorAdminUserId",
     "adminRecoveryContextId",
@@ -4126,13 +4374,17 @@ function validateAdminSecurityContract(document) {
     "subjectAdminUserId",
     "systemExecutionRefHash",
     "version",
+    "outcome",
+    "failureCode",
+    "outcomeProvenance",
+    "operatorReasonRedacted",
   ];
   const auditV1Required = [
-    ...auditV2Required.slice(0, 13),
+    ...auditTypedRequired.slice(0, 13),
     "legacyReasonRedacted",
-    ...auditV2Required.slice(13),
+    ...auditTypedRequired.slice(13),
   ];
-  const auditV2Properties = [
+  const auditTypedProperties = [
     "version",
     "eventId",
     "action",
@@ -4154,16 +4406,87 @@ function validateAdminSecurityContract(document) {
     "causationEventId",
     "causationSecurityEventId",
     "createdAt",
+    "outcome",
+    "failureCode",
+    "outcomeProvenance",
+    "operatorReasonRedacted",
   ];
-  const auditV1Properties = [...auditV2Properties, "legacyReasonRedacted"];
-  const [sessionAudit, recoveryAudit, systemAudit] = auditV2?.oneOf ?? [];
-  const [autonomousAudit, delegatedAudit, publicResetAudit] =
-    systemAudit?.oneOf ?? [];
+  const auditV1Properties = [...auditTypedProperties, "legacyReasonRedacted"];
+  const expectedRejectedFailureCodes = [
+    "VALIDATION_ERROR",
+    "FORBIDDEN",
+    "STEP_UP_REQUIRED",
+    "STEP_UP_EXPIRED",
+    "STEP_UP_INVALID",
+    "INTEGRITY_REJECTED",
+    "DEPENDENCY_UNAVAILABLE",
+    "IDEMPOTENCY_CONFLICT",
+    "RESOURCE_NOT_FOUND",
+    "RESOURCE_CONFLICT",
+    "RESOURCE_EXPIRED",
+    "PROJECTION_BUDGET_EXCEEDED",
+  ];
+  const failureCodePolicy = c2Policy.failureCodeByTrigger ?? {};
+  const mappedFailureCodes = new Set();
+  const collectMappedFailureCodes = (value) => {
+    if (typeof value === "string") {
+      if (expectedRejectedFailureCodes.includes(value)) {
+        mappedFailureCodes.add(value);
+      }
+      return;
+    }
+    if (value && typeof value === "object") {
+      Object.values(value).forEach(collectMappedFailureCodes);
+    }
+  };
+  collectMappedFailureCodes(failureCodePolicy.globalAuditLogV3);
+  collectMappedFailureCodes(failureCodePolicy.businessByOperation);
+  const hasExactTypedAuditContexts = (schema) => {
+    const [sessionAudit, recoveryAudit, systemAudit] = schema?.oneOf ?? [];
+    const [autonomousAudit, delegatedAudit, publicResetAudit] =
+      systemAudit?.oneOf ?? [];
+    return (
+      schema?.oneOf?.length === 3 &&
+      stableEqual(
+        schema.oneOf.map((branch) => branch.properties?.context?.const),
+        ["ADMIN_SESSION", "ADMIN_RECOVERY", "SYSTEM"],
+      ) &&
+      sessionAudit?.properties?.actorAdminUserId?.type === "string" &&
+      sessionAudit?.properties?.adminSessionId?.type === "string" &&
+      sessionAudit?.properties?.adminRecoveryContextId?.type === "null" &&
+      sessionAudit?.properties?.systemExecutionRefHash?.type === "null" &&
+      sessionAudit?.properties?.causationSecurityEventId?.type === "null" &&
+      sessionAudit?.properties?.delegatedByAdminUserId?.type === "null" &&
+      recoveryAudit?.properties?.actorAdminUserId?.type === "string" &&
+      recoveryAudit?.properties?.adminSessionId?.type === "null" &&
+      recoveryAudit?.properties?.adminRecoveryContextId?.type === "string" &&
+      recoveryAudit?.properties?.systemExecutionRefHash?.type === "null" &&
+      recoveryAudit?.properties?.causationSecurityEventId?.type === "null" &&
+      recoveryAudit?.properties?.delegatedByAdminUserId?.type === "null" &&
+      systemAudit?.properties?.actorAdminUserId?.type === "null" &&
+      systemAudit?.properties?.adminSessionId?.type === "null" &&
+      systemAudit?.properties?.adminRecoveryContextId?.type === "null" &&
+      systemAudit?.properties?.systemExecutionRefHash?.type === "string" &&
+      systemAudit?.oneOf?.length === 3 &&
+      autonomousAudit?.properties?.causationEventId?.type === "null" &&
+      autonomousAudit?.properties?.causationSecurityEventId?.type === "null" &&
+      autonomousAudit?.properties?.delegatedByAdminUserId?.type === "null" &&
+      delegatedAudit?.properties?.causationEventId?.type === "string" &&
+      delegatedAudit?.properties?.causationSecurityEventId?.type === "null" &&
+      delegatedAudit?.properties?.delegatedByAdminUserId?.type === "string" &&
+      publicResetAudit?.properties?.causationEventId?.type === "null" &&
+      publicResetAudit?.properties?.causationSecurityEventId?.type ===
+        "string" &&
+      publicResetAudit?.properties?.delegatedByAdminUserId?.type === "null"
+    );
+  };
+  const [successOutcome, rejectedOutcome] = auditV3?.allOf?.[0]?.oneOf ?? [];
   if (
     JSON.stringify(audit?.oneOf ?? []) !==
       JSON.stringify([
         { $ref: "#/components/schemas/AdminAuditLogEntryV1" },
         { $ref: "#/components/schemas/AdminAuditLogEntryV2" },
+        { $ref: "#/components/schemas/AdminAuditLogEntryV3" },
       ]) ||
     JSON.stringify(audit?.discriminator ?? {}) !==
       JSON.stringify({
@@ -4171,12 +4494,15 @@ function validateAdminSecurityContract(document) {
         mapping: {
           1: "#/components/schemas/AdminAuditLogEntryV1",
           2: "#/components/schemas/AdminAuditLogEntryV2",
+          3: "#/components/schemas/AdminAuditLogEntryV3",
         },
       }) ||
     !isExactObjectSchema(auditV1, auditV1Required, auditV1Properties) ||
-    !isExactObjectSchema(auditV2, auditV2Required, auditV2Properties) ||
+    !isExactObjectSchema(auditV2, auditTypedRequired, auditTypedProperties) ||
+    !isExactObjectSchema(auditV3, auditTypedRequired, auditTypedProperties) ||
     auditV1.properties?.version?.const !== 1 ||
     auditV2.properties?.version?.const !== 2 ||
+    auditV3.properties?.version?.const !== 3 ||
     auditV1.properties?.eventId?.format !== undefined ||
     auditV1.properties?.actorAdminUserId?.format !== undefined ||
     auditV1.properties?.adminSessionId?.format !== undefined ||
@@ -4186,7 +4512,9 @@ function validateAdminSecurityContract(document) {
     auditV1.properties?.legacyReasonRedacted?.const !== true ||
     auditV1.properties?.legacyReason !== undefined ||
     auditV2.properties?.legacyReason !== undefined ||
+    auditV3.properties?.legacyReason !== undefined ||
     auditV2.properties?.legacyReasonRedacted !== undefined ||
+    auditV3.properties?.legacyReasonRedacted !== undefined ||
     [
       "eventClass",
       "context",
@@ -4199,38 +4527,10 @@ function validateAdminSecurityContract(document) {
       "causationEventId",
       "causationSecurityEventId",
     ].some((field) => auditV1.properties?.[field]?.type !== "null") ||
-    auditV2.oneOf?.length !== 3 ||
-    !stableEqual(
-      auditV2.oneOf.map((branch) => branch.properties?.context?.const),
-      ["ADMIN_SESSION", "ADMIN_RECOVERY", "SYSTEM"],
-    ) ||
-    sessionAudit?.properties?.actorAdminUserId?.type !== "string" ||
-    sessionAudit?.properties?.adminSessionId?.type !== "string" ||
-    sessionAudit?.properties?.adminRecoveryContextId?.type !== "null" ||
-    sessionAudit?.properties?.systemExecutionRefHash?.type !== "null" ||
-    sessionAudit?.properties?.causationSecurityEventId?.type !== "null" ||
-    sessionAudit?.properties?.delegatedByAdminUserId?.type !== "null" ||
-    recoveryAudit?.properties?.actorAdminUserId?.type !== "string" ||
-    recoveryAudit?.properties?.adminSessionId?.type !== "null" ||
-    recoveryAudit?.properties?.adminRecoveryContextId?.type !== "string" ||
-    recoveryAudit?.properties?.systemExecutionRefHash?.type !== "null" ||
-    recoveryAudit?.properties?.causationSecurityEventId?.type !== "null" ||
-    recoveryAudit?.properties?.delegatedByAdminUserId?.type !== "null" ||
-    systemAudit?.properties?.actorAdminUserId?.type !== "null" ||
-    systemAudit?.properties?.adminSessionId?.type !== "null" ||
-    systemAudit?.properties?.adminRecoveryContextId?.type !== "null" ||
-    systemAudit?.properties?.systemExecutionRefHash?.type !== "string" ||
+    !hasExactTypedAuditContexts(auditV2) ||
+    !hasExactTypedAuditContexts(auditV3) ||
     auditV2.properties?.causationSecurityEventId?.format !== "uuid" ||
-    systemAudit?.oneOf?.length !== 3 ||
-    autonomousAudit?.properties?.causationEventId?.type !== "null" ||
-    autonomousAudit?.properties?.causationSecurityEventId?.type !== "null" ||
-    autonomousAudit?.properties?.delegatedByAdminUserId?.type !== "null" ||
-    delegatedAudit?.properties?.causationEventId?.type !== "string" ||
-    delegatedAudit?.properties?.causationSecurityEventId?.type !== "null" ||
-    delegatedAudit?.properties?.delegatedByAdminUserId?.type !== "string" ||
-    publicResetAudit?.properties?.causationEventId?.type !== "null" ||
-    publicResetAudit?.properties?.causationSecurityEventId?.type !== "string" ||
-    publicResetAudit?.properties?.delegatedByAdminUserId?.type !== "null" ||
+    auditV3.properties?.causationSecurityEventId?.format !== "uuid" ||
     !stableEqual(auditV2.properties?.eventClass?.enum ?? [], [
       "LOGIN",
       "SESSION",
@@ -4239,14 +4539,73 @@ function validateAdminSecurityContract(document) {
     ]) ||
     auditV2.properties?.reasonCode?.$ref !==
       "#/components/schemas/AdminReasonCode" ||
-    auditV2.properties?.operatorReason?.minLength !== 3 ||
+    auditV2.properties?.operatorReason?.type !== "null" ||
+    auditV3.properties?.operatorReason?.type !== "null" ||
+    auditV1.properties?.operatorReasonRedacted?.const !== true ||
+    auditV2.properties?.operatorReasonRedacted?.const !== true ||
+    auditV3.properties?.operatorReasonRedacted?.const !== true ||
+    auditV1.properties?.outcome?.const !== "UNKNOWN" ||
+    auditV2.properties?.outcome?.const !== "UNKNOWN" ||
+    auditV1.properties?.failureCode?.type !== "null" ||
+    auditV2.properties?.failureCode?.type !== "null" ||
+    auditV1.properties?.outcomeProvenance?.const !== "HISTORICAL_UNKNOWN" ||
+    auditV2.properties?.outcomeProvenance?.const !== "HISTORICAL_UNKNOWN" ||
+    auditV3.properties?.outcomeProvenance?.const !== "EXPLICIT_C2" ||
+    !stableEqual(auditV3.properties?.outcome?.enum ?? [], [
+      "SUCCESS",
+      "REJECTED",
+    ]) ||
+    auditV3?.allOf?.length !== 1 ||
+    auditV3.allOf[0]?.oneOf?.length !== 2 ||
+    successOutcome?.properties?.outcome?.const !== "SUCCESS" ||
+    successOutcome?.properties?.failureCode?.type !== "null" ||
+    successOutcome?.properties?.outcomeProvenance?.const !== "EXPLICIT_C2" ||
+    rejectedOutcome?.properties?.outcome?.const !== "REJECTED" ||
+    !stableEqual(
+      rejectedOutcome?.properties?.failureCode?.enum ?? [],
+      expectedRejectedFailureCodes,
+    ) ||
+    !stableEqual(
+      [...mappedFailureCodes].sort(),
+      [...expectedRejectedFailureCodes].sort(),
+    ) ||
+    !stableEqual(
+      Object.keys(failureCodePolicy.businessByOperation ?? {}),
+      REQUIRED_ADMIN_C2_OPERATION_IDS,
+    ) ||
+    failureCodePolicy.scope !== "ADMIN_AUDIT_LOG_V3_REJECTED_ONLY" ||
+    failureCodePolicy.nonAuditLogRule !==
+      "ADMIN_SECURITY_EVENT_AND_NONE_SINK_OPERATIONS_MUST_NOT_CREATE_AUDIT_LOG_V3" ||
+    rejectedOutcome?.properties?.outcomeProvenance?.const !== "EXPLICIT_C2" ||
+    auditV1.properties?.maskedBefore?.maxProperties !== undefined ||
+    !stableEqual(auditV1.properties?.maskedBefore?.type ?? [], [
+      "object",
+      "array",
+      "string",
+      "number",
+      "boolean",
+      "null",
+    ]) ||
+    auditV1.properties?.maskedBefore?.additionalProperties !== true ||
+    auditV1.properties?.maskedAfter?.maxProperties !== undefined ||
+    !stableEqual(auditV1.properties?.maskedAfter?.type ?? [], [
+      "object",
+      "array",
+      "string",
+      "number",
+      "boolean",
+      "null",
+    ]) ||
+    auditV1.properties?.maskedAfter?.additionalProperties !== true ||
     auditV1.properties?.maskedBefore?.["x-kora-pii-redacted"] !== true ||
     auditV1.properties?.maskedAfter?.["x-kora-pii-redacted"] !== true ||
     auditV2.properties?.maskedBefore?.["x-kora-pii-redacted"] !== true ||
-    auditV2.properties?.maskedAfter?.["x-kora-pii-redacted"] !== true
+    auditV2.properties?.maskedAfter?.["x-kora-pii-redacted"] !== true ||
+    auditV3.properties?.maskedBefore?.["x-kora-pii-redacted"] !== true ||
+    auditV3.properties?.maskedAfter?.["x-kora-pii-redacted"] !== true
   ) {
     fail(
-      "AuditLog must be an exclusive v1/v2 projection with real legacy nullities, no raw legacy reason and strict v2 contexts/causality",
+      "AuditLog must preserve historical v1/v2 UNKNOWN outcomes and expose explicit conditional v3 outcomes with strict typed contexts/causality",
     );
   }
 
@@ -4254,7 +4613,7 @@ function validateAdminSecurityContract(document) {
   if (
     auditProjection.entrySchema !== "AdminAuditLogEntry" ||
     auditProjection.versionDiscriminator !== "version" ||
-    !stableEqual(auditProjection.exclusiveVersions ?? [], [1, 2]) ||
+    !stableEqual(auditProjection.exclusiveVersions ?? [], [1, 2, 3]) ||
     auditProjection.listAndExportProjection !==
       "EXACT_SAME_VERSIONED_SCHEMA_AND_MASKING" ||
     auditProjection.legacyV1?.rawLegacyReason !==
@@ -4262,6 +4621,16 @@ function validateAdminSecurityContract(document) {
     auditProjection.legacyV1?.legacyReasonRedacted !== true ||
     auditProjection.legacyV1?.v2Metadata !==
       "EXPLICIT_NULL_NO_BACKFILL_NO_SYNTHETIC_ATTRIBUTION" ||
+    auditProjection.legacyV1?.representability !==
+      "NO_UUID_OR_LENGTH_REQUIREMENT_ON_TEXT_IDENTIFIERS_ANY_JSON_VALUE_FOR_MASKED_COLUMNS_AND_NO_PROJECTION_TRUNCATION" ||
+    !stableEqual(auditProjection.legacyV1?.physicalDdlFacts?.nonEmpty ?? [], [
+      "action",
+      "entityType",
+      "entityId",
+      "legacyReason",
+    ]) ||
+    auditProjection.legacyV1?.physicalDdlFacts?.requestIdLength !==
+      "8_TO_128_IN_CURRENT_BASELINE_CHECK" ||
     auditProjection.v2?.eventClassContextReasonCode !== "NON_NULL" ||
     !stableEqual(auditProjection.filters?.common ?? [], [
       "actorAdminUserId",
@@ -4279,19 +4648,78 @@ function validateAdminSecurityContract(document) {
     ]) ||
     auditProjection.filters?.dateRange?.semantics !==
       "SAME_TIME_RANGE_WITH_SURFACE_SPECIFIC_NAMES" ||
-    !stableEqual(auditProjection.filters?.v2Only ?? [], [
+    !stableEqual(auditProjection.filters?.typedVersions ?? [], [2, 3]) ||
+    !stableEqual(auditProjection.filters?.typedOnly ?? [], [
       "auditEventClass",
       "auditContext",
       "auditReasonCode",
     ]) ||
-    auditProjection.filters?.v1WithAnyV2OnlyFilter !== "NEVER_MATCH" ||
-    auditProjection.filters?.v1WithoutVersionOrV2OnlyFilters !==
+    auditProjection.filters?.v1WithAnyTypedFilter !== "NEVER_MATCH" ||
+    auditProjection.filters?.v1WithoutVersionOrTypedOnlyFilters !==
       "INCLUDED_WHEN_COMMON_FILTERS_MATCH" ||
+    auditProjection.filters?.orderPaginationSnapshotLimitsMasking !==
+      "IDENTICAL_FOR_V1_V2_AND_V3" ||
     auditProjection.filters?.unknownHistoricalValue !==
-      "NEVER_SYNTHETICALLY_MATCH_CLASS_CONTEXT_OR_REASON"
+      "NEVER_SYNTHETICALLY_MATCH_CLASS_CONTEXT_OR_REASON" ||
+    auditProjection.filters?.v2Outcome !==
+      "ALWAYS_UNKNOWN_NO_OUTCOME_OR_FAILURE_FILTER_MATCH" ||
+    auditProjection.filters?.v3Outcome !==
+      "EXPLICIT_OUTCOME_AND_NORMATIVE_FAILURE_CODE" ||
+    auditProjection.operatorReason?.durableStorage !==
+      "PRESERVED_WHEN_REQUIRED" ||
+    auditProjection.operatorReason?.listAndExport !==
+      "ALWAYS_NULL_WITH_OPERATOR_REASON_REDACTED_TRUE" ||
+    auditProjection.operatorReason?.presentationTransformOnly !== true ||
+    auditProjection.operatorReason?.durableMutation !== false ||
+    !stableEqual(auditProjection.operatorReason?.forbiddenCanaries ?? [], [
+      "EMAIL",
+      "PHONE",
+      "SECRET",
+      "FREE_TEXT",
+    ]) ||
+    auditProjection.historicalOutcome !==
+      "UNKNOWN_WITH_HISTORICAL_UNKNOWN_PROVENANCE_NO_ACTION_OR_REASON_INFERENCE" ||
+    auditProjection.budgetOverflow?.truncate !== false ||
+    auditProjection.budgetOverflow?.omitRow !== false ||
+    auditProjection.budgetOverflow?.fabricateValue !== false ||
+    auditProjection.budgetOverflow?.list !==
+      "NEUTRAL_503_SERVICE_UNAVAILABLE_NO_PARTIAL_PAGE_REDUCE_FILTERS" ||
+    auditProjection.budgetOverflow?.export !==
+      "FAILED_WITH_PROJECTION_BUDGET_EXCEEDED_NO_PARTIAL_ARTIFACT"
   ) {
     fail(
-      "audit projection policy must include v1 by default, omit raw legacyReason and prevent synthetic v2 filter matches",
+      "audit projection must preserve historical rows, redact operator reason only at presentation, reject budget overflow and expose exact v1/v2/v3 semantics",
+    );
+  }
+
+  const auditOutcome = c2Policy.auditOutcome ?? {};
+  if (
+    !orderedEqual(auditOutcome.newC2Values ?? [], ["SUCCESS", "REJECTED"]) ||
+    auditOutcome.success !== "OUTCOME_SUCCESS_FAILURE_CODE_NULL" ||
+    auditOutcome.rejection !==
+      "OUTCOME_REJECTED_NORMATIVE_NON_NULL_FAILURE_CODE" ||
+    auditOutcome.historicalV1AndExistingV2C1?.outcome !== "UNKNOWN" ||
+    auditOutcome.historicalV1AndExistingV2C1?.failureCode !== null ||
+    auditOutcome.historicalV1AndExistingV2C1?.provenance !==
+      "HISTORICAL_UNKNOWN" ||
+    auditOutcome.historicalV1AndExistingV2C1?.rewrite !== false ||
+    auditOutcome.historicalV1AndExistingV2C1?.backfill !== false ||
+    auditOutcome.historicalV1AndExistingV2C1?.inferFromReasonCode !== false ||
+    auditOutcome.historicalV1AndExistingV2C1?.defaultSuccess !== false ||
+    (
+      auditOutcome.historicalV1AndExistingV2C1
+        ?.verifiedHistoricalActionClassificationTable ?? []
+    ).length !== 0 ||
+    auditOutcome.downloadSuccess !==
+      "AUTHORIZATION_READ_LEASE_AND_BEGINNING_DURABLY_RECORDED_NOT_CLIENT_RECEIPT" ||
+    auditOutcome.downloadTerminalObservation !==
+      "SEPARATE_NON_AUDIT_OPERATIONAL_OBSERVATION_COMPLETE_INTERRUPTED_OR_UNKNOWN" ||
+    auditOutcome.socketCloseProvesReceipt !== false ||
+    auditOutcome.unknownCommit !==
+      "NO_CONTRADICTORY_SUCCESS_OR_REJECTION_RECONCILE_FIRST"
+  ) {
+    fail(
+      "audit outcomes must be explicit for new C2 writes, UNKNOWN for unverified history and must not claim client receipt",
     );
   }
 
@@ -4315,7 +4743,10 @@ function validateAdminSecurityContract(document) {
     requiredAuditFilters.some(
       (name) => !hasParameter(document, auditRead, name, "query"),
     ) ||
-    document.components.parameters.AuditVersion?.schema?.enum?.length !== 2 ||
+    !stableEqual(
+      document.components.parameters.AuditVersion?.schema?.enum ?? [],
+      [1, 2, 3],
+    ) ||
     document.components.parameters.AuditEventClass?.schema?.enum?.length !==
       4 ||
     document.components.parameters.AuditContext?.schema?.$ref !==
@@ -4331,7 +4762,7 @@ function validateAdminSecurityContract(document) {
     document.components.parameters.AuditEntityId?.schema?.format !== undefined
   ) {
     fail(
-      "audit read must preserve historical-compatible common filters and explicit version/v2-only filters",
+      "audit read must preserve historical-compatible common filters and explicit version/typed-v2-v3-only filters",
     );
   }
 
@@ -4389,7 +4820,7 @@ function validateAdminSecurityContract(document) {
     "get",
   );
   if (
-    auditExport?.oneOf?.length !== 2 ||
+    auditExport?.oneOf?.length !== 3 ||
     !stableEqual(auditExport.oneOf[0]?.properties?.state?.enum ?? [], [
       "READY",
       "EXPIRED",
@@ -4400,7 +4831,15 @@ function validateAdminSecurityContract(document) {
     !stableEqual(auditExport.oneOf[1]?.properties?.state?.enum ?? [], [
       "PENDING",
       "PROCESSING",
-      "FAILED",
+    ]) ||
+    auditExport.oneOf[1]?.properties?.failureCode?.type !== "null" ||
+    auditExport.oneOf[2]?.properties?.state?.const !== "FAILED" ||
+    auditExport.oneOf[2]?.properties?.failureCode?.type !== "string" ||
+    !stableEqual(auditExport.oneOf[2]?.properties?.failureCode?.enum ?? [], [
+      "RETRY_BUDGET_EXHAUSTED",
+      "PROJECTION_BUDGET_EXCEEDED",
+      "INTEGRITY_FAILED",
+      "DEPENDENCY_UNAVAILABLE",
     ]) ||
     createAuditExport["x-kora-pii-redacted"] !== true ||
     createAuditExport["x-kora-entry-schema"] !== "AdminAuditLogEntry" ||

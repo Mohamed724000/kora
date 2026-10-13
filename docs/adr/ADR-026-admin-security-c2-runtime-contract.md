@@ -1,9 +1,10 @@
 # ADR-026 — Admin Security C2 Runtime Contract
 
 Statut : **ACCEPTED POUR LE PRÉREQUIS CONTRACTUEL S1.2-03C2-P0 — RUNTIME NON
-IMPLÉMENTÉ — PUBLICATION CONTRACTUELLE SANS AUTORISATION RUNTIME**
+IMPLÉMENTÉ — P0/R1/R2/R3 PUBLIÉS ; R4 VALIDÉ LOCALEMENT DANS L’INSTANTANÉ
+PRÉPUBLICATION DU 2026-10-13**
 
-Date : 2026-10-09
+Date : 2026-10-12
 
 ## Contexte
 
@@ -329,3 +330,146 @@ payloads, les en-têtes et le framing HTTP sont exclus. Le hash est conservé en
 état `EXPIRED` après suppression de l'artefact dérivé. Pour éviter toute
 autoréférence, `contentSha256` est absent du ZIP et de son manifeste ; le profil
 JCS/JWS Ed25519 R4 et les hashes par entrée restent inchangés.
+
+## Amendement R4 — causalité d'exécution complète
+
+### Preuve, autorisation et résultat
+
+Pour chacune des quinze opérations C2, l'ordre normatif est : entrée, preuve
+du contexte d'audit, autorisation, contrôles métier post-preuve, mutation ou
+snapshot, audit, COMMIT, réponse, continuation. La preuve de contexte est une
+validation serveur complète de session/JTI/version d'autorisation/révocation,
+ou du contexte recovery ; un cookie ou un identifiant client ne suffit jamais.
+Rôle, step-up et intégrité export sont des contrôles ultérieurs distincts.
+
+Avant preuve complète, le rejet va à `AdminSecurityEvent`. Après preuve, un
+refus de rôle, de step-up ou d'intégrité va à `AuditLog` v3 `REJECTED` lorsque
+la table d'opération le prévoit. Sink indisponible : rollback et 503 neutre,
+sans fausse durabilité. COMMIT inconnu : 503 neutre, aucun second sink et
+réconciliation avant toute action. Les opérations C2 et transitions SYSTEM
+réussies sont des v3 `SUCCESS`; v1/v2 historiques restent explicitement
+`UNKNOWN`.
+
+La table machine-readable `failureCodeByTrigger` est normative : rôle refusé,
+step-up absent/expiré/invalide, intégrité et dépendance ont chacun leur code
+fermé ; les contrôles métier de chaque opération mappent explicitement
+validation, idempotence, absence, conflit, expiration et dépassement de budget.
+L'ensemble exact des valeurs atteignables est celui de l'enum v3. `AUTH_REQUIRED`
+reste un rejet avant preuve vers SecurityEvent et un sink d'audit indisponible
+ne peut pas prétendre avoir écrit un AuditLog v3.
+
+Pour le worker export, READY produit `SUCCESS/null`. Un retry non terminal ne
+produit aucun AuditLog. L'épuisement terminal vers FAILED est atomique avec un
+unique AuditLog v3 `REJECTED`; les codes export se projettent de façon fermée :
+`RETRY_BUDGET_EXHAUSTED` et `DEPENDENCY_UNAVAILABLE` vers
+`DEPENDENCY_UNAVAILABLE`, `PROJECTION_BUDGET_EXCEEDED` vers le même code et
+`INTEGRITY_FAILED` vers `INTEGRITY_REJECTED`. Un COMMIT inconnu relit également
+FAILED et s'arrête si génération, tentative, code et audit unique concordent.
+
+### Sources SYSTEM
+
+Les sept transitions déclarent type/version/provenance de source, action,
+classe, contexte, outcome et failureCode source, action/classe/contexte/outcome
+SYSTEM, acteur nul,
+ressource, liaisons durables, règle de délégation, clé d'unicité et sources
+invalides. Une délégation depuis `AuditLog` exige une source v3 `SUCCESS` et
+`delegatedByAdminUserId` égal à l'acteur causal. Une source historique,
+`UNKNOWN`, `REJECTED`, sans lien outbox/job/case ou sans rapport est refusée.
+Chaque source AuditLog applique la liaison exacte définie pour son action.
+Pour une annulation déclenchée par création, l'audit causal porte le nouveau
+`SUPERSEDING_RECOVERY_CASE_ID`, tandis que chaque audit SYSTEM porte un
+`CANCELLED_RECOVERY_CASE_ID` distinct. Pour rôle/statut, l'`entityId` causal
+est le sujet admin et chaque case annulé doit avoir ce même sujet. Pour
+création de case, changement de rôle ou de statut,
+l'annulation de chaque case PENDING et son AuditLog SYSTEM sont dans la même
+transaction PostgreSQL que l'audit initiateur, avant réponse ; ce n'est pas une
+continuation worker. Le reset public reste une branche `AdminSecurityEvent` C1 typée
+et refuse explicitement `FAILED`, sans administrateur ni délégant artificiel.
+Les sources d'état serveur refusent tout état ou génération qui ne correspond
+pas à leur prédicat, sans leur appliquer artificiellement les outcomes AuditLog.
+
+### Export : lease, fencing et visibilité
+
+La machine fermée est `PENDING -> PROCESSING -> READY|FAILED`, puis
+`READY -> EXPIRED`. Un `PROCESSING` ne se reprend qu'après expiration de sa
+lease avec incrément du fencing. Paramètres contractuels : lease 120 s,
+renouvellement 30 s, tentative au plus 600 s et trois tentatives, tentative
+initiale comprise. Chaque claim fixe `attemptStartedAt` et une
+`attemptDeadline = attemptStartedAt + 600 s` immuable. Un renouvellement exige
+le fence et le propriétaire courants, une lease encore active, aucun retry
+planifié et un instant strictement antérieur à cette deadline ; il borne la
+lease à `min(now + 120 s, attemptDeadline)` sans jamais prolonger la tentative.
+Une erreur transitoire connue applique les mêmes prédicats CAS, révoque
+immédiatement propriétaire et lease, puis planifie `nextAttemptAt` à +30 s
+avant la tentative 2 ou +120 s avant la tentative 3, sans audit non terminal.
+Un crash attend l'expiration de lease. Tant que `now < attemptDeadline`, le
+reclaim CAS vérifie génération, attempt id et propriétaire, révoque le
+propriétaire puis autorise le claim dû sans backoff additionnel. Dès que
+`now >= attemptDeadline`, le watchdog est prioritaire, y compris lorsque la
+lease expire exactement à la deadline : READY, FAILED, renew et reclaim sont
+refusés ; le watchdog planifie la reprise avec le backoff contractuel ou, au
+troisième essai, ferme FAILED/`RETRY_BUDGET_EXHAUSTED` avec audit unique. Un
+crash du troisième essai dont la lease expire avant la deadline ferme aussi
+FAILED avec ce code et cet audit unique. Une erreur déterministe
+non retryable ou l'épuisement du troisième essai fait un CAS FAILED avec code
+fermé et audit unique. L'identité stable associe export, tentative, génération
+et objet de staging immuable. Après changement de fence, un ancien worker ne
+peut plus planifier, publier l'état ou les métadonnées, rendre READY/FAILED ni
+auditer. Un PUT déjà parti peut toutefois finir uniquement sur sa propre clé
+staging export/génération/tentative ; il reste invisible et devient un orphelin
+ciblé. Aucune transaction distribuée ou annulation physique de PUT n'est
+prétendue.
+
+Les CAS terminales ordinaires READY/FAILED exigent simultanément état
+PROCESSING, génération, attempt id et propriétaire courants, lease active,
+`nextAttemptAt = null` et `now < attemptDeadline`. La révocation lors d'une
+planification rend donc l'ancien worker inéligible avant même le prochain claim.
+
+L'ordre est claim CAS, payloads, manifeste JCS, signature JWS Ed25519, ZIP
+final, hash, chiffrement/upload staging, relecture/déchiffrement/vérification,
+puis une transaction PostgreSQL CAS liant READY, métadonnées, hash, clé de
+signature et unique AuditLog SYSTEM. READY n'est visible qu'après COMMIT
+confirmé. Il n'existe aucune transaction distribuée avec le stockage. Crash
+après upload et COMMIT inconnu se réconcilient depuis PostgreSQL et l'objet
+vérifié, sans retry aveugle ; seuls les objets staging prouvés orphelins,
+non loués et âgés de plus de 24 h sont supprimables.
+
+Après perte d'acquittement, quatre branches sont exhaustives : READY de même
+génération arrête toute reprise avec son audit SUCCESS unique ; FAILED de même
+génération arrête toute reprise avec code fermé et audit REJECTED unique. Un
+PROCESSING avec le même fence ne reprend un CAS terminal depuis le staging
+vérifié que si l'attempt id et le propriétaire restent courants, la lease est
+active, `nextAttemptAt` est nul et l'instant précède la deadline immuable.
+Sinon il n'émet aucun CAS terminal et suit le retry déjà planifié, la reprise à
+expiration de lease ou le watchdog de deadline selon l'état durable.
+Un fence périmé ou une génération différente s'arrête sans mutation,
+publication ni audit, ne touche jamais l'objet courant et ne rend l'ancien
+staging éligible qu'au nettoyage ciblé prouvé, sans read lease et après 24 h.
+
+Le téléchargement acquiert avant le premier octet une lease de lecture CAS
+sur READY non expiré, après autorisation, step-up et intégrité. Lease 300 s,
+heartbeat 30 s, protection maximale 900 s. L'expiration refuse toute nouvelle
+ouverture, marque EXPIRED par CAS/audit puis diffère la suppression tant
+qu'une lecture protégée valide existe. `SUCCESS` signifie que cette ouverture
+et son audit de début sont durables avant `BEGIN_STREAM`, jamais que le client a reçu tous les
+octets ; complet/interrompu/inconnu reste une observation opérationnelle
+séparée.
+
+### Invitation et reprise
+
+`acceptAdminInvitation` consomme l'invitation, crée l'utilisateur
+`PENDING_MFA`, persiste son credential mot de passe Argon2id, crée le contexte
+`FIRST_TOTP_ENROLLMENT` de dix minutes et `AdminSecurityEvent` dans une
+transaction PostgreSQL unique. Avant COMMIT,
+rien n'est durable ; le cookie n'est émis qu'après COMMIT confirmé. COMMIT
+inconnu donne une réponse neutre sans cookie et sans retry aveugle.
+
+Si la réponse est perdue après COMMIT, la livraison du cookie est `UNKNOWN` :
+le contrat ne fabrique pas un fait réseau. La reprise exige seulement qu'aucun
+cookie préauth utilisable ne soit présumé, puis relit l'état durable par login.
+
+La reprise existe déjà dans `AdminAuthService.login`
+(`apps/api/src/admin-auth/admin-auth.service.ts`) : un compte `PENDING_MFA`
+avec mot de passe valide reçoit un nouveau préauth
+`FIRST_TOTP_ENROLLMENT` de dix minutes. Ce chemin couvre une réponse perdue et
+un premier contexte expiré ; aucun endpoint C1 n'est ajouté ou modifié.

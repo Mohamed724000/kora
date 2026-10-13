@@ -4,7 +4,11 @@ Statut : **Accepted**
 
 Date : 2026-09-28
 Amendement CTO C1 : 2026-10-02
-Portée : S1.2-03B et implémentation runtime locale S1.2-03C1
+Amendement contractuel R4 : 2026-10-12
+Portée : S1.2-03B, implémentation runtime S1.2-03C1 intégrée et contrat
+S1.2-03C2-P0-R4 validé localement dans l’instantané prépublication du
+2026-10-13 ; runtime C2 non implémenté. Toute publication ultérieure fait foi
+dans Git et GitHub.
 
 ## Contexte
 
@@ -276,3 +280,38 @@ correspondent. `auditVersion` filtre la version exacte ;
 `auditEventClass`, `auditContext` et `auditReasonCode` sont v2-only et ne font
 jamais correspondre une v1 par valeur synthétique. Ordre, curseur, snapshot,
 limites et masking sont identiques pour les deux versions.
+
+## Amendement C2-P0-R4 — résultat explicite et projection sans texte libre
+
+Les nouvelles écritures C2 utilisent `AdminAuditLogEntryV3`. Elles portent un
+résultat fermé : `SUCCESS` avec `failureCode=null`, ou `REJECTED` avec un code
+causal non nul de l'enum contractuelle. `outcomeProvenance=EXPLICIT_C2` est
+obligatoire. Un succès avec code, un rejet sans code et un code libre sont
+invalides. Cette décision ne prétend pas modifier le modèle Prisma courant :
+la future migration C2 devra créer la contrainte correspondante et le writer
+C2 devra insérer explicitement la version 3.
+
+Les lignes v1 et les lignes v2 C1 existantes restent inchangées et sont
+projetées avec `outcome=UNKNOWN`, `failureCode=null` et
+`outcomeProvenance=HISTORICAL_UNKNOWN`. Aucune action, aucun `reasonCode` et
+aucune valeur par défaut ne permet d'en déduire un résultat. Il n'existe à ce
+gel aucune table exhaustive d'actions historiques vérifiée ; aucune
+classification n'est donc autorisée.
+
+Liste et export sérialisent la même union v1/v2/v3. Le texte durable
+`operatorReason` n'est jamais sérialisé : chaque branche expose
+`operatorReason=null` et `operatorReasonRedacted=true`. Cette transformation
+de présentation ne réécrit pas le stockage. Les filtres typés classe/contexte/
+motif visent v2 et v3 ; v1 n'y correspond jamais synthétiquement. Les lignes
+v2 historiques restent `UNKNOWN`; seules les v3 portent le résultat C2.
+
+Le DDL réellement lu garantit aujourd'hui `action`, `entityType`, `entityId`
+et la colonne physique `reason` non vides, ainsi que `requestId` entre 8 et
+128 caractères. Il ne garantit ni maximum sur les autres textes, ni format
+UUID des identifiants textuels, ni forme du JSONB. La branche v1 reste donc un
+sur-ensemble représentable sans coercition, troncature ou valeur fabriquée :
+`maskedBefore` et `maskedAfter` acceptent objet, tableau, chaîne, nombre,
+booléen ou null, sans borne de forme. Cette ouverture ne s'applique pas à v2/v3.
+Un dépassement du budget de projection échoue explicitement : liste 503
+neutre sans page partielle, export `FAILED/PROJECTION_BUDGET_EXCEEDED` sans
+artefact partiel.

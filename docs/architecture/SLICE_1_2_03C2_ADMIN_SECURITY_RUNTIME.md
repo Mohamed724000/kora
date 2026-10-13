@@ -1,8 +1,9 @@
 # S1.2-03C2 — Admin Security Runtime Contract
 
-Statut : **PRÉREQUIS CONTRACTUEL P0 VALIDÉ — RUNTIME NON IMPLÉMENTÉ**
+Statut : **P0/R1/R2/R3 PUBLIÉS DANS LA DRAFT PR #51 — R4 VALIDÉ LOCALEMENT,
+INSTANTANÉ PRÉPUBLICATION DU 2026-10-13 — RUNTIME NON IMPLÉMENTÉ**
 
-Date : 2026-10-09
+Date : 2026-10-12
 
 Autorité : [ADR-026](../adr/ADR-026-admin-security-c2-runtime-contract.md),
 [ADR-025](../adr/ADR-025-admin-auth-session-audit-contexts.md), ADR-004 et
@@ -13,7 +14,7 @@ ADR-019.
 P0 modifie uniquement le contrat OpenAPI, son validateur, son générateur, la
 frontière Contracts et la documentation autorisée. L’inventaire demeure :
 
-- 60 chemins, 67 opérations et 137 schémas ;
+- 60 chemins, 67 opérations et 141 schémas ;
 - 12 opérations C1 intégrées et inchangées ;
 - 15 opérations C2 contractées, sans route runtime ;
 - cinq retraits historiques de SUPPORT inchangés ;
@@ -286,3 +287,71 @@ flux et ne fabrique aucun audit de complétion.
 R3 ne crée aucun runtime, rôle, ACL, modèle Prisma, migration, stockage ou
 provider. La surface devient 60 chemins, 67 opérations et 139 schémas en
 nommant les deux branches de projection ; C2a/C2b et C3 restent non commencés.
+
+## Gel R4 — matrice synchrone exécutable
+
+Cette matrice résume la politique machine-readable OpenAPI ; les valeurs
+exactes de chaque contrôle et sink sont celles de `operationMatrix` et
+`operationExecutionMatrix`.
+
+| Opération                   | Entrée                                | Preuve serveur                       | Autorisation puis métier                  | Mutation/snapshot                                            | Audit + COMMIT                                                         | Réponse / continuation            |
+| --------------------------- | ------------------------------------- | ------------------------------------ | ----------------------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------- | --------------------------------- |
+| requestAdminPasswordReset   | JSON email                            | aucune identité admin                | éligibilité sans oracle                   | reset + outbox chiffrée                                      | SecurityEvent, transaction confirmée                                   | neutre / notification             |
+| resetAdminPassword          | JSON reset + mot de passe             | recovery PASSWORD_RESET actif et lié | finalité + politique/HIBP                 | mot de passe, version, révocations                           | AuditLog v3, transaction confirmée                                     | après COMMIT / aucune             |
+| createAdminRecoveryCase     | JSON sujet/motif + idempotence        | session/JTI/version active           | rôle SA/SUPPORT, sujet/motif/idempotence  | annule pending puis crée case                                | audit initiateur + audits SYSTEM d'annulation dans la même transaction | après COMMIT / expiry SYSTEM      |
+| listAdminRecoveryCases      | filtres/cursor                        | session/JTI/version active           | rôle SA/SUPPORT, limites snapshot         | snapshot matérialisé                                         | aucun AuditLog de succès; transaction read/snapshot confirmée          | page / aucune                     |
+| getAdminRecoveryCase        | id case                               | session/JTI/version active           | rôle SA/SUPPORT, visibilité               | lecture                                                      | aucun AuditLog de succès; aucune écriture durable                      | enveloppe / aucune                |
+| approveAdminRecoveryCase    | id + motif + step-up + idempotence    | session/JTI/version active           | SA, step-up RECOVERY_APPROVAL, case/sujet | reset PENDING_MFA + révocations                              | AuditLog v3, transaction confirmée                                     | après COMMIT / aucune             |
+| listAdminAuditLogs          | filtres/cursor                        | session/JTI/version active           | SA, budget projection                     | snapshot avant audit                                         | AuditLog v3, transaction confirmée                                     | page / aucune                     |
+| createAdminAuditLogExport   | filtres/motif + idempotence           | session/JTI/version active           | SA, step-up AUDIT_EXPORT, budget          | snapshot + job PENDING                                       | AuditLog v3, transaction confirmée                                     | 202 / build-expiry SYSTEM         |
+| getAdminAuditLogExport      | id export                             | session/JTI/version active           | SA, visibilité                            | lecture état                                                 | AuditLog v3, transaction confirmée                                     | enveloppe / aucune                |
+| downloadAdminAuditLogExport | id export                             | session/JTI/version active           | SA, step-up AUDIT_EXPORT                  | état READY non expiré, intégrité, lease lecture              | AuditLog v3 début, transaction confirmée                               | ZIP exact / observation terminale |
+| createAdminInvitation       | JSON email/rôle/motif + idempotence   | session/JTI/version active           | SA, step-up INVITATION, collision email   | invitation + outbox                                          | AuditLog v3, transaction confirmée                                     | après COMMIT / delivery SYSTEM    |
+| acceptAdminInvitation       | JSON code/mot de passe                | aucune identité admin                | invitation single-use + HIBP              | consume + PENDING_MFA + credential Argon2id + préauth 10 min | SecurityEvent, transaction confirmée                                   | FIRST_TOTP après COMMIT / aucune  |
+| listAdminUsers              | filtres/cursor                        | session/JTI/version active           | SA, limites snapshot                      | snapshot matérialisé                                         | aucun AuditLog de succès; transaction read/snapshot confirmée          | page / aucune                     |
+| changeAdminUserRole         | id + rôle/motif/step-up/idempotence   | session/JTI/version active           | SA, step-up ROLE_CHANGE, dernier SA       | rôle + version + révocations + annulations case              | audit initiateur + audits SYSTEM d'annulation dans la même transaction | après COMMIT / aucune             |
+| changeAdminUserStatus       | id + statut/motif/step-up/idempotence | session/JTI/version active           | SA, step-up STATUS_CHANGE, dernier SA     | statut + version + révocations + annulations case            | audit initiateur + audits SYSTEM d'annulation dans la même transaction | après COMMIT / aucune             |
+
+## Gel R4 — matrice des transitions SYSTEM transactionnelles et asynchrones
+
+| Transition                           | Source et liaison                                                                                  | Claim                                    | Effet externe             | Transaction/publication                                | Reprise/expiration                      |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------- | ---------------------------------------- | ------------------------- | ------------------------------------------------------ | --------------------------------------- |
+| PASSWORD_RESET_NOTIFICATION_DELIVERY | SecurityEvent C1 SUCCEEDED + reset/outbox/job                                                      | unicité outbox+action                    | notification              | Audit SYSTEM v3 après preuve source                    | reprise bornée, source invalide refusée |
+| INVITATION_NOTIFICATION_DELIVERY     | Audit v3 SUCCESS create invitation + outbox/job                                                    | unicité outbox+action                    | e-mail invitation         | Audit SYSTEM v3, délégant=acteur causal                | aucune source historique/REJECTED       |
+| EXPORT_BUILD                         | Audit v3 SUCCESS create export + export/job/attempt                                                | CAS lease+fence                          | ZIP signé, upload staging | CAS READY+métadonnées+Audit unique                     | reconcile crash/COMMIT inconnu          |
+| EXPORT_EXPIRY                        | READY+génération+expiresAt                                                                         | CAS READY->EXPIRED                       | suppression différée      | état+Audit SYSTEM v3                                   | attend leases lecture, nettoyage ciblé  |
+| RECOVERY_CASE_CANCELLATION           | create : nouveau case causal distinct du case annulé ; rôle/statut : acteur causal = sujet du case | verrou/état dans transaction initiatrice | aucun effet externe       | cancel+Audit SYSTEM v3 avant réponse, même transaction | exactement un audit par case annulé     |
+| RECOVERY_CASE_EXPIRATION             | PENDING+génération+expiresAt                                                                       | CAS PENDING->EXPIRED                     | aucun effet externe       | expire+Audit SYSTEM v3                                 | reprise CAS, pas de délégant            |
+| ADMIN_BOOTSTRAP                      | garde singleton + admin id                                                                         | claim singleton                          | secret via canal contrôlé | création+garde+Audit SYSTEM v3                         | aucune double création/audit            |
+
+`EXPORT_BUILD` publie READY avec `SUCCESS/null`. Les reprises non terminales
+n'écrivent aucun AuditLog. Trois tentatives incluent l'initiale : une erreur
+transitoire connue planifie `nextAttemptAt` à +30 s puis +120 s par CAS ; un
+crash devient réclamable à l'expiration de lease seulement avant la deadline ;
+tout claim prématuré, stale ou concurrent du watchdog est refusé. Une erreur
+non retryable ou un troisième échec avant deadline ferme FAILED avec audit
+unique.
+Le claim fixe une deadline de tentative immuable à +600 s ; renew et CAS
+READY/FAILED exigent fence, propriétaire et lease actifs, aucun retry planifié
+et `now < deadline`. La planification révoque propriétaire/lease immédiatement.
+À ou après la deadline, y compris si lease et deadline coïncident, le watchdog
+est prioritaire : lui seul planifie la reprise avec backoff ou ferme le
+troisième essai avec `RETRY_BUDGET_EXHAUSTED` et audit unique.
+Un PUT stale déjà parti peut finir sur sa clé staging immuable, jamais publier,
+et devient un orphelin ciblé. Le terminal FAILED lie dans une seule transaction
+CAS l'état, son code fermé et un audit v3 `REJECTED` unique; une perte
+d'acquittement relit READY, FAILED, PROCESSING au même fence ou un fence/
+génération devenu obsolète avant toute action. Le PROCESSING au même fence ne
+reprend le CAS terminal que si owner, lease, absence de retry planifié et
+deadline le rendent encore éligible ; sinon il suit scheduler, reclaim ou
+watchdog sans publication. Le worker obsolète s'arrête sans
+mutation et sans toucher l'objet courant. Les codes v3 de rejet proviennent exclusivement de
+`failureCodeByTrigger`; les sinks SecurityEvent/NONE n'écrivent pas de v3.
+Les sources déléguées lient l'`entityId` causal à la ressource ou au sujet du
+case. L'annulation issue de create/role/status est un effet transactionnel,
+jamais une continuation asynchrone. Le téléchargement n'entre dans `BEGIN_STREAM` qu'après l'audit de
+début confirmé.
+
+R4 conserve 60 chemins et 67 opérations, porte le compteur à 141 schémas et
+ne modifie ni runtime, Prisma, migration, rôle, dépendance, workflow ou
+provider. C2a/C2b et C3 restent non commencés.

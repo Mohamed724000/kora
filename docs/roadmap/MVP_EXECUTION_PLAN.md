@@ -875,3 +875,22 @@ lockfile, workflow, Infrastructure ou interface. Il reste non indexé, non
 commit et non publié. C2a/C2b nécessitent toujours un mandat runtime distinct ;
 C3 n'est pas commencé, les fournisseurs restent NON QUALIFIÉS, OSS différée et
 la cause Docker historique NON CONCLUSIVE.
+
+## S1.2-03C2-P0-R4 — gel contractuel validé localement — 2026-10-12
+
+R4 complète les contrats audit et transaction avant tout C2a/C2b : outcome
+v3 explicite sans réécriture historique, projection sans texte libre, quinze
+séquences preuve/autorisation/transaction, sept sources SYSTEM entièrement
+liées, export avec lease/fencing/réconciliation et invitation/préauth
+atomique. Les futures implémentations devront matérialiser ces décisions sans
+modifier les garanties C1 et sans prétendre que les contraintes v3 existent
+déjà dans Prisma.
+
+La surface est 60 chemins, 67 opérations et 141 schémas. Dans l’instantané
+prépublication final du 2026-10-13, R4 était local, non indexé, non commité et
+non publié ; toute publication ultérieure fait foi dans Git et GitHub. Les
+deux lacunes d’archivage historiques gardent le statut **ACCEPTED WITH CTO
+WAIVER — HISTORICAL EVIDENCE ONLY** sans couvrir FINAL7 ni reconstruire une
+preuve absente. C2a/C2b exigent toujours un mandat runtime distinct ; C3 n'est
+pas commencé. Fournisseurs NON QUALIFIÉS, OSS différée et cause Docker
+historique NON CONCLUSIVE.

@@ -2,11 +2,11 @@
 
 Périmètre durable couvert : **BASELINE À S1.2-03B FUSIONNÉES + S1.2-03C1
 FUSIONNÉ DANS MAIN AU MERGE
-dc97eeef72c4e299988ed19d66460011a8551cf3, NON DÉPLOYÉ + S1.2-03C2-P0/R1
-PUBLIÉS DANS LA DRAFT PR #51 + INSTANTANÉ CONTRACTUEL R2 LOCAL
-PRÉPUBLICATION DU 2026-10-11, L'ÉTAT GIT/GITHUB POSTÉRIEUR FAISANT FOI,
-RUNTIME NON IMPLÉMENTÉ — FOURNISSEURS DE PRODUCTION NON QUALIFIÉS — C3 NOT
-STARTED**.
+dc97eeef72c4e299988ed19d66460011a8551cf3, NON DÉPLOYÉ + S1.2-03C2-P0/R1/R2/R3
+PUBLIÉS DANS LA DRAFT PR #51 AU HEAD
+dc420336d52c791b8876fa30e6ee76f0a5251bea + R4 VALIDÉ LOCALEMENT DANS
+L’INSTANTANÉ PRÉPUBLICATION DU 2026-10-13, RUNTIME NON IMPLÉMENTÉ —
+FOURNISSEURS DE PRODUCTION NON QUALIFIÉS — C3 NOT STARTED**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
 commit, push ou changement GitHub S1.1 n’avait encore été effectué : il s’agit
@@ -1207,3 +1207,23 @@ C2/C3 n'est commencé.
 La surface R3 est 60/67/139. Aucun runtime, modèle, migration, ACL, dépendance,
 workflow ou provider n'est ajouté. Docker, PostgreSQL/Redis et HTTP réel ne
 sont pas rejoués ; la cause Docker historique demeure NON CONCLUSIVE.
+
+## Fermeture contractuelle S1.2-03C2-P0-R4 — 2026-10-12
+
+| Menace                                | Contrôle R4                                                                                                                                                                                                                                                                                                                                               | Preuve locale                                                                | Limite résiduelle                   |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ----------------------------------- |
+| Faux succès ou rejet historique       | v1/v2 UNKNOWN sans inférence ; v3 résultat conditionnel fermé                                                                                                                                                                                                                                                                                             | fixtures success/rejected/history et codes arbitraires refusés               | migration/writer v3 NON IMPLÉMENTÉS |
+| Fuite de justification                | operatorReason neutralisé de façon identique liste/export avec indicateur                                                                                                                                                                                                                                                                                 | quatre canaris sensibles refusés                                             | reader réel NON IMPLÉMENTÉ          |
+| Attribution d'acteur avant preuve     | preuve serveur distincte du rôle, step-up et intégrité ; sinks par phase                                                                                                                                                                                                                                                                                  | mutations cookie, pré-preuve, rôle, step-up, intégrité                       | contrôleurs C2 NON IMPLÉMENTÉS      |
+| Worker SYSTEM sur source sans rapport | prédicats complets, source AuditLog v3 SUCCESS, liens/délégant/unicité                                                                                                                                                                                                                                                                                    | mutation indépendante de chaque propriété des sept sources                   | workers/FK/CHECK NON IMPLÉMENTÉS    |
+| Double publication ou worker tardif   | lease, génération, attempt id, owner et `nextAttemptAt=null` sur CAS terminal ; planification révoque owner/lease ; PUT stale limité à sa clé staging invisible/orpheline                                                                                                                                                                                 | traces deux workers, lease expirée, worker tardif et fin de PUT post-retry   | stockage/provider NON QUALIFIÉS     |
+| Crash, retry ou COMMIT inconnu        | backoff CAS `nextAttemptAt` 30/120 s, deadline immuable 600 s, reclaim crash uniquement avant deadline, watchdog prioritaire à ou après deadline même en collision lease/deadline, budget trois essais initial inclus ; PROCESSING même fence ne reprend que si owner/lease/deadline éligibles, sinon scheduler/reclaim/watchdog ; FAILED+audit atomiques | douze traces retry/deadline + quatre d'éligibilité COMMIT inconnu + crash    | exécution distribuée NON TESTÉE     |
+| Expiration pendant téléchargement     | read lease avant octet, ouverture post-expiry refusée, suppression différée                                                                                                                                                                                                                                                                               | trace expiration concurrente                                                 | streaming réel NON EXÉCUTÉ          |
+| Compte invité bloqué                  | transaction invite/PENDING_MFA/credential Argon2id/préauth/event ; login C1 recrée FIRST_TOTP                                                                                                                                                                                                                                                             | cinq frontières d'échec, réponse et mauvais nextStep refusé                  | e-mail/provider NON QUALIFIÉ        |
+| Valeur historique tronquée            | branche v1 sans maximum/UUID/forme JSON inventé, overflow explicite sans page/artefact partiel                                                                                                                                                                                                                                                            | fixtures courte/surlongue/vide, objet/tableau/scalaires et budget verrouillé | données réelles non rejouées        |
+
+R4 ne modifie ni runtime, Prisma, migration, ACL, dépendance, workflow ou
+provider. Docker, PostgreSQL/Redis et HTTP réel restent NON EXÉCUTÉS.
+Les deux lacunes historiques d’archivage restent **ACCEPTED WITH CTO WAIVER —
+HISTORICAL EVIDENCE ONLY**. Cette dérogation ne couvre aucune preuve FINAL7 et
+ne réduit aucune limite résiduelle de ce modèle.

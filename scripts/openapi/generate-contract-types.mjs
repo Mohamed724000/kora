@@ -24,6 +24,19 @@ function schemaType(schema) {
   if (schema?.$ref) {
     return schema.$ref.split("/").at(-1);
   }
+  if (Array.isArray(schema?.allOf)) {
+    const { allOf, ...baseSchema } = schema;
+    const hasBaseShape =
+      baseSchema.type !== undefined ||
+      baseSchema.properties !== undefined ||
+      baseSchema.oneOf !== undefined;
+    return [
+      ...(hasBaseShape ? [schemaType(baseSchema)] : []),
+      ...allOf.map(schemaType),
+    ]
+      .map((part) => `(${part})`)
+      .join(" & ");
+  }
   if (Array.isArray(schema?.oneOf)) {
     const { oneOf, ...baseSchema } = schema;
     const hasBaseShape =
@@ -68,9 +81,6 @@ function schemaType(schema) {
   }
   if (schema?.type === "array") {
     return `ReadonlyArray<${schemaType(schema.items ?? {})}>`;
-  }
-  if (Array.isArray(schema?.allOf)) {
-    return schema.allOf.map(schemaType).join(" & ");
   }
   if (schema?.type === "object" || schema?.properties) {
     const required = new Set(schema.required ?? []);

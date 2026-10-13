@@ -2,13 +2,14 @@
 
 Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-03C1 FUSIONNÉ DANS MAIN AU
 MERGE dc97eeef72c4e299988ed19d66460011a8551cf3, NON DÉPLOYÉ — PR #50
-FERMÉE/FUSIONNÉE ET QUATRE WORKFLOWS PUSH/MAIN VERTS — S1.2-03C2-P0/R1
-PUBLIÉS DANS LA DRAFT PR #51 — INSTANTANÉ LOCAL PRÉPUBLICATION R2 DU
-2026-10-11, L'ÉTAT GIT/GITHUB POSTÉRIEUR FAISANT FOI — RUNTIME NON IMPLÉMENTÉ
-— FOURNISSEURS DE PRODUCTION NON QUALIFIÉS — C3 NOT STARTED**
+FERMÉE/FUSIONNÉE — S1.2-03C2-P0/R1/R2/R3 PUBLIÉS DANS LA DRAFT PR #51 AU
+HEAD dc420336d52c791b8876fa30e6ee76f0a5251bea — R4 VALIDÉ LOCALEMENT SOUS
+DÉROGATION PROBATOIRE HISTORIQUE BORNÉE, INSTANTANÉ PRÉPUBLICATION DU
+2026-10-13 — RUNTIME NON IMPLÉMENTÉ — FOURNISSEURS DE PRODUCTION NON
+QUALIFIÉS — C3 NOT STARTED**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-10-11
+Dernière réconciliation documentaire : 2026-10-13
 
 ## Hiérarchie normative
 
@@ -993,3 +994,57 @@ local, non indexé, non commit et non publié. Les quatre succès R2, la Draft P
 #51 et l'échec Infrastructure historique à cause Docker NON CONCLUSIVE ne sont
 pas réinterprétés. Aucun runtime C2/C3 n'est commencé ; fournisseurs de
 production NON QUALIFIÉS et politique OSS différée.
+
+## S1.2-03C2-P0-R4 — complétion cumulative audit/transaction — 2026-10-12
+
+R4 ferme localement les sept findings du gel R3. Les nouvelles écritures C2
+sont contractualisées en AuditLog v3 à résultat explicite ; les lignes v1/v2
+existantes restent UNKNOWN sans réécriture ni inférence. Liste et export
+partagent une projection sans `operatorReason` brut et un overflow explicite.
+
+Les quinze opérations possèdent désormais une matrice entrée → preuve serveur
+→ autorisation → métier → mutation/snapshot → audit → COMMIT → réponse →
+continuation et des sinks complets. Les sept transitions SYSTEM possèdent une
+source entièrement liée. L'export fixe machine d'état, lease, fencing, trois
+tentatives/deux reprises, avec backoff CAS `nextAttemptAt` 30 s/120 s,
+réclamation des crashes à expiration de lease seulement avant la deadline et
+deadline immuable de 600 s par tentative. La planification révoque propriétaire et lease ; renew et CAS
+READY/FAILED exigent fence/propriétaire/lease actifs, aucun retry planifié et
+un instant strictement antérieur à la deadline. À ou après l'échéance, même si
+la lease expire au même instant, le watchdog prévaut sur le reclaim et planifie
+la reprise avec backoff ou ferme le troisième essai avec audit unique. Une
+expiration de lease du troisième essai avant deadline ferme également FAILED
+avec audit unique. Le terminal
+FAILED reste fermé. Le
+fencing interdit toute publication d'état/métadonnées/audit stale sans
+prétendre annuler un PUT déjà parti : celui-ci reste staging invisible et
+orphelin ciblé. L'ordre de publication, la transaction READY/AuditLog, la
+réconciliation et l'arbitrage expiration/téléchargement sont fermés.
+La branche COMMIT inconnu `PROCESSING_SAME_FENCE` ne reprend un CAS terminal
+que si owner, lease, `nextAttemptAt=null` et deadline le permettent encore ;
+sinon elle suit le retry planifié, le reclaim de lease ou le watchdog, sans
+laisser un futur worker inventer la suite.
+L'acceptation d'invitation est atomique avec le
+credential mot de passe Argon2id, le préauth FIRST_TOTP et l'événement de
+sécurité ; `AdminAuthService.login` est le chemin C1 de reprise. Les rejets v3
+utilisent la table fermée `failureCodeByTrigger` : les erreurs avant preuve et
+les opérations aux sinks SecurityEvent/NONE ne fabriquent jamais d'AuditLog v3.
+
+Le DDL v1 réel est décrit sans inventer de maximum ou format. La surface est
+60 chemins, 67 opérations et 141 schémas. R4 ne change aucun runtime, Prisma,
+migration, rôle, provider, dépendance, lockfile, workflow ou Infrastructure ;
+dans l’instantané prépublication final du 2026-10-13, il était local, non
+indexé, non commité et non publié. Toute publication ultérieure fait foi dans
+Git et GitHub. Le préflight clarifié conserve volontairement
+`refs/heads/main=a602fd38f32d018867c8a058deace0325b4a7c31`, tandis que
+`refs/remotes/origin/main` et le main distant restent
+`dc97eeef72c4e299988ed19d66460011a8551cf3`; l'arrêt initial est une interprétation
+NON-PASS, pas un incident Git.
+
+Les deux lacunes probatoires historiques — candidats intermédiaires rejetés
+perdus avant archivage et sortie de la tentative PowerShell 5 non capturée —
+restent visibles avec le statut **ACCEPTED WITH CTO WAIVER — HISTORICAL
+EVIDENCE ONLY**. Cette dérogation ne couvre ni FINAL7, ni ses preuves finales,
+ni un nouvel échec d’audit, de publication, de CI ou d’intégrité GitHub. Aucun
+artefact historique absent n’est reconstruit et aucune tentative NON-PASS
+n’est requalifiée.
