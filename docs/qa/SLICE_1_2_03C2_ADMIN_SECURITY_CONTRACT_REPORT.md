@@ -1,9 +1,9 @@
 # Rapport S1.2-03C2-P0 — Admin Security Contract Prerequisite
 
-Statut : **P0/R1/R2/R3 PUBLIÉS DANS LA DRAFT PR #51 AU HEAD
-dc420336d52c791b8876fa30e6ee76f0a5251bea — R4 VALIDÉ LOCALEMENT SOUS
-DÉROGATION PROBATOIRE HISTORIQUE BORNÉE, INSTANTANÉ PRÉPUBLICATION DU
-2026-10-13 — RUNTIME NON IMPLÉMENTÉ**
+Statut : **P0/R1/R2/R3/R4 PUBLIÉS DANS LA DRAFT PR #51 AU HEAD
+0f607d3965579497ac04a74bd6bd9fb20c876fa6 — R4 CI : INFRASTRUCTURE EN
+ÉCHEC, TROIS AUTRES WORKFLOWS EN SUCCÈS — R5 REQUALIFIÉ LOCALEMENT ET EN
+PRÉPARATION DE PUBLICATION, NON PUBLIÉ — RUNTIME NON IMPLÉMENTÉ**
 
 Dernière réconciliation : 2026-10-13
 
@@ -291,3 +291,197 @@ l’instantané prépublication final du 2026-10-13, R4 était local, non index�
 non commité et non publié ; toute publication ultérieure fait foi dans Git et
 GitHub. La cause Docker historique reste NON CONCLUSIVE ; fournisseurs de
 production NON QUALIFIÉS, OSS différée, runtime C2/C3 non commencé.
+
+## S1.2-03C2-P0-R5 — qualification locale prépublication du démarrage PostgreSQL
+
+### Préflight et preuve historique
+
+Le préflight du 2026-10-13 retrouve exactement le head, l’upstream et le head
+distant `0f607d3965579497ac04a74bd6bd9fb20c876fa6`, son parent
+`dc420336d52c791b8876fa30e6ee76f0a5251bea` et l’arbre
+`7752a8c01f957fe2d07ff5d9f8b31f01e3f35216`. `origin/main` local et distant
+restent `dc97eeef72c4e299988ed19d66460011a8551cf3`; la référence `main` locale
+historique reste `a602fd38f32d018867c8a058deace0325b4a7c31`. L’index est vide ;
+le worktree courant porte exactement les cinq modifications R5 non indexées
+attendues. Onze worktrees sont visibles et aucune opération Git n’est active.
+Dans cet instantané historique, le worktree étranger
+`KORA-PLUS-S1-2-03A` portait de nombreuses suppressions suivies et n’avait été
+ni consulté pour réutilisation, ni modifié, ni nettoyé par R5.
+
+Un mandat séparé a ensuite sauvegardé puis récupéré exactement les 351 chemins
+absents de `03A-CLOSURE`, avec 355/355 fichiers suivis conformes et double PASS
+indépendant. `03A` et `03A-CLOSURE` ont été déplacés séquentiellement, sans
+force, par `git worktree move` vers `Music/KORA-PLUS-WORKTREES/`. Les onze
+worktrees restent enregistrés et les dix autres sont propres. Ces opérations
+ne déterminent pas la cause des disparitions, qui reste **NON CONCLUSIVE**.
+
+La PR #51 reste `OPEN`, Draft, au head attendu, avec un corps inchangé de
+13 518 octets et SHA-256
+`045c71a02bd597b4ea1237688d871e727ca21ddd52c9bb3a641c470e07ebe2ea`.
+La PR #50 fusionnée est préservée. Les quatre runs R4 restent tentative 1 :
+Infrastructure `38382402086` en échec, Launcher Windows `38382402155`,
+Security `38382402107` et Quality Linux `38382402133` en succès. Le lockfile
+reste inchangé, SHA-256
+`a1b9744d0b132e6a2f20809c606b7b7525a17230c147dc6155ec05b5ba4aa2f3`.
+
+Le manifeste d’entrée de la reprise deadline couvre l’état local effectivement
+reçu : 634 octets et SHA-256
+`bba328e9e338e31488012d1311a616b3e7d5449fcb7e1a229aefb5e9f621dda6`.
+Deux implémentations indépendantes, Node et PowerShell avec tri ordinal,
+reproduisent les mêmes octets. Les préimages des six fichiers autorisés, les
+candidats successifs, les sorties complètes et leurs empreintes sont conservés
+append-only dans l’archive externe
+`KORA-PLUS-S1-2-03C2-P0-R5-DEADLINE-20261013T115549Z/`.
+
+Le manifeste `1287e96a13820ecec52fed1dda14c6b73b559fba296eda5fb88692f7bc47dd03`
+et l’archive `KORA-PLUS-S1-2-03C2-P0-R5-PUBLICATION-20261013T112033Z/`
+restent des preuves historiques de la tentative de publication précédente.
+Ils ne sont pas des préconditions imposées à cette reprise. Cette tentative
+s’est arrêtée avant staging : aucun commit, push ou changement GitHub R5 n’a
+été produit.
+
+Une première variante PowerShell du manifeste a été rejetée parce que son tri
+de tableaux d’octets n’était pas ordinal. Un premier snapshot de préflight a
+également été rejeté parce que PowerShell avait interprété `^{tree}` au lieu de
+le transmettre littéralement à Git. Ces candidats restent archivés NON-PASS ;
+les reprises ordinales et littérales passent sans recours à la dérogation R4.
+
+Le préflight de publication frais repart du gel unique courant : cinq fichiers,
+599 octets et SHA-256
+`d439f9bb5ee4485bccccbf58a67982dbb9be04eb7584da03c731bab7eb50c7c0`,
+reproduit octet pour octet par Node et PowerShell. Il confirme à nouveau le
+HEAD/upstream/distant, les deux références `main`, la PR #51 `OPEN` et Draft
+avec son corps inchangé, la PR #50 fusionnée avec son corps restauré, les quatre
+runs R4 et le lockfile. Les préimages de cette préparation sont archivées dans
+un nouveau dossier externe unique. Ce constat est un gate prépublication ; il
+n’affirme aucun succès CI R5 futur.
+
+Le log brut du job `115245793528` est archivé hors Git : 22 442 octets,
+SHA-256 `b0a70aefa07038f7f23869ff8fa282ed9fdee53def9a84fd6b834e9640a9a626`.
+Il montre l’image épinglée téléchargée, le conteneur créé à
+`10:18:41.943Z`, `HISTORICAL_MIGRATIONS_IMMUTABLE_PASS` à
+`10:18:43.303Z`, puis `Connection terminated unexpectedly` environ 5 ms plus
+tard. Le nettoyage ciblé réussit. `infra:down` échoue ensuite séparément parce
+que `infra:prepare` n’a jamais été atteint ; cette panne secondaire reste hors
+correction R5.
+
+Le log ne contient aucun log PostgreSQL, état Docker filtré, événement,
+restart count ou indicateur OOM. Il ne permet donc pas de distinguer
+causalement arrêt normal d’initialisation, crash/OOM, défaut réseau/Docker ou
+erreur client. Verdict historique : **NON CONCLUSIVE**.
+
+### Défaut démontré et correction
+
+L’entrypoint extrait de l’image exacte
+`postgres:18.4-alpine3.24@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15`
+démarre un serveur temporaire avec `listen_addresses=''`, exécute les scripts
+d’initialisation, arrête ce serveur, puis exécute le serveur final. L’ancien
+wrapper sondait `pg_isready` sans `--host`, donc la socket Unix du serveur
+temporaire pouvait autoriser Node avant le chemin réellement utilisé.
+
+La fixture contrôlée de huit secondes observe :
+
+- socket locale prête et TCP PostgreSQL interne `127.0.0.1:5432` indisponible ;
+- transport brut sur le port hôte accepté par le proxy Docker, mais connexion
+  `pg` authentifiée terminée de façon inattendue ;
+- fast shutdown normal du serveur temporaire, puis écoute IPv4 du serveur
+  final ;
+- `SELECT 1` authentifié réussi et dix sondes stables ;
+- conteneur `running`, `OOMKilled=false`, `RestartCount=0`, puis nettoyage
+  ciblé.
+
+Cette preuve démontre le défaut du harnais et reproduit le même message client
+sous Windows. Elle ne prouve pas que cette race a causé le run Ubuntu.
+L’exécution spontanée du wrapper pré-correction passe au code 0 sous Windows ;
+l’incident Ubuntu ne s’y reproduit donc pas spontanément.
+
+La correction reste limitée au wrapper et au validateur. Le port publié est
+résolu avant Node. Le validateur emploie `performance.now()` et une deadline
+dure de 30 000 ms couvrant connexion, authentification, `SELECT 1`, délais de
+retry et fermeture des clients rejetés. La fenêtre opérationnelle se termine
+à 29 500 ms pour réserver au plus 500 ms de nettoyage dans la même enveloppe ;
+chaque tentative est plafonnée à 2 000 ms. `connectionTimeoutMillis` est
+recalculé selon le temps restant, avec 25 ms d’avance pour laisser le pilote
+signaler l’échec avant le superviseur. `SELECT 1` est transmis sous forme de
+chaîne via l’API publique ; aucun `QueryConfig.query_timeout` non public n’est
+utilisé.
+
+Sur tout échec ou dépassement, `client.end()` est appelé exactement une fois et
+la promesse `connect` ou `query` exacte doit également terminer dans la grâce
+publique de 350 ms. Aucun retry ne commence avant ces deux terminaisons. Si
+`end` suspend, rejette ou lève synchronement, le chemin devient terminal : un
+fallback privé, structurellement gardé et strictement spécifique au pin
+`pg@8.22.0`, détruit `client.connection.stream` puis attend son événement
+`close` dans le reliquat de l’enveloppe de 500 ms. Toute montée de `pg` impose
+donc une requalification. Les promesses perdantes et rejets tardifs conservent
+un gestionnaire, ce qui interdit un rejet non géré. Le client qui réussit
+`SELECT 1` est exactement celui réutilisé pour la suite. Seule la readiness est
+rejouée : aucune migration, base, provision ou mutation n’est lancée avant sa
+réussite, et une panne ultérieure ne relance rien.
+
+### Qualification locale et limites
+
+| Contrôle                           | Résultat                                                                       |
+| ---------------------------------- | ------------------------------------------------------------------------------ |
+| Ancien résultat deadline           | NON APPLICABLE : 18/18 et 7 822 ms ne couvraient pas les opérations suspendues |
+| Candidat deadline 1                | NON-PASS conservé : 24/25, assertion de libération de socket réelle prématurée |
+| Candidat deadline 2                | PASS conservé : 25/25 après attente bornée de fermeture                        |
+| Candidat deadline 3                | PASS conservé : 26/26 avec `end` appelé même si la deadline est déjà dépassée  |
+| Candidat deadline 4                | NON-PASS conservé : 25/28 après ajout des deux fixtures TCP réelles            |
+| Candidat deadline 5                | PASS conservé : 28/28 après correction des chemins socket et erreur tardive    |
+| Gel technique avant fixture finale | PASS : 28/28, 1 011,9 ms, empreintes `5735…` et `8016…`                        |
+| Premier contrôle final             | NON-PASS conservé : 27/28, grâce de 8 ms sensible à l’ordonnancement           |
+| Replays ciblés finaux              | PASS puis PASS : 28/28, 1 373 ms puis 1 123 ms, zéro stderr                    |
+| Empreintes techniques finales      | Validateur `5735e0e4…`, tests `be2781c5…`                                      |
+| PowerShell et Node                 | PASS : parse/check des trois fichiers techniques                               |
+| Prettier initial de cette reprise  | NON-PASS conservé avant formatage                                              |
+| Prettier final                     | PASS : quatre fichiers ciblés conformes                                        |
+| Contrôle statique provisoire       | Seul NON-PASS : la mention transitoire du résultat, autres axes conformes      |
+| Wrapper frais final A              | PASS code 0, 80 413 ms, readiness 4 tentatives/823 ms, nettoyage ciblé complet |
+| Wrapper frais final B              | PASS code 0, 79 593 ms, readiness 4 tentatives/860 ms, nettoyage ciblé complet |
+| Intégration réelle par wrapper     | PASS : 47/47 tests, 12 opérations HTTP, PostgreSQL/Redis réels                 |
+| Scanner officiel                   | PASS : 388 fichiers, history=true, 52 immuables, six scripts qualifiés         |
+
+Chaque wrapper exerce PostgreSQL A/B, 39 modèles, 40 tables, quatre
+provisionnements, neuf refus ACL, douze opérations HTTP réelles avec
+PostgreSQL et Redis réels, puis retire uniquement ses bases, conteneurs,
+volume Redis et secrets éphémères. Les preuves R4 restent applicables aux
+fichiers contractuels byte-identiques.
+
+Les deux revues indépendantes effectives du gel `d439…` concluent favorablement
+sur les deux wrappers 47/47 et les deux replays 28/28, y compris les chemins
+`connect`, `SELECT 1` et `end` suspendus, les opérations tardives, l’absence de
+retry avant nettoyage et l’archive des preuves. Elles maintiennent le 27/28
+NON-PASS, la cause historique NON CONCLUSIVE et le fallback privé strictement
+lié à `pg@8.22.0`. Après la présente adaptation documentaire, deux conclusions
+seniors doivent encore porter sur le nouveau gel final avant indexation.
+
+Docker était initialement arrêté et inaccessible. Le dossier `run`, qui ne
+contenait que deux points de réanalyse de 0 octet, a été préservé par renommage
+avant le démarrage. L’inventaire de référence du replay final comptait 4
+conteneurs, 5 volumes et 5 réseaux. Les séquences d’identifiants observées après
+A sont identiques à cette référence ; celles observées après B sont identiques
+à A. Aucun résidu R5 n’est donc visible dans ces inventaires. Le démarrage
+initial de la campagne avait recréé le seul réseau intégré `bridge` ; les
+réseaux utilisateur, conteneurs et volumes étrangers observés ont conservé
+leurs identités.
+
+Docker a ensuite été arrêté. Le premier contrôle de restauration a vu un
+processus CLI transitoire ; le contrôle stabilisé suivant en observe zéro,
+l’empreinte de configuration égale celle de la préimage et le répertoire
+généré est absent. Les deux sockets sauvegardés sont de nouveau observés sous
+`run` avec les noms, attributs, tailles et horodatages consignés. Cette preuve
+de sortie ne prétend pas une identité indépendante au-delà de ces propriétés
+observées.
+
+R5 modifie cinq fichiers existants autorisés, sans ajout, suppression,
+renommage ou changement de mode suivi. Aucun runtime C2/C3, Prisma, migration,
+provisionneur, contrat, workflow, Compose, dépendance, lockfile ou timeout
+applicatif n’est modifié ; la surface reste 60 chemins, 67 opérations et 141
+schémas. Dans ce nouvel instantané prépublication, R5 reste local, non indexé,
+non commité et non publié ;
+aucun SHA, arbre ou Run ID R5 futur n’est affirmé. Aucun `git add`, commit,
+push, rerun, édition de PR, Ready, approval, merge, tag, release ou déploiement
+n’a été effectué. La PR #51 reste Draft et son corps inchangé. Fournisseurs
+**NON QUALIFIÉS**, politique OSS différée, incident Redis distinct
+**NON CONCLUSIVE**, runtime C2/C3 non commencé.

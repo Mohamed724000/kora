@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve, sep } from 'node:path';
+import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 
 import pg from 'pg';
@@ -26,9 +27,367 @@ const C1_MIGRATION = '20261002170022_admin_auth_session_runtime';
 const LOCK_SHA256 = '99836963713b4f5b269ad49af0ed3d7b0b2e336115c2f92dc9ac683d139d0900';
 const EXPECTED_MODELS = 39;
 const EXPECTED_TABLES_WITH_MIGRATION_HISTORY = 40;
+const POSTGRES_READINESS_ATTEMPT_TIMEOUT_MILLISECONDS = 2_000;
+const POSTGRES_READINESS_CLEANUP_TIMEOUT_MILLISECONDS = 500;
+const POSTGRES_READINESS_GRACEFUL_CLEANUP_TIMEOUT_MILLISECONDS = 350;
+const POSTGRES_READINESS_DRIVER_TIMEOUT_LEAD_MILLISECONDS = 25;
+const POSTGRES_READINESS_INTERVAL_MILLISECONDS = 250;
+const POSTGRES_READINESS_TIMEOUT_MILLISECONDS = 30_000;
 
 function fail(message) {
   throw new Error(`S1.2-03C1 PostgreSQL validation failed: ${message}`);
+}
+
+function errorMetadata(error) {
+  return {
+    code:
+      typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : 'none',
+    name:
+      typeof error === 'object' &&
+      error !== null &&
+      'name' in error &&
+      typeof error.name === 'string' &&
+      error.name.length > 0
+        ? error.name
+        : 'UnknownError',
+  };
+}
+
+function remainingMilliseconds(deadline, now) {
+  return Math.max(0, Math.ceil(deadline - now()));
+}
+
+function driverTimeoutMilliseconds(remaining, leadMilliseconds) {
+  const lead = Math.min(leadMilliseconds, Math.max(0, Math.floor(remaining / 4)));
+  return Math.max(1, remaining - lead);
+}
+
+function readinessTimeoutError({
+  attempts,
+  elapsedMilliseconds,
+  lastError,
+  phase,
+  timeoutMilliseconds,
+}) {
+  const metadata = errorMetadata(lastError);
+  const error = new Error(
+    `phase=postgres_readiness timeout_phase=${phase} timeout_ms=${timeoutMilliseconds} attempts=${attempts} elapsed_ms=${elapsedMilliseconds} last_error_name=${metadata.name} last_error_code=${metadata.code}`,
+  );
+  error.name = 'PostgresReadinessTimeoutError';
+  error.phase = 'postgres_readiness';
+  error.timeoutPhase = phase;
+  error.attempts = attempts;
+  error.elapsedMilliseconds = elapsedMilliseconds;
+  error.lastErrorCode = metadata.code;
+  error.lastErrorName = metadata.name;
+  return error;
+}
+
+function cleanupTimeoutError({ elapsedMilliseconds, timeoutMilliseconds }) {
+  const error = new Error(
+    `phase=postgres_readiness_cleanup cleanup_timeout_ms=${timeoutMilliseconds} elapsed_ms=${elapsedMilliseconds}`,
+  );
+  error.name = 'PostgresReadinessCleanupTimeoutError';
+  error.phase = 'postgres_readiness_cleanup';
+  error.elapsedMilliseconds = elapsedMilliseconds;
+  return error;
+}
+
+function cleanupCompatibilityError() {
+  const error = new Error('phase=postgres_readiness_cleanup hard_abort=unavailable pg_pin=8.22.0');
+  error.name = 'PostgresReadinessCleanupCompatibilityError';
+  error.phase = 'postgres_readiness_cleanup';
+  return error;
+}
+
+function reflect(promise) {
+  return Promise.resolve(promise).then(
+    (value) => ({ status: 'fulfilled', value }),
+    (reason) => ({ reason, status: 'rejected' }),
+  );
+}
+
+function hardAbortPinnedPgTransport(client) {
+  // node-postgres has no public force-destroy method. The lockfile pins pg
+  // 8.22.0, whose Client owns a node:net Socket at connection.stream. This
+  // compatibility-guarded fallback is used only after public end() fails to
+  // settle; destroy() is the Node-supported hard cancellation boundary.
+  const stream = client?.connection?.stream;
+  if (
+    stream === undefined ||
+    typeof stream.destroy !== 'function' ||
+    typeof stream.once !== 'function' ||
+    typeof stream.closed !== 'boolean'
+  ) {
+    throw cleanupCompatibilityError();
+  }
+  if (stream.closed) return Promise.resolve();
+
+  const closedPromise = new Promise((resolveClosed) => stream.once('close', resolveClosed));
+  if (!stream.destroyed) stream.destroy();
+  return closedPromise;
+}
+
+async function settleBeforeDeadline({
+  cancelTimeout,
+  deadline,
+  now,
+  onOperationStarted = () => {},
+  operation,
+  scheduleTimeout,
+  timeoutError,
+}) {
+  const remaining = remainingMilliseconds(deadline, now);
+  if (remaining === 0) throw timeoutError();
+
+  let timeoutHandle;
+  const operationPromise = Promise.resolve().then(operation);
+  onOperationStarted(operationPromise);
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutHandle = scheduleTimeout(() => reject(timeoutError()), remaining);
+  });
+
+  try {
+    const value = await Promise.race([operationPromise, timeoutPromise]);
+    if (now() >= deadline) throw timeoutError();
+    return value;
+  } finally {
+    if (timeoutHandle !== undefined) cancelTimeout(timeoutHandle);
+    // Promise.race does not cancel its losing branch. Always retain a rejection
+    // handler; readiness cleanup also waits for this exact promise and uses the
+    // pinned hard-abort boundary if public end() cannot settle it.
+    void operationPromise.catch(() => {});
+  }
+}
+
+async function closeRejectedClient({
+  cancelTimeout,
+  cleanupTimeoutMilliseconds,
+  client,
+  destroyClientTransport,
+  gracefulCleanupTimeoutMilliseconds,
+  hardDeadline,
+  now,
+  operationPromise,
+  scheduleTimeout,
+  startedAt,
+}) {
+  const cleanupDeadline = Math.min(hardDeadline, now() + cleanupTimeoutMilliseconds);
+  const gracefulDeadline = Math.min(cleanupDeadline, now() + gracefulCleanupTimeoutMilliseconds);
+  const makeTimeoutError = () =>
+    cleanupTimeoutError({
+      elapsedMilliseconds: Math.max(0, Math.ceil(now() - startedAt)),
+      timeoutMilliseconds: cleanupTimeoutMilliseconds,
+    });
+
+  let endPromise;
+  try {
+    endPromise = Promise.resolve(client.end());
+  } catch (error) {
+    endPromise = Promise.reject(error);
+  }
+  void endPromise.catch(() => {});
+  const endOutcome = reflect(endPromise);
+  const operationOutcome =
+    operationPromise === undefined ? Promise.resolve() : reflect(operationPromise);
+
+  let publicCleanupError;
+  try {
+    const [endState] = await settleBeforeDeadline({
+      cancelTimeout,
+      deadline: gracefulDeadline,
+      now,
+      operation: () => Promise.all([endOutcome, operationOutcome]),
+      scheduleTimeout,
+      timeoutError: makeTimeoutError,
+    });
+    if (endState.status === 'rejected') throw endState.reason;
+    return;
+  } catch (error) {
+    publicCleanupError = error;
+  }
+
+  let forcedCleanupError;
+  try {
+    // Invoke destroy synchronously even when the hard deadline has just
+    // elapsed; settleBeforeDeadline then bounds observation of socket close and
+    // the discarded client's error channel. The original operation retains a
+    // rejection handler but cannot reuse a transport whose close was observed.
+    if (typeof client.on === 'function') client.on('error', () => {});
+    const forcedClosePromise = Promise.resolve(destroyClientTransport(client));
+    void forcedClosePromise.catch(() => {});
+    await settleBeforeDeadline({
+      cancelTimeout,
+      deadline: cleanupDeadline,
+      now,
+      operation: () => forcedClosePromise,
+      scheduleTimeout,
+      timeoutError: makeTimeoutError,
+    });
+  } catch (error) {
+    forcedCleanupError = error;
+  }
+
+  if (forcedCleanupError !== undefined) {
+    throw new AggregateError(
+      [publicCleanupError, forcedCleanupError],
+      'phase=postgres_readiness_cleanup public_end=failed hard_abort=failed',
+      { cause: publicCleanupError },
+    );
+  }
+
+  // A public end() that does not settle is terminal even when the pinned
+  // fallback proves the transport released. Never retry from this branch.
+  throw publicCleanupError;
+}
+
+export async function waitForPostgresReadiness({
+  attemptTimeoutMilliseconds = POSTGRES_READINESS_ATTEMPT_TIMEOUT_MILLISECONDS,
+  cancelTimeout = (handle) => clearTimeout(handle),
+  cleanupTimeoutMilliseconds = POSTGRES_READINESS_CLEANUP_TIMEOUT_MILLISECONDS,
+  createClient = ({ connectionTimeoutMillis }) =>
+    new Client({ ...adminConfiguration(), connectionTimeoutMillis }),
+  destroyClientTransport = hardAbortPinnedPgTransport,
+  driverTimeoutLeadMilliseconds = POSTGRES_READINESS_DRIVER_TIMEOUT_LEAD_MILLISECONDS,
+  gracefulCleanupTimeoutMilliseconds = POSTGRES_READINESS_GRACEFUL_CLEANUP_TIMEOUT_MILLISECONDS,
+  intervalMilliseconds = POSTGRES_READINESS_INTERVAL_MILLISECONDS,
+  now = () => performance.now(),
+  scheduleTimeout = (callback, milliseconds) => setTimeout(callback, milliseconds),
+  timeoutMilliseconds = POSTGRES_READINESS_TIMEOUT_MILLISECONDS,
+} = {}) {
+  if (!Number.isInteger(attemptTimeoutMilliseconds) || attemptTimeoutMilliseconds <= 0)
+    throw new Error('PostgreSQL readiness attempt timeout must be a positive integer.');
+  if (!Number.isInteger(cleanupTimeoutMilliseconds) || cleanupTimeoutMilliseconds <= 0)
+    throw new Error('PostgreSQL readiness cleanup timeout must be a positive integer.');
+  if (
+    !Number.isInteger(gracefulCleanupTimeoutMilliseconds) ||
+    gracefulCleanupTimeoutMilliseconds <= 0
+  )
+    throw new Error('PostgreSQL readiness graceful cleanup timeout must be a positive integer.');
+  if (gracefulCleanupTimeoutMilliseconds >= cleanupTimeoutMilliseconds)
+    throw new Error(
+      'PostgreSQL readiness graceful cleanup timeout must be shorter than the cleanup timeout.',
+    );
+  if (cleanupTimeoutMilliseconds >= timeoutMilliseconds)
+    throw new Error(
+      'PostgreSQL readiness cleanup timeout must be shorter than the global timeout.',
+    );
+  if (!Number.isInteger(driverTimeoutLeadMilliseconds) || driverTimeoutLeadMilliseconds < 0)
+    throw new Error('PostgreSQL readiness driver timeout lead must be a non-negative integer.');
+  if (!Number.isInteger(intervalMilliseconds) || intervalMilliseconds <= 0)
+    throw new Error('PostgreSQL readiness interval must be a positive integer.');
+  if (!Number.isInteger(timeoutMilliseconds) || timeoutMilliseconds <= 0)
+    throw new Error('PostgreSQL readiness timeout must be a positive integer.');
+
+  const startedAt = now();
+  const hardDeadline = startedAt + timeoutMilliseconds;
+  const operationDeadline = hardDeadline - cleanupTimeoutMilliseconds;
+  let attempts = 0;
+  let lastError;
+
+  const makeTimeoutError = (phase, error = lastError) =>
+    readinessTimeoutError({
+      attempts,
+      elapsedMilliseconds: Math.max(0, Math.ceil(now() - startedAt)),
+      lastError: error,
+      phase,
+      timeoutMilliseconds,
+    });
+
+  while (true) {
+    const operationRemaining = remainingMilliseconds(operationDeadline, now);
+    if (operationRemaining === 0) throw makeTimeoutError('attempt_start');
+
+    attempts += 1;
+    const attemptDeadline = Math.min(
+      operationDeadline,
+      now() + Math.min(attemptTimeoutMilliseconds, operationRemaining),
+    );
+    let client;
+    let operationPromise;
+    try {
+      const connectionRemaining = remainingMilliseconds(attemptDeadline, now);
+      client = createClient({
+        connectionTimeoutMillis: driverTimeoutMilliseconds(
+          connectionRemaining,
+          driverTimeoutLeadMilliseconds,
+        ),
+      });
+      await settleBeforeDeadline({
+        cancelTimeout,
+        deadline: attemptDeadline,
+        now,
+        onOperationStarted: (promise) => {
+          operationPromise = promise;
+        },
+        operation: () => client.connect(),
+        scheduleTimeout,
+        timeoutError: () => makeTimeoutError('connect'),
+      });
+
+      const queryRemaining = remainingMilliseconds(attemptDeadline, now);
+      if (queryRemaining === 0) throw makeTimeoutError('between_connect_and_query');
+      const result = await settleBeforeDeadline({
+        cancelTimeout,
+        deadline: attemptDeadline,
+        now,
+        onOperationStarted: (promise) => {
+          operationPromise = promise;
+        },
+        operation: () => client.query('SELECT 1 AS value'),
+        scheduleTimeout,
+        timeoutError: () => makeTimeoutError('select_1'),
+      });
+      if (result.rows[0]?.value !== 1) {
+        const error = new Error('PostgreSQL readiness query returned an unexpected result.');
+        error.name = 'PostgresReadinessProbeError';
+        throw error;
+      }
+      return {
+        attempts,
+        client,
+        elapsedMilliseconds: Math.max(0, Math.ceil(now() - startedAt)),
+      };
+    } catch (primaryError) {
+      lastError = primaryError;
+      let cleanupError;
+      if (client !== undefined) {
+        try {
+          await closeRejectedClient({
+            cancelTimeout,
+            cleanupTimeoutMilliseconds,
+            client,
+            destroyClientTransport,
+            gracefulCleanupTimeoutMilliseconds,
+            hardDeadline,
+            now,
+            operationPromise,
+            scheduleTimeout,
+            startedAt,
+          });
+        } catch (error) {
+          cleanupError = error;
+        }
+      }
+      if (cleanupError !== undefined) {
+        const primary = errorMetadata(primaryError);
+        const cleanup = errorMetadata(cleanupError);
+        throw new AggregateError(
+          [primaryError, cleanupError],
+          `phase=postgres_readiness primary_error_name=${primary.name} primary_error_code=${primary.code} cleanup_error_name=${cleanup.name} cleanup_error_code=${cleanup.code}`,
+          { cause: primaryError },
+        );
+      }
+
+      if (primaryError?.name === 'PostgresReadinessTimeoutError') throw primaryError;
+
+      const retryRemaining = remainingMilliseconds(operationDeadline, now);
+      if (retryRemaining === 0) throw makeTimeoutError('retry_delay', primaryError);
+      const delay = Math.min(intervalMilliseconds, retryRemaining);
+      await new Promise((resolveDelay) => scheduleTimeout(resolveDelay, delay));
+      if (now() >= operationDeadline) throw makeTimeoutError('retry_delay', primaryError);
+    }
+  }
 }
 
 function normalizeOutput(value) {
@@ -1144,13 +1503,16 @@ function assertEnvironment() {
 async function main() {
   assertEnvironment();
   verifyImmutableHistory();
-  const admin = new Client(adminConfiguration());
+  const readiness = await waitForPostgresReadiness();
+  const admin = readiness.client;
   const databases = [];
   let membershipRefusalCount = 0;
   let primaryError;
   let provisionerSuccessCount = 0;
   let writerAclRefusalCount = 0;
-  await admin.connect();
+  process.stdout.write(
+    `POSTGRESQL_C1_TCP_READINESS_PASS host=${process.env.S1203C1_ADMIN_HOST} path=published authenticated=true select=1 attempts=${readiness.attempts} elapsed_ms=${readiness.elapsedMilliseconds}\n`,
+  );
   try {
     const version = await admin.query(
       `SELECT current_setting('server_version_num')::integer AS number`,
@@ -1220,7 +1582,9 @@ async function main() {
   );
 }
 
-main().catch((error) => {
-  process.stderr.write(`${normalizeOutput(error.stack ?? error.message)}\n`);
-  process.exitCode = 1;
-});
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    process.stderr.write(`${normalizeOutput(error.stack ?? error.message)}\n`);
+    process.exitCode = 1;
+  });
+}
