@@ -24,6 +24,19 @@ function schemaType(schema) {
   if (schema?.$ref) {
     return schema.$ref.split("/").at(-1);
   }
+  if (Array.isArray(schema?.allOf)) {
+    const { allOf, ...baseSchema } = schema;
+    const hasBaseShape =
+      baseSchema.type !== undefined ||
+      baseSchema.properties !== undefined ||
+      baseSchema.oneOf !== undefined;
+    return [
+      ...(hasBaseShape ? [schemaType(baseSchema)] : []),
+      ...allOf.map(schemaType),
+    ]
+      .map((part) => `(${part})`)
+      .join(" & ");
+  }
   if (Array.isArray(schema?.oneOf)) {
     const { oneOf, ...baseSchema } = schema;
     const hasBaseShape =
@@ -68,9 +81,6 @@ function schemaType(schema) {
   }
   if (schema?.type === "array") {
     return `ReadonlyArray<${schemaType(schema.items ?? {})}>`;
-  }
-  if (Array.isArray(schema?.allOf)) {
-    return schema.allOf.map(schemaType).join(" & ");
   }
   if (schema?.type === "object" || schema?.properties) {
     const required = new Set(schema.required ?? []);
@@ -137,6 +147,29 @@ export function buildAdminC1ContractPolicies(document) {
       document["x-kora-admin-recovery-code-rotation-policy"],
     sessionFamilies: document["x-kora-admin-session-family-policy"],
     unavailability: document["x-kora-admin-c1-unavailability-policy"],
+  };
+}
+
+export function buildAdminC2ContractPolicies(document) {
+  const operationIds =
+    document["x-kora-admin-c2-unavailability-policy"]?.operationIds ?? [];
+  const operationErrors = Object.fromEntries(
+    operationIds.map((operationId) => [
+      operationId,
+      document["x-kora-operation-errors"]?.[operationId] ?? [],
+    ]),
+  );
+  const errorCodes = [...new Set(Object.values(operationErrors).flat())];
+  return {
+    contract: document["x-kora-admin-c2-contract-policy"],
+    operationErrors,
+    errorStatuses: Object.fromEntries(
+      errorCodes.map((errorCode) => [
+        errorCode,
+        document["x-kora-error-statuses"]?.[errorCode] ?? null,
+      ]),
+    ),
+    unavailability: document["x-kora-admin-c2-unavailability-policy"],
   };
 }
 
@@ -227,16 +260,15 @@ export function buildAdminSecurityOperations(document) {
           document["x-kora-admin-public-failure-timing"]?.[
             operation.operationId
           ] ?? null,
-        serviceUnavailable:
-          operation["x-kora-delivery-slice"] === "S1.2-03C1"
-            ? {
-                status: 503,
-                errorCode: "SERVICE_UNAVAILABLE",
-                publicMessage:
-                  document["x-kora-admin-c1-unavailability-policy"]
-                    ?.publicMessage ?? null,
-              }
-            : null,
+        serviceUnavailable: {
+          status: 503,
+          errorCode: "SERVICE_UNAVAILABLE",
+          publicMessage:
+            (operation["x-kora-delivery-slice"] === "S1.2-03C1"
+              ? document["x-kora-admin-c1-unavailability-policy"]
+              : document["x-kora-admin-c2-unavailability-policy"]
+            )?.publicMessage ?? null,
+        },
         signedManifest: operation["x-kora-signed-manifest"] ?? null,
         idempotency: {
           required: operation["x-kora-idempotent"] === true,
@@ -269,9 +301,10 @@ export function buildContractTypes(document) {
   const schemas = Object.entries(document.components?.schemas ?? {});
   const adminSecurityOperations = buildAdminSecurityOperations(document);
   const adminC1ContractPolicies = buildAdminC1ContractPolicies(document);
+  const adminC2ContractPolicies = buildAdminC2ContractPolicies(document);
   const lines = [
     "// Generated from docs/api/openapi.yaml by scripts/openapi/generate-contract-types.mjs.",
-    "// Do not edit by hand. Runtime clients are intentionally outside S1.2-03B.",
+    "// Do not edit by hand. Runtime clients remain outside S1.2-03C2-P0.",
     "",
     "export const audioPilotPaths = [",
     ...paths.map((path) => `  ${JSON.stringify(path)},`),
@@ -280,6 +313,8 @@ export function buildContractTypes(document) {
     "export type AudioPilotPath = (typeof audioPilotPaths)[number];",
     "",
     `export const adminC1ContractPolicies = ${JSON.stringify(adminC1ContractPolicies, null, 2)} as const;`,
+    "",
+    `export const adminC2ContractPolicies = ${JSON.stringify(adminC2ContractPolicies, null, 2)} as const;`,
     "",
     `export const adminSecurityOperations = ${JSON.stringify(adminSecurityOperations, null, 2)} as const;`,
     "",

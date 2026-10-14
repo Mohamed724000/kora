@@ -103,14 +103,6 @@ try {
   $containerCreated = $true
   Write-Output "POSTGRESQL_C1_CONTAINER_ISOLATION_PASS image=$image storage=tmpfs bind=127.0.0.1"
 
-  $ready = $false
-  for ($attempt = 0; $attempt -lt 60; $attempt += 1) {
-    docker exec $container pg_isready --username=kora_s1203c1_admin --dbname=postgres *> $null
-    if ($LASTEXITCODE -eq 0) { $ready = $true; break }
-    Start-Sleep -Milliseconds 500
-  }
-  if (-not $ready) { throw 'The isolated PostgreSQL C1 container did not become ready.' }
-
   $portLine = docker port $container 5432/tcp
   if ($LASTEXITCODE -ne 0 -or $portLine -notmatch '^127\.0\.0\.1:(\d+)$') {
     throw 'Unable to resolve the isolated PostgreSQL C1 port.'
@@ -128,6 +120,10 @@ try {
   $env:S1203C1_WRITER_PASSWORD = $writerPassword
   $env:S1203C1_VALIDATION_CONTAINER = $container
 
+  # The Node validator proves authenticated SELECT 1 readiness through this
+  # published host path before it performs any database mutation. Do not use a
+  # socket-local pg_isready result here: the pinned image exposes a temporary
+  # socket-only server while its entrypoint is still initializing PostgreSQL.
   & node (Join-Path $PSScriptRoot 'validate-admin-auth-runtime.mjs')
   if ($LASTEXITCODE -ne 0) {
     throw "S1.2-03C1 PostgreSQL validation exited with code $LASTEXITCODE."

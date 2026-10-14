@@ -1,11 +1,11 @@
 # Rapport de validation locale S1.2-03C1 — Admin Auth Session Runtime
 
-Statut : **R11 PUBLIÉ AU HEAD `3e02785d…` DE LA DRAFT PR #50 AVEC QUATRE
-WORKFLOWS VERTS — REVUE TERMINALE BLOCK MALFORMED JSON — INSTANTANÉ
-PRÉPUBLICATION R12 VALIDÉ — FOURNISSEUR DE CLÉS DE PRODUCTION NON
-QUALIFIÉ — C2/C3 NOT STARTED**
+Statut : **C1 FUSIONNÉ DANS MAIN AU MERGE
+dc97eeef72c4e299988ed19d66460011a8551cf3 — QUATRE WORKFLOWS PUSH/MAIN
+VERTS — NON DÉPLOYÉ — C2-P0 CONTRACTUEL VALIDÉ, RUNTIME C2 NON IMPLÉMENTÉ —
+FOURNISSEURS DE PRODUCTION NON QUALIFIÉS — C3 NOT STARTED**
 
-Date : 2026-10-08
+Date : 2026-10-09
 
 ## Périmètre et préflight historiques C1 initial
 
@@ -1323,3 +1323,23 @@ Aucun Ready, approval, merge, tag, release ou déploiement n'est autorisé par
 cet instantané. Le fournisseur de clés de production demeure **NON QUALIFIÉ**,
 la politique OSS différée n'est pas installée, le JTI reste séparé, la
 pagination **NON CONCLUSIVE**, V8/iOS non exécutés et C2/C3 `Not started`.
+
+## Postflight d’intégration C1 — 2026-10-09
+
+Le head final C1 f09fce29f43e54f2bf6bba3b043e442df1c94a77 est fusionné
+dans main par dc97eeef72c4e299988ed19d66460011a8551cf3, parents
+c97992ca2c82bc4f22f9222ea98ed53714fede4c puis
+f09fce29f43e54f2bf6bba3b043e442df1c94a77, arbre
+a4eb9a79da1b676f0037bb547df84b91abb28309. La PR #50 est fermée, fusionnée et
+non Draft. Infrastructure 37778525448, Launcher Windows 37778525505, Security
+37778525338 et Quality Linux 37778525244 sont push/main, tentative 1,
+completed/success sur le merge exact.
+
+Le corps final de PR #50 reste à 46 267 octets et SHA-256
+c602bff7a66fcd514575c00ef02c58e114a1e9c2a5fd9fd0ab9d8e4b2e76dae0.
+C1 est intégré mais aucun déploiement n’est affirmé.
+
+Le lot S1.2-03C2-P0 ultérieur est strictement contractuel. Il ne rejoue ni
+PostgreSQL, Redis, Docker, HTTP réel, build API, Flutter ou navigateur, et ne
+modifie aucun fichier runtime C1. Les preuves R12 restent historiques et
+intactes; le présent appendice ne les renomme ni ne les réexécute.

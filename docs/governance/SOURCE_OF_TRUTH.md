@@ -1,13 +1,14 @@
 # KORA+ Final — Source de vérité
 
-Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-02 ET S1.2-03A CLÔTURÉS ET
-FUSIONNÉS — S1.2-03B-R4 FUSIONNÉ VIA PR #48 — S1.2-03C1-R11 PUBLIÉ AU HEAD
-`3e02785d…` DE LA DRAFT PR #50 AVEC QUATRE WORKFLOWS VERTS — REVUE TERMINALE
-BLOCK MALFORMED JSON — INSTANTANÉ PRÉPUBLICATION R12 VALIDÉ —
-FOURNISSEUR DE CLÉS DE PRODUCTION NON QUALIFIÉ — C2/C3 NOT STARTED**
+Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-03C1 FUSIONNÉ DANS MAIN AU
+MERGE dc97eeef72c4e299988ed19d66460011a8551cf3, NON DÉPLOYÉ — PR #50
+FERMÉE/FUSIONNÉE — S1.2-03C2-P0/R1–R5 PUBLIÉS DANS LA DRAFT PR #51 AU HEAD
+7d0e0e01f2618dab59d2e21d0091892f98c7b6ae — R6 QUALIFIÉ LOCALEMENT ET
+AUTORISÉ POUR PUBLICATION SOUS GATES, CI R6 NON ACQUISE — RUNTIME NON
+IMPLÉMENTÉ — FOURNISSEURS DE PRODUCTION NON QUALIFIÉS — C3 NOT STARTED**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-10-08
+Dernière réconciliation documentaire : 2026-10-13
 
 ## Hiérarchie normative
 
@@ -901,3 +902,201 @@ politique OSS différée n'est pas installée, la recommandation JTI reste
 séparée, la pagination reste **NON CONCLUSIVE**, V8/iOS ne sont pas exécutés et
 C2/C3 restent `Not started`. Aucun Ready, approval, merge, tag, release ou
 déploiement n'est autorisé par cet instantané.
+
+## Réconciliation C1 fusionnée et prérequis contractuel S1.2-03C2-P0 — 2026-10-09
+
+La PR #50 est fermée et fusionnée. Le head source final est
+f09fce29f43e54f2bf6bba3b043e442df1c94a77; le merge main est
+dc97eeef72c4e299988ed19d66460011a8551cf3, avec les parents ordonnés
+c97992ca2c82bc4f22f9222ea98ed53714fede4c puis
+f09fce29f43e54f2bf6bba3b043e442df1c94a77 et l’arbre
+a4eb9a79da1b676f0037bb547df84b91abb28309. Les runs push/main Infrastructure
+37778525448, Launcher Windows 37778525505, Security 37778525338 et Quality
+Linux 37778525244 sont completed/success, tentative 1, sur ce merge. C1 est
+intégré mais non déployé.
+
+S1.2-03C2-P0 matérialise ADR-026 et la fermeture contractuelle des
+quinze opérations C2 sans démarrer leur runtime. La surface cumulative reste
+60 chemins, 67 opérations et 137 schémas; C1 reste 12 opérations et C2 reste 15. P0 verrouille le 503 fermé, les purposes/sinks/contextes, le reset
+PASSWORD_RESET, les neuf erreurs JSON pré-contrôleur, les notifications/outbox,
+la compromission des mots de passe, l’e-mail/idempotence, les snapshots de
+pagination, les exports signés, le bootstrap CLI et les futures frontières
+PostgreSQL.
+
+P0 ne modifie ni runtime, Prisma, migration, provisioning, rôle/compte,
+dépendance, lockfile, workflow ou interface. Dans l’instantané de validation
+locale antérieur à sa publication, il était non indexé, non commité et non
+publié; toute publication ultérieure fait foi dans Git et GitHub. PostgreSQL,
+Redis, Docker, HTTP réel, builds applicatifs, Flutter et navigateur sont NON
+EXÉCUTÉS. Les fournisseurs de notification, HIBP, export et clés de production
+sont NON QUALIFIÉS; la politique OSS reste différée et C3 reste Not started.
+
+## Instantané local prépublication S1.2-03C2-P0-R2 — 2026-10-10
+
+La revue cumulative P0/R1 a bloqué l'intégration contractuelle sur la causalité
+du worker de notification issu du reset public et a relevé deux durcissements
+LOW. R2 conserve 60 chemins, 67 opérations et 137 schémas tout en ajoutant au
+type existant `AdminAuditLogEntry` le lien nullable
+`causationSecurityEventId`. Les trois origines SYSTEM sont exclusives :
+autonome, délégation prouvée vers `AuditLog`, ou continuation du reset public
+vers `AdminSecurityEvent`. Aucun acteur ou délégant n'est déduit d'une donnée
+client et aucun identifiant interne n'est exposé par la réponse publique.
+
+Le contrat décrit la future FK, le CHECK XOR, les liaisons atomiques et les ACL
+minimales, mais ne modifie ni Prisma, migration, rôle, compte ou provisioning.
+Les listes d'erreurs des quinze opérations C2 et leurs statuts sont exacts et
+générés. Le nettoyage Infrastructure capture séparément une exception de
+`stopChild`, sans retry ni faux succès. Les surfaces d'intégration
+`apps/api/src/app.module.ts` et `apps/api/src/app.factory.ts` restent hors R2 et
+devront être autorisées explicitement si un futur runtime les requiert.
+
+La première campagne combinée R2 à 329/331 reste NON-PASS; après correction du
+helper de type null, la reprise passe 331/331. Les gates techniques passent :
+OpenAPI 60/67/137, adversarial 324/324, boundary et Contracts 8/8,
+format/lint/typecheck/build Contracts, génération exacte, Infrastructure
+14/14, tooling 459/459 et scanner officiel sur 388 fichiers avec historique,
+52 sources immuables et six scripts qualifiés. L'échec Infrastructure
+historique reste conservé et sa cause Docker demeure NON CONCLUSIVE.
+
+Le contrôle GitHub pré-écriture futur doit figer dépôt, numéro de PR, état,
+branche, base/head, titre et candidat UTF-8 avec taille/hash, puis effectuer
+une relecture API binaire et une comparaison exacte. L'incident PR #50 reste
+décrit honnêtement comme une édition erronée puis une restauration corrective,
+pas comme une écriture unique conforme.
+
+Dans cet instantané antérieur à toute publication, R2 est local, non indexé,
+non commité et non publié; tout état Git/GitHub postérieur fait foi. Aucun
+runtime C2/C3 n'est commencé. Les fournisseurs de production restent NON
+QUALIFIÉS et la politique OSS reste différée.
+
+## S1.2-03C2-P0-R3 — projection legacy, motifs et hash d'export — 2026-10-11
+
+Au head publié R2 `751299d10049582ba8eec829bbfcd2dbdd02fb02`, la
+revue cumulative a identifié trois ambiguïtés contractuelles : projection des
+lignes AuditLog v1, sélection des motifs v2 et portée de `contentSha256`. R3
+les ferme localement sans runtime.
+
+La projection est l'union discriminée v1/v2. V1 conserve les identifiants et
+attributs historiques représentables, n'invente aucune métadonnée v2 et omet
+la colonne `legacyReason` dès l'allowlist PostgreSQL ; liste et export restent
+cohérents et incluent v1 par défaut. V2 garde ses non-nullités et les trois
+contextes/origines R2.
+
+Une table exacte couvre dix opérations AuditLog et sept transitions SYSTEM.
+Les motifs fixes, motifs client validés, rejets après preuve, opérations sans
+AuditLog et sources causales sont séparés. L'expiration recovery reçoit
+`ACCOUNT_RECOVERY`. Le ZIP final complet est hashé avant chiffrement, transmis
+byte-identique après déchiffrement, immuable en READY et non autoréférentiel.
+
+La surface courante est 60 chemins, 67 opérations et 139 schémas. R3 reste
+local, non indexé, non commit et non publié. Les quatre succès R2, la Draft PR
+#51 et l'échec Infrastructure historique à cause Docker NON CONCLUSIVE ne sont
+pas réinterprétés. Aucun runtime C2/C3 n'est commencé ; fournisseurs de
+production NON QUALIFIÉS et politique OSS différée.
+
+## S1.2-03C2-P0-R4 — complétion cumulative audit/transaction — 2026-10-12
+
+R4 ferme localement les sept findings du gel R3. Les nouvelles écritures C2
+sont contractualisées en AuditLog v3 à résultat explicite ; les lignes v1/v2
+existantes restent UNKNOWN sans réécriture ni inférence. Liste et export
+partagent une projection sans `operatorReason` brut et un overflow explicite.
+
+Les quinze opérations possèdent désormais une matrice entrée → preuve serveur
+→ autorisation → métier → mutation/snapshot → audit → COMMIT → réponse →
+continuation et des sinks complets. Les sept transitions SYSTEM possèdent une
+source entièrement liée. L'export fixe machine d'état, lease, fencing, trois
+tentatives/deux reprises, avec backoff CAS `nextAttemptAt` 30 s/120 s,
+réclamation des crashes à expiration de lease seulement avant la deadline et
+deadline immuable de 600 s par tentative. La planification révoque propriétaire et lease ; renew et CAS
+READY/FAILED exigent fence/propriétaire/lease actifs, aucun retry planifié et
+un instant strictement antérieur à la deadline. À ou après l'échéance, même si
+la lease expire au même instant, le watchdog prévaut sur le reclaim et planifie
+la reprise avec backoff ou ferme le troisième essai avec audit unique. Une
+expiration de lease du troisième essai avant deadline ferme également FAILED
+avec audit unique. Le terminal
+FAILED reste fermé. Le
+fencing interdit toute publication d'état/métadonnées/audit stale sans
+prétendre annuler un PUT déjà parti : celui-ci reste staging invisible et
+orphelin ciblé. L'ordre de publication, la transaction READY/AuditLog, la
+réconciliation et l'arbitrage expiration/téléchargement sont fermés.
+La branche COMMIT inconnu `PROCESSING_SAME_FENCE` ne reprend un CAS terminal
+que si owner, lease, `nextAttemptAt=null` et deadline le permettent encore ;
+sinon elle suit le retry planifié, le reclaim de lease ou le watchdog, sans
+laisser un futur worker inventer la suite.
+L'acceptation d'invitation est atomique avec le
+credential mot de passe Argon2id, le préauth FIRST_TOTP et l'événement de
+sécurité ; `AdminAuthService.login` est le chemin C1 de reprise. Les rejets v3
+utilisent la table fermée `failureCodeByTrigger` : les erreurs avant preuve et
+les opérations aux sinks SecurityEvent/NONE ne fabriquent jamais d'AuditLog v3.
+
+Le DDL v1 réel est décrit sans inventer de maximum ou format. La surface est
+60 chemins, 67 opérations et 141 schémas. R4 ne change aucun runtime, Prisma,
+migration, rôle, provider, dépendance, lockfile, workflow ou Infrastructure ;
+dans l’instantané prépublication final du 2026-10-13, il était local, non
+indexé, non commité et non publié. Toute publication ultérieure fait foi dans
+Git et GitHub. Le préflight clarifié conserve volontairement
+`refs/heads/main=a602fd38f32d018867c8a058deace0325b4a7c31`, tandis que
+`refs/remotes/origin/main` et le main distant restent
+`dc97eeef72c4e299988ed19d66460011a8551cf3`; l'arrêt initial est une interprétation
+NON-PASS, pas un incident Git.
+
+Les deux lacunes probatoires historiques — candidats intermédiaires rejetés
+perdus avant archivage et sortie de la tentative PowerShell 5 non capturée —
+restent visibles avec le statut **ACCEPTED WITH CTO WAIVER — HISTORICAL
+EVIDENCE ONLY**. Cette dérogation ne couvre ni FINAL7, ni ses preuves finales,
+ni un nouvel échec d’audit, de publication, de CI ou d’intégrité GitHub. Aucun
+artefact historique absent n’est reconstruit et aucune tentative NON-PASS
+n’est requalifiée.
+
+## S1.2-03C2-P0-R5 publié et R6 contractuel local — 2026-10-13
+
+R5 est publié dans la Draft PR #51 au commit
+`7d0e0e01f2618dab59d2e21d0091892f98c7b6ae`, arbre
+`3212cb4d119e2d440b155a1aef4e83f0aebb5ce5`. Les quatre workflows de cette
+publication sont terminés en succès sur ce head exact : Infrastructure
+`38437635773`, Launcher Windows `38437635822`, Security `38437635803` et
+Quality Linux `38437635804`. La PR reste ouverte, Draft et non fusionnée.
+
+La revue terminale post-R5 a identifié une lacune **HIGH** dans le contrat de
+disposition du client transactionnel. R6 exige désormais, pour tous les futurs
+writers C2 HTTP, bootstrap, outbox, jobs et transitions SYSTEM : `BEGIN`,
+rollback et accusé de COMMIT bornés à 2 000 ms sur horloge monotone ; callback
+seulement après BEGIN confirmé ; retour au pool uniquement après réponse
+terminale, `ReadyForQuery=I` causal post-commande du même client utilisable ;
+destruction physique exactement une fois après rejet non idle, deadline,
+connexion perdue, accusé inconnu ou état `T`/`E`/inconnu ; conservation
+distincte des erreurs et issues terminales ; libération totale exactement une
+fois.
+
+La tentative de COMMIT est marquée avant l’appel driver. Toute perte, deadline
+ou absence d’accusé après ce point est exclusivement `COMMIT_UNKNOWN` :
+destruction sans rollback, replay ou second sink, settle tardif sans
+reclassification, réponse ou release, puis réconciliation durable. Un rejet
+serveur confirmé reste un résultat non commité connu ; un COMMIT confirmé reste
+durable même si le client devient inutilisable et doit être détruit. Un retry de
+job ne vaut jamais autorisation de rejouer une mutation au résultat inconnu.
+Six traces normatives et vingt et une mutations adversariales ferment ces
+invariants.
+
+La qualification locale R6 passe OpenAPI 60/67/141, 373/373 tests
+adversariaux, boundary 10/10, génération exacte, Contracts
+format/lint/typecheck/tests/build avec 10/10 tests, tooling 522/522, scanner
+officiel sur 388 fichiers avec historique, Prettier ciblé et contrôles
+d’intégrité statiques. PostgreSQL, Redis, Docker, HTTP réel, Flutter, APK et
+builds applicatifs sont **NON EXÉCUTÉS** pour R6. Ces résultats sont locaux et
+ne constituent ni une publication ni une CI R6.
+
+R6 reste local, non indexé, non commité et non publié. Il n’implémente aucun
+runtime et ne modifie ni Prisma, migration, rôle, provider, dépendance,
+lockfile, workflow ou infrastructure. Le candidat de corps PR est conservé
+hors dépôt et la PR live n’est pas modifiée. La dérogation R4 demeure limitée
+aux preuves historiques qu’elle nomme et ne couvre pas R6. Fournisseurs de
+production **NON QUALIFIÉS**, OSS différée et runtime C2/C3 non commencé.
+
+Cet état local constitue désormais le gel d'entrée qualifié de la publication
+R6 autorisée sous gates. La perte du premier brouillon de corps PR, jamais
+publié, est couverte uniquement par **ACCEPTED WITH CTO WAIVER — R6
+UNPUBLISHED DRAFT ONLY** ; les constats historiques BLOCK restent inchangés et
+la dérogation ne couvre ni les octets techniques finaux, ni le candidat final,
+ni une preuve de validation. Au présent gel documentaire, aucune CI R6 n'est
+encore acquise et le corps live de la PR #51 reste inchangé.

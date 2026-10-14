@@ -1,11 +1,12 @@
 # KORA+ Final — Threat Model initial
 
-Périmètre durable couvert : **BASELINE + S0.4/S0.5/M0.1/M0.2/S0.6 ET M0.3
-FUSIONNÉS ET CLÔTURÉS + S1.1 FERMÉ + CONTRACT & DATA READINESS S1.2-01 +
-S1.2-02 CLÔTURÉ ET FUSIONNÉ + S1.2-03A CLÔTURÉ ET FUSIONNÉ + S1.2-03B-R4
-FUSIONNÉ VIA PR #48 + S1.2-03C1-R11 PUBLIÉ DANS LA DRAFT PR #50 AVEC QUATRE
-WORKFLOWS VERTS + REVUE TERMINALE BLOCK MALFORMED JSON + INSTANTANÉ
-PRÉPUBLICATION R12 VALIDÉ — KMS/JWT DE PRODUCTION NON QUALIFIÉS — C2/C3 NOT
+Périmètre durable couvert : **BASELINE À S1.2-03B FUSIONNÉES + S1.2-03C1
+FUSIONNÉ DANS MAIN AU MERGE
+dc97eeef72c4e299988ed19d66460011a8551cf3, NON DÉPLOYÉ + S1.2-03C2-P0/R1–R5
+PUBLIÉS DANS LA DRAFT PR #51 AU HEAD
+7d0e0e01f2618dab59d2e21d0091892f98c7b6ae + R6 QUALIFIÉ LOCALEMENT ET
+AUTORISÉ POUR PUBLICATION SOUS GATES, CI R6 NON ACQUISE AU 2026-10-13,
+RUNTIME NON IMPLÉMENTÉ — FOURNISSEURS DE PRODUCTION NON QUALIFIÉS — C3 NOT
 STARTED**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
@@ -1152,3 +1153,101 @@ GitHub. C1 demeure en revue dans la Draft PR #50 et n'est pas intégré à `main
 Cet instantané ne qualifie ni le fournisseur KMS/JWT de production, ni
 OSS/JTI/pagination/V8/iOS, ni C2/C3, et n'autorise aucun Ready, approval, merge,
 tag, release ou déploiement.
+
+## Menaces et contrôles contractuels S1.2-03C2-P0 — 2026-10-09
+
+| Menace                                          | Contrôle contractuel P0                                                                                             | Preuve P0                                        | Limite résiduelle                        |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | ---------------------------------------- |
+| Fuite de dépendance ou retry dangereux          | 503 C2 fermé sur les 15 opérations; rollback confirmé distinct du COMMIT inconnu; aucun retry aveugle               | validateur exact et mutations adversariales      | runtime et timeouts réseau NON EXÉCUTÉS  |
+| Contexte/acteur fabriqué par le client          | matrice serveur par opération; avant preuve SecurityEvent, après preuve sink exact                                  | policy générée; mutations preuve/sink/contexte   | stockage et transactions C2 NON EXÉCUTÉS |
+| Reset utilisé comme bypass MFA                  | PASSWORD_RESET XOR MFA_RECOVERY; aucune session/enrollment; TOTP et codes préservés                                 | policy/ADR et mutation reset=MFA                 | modèle/migration/runtime NON EXÉCUTÉS    |
+| JSON malformé hors audit                        | neuf POST exacts, 400 VALIDATION_ERROR, même requestId, un SecurityEvent                                            | carte contractuelle et mutation retrait          | middleware C2 réel NON EXÉCUTÉ           |
+| Secret reset/invitation exposé                  | code manuel, aucun secret dans lien/DB/log/audit, outbox chiffré atomique                                           | ADR-026 et policy                                | provider/outbox/worker NON EXÉCUTÉS      |
+| Mot de passe compromis ou fuite vers HIBP       | préfixe SHA-1 seulement avec padding; fail-closed; Argon2id stockage; UTF-8 exact                                   | policy et provider déclaré non qualifié          | appel HIBP NON EXÉCUTÉ                   |
+| Collision e-mail ou invitation concurrente      | ASCII case-insensitive sans plus/dot; collision preflight; une invitation valide, remplacement atomique             | contrat/ADR                                      | migration/concurrence NON EXÉCUTÉES      |
+| Rejeu idempotent sous autorisation périmée      | portée acteur/opération/clé/digest, fenêtre 24 h, rechargement auth, aucune extension/secret                        | policy générée                                   | implémentation NON EXÉCUTÉE              |
+| Curseur substitué ou extraction non bornée      | cursor authentifié lié; snapshot 15 min; 10k/25 MiB; pas de troncature                                              | paramètres dédiés et mutations                   | stockage snapshot NON EXÉCUTÉ            |
+| Export incomplet, altéré ou trop riche          | AND, snapshot immuable, masking allowlist, JCS/JWS Ed25519, clés séparées                                           | profil R4 préservé et mutations signature/bornes | clés/storage/provider NON QUALIFIÉS      |
+| Faux succès après début de stream               | audit durable et intégrité avant premier octet; interruption ensuite sans JSON/faux succès                          | contrat/ADR                                      | streaming réel NON EXÉCUTÉ               |
+| Bootstrap concurrent ou secret en CLI           | garde singleton, refus si admin existe, stdin/secret store, audit SYSTEM atomique                                   | policy/architecture                              | CLI et PostgreSQL NON EXÉCUTÉS           |
+| Escalade PostgreSQL C2                          | reader C1 non élargi; identités séparées; aucun ownership/membership/PUBLIC/default/grant option; sinks insert-only | architecture et allowlists futures               | SQL/grants/membership NON EXÉCUTÉS       |
+| Qualification locale présentée comme production | quatre familles de providers marquées NON QUALIFIÉES; runtimeImplemented=false                                      | mutation falsement qualifiée refusée             | qualification future séparée             |
+
+La PR #50 et C1 sont intégrés au merge main
+dc97eeef72c4e299988ed19d66460011a8551cf3 avec quatre runs push/main verts,
+mais aucun déploiement n’est affirmé. Dans l’instantané de validation locale
+antérieur à sa publication, P0 était non indexé, non commité et non publié;
+toute publication ultérieure fait foi dans Git et GitHub. Il n’autorise ni
+C2a/C2b runtime, C3, politique OSS, fournisseur ou déploiement.
+
+## Durcissement contractuel S1.2-03C2-P0-R2 — 2026-10-10
+
+| Menace                                      | Contrôle R2                                                                                                                                           | Preuve locale                                                                 | Limite résiduelle                   |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------- |
+| Délégant fabriqué pour le reset public      | branche SYSTEM dédiée avec `causationSecurityEventId`, acteur et délégant nuls; e-mail, destinataire, sujet et identité client interdits comme preuve | politique transversale, schéma exclusif et mutations adversariales            | modèle SQL/runtime NON EXÉCUTÉS     |
+| Source causale arbitraire ou incompatible   | worker obligé de valider type AdminSecurityEvent, action, classe LOGIN, entité reset et liaisons demande/outbox                                       | mutations mauvais type et causalité perdue refusées                           | worker réel NON IMPLÉMENTÉ          |
+| Sources AuditLog et SecurityEvent combinées | trois combinaisons SYSTEM exclusives; causalité mixte et délégant interdit/manquant refusés                                                           | trois fixtures valides et trois invalides                                     | CHECK/FK futurs NON MATÉRIALISÉS    |
+| Dérive silencieuse des erreurs C2           | listes et statuts exacts des quinze opérations, indépendants de l'égalité des seuls statuts                                                           | retrait, ajout même statut, doublon, substitution et statut incorrect refusés | réponses HTTP runtime NON EXÉCUTÉES |
+| Échec de stop API masquant le postflight    | exception `stopChild` assainie, phase/action explicites, un appel, code d'échec conservé                                                              | injection sans Docker, Infrastructure ciblée 14/14                            | arrêt réel exceptionnel NON REJOUÉ  |
+
+Les fournisseurs restent NON QUALIFIÉS, Prisma et les permissions restent
+inchangés, Docker/HTTP/PostgreSQL/Redis ne sont pas rejoués et aucun runtime
+C2/C3 n'est commencé.
+
+## Fermeture contractuelle S1.2-03C2-P0-R3 — 2026-10-11
+
+| Menace                                    | Contrôle R3                                                                                                        | Preuve locale                                                     | Limite résiduelle                 |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- | --------------------------------- |
+| Ligne v1 supprimée ou faussement enrichie | union versionnée, v1 incluse par défaut, métadonnées v2 nulles, identifiants historiques non coercés               | fixture v1 réelle et mutations version/attribution/filtres        | reader/runtime C2b NON IMPLÉMENTÉ |
+| Fuite de legacyReason sensible            | colonne non sélectionnée, propriété interdite, `legacyReasonRedacted=true` dérivé de version                       | canari raw rejeté et frontière générée sans propriété             | ACL/SQL futur à prouver           |
+| Motif v2 arbitraire ou enum-first         | table exacte pour dix opérations et sept transitions ; motif client validé ou rejet serveur SECURITY_RESPONSE/null | mutations valeur/source/default/reprise texte                     | writers/workers NON IMPLÉMENTÉS   |
+| Confusion causalité SYSTEM                | chaque transition fixe l'une des trois origines R2 et une source serveur validée                                   | table normative et gate exhaustif                                 | FK/CHECK futurs NON MATÉRIALISÉS  |
+| Hash d'un sous-ensemble ou ciphertext     | SHA-256 du ZIP final complet avant chiffrement, égal au plaintext téléchargé                                       | fixture ZIP, AES-GCM round-trip, hash manifest/ciphertext refusés | storage/provider NON QUALIFIÉS    |
+| Artefact READY reconstruit                | immutabilité, aucune recompression au download, hash conservé en EXPIRED, champ absent du ZIP                      | policy exacte et mutation self-reference                          | streaming réel NON EXÉCUTÉ        |
+
+La surface R3 est 60/67/139. Aucun runtime, modèle, migration, ACL, dépendance,
+workflow ou provider n'est ajouté. Docker, PostgreSQL/Redis et HTTP réel ne
+sont pas rejoués ; la cause Docker historique demeure NON CONCLUSIVE.
+
+## Fermeture contractuelle S1.2-03C2-P0-R4 — 2026-10-12
+
+| Menace                                | Contrôle R4                                                                                                                                                                                                                                                                                                                                               | Preuve locale                                                                | Limite résiduelle                   |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ----------------------------------- |
+| Faux succès ou rejet historique       | v1/v2 UNKNOWN sans inférence ; v3 résultat conditionnel fermé                                                                                                                                                                                                                                                                                             | fixtures success/rejected/history et codes arbitraires refusés               | migration/writer v3 NON IMPLÉMENTÉS |
+| Fuite de justification                | operatorReason neutralisé de façon identique liste/export avec indicateur                                                                                                                                                                                                                                                                                 | quatre canaris sensibles refusés                                             | reader réel NON IMPLÉMENTÉ          |
+| Attribution d'acteur avant preuve     | preuve serveur distincte du rôle, step-up et intégrité ; sinks par phase                                                                                                                                                                                                                                                                                  | mutations cookie, pré-preuve, rôle, step-up, intégrité                       | contrôleurs C2 NON IMPLÉMENTÉS      |
+| Worker SYSTEM sur source sans rapport | prédicats complets, source AuditLog v3 SUCCESS, liens/délégant/unicité                                                                                                                                                                                                                                                                                    | mutation indépendante de chaque propriété des sept sources                   | workers/FK/CHECK NON IMPLÉMENTÉS    |
+| Double publication ou worker tardif   | lease, génération, attempt id, owner et `nextAttemptAt=null` sur CAS terminal ; planification révoque owner/lease ; PUT stale limité à sa clé staging invisible/orpheline                                                                                                                                                                                 | traces deux workers, lease expirée, worker tardif et fin de PUT post-retry   | stockage/provider NON QUALIFIÉS     |
+| Crash, retry ou COMMIT inconnu        | backoff CAS `nextAttemptAt` 30/120 s, deadline immuable 600 s, reclaim crash uniquement avant deadline, watchdog prioritaire à ou après deadline même en collision lease/deadline, budget trois essais initial inclus ; PROCESSING même fence ne reprend que si owner/lease/deadline éligibles, sinon scheduler/reclaim/watchdog ; FAILED+audit atomiques | douze traces retry/deadline + quatre d'éligibilité COMMIT inconnu + crash    | exécution distribuée NON TESTÉE     |
+| Expiration pendant téléchargement     | read lease avant octet, ouverture post-expiry refusée, suppression différée                                                                                                                                                                                                                                                                               | trace expiration concurrente                                                 | streaming réel NON EXÉCUTÉ          |
+| Compte invité bloqué                  | transaction invite/PENDING_MFA/credential Argon2id/préauth/event ; login C1 recrée FIRST_TOTP                                                                                                                                                                                                                                                             | cinq frontières d'échec, réponse et mauvais nextStep refusé                  | e-mail/provider NON QUALIFIÉ        |
+| Valeur historique tronquée            | branche v1 sans maximum/UUID/forme JSON inventé, overflow explicite sans page/artefact partiel                                                                                                                                                                                                                                                            | fixtures courte/surlongue/vide, objet/tableau/scalaires et budget verrouillé | données réelles non rejouées        |
+
+R4 ne modifie ni runtime, Prisma, migration, ACL, dépendance, workflow ou
+provider. Docker, PostgreSQL/Redis et HTTP réel restent NON EXÉCUTÉS.
+Les deux lacunes historiques d’archivage restent **ACCEPTED WITH CTO WAIVER —
+HISTORICAL EVIDENCE ONLY**. Cette dérogation ne couvre aucune preuve FINAL7 et
+ne réduit aucune limite résiduelle de ce modèle.
+
+## Fermeture contractuelle S1.2-03C2-P0-R6 — 2026-10-13
+
+| Menace                                         | Contrôle R6                                                                                                                                                    | Preuve contractuelle                                                         | Limite résiduelle                     |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------- |
+| Client `T`/`E` réintroduit dans le pool        | callback seulement après BEGIN confirmé ; réutilisation après réponse terminale et `ReadyForQuery=I` post-commande du même client utilisable                   | policy générée, traces et mutation de stale `I`                              | writers C2 NON IMPLÉMENTÉS            |
+| BEGIN suspendu ou résultat inconnu             | borne monotone 2 000 ms ; aucun callback/retry ; discard physique exactement une fois                                                                          | policy BEGIN et mutations confirmation/disposition                           | panne réseau réelle NON EXÉCUTÉE      |
+| Rollback rejeté, suspendu ou connexion perdue  | discard/destruction de la connexion physique exactement une fois ; terminaison tardive seulement observée                                                      | trois traces fermées et mutations absence de discard/deadline/double release | timeout réseau réel NON EXÉCUTÉ       |
+| Erreur primaire masquée                        | erreurs primaire et rollback conservées séparément dans une observation assainie ; aucune fuite publique                                                       | mutation perte de l'erreur primaire                                          | observabilité runtime NON IMPLÉMENTÉE |
+| COMMIT suspendu ou faux rollback après inconnu | tentative marquée avant driver, accusé borné à 2 000 ms ; branche exclusive, discard unique, aucun rollback tenté/affirmé, late settle sans reclassification   | trace COMMIT_UNKNOWN et mutations deadline/exclusivité/faux rollback         | reconciliation runtime NON TESTÉE     |
+| Replay ou double sink après issue inconnue     | aucun retry aveugle, replay de mutation ou second sink ; une reprise de job autorisée par la machine d'état ne vaut jamais permission de replay d'une mutation | mutations replay/second sink et règle de frontière des jobs                  | exécution distribuée NON TESTÉE       |
+
+La preuve C1 R6 existante démontre la classe de risque et reste consultée en
+lecture seule ; elle n'est pas présentée comme un test du futur runtime C2. R6
+ne modifie aucun writer, Prisma, migration, ACL, workflow, dépendance ou
+lockfile. Les fournisseurs restent **NON QUALIFIÉS** et C2/C3 runtime ne sont
+pas commencés.
+
+La publication R6 est autorisée sous gates à partir de ce gel local sans
+réduire ces limites résiduelles. La dérogation **ACCEPTED WITH CTO WAIVER — R6
+UNPUBLISHED DRAFT ONLY** couvre uniquement un premier brouillon de corps PR
+jamais publié ; elle ne couvre aucun octet technique final, candidat final ou
+résultat de validation. Aucune CI R6 n'est acquise au présent gel.

@@ -4,7 +4,11 @@ Statut : **Accepted**
 
 Date : 2026-09-28
 Amendement CTO C1 : 2026-10-02
-Portée : S1.2-03B et implémentation runtime locale S1.2-03C1
+Amendement contractuel R4 : 2026-10-12
+Portée : S1.2-03B, implémentation runtime S1.2-03C1 intégrée et contrat
+S1.2-03C2-P0-R4 validé localement dans l’instantané prépublication du
+2026-10-13 ; runtime C2 non implémenté. Toute publication ultérieure fait foi
+dans Git et GitHub.
 
 ## Contexte
 
@@ -34,10 +38,22 @@ cible. Ils ne sont jamais fusionnés. Les actions sensibles portent également
 Chaque entrée conserve aussi une classe `LOGIN`, `SESSION`, `EXPORT` ou
 `BUSINESS`, l'entité, les valeurs avant/après masquées, le `requestId`, une
 causalité éventuelle et l'administrateur délégant lorsqu'un traitement
-`SYSTEM` prolonge une demande humaine. Un traitement système garde un acteur
-nul. S'il est autonome, `delegatedByAdminUserId` et `causationEventId` sont
-tous deux nuls ; s'il prolonge une demande humaine, ces deux champs sont
-obligatoires ensemble et préservent la chaîne de preuve sans usurpation.
+`SYSTEM` prolonge une demande humaine. Un traitement système garde toujours un
+acteur nul et choisit exactement une origine :
+
+- autonome : `causationEventId`, `causationSecurityEventId` et
+  `delegatedByAdminUserId` sont nuls ;
+- délégation administrateur prouvée : `causationEventId` référence un
+  `AuditLog`, `delegatedByAdminUserId` est obligatoire et
+  `causationSecurityEventId` est nul ;
+- continuation du reset public : `causationSecurityEventId` référence
+  l'`AdminSecurityEvent` initial, tandis que `causationEventId` et
+  `delegatedByAdminUserId` sont nuls.
+
+Ces trois branches sont exclusives. Le lien de sécurité n'est jamais fourni
+par le client : il provient de l'état durable créé côté serveur. Une adresse
+e-mail, le compte destinataire, `subjectAdminUserId` ou une identité déclarée
+par le client ne prouvent jamais un administrateur délégant.
 
 Les événements sans contexte d'audit prouvé, succès ou échec, sont écrits dans
 un futur `AdminSecurityEvent`, et non dans `AuditLog`, puisqu'aucun acteur
@@ -234,3 +250,68 @@ l'adaptateur à clés réelles éphémères est exclusivement injecté par les t
 Sans provider qualifié, C1 échoue fermé. Toute décision Ready, fusion ou
 déploiement, toute capacité C2 et toute interface C3 exigent encore une
 décision distincte.
+
+## Amendement C2-P0-R3 — projection des AuditLog historiques
+
+La projection publique d'un `AuditLog` est désormais une union exclusivement
+discriminée par `version` : `AdminAuditLogEntryV1` ou
+`AdminAuditLogEntryV2`. Cette décision ne réécrit aucune ligne et n'autorise
+aucun backfill.
+
+La branche v1 représente les lignes physiques préservées : identifiants
+historiques textuels sans coercition UUID, acteur et session historiques non
+nuls, attributs d'événement représentables, et nullité explicite de toute
+métadonnée ajoutée pour v2 (`eventClass`, `context`, `reasonCode`, causalité,
+sujet, délégation et contexte recovery/SYSTEM). Le reader C2b futur sélectionne
+une allowlist de colonnes et ne lit jamais la colonne physique `reason` mappée
+`legacyReason`. Le client reçoit uniquement `legacyReasonRedacted: true`, qui
+décrit la projection et ne fabrique aucune donnée historique. Les snapshots
+historiques passent par la même allowlist de masking positive que v2.
+
+La branche v2 conserve `eventClass`, `context` et `reasonCode` non nuls, les
+trois contextes `ADMIN_SESSION`, `ADMIN_RECOVERY`, `SYSTEM`, et les trois
+origines SYSTEM exclusives `AUTONOMOUS`, `ADMIN_DELEGATION` et
+`PUBLIC_PASSWORD_RESET`. Les nullités v1 et l'indicateur de projection legacy
+y sont interdits.
+
+Liste et export utilisent exactement `AdminAuditLogEntry`. Sans filtre de
+version/classe/contexte/motif, v1 reste éligible lorsque les filtres communs
+correspondent. `auditVersion` filtre la version exacte ;
+`auditEventClass`, `auditContext` et `auditReasonCode` sont v2-only et ne font
+jamais correspondre une v1 par valeur synthétique. Ordre, curseur, snapshot,
+limites et masking sont identiques pour les deux versions.
+
+## Amendement C2-P0-R4 — résultat explicite et projection sans texte libre
+
+Les nouvelles écritures C2 utilisent `AdminAuditLogEntryV3`. Elles portent un
+résultat fermé : `SUCCESS` avec `failureCode=null`, ou `REJECTED` avec un code
+causal non nul de l'enum contractuelle. `outcomeProvenance=EXPLICIT_C2` est
+obligatoire. Un succès avec code, un rejet sans code et un code libre sont
+invalides. Cette décision ne prétend pas modifier le modèle Prisma courant :
+la future migration C2 devra créer la contrainte correspondante et le writer
+C2 devra insérer explicitement la version 3.
+
+Les lignes v1 et les lignes v2 C1 existantes restent inchangées et sont
+projetées avec `outcome=UNKNOWN`, `failureCode=null` et
+`outcomeProvenance=HISTORICAL_UNKNOWN`. Aucune action, aucun `reasonCode` et
+aucune valeur par défaut ne permet d'en déduire un résultat. Il n'existe à ce
+gel aucune table exhaustive d'actions historiques vérifiée ; aucune
+classification n'est donc autorisée.
+
+Liste et export sérialisent la même union v1/v2/v3. Le texte durable
+`operatorReason` n'est jamais sérialisé : chaque branche expose
+`operatorReason=null` et `operatorReasonRedacted=true`. Cette transformation
+de présentation ne réécrit pas le stockage. Les filtres typés classe/contexte/
+motif visent v2 et v3 ; v1 n'y correspond jamais synthétiquement. Les lignes
+v2 historiques restent `UNKNOWN`; seules les v3 portent le résultat C2.
+
+Le DDL réellement lu garantit aujourd'hui `action`, `entityType`, `entityId`
+et la colonne physique `reason` non vides, ainsi que `requestId` entre 8 et
+128 caractères. Il ne garantit ni maximum sur les autres textes, ni format
+UUID des identifiants textuels, ni forme du JSONB. La branche v1 reste donc un
+sur-ensemble représentable sans coercition, troncature ou valeur fabriquée :
+`maskedBefore` et `maskedAfter` acceptent objet, tableau, chaîne, nombre,
+booléen ou null, sans borne de forme. Cette ouverture ne s'applique pas à v2/v3.
+Un dépassement du budget de projection échoue explicitement : liste 503
+neutre sans page partielle, export `FAILED/PROJECTION_BUDGET_EXCEEDED` sans
+artefact partiel.

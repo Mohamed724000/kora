@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
   generateKeyPairSync,
   sign as signBytes,
   verify as verifyBytes,
@@ -11,6 +14,7 @@ import { test } from "node:test";
 import {
   EXACT_PRETTIER_VERSION,
   buildAdminC1ContractPolicies,
+  buildAdminC2ContractPolicies,
   buildAdminSecurityOperations,
   buildContractTypes,
   loadExactPrettier,
@@ -23,6 +27,7 @@ import {
 } from "./artist-earning-allocation.mjs";
 
 import {
+  ADMIN_C2_EXACT_OPERATION_ERRORS,
   ADMIN_STRUCTURAL_VALIDATION_OPERATIONS,
   ADMIN_SECURITY_CONTRACTS,
   EXPECTED_PATHS,
@@ -54,6 +59,121 @@ function adminSecurityOperation(document, operationId) {
   );
   assert.ok(contract, `fixture must include ${operationId}`);
   return document.paths[contract.path][contract.method];
+}
+
+function adminSystemAuditFixture(overrides = {}) {
+  return {
+    version: 3,
+    eventId: "00000000-0000-4000-8000-000000000001",
+    action: "deliverAdminPasswordResetNotification",
+    eventClass: "LOGIN",
+    context: "SYSTEM",
+    actorAdminUserId: null,
+    subjectAdminUserId: null,
+    delegatedByAdminUserId: null,
+    adminSessionId: null,
+    adminRecoveryContextId: null,
+    systemExecutionRefHash: "a".repeat(64),
+    entityType: "ADMIN_PASSWORD_RESET_DELIVERY",
+    entityId: "00000000-0000-4000-8000-000000000002",
+    maskedBefore: null,
+    maskedAfter: null,
+    reasonCode: "ACCOUNT_RECOVERY",
+    operatorReason: null,
+    requestId: "request-r2-system-audit",
+    causationEventId: null,
+    causationSecurityEventId: null,
+    createdAt: "2026-10-10T00:00:00.000Z",
+    outcome: "SUCCESS",
+    failureCode: null,
+    outcomeProvenance: "EXPLICIT_C2",
+    operatorReasonRedacted: true,
+    ...overrides,
+  };
+}
+
+function adminLegacyAuditFixture(overrides = {}) {
+  return {
+    version: 1,
+    eventId: "legacy-audit",
+    action: `legacy-${"action".repeat(25)}`,
+    eventClass: null,
+    context: null,
+    actorAdminUserId: "legacy-admin",
+    subjectAdminUserId: null,
+    delegatedByAdminUserId: null,
+    adminSessionId: "legacy-session",
+    adminRecoveryContextId: null,
+    systemExecutionRefHash: null,
+    entityType: `legacy-${"entity".repeat(25)}`,
+    entityId: "legacy-entity",
+    maskedBefore: null,
+    maskedAfter: null,
+    reasonCode: null,
+    operatorReason: null,
+    requestId: "legacy-request-id",
+    causationEventId: null,
+    causationSecurityEventId: null,
+    createdAt: "2026-10-10T00:00:00.000Z",
+    legacyReasonRedacted: true,
+    outcome: "UNKNOWN",
+    failureCode: null,
+    outcomeProvenance: "HISTORICAL_UNKNOWN",
+    operatorReasonRedacted: true,
+    ...overrides,
+  };
+}
+
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function buildStoredZip(entries) {
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+  for (const [path, value] of entries) {
+    const name = Buffer.from(path, "utf8");
+    const body = Buffer.from(value);
+    const checksum = crc32(body);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(0x0800, 6);
+    local.writeUInt32LE(checksum, 14);
+    local.writeUInt32LE(body.length, 18);
+    local.writeUInt32LE(body.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    localParts.push(local, name, body);
+
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(0x0800, 8);
+    central.writeUInt32LE(checksum, 16);
+    central.writeUInt32LE(body.length, 20);
+    central.writeUInt32LE(body.length, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt32LE(offset, 42);
+    centralParts.push(central, name);
+    offset += local.length + name.length + body.length;
+  }
+  const centralDirectory = Buffer.concat(centralParts);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(centralDirectory.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...localParts, centralDirectory, end]);
 }
 
 function base64UrlNoPadding(value) {
@@ -192,14 +312,14 @@ function predecessorFrom(result, consumedByArtistSettlementId = null) {
   };
 }
 
-test("the S1.2-03B OpenAPI and S1.2-03C1 Prisma target contracts are semantically valid", () => {
+test("the S1.2-03C2-P0 OpenAPI and preserved S1.2-03C1 Prisma target contracts are semantically valid", () => {
   const result = readAndValidateOpenApi();
 
   assert.equal(result.openapi.paths, 60);
   assert.equal(result.openapi.operations, 67);
   assert.equal(result.openapi.invariants, 18);
   assert.equal(result.openapi.references, "resolved");
-  assert.equal(result.openapi.schemas, 137);
+  assert.equal(result.openapi.schemas, 141);
   assert.equal(result.prisma.models, 39);
   assert.ok(result.prisma.integerFinancialFields >= 10);
   assert.equal(EXPECTED_PATHS.length, 60);
@@ -308,7 +428,7 @@ test("rejects an unapproved OpenAPI schema", () => {
 
   assert.throws(
     () => validateOpenApiDocument(document),
-    /schemas must be exactly the 137 approved schemas/,
+    /schemas must be exactly the 141 approved schemas/,
   );
 });
 
@@ -2877,7 +2997,1516 @@ test("materializes all four C1 CTO arbitration policies in generated metadata", 
   assert.equal(
     operations.filter(({ serviceUnavailable }) => serviceUnavailable !== null)
       .length,
-    12,
+    27,
+  );
+});
+
+test("materializes the complete C2-P0 contract policy in generated metadata", () => {
+  const policies = buildAdminC2ContractPolicies(sourceDocument);
+  const operations = buildAdminSecurityOperations(sourceDocument);
+
+  assert.equal(Object.keys(policies.contract.operationMatrix).length, 15);
+  assert.deepEqual(policies.operationErrors, ADMIN_C2_EXACT_OPERATION_ERRORS);
+  assert.equal(policies.errorStatuses.VALIDATION_ERROR, 400);
+  assert.equal(policies.errorStatuses.SERVICE_UNAVAILABLE, 503);
+  assert.equal(policies.unavailability.operationIds.length, 15);
+  assert.equal(policies.unavailability.errorCode, "SERVICE_UNAVAILABLE");
+  assert.equal(
+    policies.unavailability.rollbackUnconfirmedClientDisposition,
+    "DISCARD_PHYSICAL_CONNECTION_EXACTLY_ONCE",
+  );
+  assert.equal(
+    policies.unavailability.commitUnknownClientDisposition,
+    "DISCARD_PHYSICAL_CONNECTION_EXACTLY_ONCE_NO_ROLLBACK_CLAIM_NO_MUTATION_REPLAY",
+  );
+  const disposal = policies.contract.transactionClientDisposal;
+  assert.deepEqual(disposal.scope, [
+    "HTTP",
+    "BOOTSTRAP",
+    "OUTBOX",
+    "JOBS",
+    "SYSTEM_TRANSITIONS",
+  ]);
+  assert.equal(disposal.appliesTo, "ALL_FUTURE_C2_WRITERS");
+  assert.equal(disposal.runtimeImplementedInP0R6, false);
+  assert.equal(
+    disposal.acquisitionAndCallbackLiveness.unboundedAcquisitionOrCallback,
+    "FORBIDDEN",
+  );
+  assert.equal(
+    disposal.acquisitionAndCallbackLiveness.deadlineValuesInP0R6,
+    "NOT_DEFINED_NO_RUNTIME_AUTHORIZED",
+  );
+  assert.equal(disposal.begin.deadlineMilliseconds, 2000);
+  assert.equal(disposal.begin.deadlineClock, "MONOTONIC_ELAPSED");
+  assert.equal(disposal.begin.callbackAllowedWhen, "BEGIN_CONFIRMED");
+  assert.equal(
+    disposal.begin.unconfirmedDisposition,
+    "DISCARD_PHYSICAL_CONNECTION_EXACTLY_ONCE",
+  );
+  assert.equal(disposal.rollback.deadlineMilliseconds, 2000);
+  assert.equal(disposal.rollback.deadlineClock, "MONOTONIC_ELAPSED");
+  assert.equal(
+    disposal.rollback.requiredWhen,
+    "ANY_FAILURE_OR_ABORT_AFTER_BEGIN_CONFIRMED_BEFORE_COMMIT_ATTEMPT",
+  );
+  assert.equal(
+    disposal.rollback.reuseAllowedWhen,
+    "ROLLBACK_CONFIRMED_BEFORE_DEADLINE_AND_POST_COMMAND_READY_FOR_QUERY_IDLE_SAME_CLIENT_AND_CLIENT_USABLE",
+  );
+  assert.deepEqual(disposal.rollback.reusableReadyForQueryStates, ["I"]);
+  assert.deepEqual(disposal.rollback.discardReadyForQueryStates, [
+    "T",
+    "E",
+    "UNKNOWN",
+  ]);
+  assert.equal(disposal.release.totalCardinality, "EXACTLY_ONCE");
+  assert.equal(
+    disposal.release.discard,
+    "PUBLIC_POOL_CLIENT_DESTROY_OR_EQUIVALENT_PHYSICAL_CONNECTION_DISCARD",
+  );
+  assert.equal(disposal.errors.primary, "PRESERVE_SEPARATELY");
+  assert.equal(disposal.commit.acknowledgementDeadlineMilliseconds, 2000);
+  assert.equal(disposal.commit.deadlineClock, "MONOTONIC_ELAPSED");
+  assert.equal(
+    disposal.commit.successOtherwiseDisposition,
+    "DISCARD_PHYSICAL_CONNECTION_EXACTLY_ONCE_WITH_SUCCESS_RESPONSE_PRESERVED",
+  );
+  assert.equal(
+    disposal.commit.explicitServerRejection,
+    "CONFIRMED_NOT_COMMITTED_NEUTRAL_503_NO_ROLLBACK_AFTER_COMMIT_ATTEMPT_NO_REPLAY",
+  );
+  assert.equal(
+    disposal.commit.lateSettlement,
+    "OBSERVE_ONLY_NO_RECLASSIFICATION_NO_RESPONSE_NO_RELEASE_NO_REPLAY",
+  );
+  assert.equal(
+    disposal.phaseExclusivity.postCommitAttemptConnectionLoss,
+    "COMMIT_UNKNOWN_EXCLUSIVELY",
+  );
+  assert.equal(
+    disposal.release.defaultForAcquiredClientNotMeetingReusablePredicate,
+    "DISCARD_PHYSICAL_CONNECTION_EXACTLY_ONCE",
+  );
+  assert.equal(
+    disposal.errors.commit,
+    "PRESERVE_SEPARATELY_AS_ERROR_OR_TERMINAL_OUTCOME",
+  );
+  assert.equal(disposal.phaseExclusivity.overlap, "FORBIDDEN");
+  assert.equal(disposal.commitUnknown.rollbackClaim, "FORBIDDEN");
+  assert.equal(disposal.commitUnknown.mutationReplay, "FORBIDDEN");
+  assert.deepEqual(
+    disposal.contractualTraces.map(({ name }) => name),
+    [
+      "CALLBACK_FAILED_ROLLBACK_CONFIRMED",
+      "ROLLBACK_REJECTED",
+      "ROLLBACK_SUSPENDED",
+      "CONNECTION_LOST",
+      "COMMIT_CONFIRMED",
+      "COMMIT_UNKNOWN",
+    ],
+  );
+  assert.equal(
+    policies.contract.operationMatrix.approveAdminRecoveryCase.stepUpPurpose,
+    "RECOVERY_APPROVAL",
+  );
+  assert.equal(
+    policies.contract.operationMatrix.resetAdminPassword.proofPurpose,
+    "PASSWORD_RESET",
+  );
+  assert.equal(
+    policies.contract.operationMatrix.resetAdminPassword.forbiddenProofPurpose,
+    "MFA_RECOVERY",
+  );
+  assert.deepEqual(policies.contract.preControllerJson.operationIds, [
+    "requestAdminPasswordReset",
+    "resetAdminPassword",
+    "createAdminRecoveryCase",
+    "approveAdminRecoveryCase",
+    "createAdminAuditLogExport",
+    "createAdminInvitation",
+    "acceptAdminInvitation",
+    "changeAdminUserRole",
+    "changeAdminUserStatus",
+  ]);
+  assert.equal(policies.contract.pagination.defaultLimit, 25);
+  assert.equal(policies.contract.pagination.maximumEntries, 10_000);
+  assert.equal(policies.contract.auditExport.truncation, "FORBIDDEN");
+  assert.equal(
+    policies.contract.productionQualification.runtimeImplemented,
+    false,
+  );
+  assert.equal(
+    operations.filter(
+      ({ deliverySlice, serviceUnavailable }) =>
+        deliverySlice === "S1.2-03C2" && serviceUnavailable !== null,
+    ).length,
+    15,
+  );
+});
+
+test("accepts exactly the three valid SYSTEM causality origins", () => {
+  const autonomous = adminSystemAuditFixture();
+  const delegated = adminSystemAuditFixture({
+    causationEventId: "00000000-0000-4000-8000-000000000003",
+    delegatedByAdminUserId: "00000000-0000-4000-8000-000000000004",
+  });
+  const publicReset = adminSystemAuditFixture({
+    causationSecurityEventId: "00000000-0000-4000-8000-000000000005",
+  });
+
+  for (const audit of [autonomous, delegated, publicReset]) {
+    assert.equal(
+      validateSchemaInstance(sourceDocument, "AdminAuditLogEntry", audit),
+      true,
+    );
+  }
+});
+
+test("accepts real legacy v1 identifiers and nullities without exposing legacyReason", () => {
+  const legacy = adminLegacyAuditFixture();
+  assert.ok(legacy.action.length > 120);
+  assert.ok(legacy.entityType.length > 120);
+  assert.equal(
+    validateSchemaInstance(sourceDocument, "AdminAuditLogEntry", legacy),
+    true,
+  );
+  assert.equal(Object.hasOwn(legacy, "legacyReason"), false);
+  assert.equal(legacy.legacyReasonRedacted, true);
+});
+
+for (const [name, audit] of [
+  ["a missing version", adminLegacyAuditFixture({ version: undefined })],
+  ["an unknown version", adminLegacyAuditFixture({ version: 4 })],
+  [
+    "v2 legacy nullities",
+    adminSystemAuditFixture({
+      context: null,
+      eventClass: null,
+      reasonCode: null,
+    }),
+  ],
+  [
+    "synthetic v1 class attribution",
+    adminLegacyAuditFixture({ eventClass: "LOGIN" }),
+  ],
+  [
+    "synthetic v1 context attribution",
+    adminLegacyAuditFixture({ context: "ADMIN_SESSION" }),
+  ],
+  [
+    "synthetic v1 reason attribution",
+    adminLegacyAuditFixture({ reasonCode: "ACCOUNT_RECOVERY" }),
+  ],
+  [
+    "a sensitive raw legacyReason canary",
+    adminLegacyAuditFixture({
+      legacyReason: "CANARY-R3-LEGACY-REASON-MUST-NEVER-BE-DELIVERED",
+    }),
+  ],
+]) {
+  test(`rejects audit projection with ${name}`, () => {
+    if (audit.version === undefined) delete audit.version;
+    assert.throws(
+      () => validateSchemaInstance(sourceDocument, "AdminAuditLogEntry", audit),
+      /must match exactly one oneOf branch/u,
+    );
+  });
+}
+
+test("binds list and export to one versioned projection and exact filter semantics", () => {
+  const policy = sourceDocument["x-kora-admin-c2-contract-policy"];
+  const list = adminSecurityOperation(sourceDocument, "listAdminAuditLogs");
+  const createExport = adminSecurityOperation(
+    sourceDocument,
+    "createAdminAuditLogExport",
+  );
+  const download = adminSecurityOperation(
+    sourceDocument,
+    "downloadAdminAuditLogExport",
+  );
+  const exportRequest =
+    sourceDocument.components.schemas.AdminAuditExportRequest;
+  const listFilterRefs = list.parameters.map((parameter) => parameter.$ref);
+
+  assert.equal(policy.auditProjection.entrySchema, "AdminAuditLogEntry");
+  assert.equal(
+    policy.auditProjection.filters.v1WithoutVersionOrTypedOnlyFilters,
+    "INCLUDED_WHEN_COMMON_FILTERS_MATCH",
+  );
+  assert.equal(
+    policy.auditProjection.filters.v1WithAnyTypedFilter,
+    "NEVER_MATCH",
+  );
+  assert.deepEqual(policy.auditProjection.filters.typedOnly, [
+    "auditEventClass",
+    "auditContext",
+    "auditReasonCode",
+  ]);
+  for (const name of [
+    "AuditVersion",
+    "AuditEventClass",
+    "AuditContext",
+    "AuditReasonCode",
+  ]) {
+    assert.ok(listFilterRefs.includes(`#/components/parameters/${name}`));
+  }
+  for (const name of [
+    "auditVersion",
+    "auditEventClass",
+    "auditContext",
+    "auditReasonCode",
+  ]) {
+    assert.ok(exportRequest.properties[name]);
+  }
+  assert.equal(
+    exportRequest.properties.reasonCode.description.includes(
+      "not an entry filter",
+    ),
+    true,
+  );
+  assert.equal(list["x-kora-entry-schema"], "AdminAuditLogEntry");
+  assert.equal(createExport["x-kora-entry-schema"], "AdminAuditLogEntry");
+  assert.equal(download["x-kora-entry-schema"], "AdminAuditLogEntry");
+});
+
+test("enforces explicit C2 audit outcomes without inventing a historical result", () => {
+  const success = adminSystemAuditFixture();
+  const rejected = adminSystemAuditFixture({
+    outcome: "REJECTED",
+    failureCode: "DEPENDENCY_UNAVAILABLE",
+  });
+  const historicalV2 = adminSystemAuditFixture({
+    version: 2,
+    outcome: "UNKNOWN",
+    failureCode: null,
+    outcomeProvenance: "HISTORICAL_UNKNOWN",
+  });
+
+  assert.equal(
+    validateSchemaInstance(sourceDocument, "AdminAuditLogEntry", success),
+    true,
+  );
+  assert.equal(
+    validateSchemaInstance(sourceDocument, "AdminAuditLogEntry", rejected),
+    true,
+  );
+  assert.equal(
+    validateSchemaInstance(sourceDocument, "AdminAuditLogEntry", historicalV2),
+    true,
+  );
+
+  for (const invalid of [
+    adminSystemAuditFixture({ failureCode: "DEPENDENCY_UNAVAILABLE" }),
+    adminSystemAuditFixture({ outcome: "REJECTED", failureCode: null }),
+    adminSystemAuditFixture({
+      outcome: "REJECTED",
+      failureCode: "ARBITRARY_CLIENT_TEXT",
+    }),
+  ]) {
+    assert.throws(
+      () =>
+        validateSchemaInstance(sourceDocument, "AdminAuditLogEntry", invalid),
+      /must match exactly one oneOf branch/u,
+    );
+  }
+
+  const policy =
+    sourceDocument["x-kora-admin-c2-contract-policy"].failureCodeByTrigger;
+  const mapped = new Set();
+  const collect = (value) => {
+    if (typeof value === "string") {
+      if (!value.startsWith("NOT_APPLICABLE") && !value.startsWith("NO_V3_")) {
+        mapped.add(value);
+      }
+    } else if (value && typeof value === "object") {
+      Object.values(value).forEach(collect);
+    }
+  };
+  collect(policy.globalAuditLogV3);
+  collect(policy.businessByOperation);
+  const rejectedCodes =
+    sourceDocument.components.schemas.AdminAuditLogEntryV3.allOf[0].oneOf[1]
+      .properties.failureCode.enum;
+  assert.deepEqual([...mapped].sort(), [...rejectedCodes].sort());
+  assert.equal(mapped.has("AUTH_REQUIRED"), false);
+  assert.equal(mapped.has("AUDIT_SINK_UNAVAILABLE"), false);
+
+  const document = documentFixture();
+  document[
+    "x-kora-admin-c2-contract-policy"
+  ].failureCodeByTrigger.businessByOperation.resetAdminPassword.PASSWORD_RESET_PURPOSE_OR_SUBJECT_NOT_AUTHORIZED =
+    "RESOURCE_NOT_FOUND";
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /policies must be exact/u,
+  );
+});
+
+test("redacts every free-form operator reason canary in list and export projections", () => {
+  const canaries = [
+    "alice@example.test",
+    "+22370000000",
+    "totp-secret-canary",
+    "free text justification canary",
+  ];
+  for (const canary of canaries) {
+    assert.throws(
+      () =>
+        validateSchemaInstance(
+          sourceDocument,
+          "AdminAuditLogEntry",
+          adminSystemAuditFixture({ operatorReason: canary }),
+        ),
+      /must match exactly one oneOf branch|only allows null/u,
+    );
+  }
+  for (const version of [
+    "AdminAuditLogEntryV1",
+    "AdminAuditLogEntryV2",
+    "AdminAuditLogEntryV3",
+  ]) {
+    const schema = sourceDocument.components.schemas[version];
+    assert.equal(schema.properties.operatorReason.type, "null");
+    assert.equal(schema.properties.operatorReasonRedacted.const, true);
+  }
+});
+
+test("keeps context proof distinct from role, step-up, integrity and pre-proof rejection sinks", () => {
+  const download = adminSecurityOperation(
+    sourceDocument,
+    "downloadAdminAuditLogExport",
+  );
+  assert.deepEqual(download["x-kora-authorization-checks"], [
+    "ROLE_ONE_OF_SUPER_ADMIN",
+    "FRESH_STEP_UP_AUDIT_EXPORT",
+  ]);
+  assert.deepEqual(download["x-kora-post-proof-business-checks"], [
+    "EXPORT_READY_NOT_EXPIRED",
+    "CONTENT_HASH_AND_JWS_INTEGRITY",
+  ]);
+  const mutations = [
+    [
+      "cookie substituted for server proof",
+      (document) => {
+        adminSecurityOperation(document, "approveAdminRecoveryCase")[
+          "x-kora-audit-context-proof"
+        ] = "COOKIE_ONLY";
+      },
+    ],
+    [
+      "role refusal removed after proof",
+      (document) => {
+        adminSecurityOperation(document, "approveAdminRecoveryCase")[
+          "x-kora-authorization-checks"
+        ] = ["FRESH_STEP_UP_RECOVERY_APPROVAL"];
+      },
+    ],
+    [
+      "invalid step-up loses its proved-context sink",
+      (document) => {
+        adminSecurityOperation(document, "approveAdminRecoveryCase")[
+          "x-kora-failure-sinks"
+        ].stepUpInvalidAfterProof = "ADMIN_SECURITY_EVENT_FAILED";
+      },
+    ],
+    [
+      "integrity refusal loses its proved-context sink",
+      (document) => {
+        adminSecurityOperation(document, "downloadAdminAuditLogExport")[
+          "x-kora-failure-sinks"
+        ].integrityRejectedAfterProof = "ADMIN_SECURITY_EVENT_FAILED";
+      },
+    ],
+    [
+      "export state and integrity are duplicated into authorization",
+      (document) => {
+        adminSecurityOperation(document, "downloadAdminAuditLogExport")[
+          "x-kora-authorization-checks"
+        ].push("EXPORT_READY_NOT_EXPIRED_CONTENT_HASH_AND_JWS_INTEGRITY");
+      },
+    ],
+    [
+      "unproved actor is attributed to AuditLog",
+      (document) => {
+        adminSecurityOperation(document, "changeAdminUserRole")[
+          "x-kora-failure-sinks"
+        ].beforeCompleteProof = "AUDIT_LOG_REJECTED";
+      },
+    ],
+    [
+      "dependency failure before proof loses its named security-event sink",
+      (document) => {
+        adminSecurityOperation(document, "approveAdminRecoveryCase")[
+          "x-kora-failure-sinks"
+        ].dependencyUnavailable.beforeCompleteProof = "AUDIT_LOG_REJECTED";
+      },
+    ],
+    [
+      "dependency failure after proof loses its named audit sink",
+      (document) => {
+        adminSecurityOperation(document, "approveAdminRecoveryCase")[
+          "x-kora-failure-sinks"
+        ].dependencyUnavailable.afterCompleteProof =
+          "ADMIN_SECURITY_EVENT_FAILED";
+      },
+    ],
+  ];
+
+  for (const [name, mutate] of mutations) {
+    const document = documentFixture();
+    mutate(document);
+    assert.throws(
+      () => validateOpenApiDocument(document),
+      /must separate audit-context proof|must be exact/u,
+      name,
+    );
+  }
+});
+
+test("keeps the three read-only NONE operations free of success and rejection AuditLog writes", () => {
+  const policy = sourceDocument["x-kora-admin-c2-contract-policy"];
+  const expected = {
+    listAdminRecoveryCases:
+      "READ_ONLY_SNAPSHOT_CONFIRMATION_UNKNOWN_NEUTRAL_503_NO_RETRY",
+    getAdminRecoveryCase: "NOT_APPLICABLE_NO_DURABLE_WRITE",
+    listAdminUsers:
+      "READ_ONLY_SNAPSHOT_CONFIRMATION_UNKNOWN_NEUTRAL_503_NO_RETRY",
+  };
+  for (const [operationId, commitUnknown] of Object.entries(expected)) {
+    const sinks = policy.operationMatrix[operationId].failureSinks;
+    assert.doesNotMatch(JSON.stringify(sinks), /AUDIT_LOG_REJECTED/u);
+    assert.equal(sinks.roleDeniedAfterProof, "NONE");
+    assert.equal(sinks.businessRejectedAfterProof, "NONE");
+    assert.equal(sinks.commitUnknown, commitUnknown);
+  }
+
+  const document = documentFixture();
+  document[
+    "x-kora-admin-c2-contract-policy"
+  ].operationMatrix.listAdminUsers.failureSinks.businessRejectedAfterProof =
+    "AUDIT_LOG_REJECTED";
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /post-proof business rejection|read-only NONE sink/u,
+  );
+});
+
+test("rejects every independently mutated SYSTEM source predicate", () => {
+  const predicates =
+    sourceDocument["x-kora-admin-c2-contract-policy"].systemSourcePredicates;
+  assert.equal(Object.keys(predicates).length, 7);
+
+  for (const [transition, predicate] of Object.entries(predicates)) {
+    for (const key of Object.keys(predicate)) {
+      const document = documentFixture();
+      const target =
+        document["x-kora-admin-c2-contract-policy"].systemSourcePredicates[
+          transition
+        ];
+      const value = target[key];
+      target[key] = Array.isArray(value)
+        ? value.slice(1)
+        : value === null
+          ? "INVALID_NON_NULL"
+          : typeof value === "number"
+            ? value + 1
+            : `${value}_INVALID`;
+      assert.throws(
+        () => validateOpenApiDocument(document),
+        /policies must be exact|source actions must exactly match/u,
+        `${transition}.${key}`,
+      );
+    }
+  }
+
+  assert.deepEqual(
+    Object.entries(
+      sourceDocument["x-kora-admin-c2-contract-policy"].operationMatrix,
+    )
+      .filter(([, operation]) =>
+        operation.transactionalSystemTransitions?.includes(
+          "RECOVERY_CASE_SERVER_CANCELLATION_SYSTEM_AUDIT",
+        ),
+      )
+      .map(([operationId]) => operationId),
+    predicates.RECOVERY_CASE_SERVER_CANCELLATION_SYSTEM_AUDIT.sourceActions,
+  );
+  const document = documentFixture();
+  document[
+    "x-kora-admin-c2-contract-policy"
+  ].operationMatrix.changeAdminUserRole.transactionalSystemTransitions = [];
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /transactional SYSTEM effects must match|source actions must exactly match/u,
+  );
+
+  const swappedResourceDocument = documentFixture();
+  swappedResourceDocument[
+    "x-kora-admin-c2-contract-policy"
+  ].systemSourcePredicates.RECOVERY_CASE_SERVER_CANCELLATION_SYSTEM_AUDIT.sourceResourceBindingByAction.createAdminRecoveryCase.causalAuditEntityId =
+    "CANCELLED_RECOVERY_CASE_ID";
+  assert.throws(
+    () => validateOpenApiDocument(swappedResourceDocument),
+    /policies must be exact/u,
+    "superseding and cancelled recovery case identifiers must remain distinct",
+  );
+});
+
+test("locks export fencing, recovery, publication order and all concurrency and retry traces", () => {
+  const policy = sourceDocument["x-kora-admin-c2-contract-policy"].auditExport;
+  assert.deepEqual(policy.stateMachine.transitions, {
+    PENDING: ["PROCESSING"],
+    PROCESSING: ["READY", "FAILED", "PROCESSING"],
+    READY: ["EXPIRED"],
+    FAILED: [],
+    EXPIRED: [],
+  });
+  assert.equal(
+    policy.stateMachine.leaseReclaimCondition,
+    "STATE_PROCESSING_OWNER_CURRENT_NEXT_ATTEMPT_AT_NULL_LEASE_EXPIRED_ATTEMPTS_REMAIN_AND_NOW_BEFORE_IMMUTABLE_ATTEMPT_DEADLINE",
+  );
+  assert.equal(
+    policy.stateMachine.leaseReclaimEffect,
+    "BEFORE_ATTEMPT_DEADLINE_CAS_CURRENT_GENERATION_ATTEMPT_ID_AND_OWNER_CLEAR_OWNER_SET_NEXT_ATTEMPT_AT_TO_EXPIRED_LEASE_TIME_THEN_DUE_OWNER_NULL_CLAIM_INCREMENTS_GENERATION_AND_REPLACES_ATTEMPT_ID",
+  );
+  assert.equal(policy.workerProtocol.leaseSeconds, 120);
+  assert.equal(policy.workerProtocol.leaseRenewalSeconds, 30);
+  assert.equal(policy.workerProtocol.maximumProcessingSecondsPerAttempt, 600);
+  assert.equal(policy.workerProtocol.maximumAttempts, 3);
+  assert.equal(
+    policy.workerProtocol.maximumAttemptsSemantics,
+    "INCLUDES_INITIAL_ATTEMPT_1",
+  );
+  assert.deepEqual(policy.workerProtocol.retryBackoffSecondsByNextAttempt, {
+    2: 30,
+    3: 120,
+  });
+  assert.deepEqual(policy.workerProtocol.retryableFailureClasses, [
+    "TRANSIENT_DEPENDENCY_UNAVAILABLE",
+    "PROCESS_TIMEOUT_BEFORE_TERMINAL_CAS",
+    "LEASE_HEARTBEAT_LOST_WHILE_CURRENT_FENCE",
+  ]);
+  assert.equal(
+    policy.workerProtocol.staleWorker,
+    "CANNOT_CAS_RETRY_SCHEDULE_READY_OR_FAILED_CANNOT_PUBLISH_METADATA_VISIBILITY_OR_AUDIT_AFTER_FENCE_CHANGE",
+  );
+  assert.equal(
+    policy.workerProtocol.stalePutCompletion,
+    "AN_ALREADY_STARTED_PUT_MAY_FINISH_ONLY_AT_ITS_IMMUTABLE_EXPORT_GENERATION_ATTEMPT_STAGING_KEY_REMAINS_INVISIBLE_AND_BECOMES_TARGETED_ORPHAN",
+  );
+  assert.equal(
+    policy.workerProtocol.knownRetryableFailure,
+    "CAS_PROCESSING_CURRENT_GENERATION_ATTEMPT_ID_AND_OWNER_LEASE_ACTIVE_NEXT_ATTEMPT_AT_NULL_AND_NOW_BEFORE_IMMUTABLE_ATTEMPT_DEADLINE_CLEAR_OWNER_AND_LEASE_KEEP_PROCESSING_SET_NEXT_ATTEMPT_AT_NOW_PLUS_BACKOFF_FOR_NEXT_ATTEMPT_NO_AUDIT",
+  );
+  assert.equal(
+    policy.workerProtocol.readyTransaction,
+    "CAS_PROCESSING_CURRENT_GENERATION_ATTEMPT_ID_AND_OWNER_LEASE_ACTIVE_NEXT_ATTEMPT_AT_NULL_AND_NOW_BEFORE_IMMUTABLE_ATTEMPT_DEADLINE_TO_READY_PLUS_OBJECT_METADATA_CONTENT_SHA256_SIGNATURE_KEY_ID_AND_SINGLE_SYSTEM_AUDIT",
+  );
+  assert.equal(
+    policy.workerProtocol.failedTransaction,
+    "CAS_PROCESSING_CURRENT_GENERATION_ATTEMPT_ID_AND_OWNER_LEASE_ACTIVE_NEXT_ATTEMPT_AT_NULL_AND_NOW_BEFORE_IMMUTABLE_ATTEMPT_DEADLINE_TO_FAILED_PLUS_CLOSED_EXPORT_FAILURE_CODE_AND_SINGLE_SYSTEM_AUDIT_IN_ONE_TRANSACTION",
+  );
+  assert.equal(
+    policy.workerProtocol.leaseRenewal,
+    "CAS_CURRENT_GENERATION_ATTEMPT_ID_AND_OWNER_WHILE_LEASE_ACTIVE_NEXT_ATTEMPT_AT_NULL_AND_NOW_BEFORE_IMMUTABLE_ATTEMPT_DEADLINE_SET_LEASE_EXPIRES_AT_MIN_NOW_PLUS_120_SECONDS_ATTEMPT_DEADLINE_NEVER_EXTEND_ATTEMPT_DEADLINE",
+  );
+  assert.equal(
+    policy.workerProtocol.attemptDeadlineExpiry,
+    "WATCHDOG_AT_OR_AFTER_IMMUTABLE_ATTEMPT_DEADLINE_REJECT_READY_FAILED_AND_RENEW_THEN_CAS_PROCESSING_CURRENT_GENERATION_ATTEMPT_ID_AND_OWNER_IF_ATTEMPTS_REMAIN_CLEAR_OWNER_AND_LEASE_SET_NEXT_ATTEMPT_AT_NOW_PLUS_BACKOFF_NO_AUDIT_ELSE_TO_FAILED_RETRY_BUDGET_EXHAUSTED_AND_SINGLE_SYSTEM_AUDIT_IN_ONE_TRANSACTION",
+  );
+  assert.equal(
+    policy.workerProtocol.crashOrHang,
+    "IF_NEXT_ATTEMPT_AT_NOT_NULL_FOLLOW_SCHEDULE_ELSE_IF_NOW_GTE_IMMUTABLE_ATTEMPT_DEADLINE_USE_ATTEMPT_DEADLINE_WATCHDOG_ELSE_AT_LEASE_EXPIRY_BEFORE_ATTEMPT_DEADLINE_CAS_CURRENT_GENERATION_ATTEMPT_ID_AND_OWNER_IF_ATTEMPTS_REMAIN_CLEAR_OWNER_SET_NEXT_ATTEMPT_AT_TO_LEASE_EXPIRY_THEN_DUE_OWNER_NULL_CLAIM_ELSE_TO_FAILED_RETRY_BUDGET_EXHAUSTED_AND_SINGLE_SYSTEM_AUDIT_IN_ONE_TRANSACTION",
+  );
+  assert.equal(
+    policy.workerProtocol.claim,
+    "POSTGRESQL_CAS_PROCESSING_OWNER_NULL_ATTEMPTS_REMAIN_AND_NOW_GTE_NEXT_ATTEMPT_AT_INCREMENT_GENERATION_AND_ATTEMPT_NUMBER_REPLACE_ATTEMPT_ID_SET_ATTEMPT_STARTED_AT_NOW_AND_IMMUTABLE_ATTEMPT_DEADLINE_NOW_PLUS_600_SECONDS_SET_LEASE_EXPIRES_AT_MIN_NOW_PLUS_120_SECONDS_ATTEMPT_DEADLINE",
+  );
+  for (const mutate of [
+    (worker) => {
+      worker.retryBackoffSecondsByNextAttempt[2] = 29;
+    },
+    (worker) => {
+      worker.staleWorker = "CANNOT_UPLOAD";
+    },
+    (worker) => {
+      worker.terminalFailureCodeByClass.RETRYABLE_FAILURE_AT_MAXIMUM_ATTEMPT =
+        "DEPENDENCY_UNAVAILABLE";
+    },
+    (worker) => {
+      worker.readyTransaction =
+        "CAS_PROCESSING_GENERATION_AND_ATTEMPT_TO_READY";
+    },
+    (worker) => {
+      worker.leaseRenewal = "RENEW_LEASE_AND_EXTEND_DEADLINE";
+    },
+    (worker) => {
+      worker.maximumProcessingSecondsPerAttempt = 601;
+    },
+  ]) {
+    const document = documentFixture();
+    mutate(
+      document["x-kora-admin-c2-contract-policy"].auditExport.workerProtocol,
+    );
+    assert.throws(
+      () => validateOpenApiDocument(document),
+      /audit export retries must preserve exact scheduling/u,
+    );
+  }
+  assert.equal(policy.workerProtocol.distributedTransaction, false);
+  assert.equal(
+    policy.workerProtocol.nonTerminalRetryAudit,
+    "NO_AUDIT_LOG_FOR_NON_TERMINAL_RETRY",
+  );
+  assert.deepEqual(
+    sourceDocument["x-kora-admin-c2-contract-policy"].systemSourcePredicates
+      .EXPORT_BUILD_SYSTEM_AUDIT.resultOutcomes,
+    {
+      READY: { outcome: "SUCCESS", failureCode: null },
+      FAILED: {
+        outcome: "REJECTED",
+        failureCodeByExportFailureCode: {
+          RETRY_BUDGET_EXHAUSTED: "DEPENDENCY_UNAVAILABLE",
+          PROJECTION_BUDGET_EXCEEDED: "PROJECTION_BUDGET_EXCEEDED",
+          INTEGRITY_FAILED: "INTEGRITY_REJECTED",
+          DEPENDENCY_UNAVAILABLE: "DEPENDENCY_UNAVAILABLE",
+        },
+      },
+    },
+  );
+  assert.equal(policy.downloadExpirationArbitration.readLeaseSeconds, 300);
+  assert.equal(policy.contractualTraces.length, 6);
+  assert.deepEqual(
+    policy.unknownCommitReconciliationBranches.map(
+      (branch) => branch.durableState,
+    ),
+    [
+      "READY_MATCHING_GENERATION",
+      "FAILED_MATCHING_GENERATION",
+      "PROCESSING_SAME_FENCE",
+      "STALE_FENCE_OR_DIFFERENT_GENERATION",
+    ],
+  );
+  const sameFenceUnknownCommit =
+    policy.unknownCommitReconciliationBranches.find(
+      (branch) => branch.durableState === "PROCESSING_SAME_FENCE",
+    );
+  assert.equal(sameFenceUnknownCommit.resumeCas, "CONDITIONAL");
+  assert.equal(
+    sameFenceUnknownCommit.terminalEligibility,
+    "CURRENT_ATTEMPT_ID_AND_OWNER_LEASE_ACTIVE_NEXT_ATTEMPT_AT_NULL_AND_NOW_BEFORE_IMMUTABLE_ATTEMPT_DEADLINE",
+  );
+  assert.equal(
+    sameFenceUnknownCommit.ineligibleAction,
+    "NO_TERMINAL_CAS_FOLLOW_EXISTING_RETRY_SCHEDULE_OR_LEASE_EXPIRY_RECLAIM_OR_ATTEMPT_DEADLINE_WATCHDOG",
+  );
+  assert.match(
+    sameFenceUnknownCommit.requiredAction,
+    /RESUME_SINGLE_FENCED_CAS_FROM_VERIFIED_STAGING_STATE_ELSE_NO_TERMINAL_CAS/u,
+  );
+
+  const reconcileUnknownCommit = ({ initial }) => {
+    if (initial.nextAttemptAt !== null) return "FOLLOW_SCHEDULED_RETRY";
+    if (initial.now >= initial.attemptDeadline) {
+      return "FOLLOW_ATTEMPT_DEADLINE_WATCHDOG";
+    }
+    if (!initial.currentOwner || initial.now >= initial.leaseExpiresAt) {
+      return "FOLLOW_LEASE_EXPIRY_RECLAIM";
+    }
+    return "RESUME_TERMINAL_CAS";
+  };
+  assert.equal(policy.unknownCommitEligibilityTraces.length, 4);
+  for (
+    let index = 0;
+    index < policy.unknownCommitEligibilityTraces.length;
+    index += 1
+  ) {
+    const fixture = policy.unknownCommitEligibilityTraces[index];
+    assert.equal(
+      reconcileUnknownCommit(fixture),
+      fixture.expectedAction,
+      fixture.name,
+    );
+    const document = documentFixture();
+    document[
+      "x-kora-admin-c2-contract-policy"
+    ].auditExport.unknownCommitEligibilityTraces[index].expectedAction =
+      "INVALID_ACTION";
+    assert.throws(
+      () => validateOpenApiDocument(document),
+      /policies must be exact/u,
+      `unknown commit eligibility trace ${index}`,
+    );
+  }
+
+  const executeTrace = (fixture) => {
+    const state = {
+      auditCount: 0,
+      completedReaders: [],
+      downloadAuditCount: 0,
+      downloadAuditedReaders: [],
+      expiryAuditCount: 0,
+      generation: 0,
+      owner: null,
+      protectedReaders: [],
+      rejectedReaders: [],
+      streamingReaders: [],
+      stagingObjects: [],
+      targetedOrphans: [],
+      currentStaging: null,
+      stagingVerified: false,
+      state: "PENDING",
+      visible: false,
+      ...fixture.initial,
+    };
+    for (const event of fixture.events) {
+      switch (event.type) {
+        case "CLAIM":
+          if (
+            event.expectedGeneration === state.generation &&
+            (state.state === "PENDING" ||
+              (state.state === "PROCESSING" && state.leaseExpired === true))
+          ) {
+            state.state = "PROCESSING";
+            state.generation += 1;
+            state.owner = event.worker;
+            state.leaseExpired = false;
+            state.currentStaging = null;
+            state.stagingVerified = false;
+          }
+          break;
+        case "UPLOAD_STAGING":
+          if (
+            state.owner === event.worker &&
+            state.generation === event.expectedGeneration
+          ) {
+            const stagingObject = `${event.worker}:${event.expectedGeneration}`;
+            state.stagingObjects.push(stagingObject);
+            state.currentStaging = stagingObject;
+            state.stagingVerified = true;
+          }
+          break;
+        case "CRASH":
+          state.leaseExpired = state.owner === event.worker;
+          break;
+        case "RECONCILE_STAGING":
+          if (
+            state.state === "PROCESSING" &&
+            state.owner === event.worker &&
+            state.generation === event.expectedGeneration
+          ) {
+            const currentGenerationStaging = `${event.worker}:${event.expectedGeneration}`;
+            state.targetedOrphans.push(
+              ...state.stagingObjects.filter(
+                (stagingObject) => stagingObject !== currentGenerationStaging,
+              ),
+            );
+          }
+          break;
+        case "PUBLISH":
+          if (
+            state.owner === event.worker &&
+            state.generation === event.expectedGeneration &&
+            state.stagingVerified &&
+            state.currentStaging ===
+              `${event.worker}:${event.expectedGeneration}`
+          ) {
+            state.state = "READY";
+            state.visible = true;
+            state.auditCount += 1;
+          }
+          break;
+        case "COMMIT_READY":
+          if (
+            state.owner === event.worker &&
+            state.generation === event.expectedGeneration &&
+            state.stagingVerified &&
+            state.currentStaging ===
+              `${event.worker}:${event.expectedGeneration}`
+          ) {
+            state.state = "READY";
+            state.visible = true;
+            state.auditCount += 1;
+            state.commitAcknowledgement = event.ack;
+          }
+          break;
+        case "READ_DURABLE":
+          assert.equal(state.generation, event.expectedGeneration);
+          break;
+        case "ACQUIRE_READ":
+          if (state.state === "READY" && state.visible) {
+            state.protectedReaders.push(event.reader);
+          } else {
+            state.rejectedReaders.push(event.reader);
+          }
+          break;
+        case "AUDIT_DOWNLOAD_COMMIT":
+          if (
+            state.protectedReaders.includes(event.reader) &&
+            !state.downloadAuditedReaders.includes(event.reader)
+          ) {
+            state.downloadAuditedReaders.push(event.reader);
+            state.downloadAuditCount += 1;
+            state.auditCount += 1;
+          }
+          break;
+        case "BEGIN_STREAM":
+          assert.ok(
+            state.downloadAuditedReaders.includes(event.reader),
+            "streaming requires a durable download audit",
+          );
+          state.streamingReaders.push(event.reader);
+          break;
+        case "EXPIRE_READY":
+          if (state.state === "READY") {
+            state.state = "EXPIRED";
+            state.visible = false;
+            state.expiryAuditCount += 1;
+            state.auditCount += 1;
+          }
+          break;
+        case "OPEN_READ":
+          if (state.state === "READY" && state.visible) {
+            state.protectedReaders.push(event.reader);
+          } else {
+            state.rejectedReaders.push(event.reader);
+          }
+          break;
+        case "COMPLETE_READ":
+          if (state.streamingReaders.includes(event.reader)) {
+            state.completedReaders.push(event.reader);
+          }
+          break;
+        default:
+          assert.fail(`unknown export trace event ${event.type}`);
+      }
+    }
+    return Object.fromEntries(
+      Object.keys(fixture.expected).map((key) => [key, state[key]]),
+    );
+  };
+
+  for (let index = 0; index < policy.contractualTraces.length; index += 1) {
+    const fixture = policy.contractualTraces[index];
+    assert.deepEqual(executeTrace(fixture), fixture.expected, fixture.name);
+    const document = documentFixture();
+    document["x-kora-admin-c2-contract-policy"].auditExport.contractualTraces[
+      index
+    ].expected.visible = !fixture.expected.visible;
+    assert.throws(
+      () => validateOpenApiDocument(document),
+      /policies must be exact/u,
+      `contractual trace ${index}`,
+    );
+  }
+
+  const executeRetryTrace = (fixture) => {
+    const state = {
+      attemptNumber: 1,
+      attemptDeadline: Number.POSITIVE_INFINITY,
+      auditCount: 0,
+      failureCode: null,
+      generation: 0,
+      leaseExpiresAt: Number.POSITIVE_INFINITY,
+      nextAttemptAt: null,
+      owner: null,
+      rejectedClaims: 0,
+      retryScheduleRejected: false,
+      state: "PENDING",
+      targetedOrphans: [],
+      terminalCasRejected: 0,
+      timeoutCount: 0,
+      visible: false,
+      ...fixture.initial,
+    };
+    const retryable = new Set(policy.workerProtocol.retryableFailureClasses);
+    const terminalCodes = policy.workerProtocol.terminalFailureCodeByClass;
+    const failTerminally = (failureCode) => {
+      state.state = "FAILED";
+      state.owner = null;
+      state.failureCode = failureCode;
+      state.auditCount += 1;
+    };
+    for (const event of fixture.events) {
+      switch (event.type) {
+        case "KNOWN_FAILURE":
+          state.now = event.now ?? state.now ?? 0;
+          if (
+            state.owner !== event.worker ||
+            state.generation !== event.expectedGeneration ||
+            state.nextAttemptAt !== null ||
+            state.now >= state.leaseExpiresAt ||
+            state.now >= state.attemptDeadline
+          ) {
+            state.retryScheduleRejected = true;
+            break;
+          }
+          if (retryable.has(event.failureClass)) {
+            if (state.attemptNumber >= policy.workerProtocol.maximumAttempts) {
+              failTerminally(
+                terminalCodes.RETRYABLE_FAILURE_AT_MAXIMUM_ATTEMPT,
+              );
+            } else {
+              const nextAttempt = state.attemptNumber + 1;
+              state.owner = null;
+              state.leaseExpiresAt = null;
+              state.nextAttemptAt =
+                (state.now ?? 0) +
+                policy.workerProtocol.retryBackoffSecondsByNextAttempt[
+                  nextAttempt
+                ];
+            }
+          } else if (terminalCodes[event.failureClass]) {
+            failTerminally(terminalCodes[event.failureClass]);
+          } else {
+            assert.fail(`unknown retry failure class ${event.failureClass}`);
+          }
+          break;
+        case "CLAIM_RETRY":
+          if (
+            state.state === "PROCESSING" &&
+            state.owner === null &&
+            event.expectedGeneration === state.generation &&
+            event.now >= state.nextAttemptAt &&
+            state.attemptNumber < policy.workerProtocol.maximumAttempts
+          ) {
+            state.generation += 1;
+            state.attemptNumber += 1;
+            state.owner = event.worker;
+            state.nextAttemptAt = null;
+            state.attemptDeadline =
+              event.now +
+              policy.workerProtocol.maximumProcessingSecondsPerAttempt;
+            state.leaseExpiresAt = Math.min(
+              event.now + policy.workerProtocol.leaseSeconds,
+              state.attemptDeadline,
+            );
+          } else {
+            state.rejectedClaims += 1;
+          }
+          break;
+        case "PUT_COMPLETE": {
+          const stagingObject = `${event.worker}:${event.expectedGeneration}`;
+          if (
+            event.expectedGeneration !== state.generation ||
+            event.worker !== state.owner ||
+            state.nextAttemptAt !== null
+          ) {
+            state.targetedOrphans.push(stagingObject);
+          }
+          break;
+        }
+        case "COMMIT_READY":
+          if (
+            state.state === "PROCESSING" &&
+            event.worker === state.owner &&
+            event.expectedGeneration === state.generation &&
+            event.expectedAttemptNumber === state.attemptNumber &&
+            state.nextAttemptAt === null &&
+            event.now < state.leaseExpiresAt &&
+            event.now < state.attemptDeadline
+          ) {
+            state.state = "READY";
+            state.owner = null;
+            state.visible = true;
+            state.auditCount += 1;
+          } else {
+            state.terminalCasRejected += 1;
+          }
+          break;
+        case "ATTEMPT_DEADLINE":
+          if (
+            state.state === "PROCESSING" &&
+            event.worker === state.owner &&
+            event.expectedGeneration === state.generation &&
+            event.expectedAttemptNumber === state.attemptNumber &&
+            event.now >= state.attemptDeadline
+          ) {
+            state.timeoutCount += 1;
+            if (state.attemptNumber >= policy.workerProtocol.maximumAttempts) {
+              failTerminally(
+                terminalCodes.RETRYABLE_FAILURE_AT_MAXIMUM_ATTEMPT,
+              );
+            } else {
+              const nextAttempt = state.attemptNumber + 1;
+              state.owner = null;
+              state.leaseExpiresAt = null;
+              state.nextAttemptAt =
+                event.now +
+                policy.workerProtocol.retryBackoffSecondsByNextAttempt[
+                  nextAttempt
+                ];
+            }
+          }
+          break;
+        case "SCHEDULE_RETRY":
+          if (
+            event.expectedGeneration !== state.generation ||
+            event.worker !== state.owner ||
+            state.nextAttemptAt !== null ||
+            (event.now ?? 0) >= state.leaseExpiresAt ||
+            (event.now ?? 0) >= state.attemptDeadline
+          ) {
+            state.retryScheduleRejected = true;
+          }
+          break;
+        case "CRASH":
+          assert.equal(event.worker, state.owner);
+          break;
+        case "CLAIM_AFTER_CRASH":
+          if (
+            state.state === "PROCESSING" &&
+            state.nextAttemptAt === null &&
+            event.expectedGeneration === state.generation &&
+            event.now >= state.leaseExpiresAt &&
+            event.now < state.attemptDeadline
+          ) {
+            if (state.attemptNumber >= policy.workerProtocol.maximumAttempts) {
+              failTerminally(
+                terminalCodes.RETRYABLE_FAILURE_AT_MAXIMUM_ATTEMPT,
+              );
+            } else {
+              state.generation += 1;
+              state.attemptNumber += 1;
+              state.owner = event.worker;
+              state.nextAttemptAt = null;
+              state.attemptDeadline =
+                event.now +
+                policy.workerProtocol.maximumProcessingSecondsPerAttempt;
+              state.leaseExpiresAt = Math.min(
+                event.now + policy.workerProtocol.leaseSeconds,
+                state.attemptDeadline,
+              );
+            }
+          } else {
+            state.rejectedClaims += 1;
+          }
+          break;
+        default:
+          assert.fail(`unknown retry trace event ${event.type}`);
+      }
+    }
+    return Object.fromEntries(
+      Object.keys(fixture.expected).map((key) => [key, state[key]]),
+    );
+  };
+
+  assert.equal(policy.retryContractualTraces.length, 12);
+  for (
+    let index = 0;
+    index < policy.retryContractualTraces.length;
+    index += 1
+  ) {
+    const fixture = policy.retryContractualTraces[index];
+    assert.deepEqual(
+      executeRetryTrace(fixture),
+      fixture.expected,
+      fixture.name,
+    );
+    const document = documentFixture();
+    document[
+      "x-kora-admin-c2-contract-policy"
+    ].auditExport.retryContractualTraces[index].expected.visible =
+      !fixture.expected.visible;
+    assert.throws(
+      () => validateOpenApiDocument(document),
+      /policies must be exact/u,
+      `retry contractual trace ${index}`,
+    );
+  }
+
+  assert.throws(
+    () =>
+      executeTrace({
+        initial: { state: "READY", generation: 1, visible: true },
+        events: [
+          { type: "ACQUIRE_READ", reader: "R1" },
+          { type: "BEGIN_STREAM", reader: "R1" },
+        ],
+        expected: {},
+      }),
+    /streaming requires a durable download audit/u,
+  );
+
+  for (
+    let index = 0;
+    index < policy.unknownCommitReconciliationBranches.length;
+    index += 1
+  ) {
+    const document = documentFixture();
+    document[
+      "x-kora-admin-c2-contract-policy"
+    ].auditExport.unknownCommitReconciliationBranches[index].resumeCas =
+      !policy.unknownCommitReconciliationBranches[index].resumeCas;
+    assert.throws(
+      () => validateOpenApiDocument(document),
+      /policies must be exact/u,
+      `unknown commit branch ${index}`,
+    );
+  }
+});
+
+test("makes invitation acceptance and FIRST_TOTP_ENROLLMENT pre-auth one atomic boundary", () => {
+  const policy =
+    sourceDocument["x-kora-admin-c2-contract-policy"].invitationAcceptance;
+  assert.deepEqual(policy.transaction, [
+    "CONSUME_INVITATION",
+    "CREATE_ADMIN_USER_PENDING_MFA",
+    "CREATE_ARGON2ID_PASSWORD_CREDENTIAL",
+    "CREATE_FIRST_TOTP_ENROLLMENT_PREAUTH_10_MINUTES",
+    "WRITE_ADMIN_SECURITY_EVENT",
+  ]);
+  assert.equal(policy.cookie, "ISSUE_ONLY_AFTER_CONFIRMED_COMMIT");
+  assert.equal(policy.recoveryPath.runtimeSymbol, "AdminAuthService.login");
+  assert.equal(policy.recoveryPath.newEndpoint, false);
+  assert.deepEqual(
+    policy.failureBoundaryTraces.map((trace) => trace.name),
+    [
+      "PRE_COMMIT_FAILURE",
+      "CONFIRMED_COMMIT",
+      "UNKNOWN_COMMIT",
+      "LOST_RESPONSE_AFTER_CONFIRMED_COMMIT",
+      "EXPIRED_FIRST_TOTP_PREAUTH",
+    ],
+  );
+  const [preCommit, confirmed, unknown, lostResponse, expiredPreauth] =
+    policy.failureBoundaryTraces;
+  assert.deepEqual(preCommit.durableEffects, []);
+  assert.equal(
+    policy.preCommitFailure,
+    "NO_DURABLE_CONSUMPTION_USER_PASSWORD_CREDENTIAL_PREAUTH_OR_SECURITY_EVENT",
+  );
+  assert.equal(preCommit.cookieIssued, false);
+  assert.equal(confirmed.durableEffects.length, 5);
+  assert.equal(confirmed.cookieIssued, true);
+  assert.equal(unknown.cookieIssued, false);
+  assert.equal(unknown.automaticRetry, false);
+  assert.equal(unknown.durableEffects, "UNKNOWN_UNTIL_RECONCILIATION");
+  assert.equal(
+    unknown.reconciliation,
+    "LOGIN_READS_DURABLE_USER_STATE_NO_BLIND_ACCEPT_RETRY",
+  );
+  assert.equal(lostResponse.durableEffects.length, 5);
+  assert.equal(lostResponse.preauthState, "VALID_OR_EVENTUALLY_EXPIRES");
+  assert.equal(lostResponse.cookieDelivery, "UNKNOWN");
+  assert.equal(lostResponse.usablePreauthCookie, "UNKNOWN");
+  assert.equal(
+    expiredPreauth.recovery,
+    "AdminAuthService.login_CREATES_NEW_FIRST_TOTP_PREAUTH_10_MINUTES",
+  );
+  assert.equal(
+    expiredPreauth.preauthState,
+    "EXPIRED_REPLACED_ONLY_AFTER_PASSWORD_LOGIN",
+  );
+  assert.equal(expiredPreauth.cookieDelivery, "UNKNOWN");
+  assert.equal(expiredPreauth.usablePreauthCookie, false);
+  for (let index = 0; index < policy.failureBoundaryTraces.length; index += 1) {
+    const document = documentFixture();
+    document[
+      "x-kora-admin-c2-contract-policy"
+    ].invitationAcceptance.failureBoundaryTraces[index].automaticRetry = true;
+    assert.throws(
+      () => validateOpenApiDocument(document),
+      /policies must be exact/u,
+      `invitation boundary ${index}`,
+    );
+  }
+  assert.equal(
+    validateSchemaInstance(
+      sourceDocument,
+      "AdminInvitationAcceptedPreAuthEnvelope",
+      {
+        data: {
+          challengeId: "00000000-0000-4000-8000-000000000001",
+          expiresAt: "2026-10-10T00:10:00.000Z",
+          nextStep: "FIRST_TOTP_ENROLLMENT",
+        },
+        meta: { requestId: "request-r4-invitation" },
+      },
+    ),
+    true,
+  );
+  assert.throws(
+    () =>
+      validateSchemaInstance(
+        sourceDocument,
+        "AdminInvitationAcceptedPreAuthEnvelope",
+        {
+          data: {
+            challengeId: "00000000-0000-4000-8000-000000000001",
+            expiresAt: "2026-10-10T00:10:00.000Z",
+            nextStep: "MFA_RECOVERY",
+          },
+          meta: { requestId: "request-r4-invitation" },
+        },
+      ),
+    /must equal its const value/u,
+  );
+});
+
+test("represents real v1 short and overlong text while failing closed on projection budget", () => {
+  const fixtures = [
+    adminLegacyAuditFixture({
+      actorAdminUserId: "",
+      adminSessionId: "",
+      eventId: "",
+      requestId: "12345678",
+    }),
+    adminLegacyAuditFixture({
+      eventId: `legacy-${"e".repeat(500)}`,
+      action: `legacy-${"a".repeat(500)}`,
+      entityType: `legacy-${"t".repeat(500)}`,
+      entityId: `legacy-${"i".repeat(500)}`,
+    }),
+    adminLegacyAuditFixture({
+      maskedBefore: Object.fromEntries([
+        ...Array.from({ length: 51 }, (_, index) => [
+          `legacyField${index}`,
+          `masked-${index}`,
+        ]),
+        [
+          "nestedSensitiveShape",
+          {
+            contact: "[REDACTED]",
+            metadata: { phone: "[REDACTED]", secret: "[REDACTED]" },
+          },
+        ],
+      ]),
+    }),
+    adminLegacyAuditFixture({
+      maskedBefore: ["[REDACTED]", { nested: [true, 7, null] }],
+      maskedAfter: "[REDACTED]",
+    }),
+    adminLegacyAuditFixture({
+      maskedBefore: 7,
+      maskedAfter: false,
+    }),
+  ];
+  for (const fixture of fixtures) {
+    assert.equal(
+      validateSchemaInstance(sourceDocument, "AdminAuditLogEntry", fixture),
+      true,
+    );
+  }
+  const narrowedDocument = documentFixture();
+  narrowedDocument.components.schemas.AdminAuditLogEntryV1.properties.maskedBefore.type =
+    ["object", "null"];
+  assert.throws(
+    () => validateOpenApiDocument(narrowedDocument),
+    /historical v1\/v2 UNKNOWN outcomes/u,
+  );
+  const budget =
+    sourceDocument["x-kora-admin-c2-contract-policy"].auditProjection
+      .budgetOverflow;
+  assert.deepEqual(budget, {
+    truncate: false,
+    omitRow: false,
+    fabricateValue: false,
+    list: "NEUTRAL_503_SERVICE_UNAVAILABLE_NO_PARTIAL_PAGE_REDUCE_FILTERS",
+    export: "FAILED_WITH_PROJECTION_BUDGET_EXCEEDED_NO_PARTIAL_ARTIFACT",
+  });
+  assert.throws(
+    () =>
+      validateSchemaInstance(
+        sourceDocument,
+        "AdminAuditLogEntry",
+        adminLegacyAuditFixture({
+          operatorReason: "alice@example.test +22370000000 secret free text",
+        }),
+      ),
+    /must match exactly one oneOf branch|only allows null/u,
+  );
+});
+
+test("locks every C2 AuditLog producer to a deterministic reason source", () => {
+  const policy = sourceDocument["x-kora-admin-c2-contract-policy"].auditReasons;
+  assert.equal(Object.keys(policy.auditLogOperations).length, 10);
+  assert.equal(Object.keys(policy.systemTransitions).length, 7);
+  assert.deepEqual(policy.auditLogOperations.resetAdminPassword, {
+    source: "SERVER_FIXED",
+    reasonCode: "ACCOUNT_RECOVERY",
+  });
+  assert.deepEqual(policy.auditLogOperations.listAdminAuditLogs, {
+    source: "SERVER_FIXED",
+    reasonCode: "AUDIT_EXPORT",
+  });
+  assert.deepEqual(policy.validatedClientRule.missingOrInvalidAfterProof, {
+    source: "SERVER_FIXED_REJECTION",
+    reasonCode: "SECURITY_RESPONSE",
+    operatorReason: null,
+    invalidClientTextReuse: "FORBIDDEN",
+  });
+  assert.equal(policy.systemTransitionOperatorReason, null);
+  for (const transition of Object.values(policy.systemTransitions)) {
+    assert.ok(
+      ["AUTONOMOUS", "ADMIN_DELEGATION", "PUBLIC_PASSWORD_RESET"].includes(
+        transition.systemOrigin,
+      ),
+    );
+    assert.equal(typeof transition.validatedSource, "string");
+  }
+  assert.equal(
+    policy.legacyReasonStorage,
+    "EXACT_SERVER_LITERAL_C2_RUNTIME_NEVER_CLIENT_TEXT_NOT_PROJECTED",
+  );
+  assert.doesNotMatch(JSON.stringify(policy), /CANARY-R3-LEGACY-REASON/u);
+});
+
+test("hashes the exact immutable final ZIP across simulated encrypted storage", () => {
+  const payload = Buffer.from(
+    '[{"legacyReasonRedacted":true,"version":1}]\n',
+    "utf8",
+  );
+  const payloadSha256 = createHash("sha256").update(payload).digest("hex");
+  const manifest = Buffer.from(
+    JSON.stringify({
+      createdAt: "2026-10-11T00:00:00.000Z",
+      entries: [
+        {
+          path: "audit.json",
+          sha256: payloadSha256,
+          size: payload.length,
+        },
+      ],
+      expiresAt: "2026-10-12T00:00:00.000Z",
+      exportId: "00000000-0000-4000-8000-000000000099",
+    }),
+    "utf8",
+  );
+  const signature = Buffer.from("fixture.detached.signature\n", "utf8");
+  const zip = buildStoredZip([
+    ["audit.json", payload],
+    ["manifest.json", manifest],
+    ["manifest.sig", signature],
+  ]);
+  const exactZipSha256 = createHash("sha256").update(zip).digest("hex");
+
+  assert.equal(zip.subarray(0, 4).toString("hex"), "504b0304");
+  assert.equal(
+    exactZipSha256,
+    "0d4f081ba9b3118e0533435becc7f1310266eb12bae03599eac3f38e5d44d79f",
+  );
+  assert.equal(manifest.includes(Buffer.from("contentSha256")), false);
+  assert.notEqual(
+    createHash("sha256").update(manifest).digest("hex"),
+    exactZipSha256,
+  );
+
+  const key = createHash("sha256").update("r3-fixture-storage-key").digest();
+  const iv = Buffer.from("000102030405060708090a0b", "hex");
+  const aad = Buffer.from("r3-audit-export-fixture", "utf8");
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  cipher.setAAD(aad);
+  const ciphertext = Buffer.concat([cipher.update(zip), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  const decipher = createDecipheriv("aes-256-gcm", key, iv);
+  decipher.setAAD(aad);
+  decipher.setAuthTag(tag);
+  const downloaded = Buffer.concat([
+    decipher.update(ciphertext),
+    decipher.final(),
+  ]);
+
+  assert.deepEqual(downloaded, zip);
+  assert.equal(
+    createHash("sha256").update(downloaded).digest("hex"),
+    exactZipSha256,
+  );
+  assert.notEqual(
+    createHash("sha256").update(ciphertext).digest("hex"),
+    exactZipSha256,
+  );
+  const mutated = Buffer.from(zip);
+  mutated[40] ^= 0x01;
+  assert.notEqual(
+    createHash("sha256").update(mutated).digest("hex"),
+    exactZipSha256,
+  );
+});
+
+for (const [name, audit] of [
+  [
+    "two causal sources simultaneously",
+    adminSystemAuditFixture({
+      causationEventId: "00000000-0000-4000-8000-000000000003",
+      causationSecurityEventId: "00000000-0000-4000-8000-000000000005",
+      delegatedByAdminUserId: "00000000-0000-4000-8000-000000000004",
+    }),
+  ],
+  [
+    "missing delegator for AuditLog causation",
+    adminSystemAuditFixture({
+      causationEventId: "00000000-0000-4000-8000-000000000003",
+    }),
+  ],
+  [
+    "forbidden delegator for public-reset causation",
+    adminSystemAuditFixture({
+      causationSecurityEventId: "00000000-0000-4000-8000-000000000005",
+      delegatedByAdminUserId: "00000000-0000-4000-8000-000000000004",
+    }),
+  ],
+]) {
+  test(`rejects SYSTEM causality with ${name}`, () => {
+    assert.throws(
+      () => validateSchemaInstance(sourceDocument, "AdminAuditLogEntry", audit),
+      /must match exactly one oneOf branch/u,
+    );
+  });
+}
+
+for (const [name, mutate] of [
+  [
+    "a removed exact error",
+    (document) => document["x-kora-operation-errors"].listAdminUsers.pop(),
+  ],
+  [
+    "an added same-status error",
+    (document) =>
+      document["x-kora-operation-errors"].requestAdminPasswordReset.push(
+        "ADMIN_RECOVERY_CODE_INVALID",
+      ),
+  ],
+  [
+    "a duplicated error",
+    (document) =>
+      document["x-kora-operation-errors"].createAdminInvitation.push(
+        "SERVICE_UNAVAILABLE",
+      ),
+  ],
+  [
+    "a substituted same-status error",
+    (document) => {
+      document["x-kora-operation-errors"].resetAdminPassword[1] =
+        "ADMIN_RECOVERY_CODE_INVALID";
+    },
+  ],
+  [
+    "a permuted error order",
+    (document) => {
+      const errors =
+        document["x-kora-operation-errors"].approveAdminRecoveryCase;
+      [errors[3], errors[4]] = [errors[4], errors[3]];
+    },
+  ],
+]) {
+  test(`rejects the C2 error table with ${name}`, () => {
+    const document = documentFixture();
+    mutate(document);
+    assert.throws(
+      () => validateOpenApiDocument(document),
+      /must preserve its exact C2 error list/u,
+    );
+  });
+}
+
+test("rejects an incorrect exact C2 error status", () => {
+  const document = documentFixture();
+  document["x-kora-error-statuses"].ADMIN_USER_NOT_FOUND = 409;
+  assert.throws(
+    () => validateOpenApiDocument(document),
+    /ADMIN_USER_NOT_FOUND must preserve its exact C2 HTTP status/u,
   );
 });
 
@@ -3049,7 +4678,7 @@ const adminSecurityMutations = [
   [
     "audit execution-context XOR weakened",
     (document) => {
-      document.components.schemas.AdminAuditLogEntry.oneOf.pop();
+      document.components.schemas.AdminAuditLogEntryV2.oneOf.pop();
     },
   ],
   [
@@ -3097,9 +4726,86 @@ const adminSecurityMutations = [
     },
   ],
   [
+    "legacy v1 excluded by default",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].auditProjection.filters.v1WithoutVersionOrTypedOnlyFilters = "EXCLUDED";
+    },
+  ],
+  [
+    "typed filter synthetically attributed to v1",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].auditProjection.filters.v1WithAnyTypedFilter =
+        "MATCH_SYNTHETIC_DEFAULT";
+    },
+  ],
+  [
+    "list and export use divergent audit projections",
+    (document) => {
+      adminSecurityOperation(document, "listAdminAuditLogs")[
+        "x-kora-entry-schema"
+      ] = "AdminAuditLogEntryV2";
+    },
+  ],
+  [
+    "server reset reason changed",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].auditReasons.auditLogOperations.resetAdminPassword.reasonCode =
+        "SECURITY_RESPONSE";
+    },
+  ],
+  [
+    "client reason falls back to first enum",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].auditReasons.validatedClientRule.acceptedPath = "FIRST_ENUM_DEFAULT";
+    },
+  ],
+  [
+    "invalid client reason copied to operatorReason",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].auditReasons.validatedClientRule.missingOrInvalidAfterProof.operatorReason =
+        "CLIENT_TEXT";
+    },
+  ],
+  [
+    "SYSTEM transition origin widened",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].auditReasons.systemTransitions.EXPORT_BUILD_SYSTEM_AUDIT.systemOrigin =
+        "AUTONOMOUS";
+    },
+  ],
+  [
+    "export content hash reduced to manifest-only",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].auditExport.contentSha256.input = "MANIFEST_ONLY";
+    },
+  ],
+  [
+    "export content hash made self-referential",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].auditExport.contentSha256.selfReference =
+        "contentSha256_INCLUDED_IN_MANIFEST";
+    },
+  ],
+  [
     "audit entity evidence removed",
     (document) => {
-      const schema = document.components.schemas.AdminAuditLogEntry;
+      const schema = document.components.schemas.AdminAuditLogEntryV2;
       schema.required = schema.required.filter(
         (field) => field !== "entityType",
       );
@@ -3109,7 +4815,7 @@ const adminSecurityMutations = [
   [
     "session audit actor made nullable",
     (document) => {
-      document.components.schemas.AdminAuditLogEntry.oneOf[0].properties.actorAdminUserId.type =
+      document.components.schemas.AdminAuditLogEntryV2.oneOf[0].properties.actorAdminUserId.type =
         "null";
     },
   ],
@@ -3188,7 +4894,7 @@ const adminSecurityMutations = [
   [
     "audit event class weakened",
     (document) => {
-      document.components.schemas.AdminAuditLogEntry.properties.eventClass.enum.pop();
+      document.components.schemas.AdminAuditLogEntryV2.properties.eventClass.enum.pop();
     },
   ],
   [
@@ -3252,7 +4958,52 @@ const adminSecurityMutations = [
   [
     "autonomous SYSTEM audit forced to invent causation",
     (document) => {
-      document.components.schemas.AdminAuditLogEntry.oneOf[2].oneOf.shift();
+      document.components.schemas.AdminAuditLogEntryV2.oneOf[2].oneOf.shift();
+    },
+  ],
+  [
+    "SYSTEM audit combines AuditLog and AdminSecurityEvent causality",
+    (document) => {
+      document.components.schemas.AdminAuditLogEntryV2.oneOf[2].oneOf[2].properties.causationEventId =
+        {
+          type: "string",
+          format: "uuid",
+        };
+    },
+  ],
+  [
+    "public reset SYSTEM audit fabricates a delegating administrator",
+    (document) => {
+      document.components.schemas.AdminAuditLogEntryV2.oneOf[2].oneOf[2].properties.delegatedByAdminUserId =
+        {
+          type: "string",
+          format: "uuid",
+        };
+    },
+  ],
+  [
+    "public reset worker accepts the wrong causal record type",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].systemAuditCausality.publicPasswordReset.sourceRecordType = "AuditLog";
+    },
+  ],
+  [
+    "public reset delivery loses causality by autonomous reclassification",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].systemAuditCausality.publicPasswordReset.workerAuditOrigin =
+        "AUTONOMOUS";
+    },
+  ],
+  [
+    "client input becomes trusted SYSTEM causality",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].systemAuditCausality.clientSupplied = true;
     },
   ],
   [
@@ -3425,14 +5176,267 @@ const adminSecurityMutations = [
     },
   ],
   [
-    "SERVICE_UNAVAILABLE added to C2",
+    "C2 SERVICE_UNAVAILABLE error and response omitted",
     (document) => {
-      document["x-kora-operation-errors"].requestAdminPasswordReset.push(
-        "SERVICE_UNAVAILABLE",
+      document["x-kora-operation-errors"].requestAdminPasswordReset = document[
+        "x-kora-operation-errors"
+      ].requestAdminPasswordReset.filter(
+        (code) => code !== "SERVICE_UNAVAILABLE",
       );
-      adminSecurityOperation(document, "requestAdminPasswordReset").responses[
-        "503"
-      ] = { $ref: "#/components/responses/AdminServiceUnavailable" };
+      delete adminSecurityOperation(document, "requestAdminPasswordReset")
+        .responses["503"];
+    },
+  ],
+  [
+    "C2 step-up purpose weakened",
+    (document) => {
+      adminSecurityOperation(document, "approveAdminRecoveryCase")[
+        "x-kora-step-up-purpose"
+      ] = "AUDIT_EXPORT";
+    },
+  ],
+  [
+    "C2 success sink weakened",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].operationMatrix.createAdminInvitation.successSink =
+        "ADMIN_SECURITY_EVENT";
+    },
+  ],
+  [
+    "C2 reset audit context removed",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].operationMatrix.resetAdminPassword.auditContext = null;
+    },
+  ],
+  [
+    "client reset field accepted as server proof",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].operationMatrix.resetAdminPassword.serverProof =
+        "CLIENT_RESET_CODE_IS_SUFFICIENT";
+    },
+  ],
+  [
+    "password reset aliases MFA recovery",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].passwordReset.recoveryPurpose = "MFA_RECOVERY";
+    },
+  ],
+  [
+    "C2 malformed JSON route map weakened",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].preControllerJson.operationIds.pop();
+    },
+  ],
+  [
+    "C2 cursor loses principal binding",
+    (document) => {
+      document["x-kora-admin-c2-contract-policy"].pagination.cursor =
+        "OPAQUE_ONLY";
+    },
+  ],
+  [
+    "C2 export becomes unbounded",
+    (document) => {
+      document["x-kora-admin-c2-contract-policy"].auditExport.maximumEntries =
+        null;
+    },
+  ],
+  [
+    "local provider is falsely production-qualified",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].productionQualification.notificationProvider = "QUALIFIED";
+    },
+  ],
+  [
+    "C2 transaction disposal omits physical connection discard",
+    (document) => {
+      delete document["x-kora-admin-c2-contract-policy"]
+        .transactionClientDisposal.release.discard;
+    },
+  ],
+  [
+    "C2 rollback rejection returns a reusable client",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.contractualTraces.find(
+        ({ name }) => name === "ROLLBACK_REJECTED",
+      ).clientDisposition = "REUSABLE_SINGLE_RELEASE";
+    },
+  ],
+  [
+    "C2 rollback loses its monotonic deadline",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.rollback.deadlineMilliseconds = null;
+    },
+  ],
+  [
+    "C2 transaction client permits double release",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.release.totalCardinality = "AT_LEAST_ONCE";
+    },
+  ],
+  [
+    "C2 rollback failure drops the primary error",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.errors.primary =
+        "REPLACE_WITH_ROLLBACK_ERROR";
+    },
+  ],
+  [
+    "C2 unknown commit falsely claims rollback",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.commitUnknown.rollbackClaim = "CONFIRMED";
+    },
+  ],
+  [
+    "C2 state-machine retry replays an unknown mutation",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.jobRetryBoundary =
+        "STATE_MACHINE_RETRY_AUTHORIZES_UNKNOWN_MUTATION_REPLAY";
+    },
+  ],
+  [
+    "C2 rollback failure emits a contradictory second sink",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.publicFailure.secondSink = "AUDIT_LOG";
+    },
+  ],
+  [
+    "C2 callback starts without confirmed BEGIN",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.begin.callbackAllowedWhen = "BEGIN_ATTEMPTED";
+    },
+  ],
+  [
+    "C2 unknown BEGIN outcome returns a reusable client",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.begin.unconfirmedDisposition =
+        "POOL_RELEASE_REUSABLE";
+    },
+  ],
+  [
+    "C2 connection loss overlaps pre-COMMIT and COMMIT_UNKNOWN",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.phaseExclusivity.postCommitAttemptConnectionLoss =
+        "PRE_COMMIT_OR_COMMIT_UNKNOWN";
+    },
+  ],
+  [
+    "C2 COMMIT acknowledgement loses its monotonic deadline",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.commit.acknowledgementDeadlineMilliseconds =
+        null;
+    },
+  ],
+  [
+    "C2 transaction reuse accepts a stale ReadyForQuery I",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.rollback.reuseAllowedWhen =
+        "ROLLBACK_CONFIRMED_AND_ANY_OBSERVED_IDLE_STATE";
+    },
+  ],
+  [
+    "C2 unknown BEGIN late settlement starts the callback",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.begin.lateSettlement =
+        "START_CALLBACK_AFTER_LATE_CONFIRMATION";
+    },
+  ],
+  [
+    "C2 confirmed COMMIT with unusable client becomes COMMIT_UNKNOWN",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.commit.successOtherwiseDisposition =
+        "RECLASSIFY_COMMIT_UNKNOWN";
+    },
+  ],
+  [
+    "C2 explicit server COMMIT rejection is treated as unknown",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.commit.explicitServerRejection =
+        "COMMIT_UNKNOWN";
+    },
+  ],
+  [
+    "C2 rollback is limited to callback failures",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.rollback.requiredWhen =
+        "CALLBACK_FAILED_BEFORE_COMMIT";
+    },
+  ],
+  [
+    "C2 COMMIT terminal error is not preserved",
+    (document) => {
+      delete document["x-kora-admin-c2-contract-policy"]
+        .transactionClientDisposal.errors.commit;
+    },
+  ],
+  [
+    "C2 acquired client without reusable proof has no default discard",
+    (document) => {
+      delete document["x-kora-admin-c2-contract-policy"]
+        .transactionClientDisposal.release
+        .defaultForAcquiredClientNotMeetingReusablePredicate;
+    },
+  ],
+  [
+    "C2 future writer permits unbounded pool acquisition or callback",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.acquisitionAndCallbackLiveness.unboundedAcquisitionOrCallback =
+        "ALLOWED";
+    },
+  ],
+  [
+    "C2 callback deadline permits post-deadline queries",
+    (document) => {
+      document[
+        "x-kora-admin-c2-contract-policy"
+      ].transactionClientDisposal.acquisitionAndCallbackLiveness.postDeadlineCallbackQuery =
+        "ALLOWED";
     },
   ],
   [
@@ -3454,7 +5458,7 @@ const adminSecurityMutations = [
 ];
 
 for (const [name, mutate] of adminSecurityMutations) {
-  test(`S1.2-03B rejects ${name}`, () => {
+  test(`S1.2-03C2-P0 rejects ${name}`, () => {
     const document = documentFixture();
     mutate(document);
 
