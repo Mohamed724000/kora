@@ -1,12 +1,33 @@
 import assert from "node:assert/strict";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { dirname, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 
 import pg from "pg";
 
-import { waitForPostgresReadiness } from "../../apps/api/prisma/validate-admin-auth-runtime.mjs";
+import {
+  cleanupHistoricalPrismaWorkspace,
+  gitBlobOid,
+  historicalArtifactManifest,
+  historicalReferenceMetadata,
+  materializeHistoricalPrismaWorkspace,
+  validateHistoricalArtifactBuffer,
+  waitForPostgresReadiness,
+} from "../../apps/api/prisma/validate-admin-auth-runtime.mjs";
 
 import {
   assertNoSensitiveValue,
@@ -24,6 +45,176 @@ const requiredViolations = [
 ];
 
 const { Client } = pg;
+const repositoryRoot = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+);
+
+function historicalFixture(context, { alterPath, omitPath } = {}) {
+  const sourceRoot = mkdtempSync(resolve(tmpdir(), "kora-c1-history-fixture-"));
+  context.after(() => {
+    if (existsSync(sourceRoot))
+      rmSync(sourceRoot, { force: true, recursive: true });
+  });
+  for (const artifact of historicalArtifactManifest()) {
+    if (artifact.sourcePath === omitPath) continue;
+    const source = resolve(repositoryRoot, artifact.sourcePath);
+    const destination = resolve(sourceRoot, artifact.sourcePath);
+    mkdirSync(dirname(destination), { recursive: true });
+    const bytes = readFileSync(source);
+    if (artifact.sourcePath === alterPath) bytes[0] ^= 1;
+    writeFileSync(destination, bytes, { flag: "wx" });
+  }
+  return sourceRoot;
+}
+
+test("fige l'identité du schema C1 autonome sans objet Git historique", (context) => {
+  const manifest = historicalArtifactManifest();
+  const schema = manifest.find(
+    ({ sourcePath }) =>
+      sourcePath === "apps/api/prisma/history/s1-2-03c1/schema.prisma",
+  );
+  assert(schema);
+  assert.deepEqual(historicalReferenceMetadata(), {
+    commit: "d514b87cbef21dfae4585f4d143889aca2d8b229",
+    tree: "2429871f3b440934cfbd02ceaaf0c74f3f8f3ac4",
+  });
+  const bytes = readFileSync(resolve(repositoryRoot, schema.sourcePath));
+  assert.equal(bytes.length, 36_144);
+  assert.equal(gitBlobOid(bytes), schema.gitOid);
+  assert.doesNotThrow(() => validateHistoricalArtifactBuffer(schema, bytes));
+
+  const sourceRoot = historicalFixture(context);
+  assert.equal(existsSync(resolve(sourceRoot, ".git")), false);
+  const workspace = materializeHistoricalPrismaWorkspace({
+    sourceRoot,
+    tempBase: resolve(sourceRoot, "tmp"),
+  });
+  assert.equal(
+    existsSync(
+      resolve(workspace.migrationsDirectory, "admin_security_c2a_runtime"),
+    ),
+    false,
+  );
+  cleanupHistoricalPrismaWorkspace(workspace);
+  assert.equal(existsSync(workspace.root), false);
+});
+
+test("refuse le schema C1 historique manquant ou altéré", (context) => {
+  const schemaPath = "apps/api/prisma/history/s1-2-03c1/schema.prisma";
+  const missingRoot = historicalFixture(context, { omitPath: schemaPath });
+  assert.throws(
+    () =>
+      materializeHistoricalPrismaWorkspace({
+        sourceRoot: missingRoot,
+        tempBase: resolve(missingRoot, "tmp"),
+      }),
+    /historical artifact .* is missing/u,
+  );
+
+  const alteredRoot = historicalFixture(context, { alterPath: schemaPath });
+  assert.throws(
+    () =>
+      materializeHistoricalPrismaWorkspace({
+        sourceRoot: alteredRoot,
+        tempBase: resolve(alteredRoot, "tmp"),
+      }),
+    /historical artifact (?:SHA-256|Git blob) changed/u,
+  );
+});
+
+test("refuse traversal, mauvais OID et inventaire historique supplémentaire", (context) => {
+  const schema = historicalArtifactManifest().find(
+    ({ sourcePath }) =>
+      sourcePath === "apps/api/prisma/history/s1-2-03c1/schema.prisma",
+  );
+  assert(schema);
+  const bytes = readFileSync(resolve(repositoryRoot, schema.sourcePath));
+  assert.throws(
+    () =>
+      validateHistoricalArtifactBuffer(
+        { ...schema, targetPath: "../schema.prisma" },
+        bytes,
+      ),
+    /not a safe relative path/u,
+  );
+  assert.throws(
+    () =>
+      validateHistoricalArtifactBuffer(
+        { ...schema, gitOid: "0".repeat(40) },
+        bytes,
+      ),
+    /Git blob changed/u,
+  );
+
+  const sourceRoot = historicalFixture(context);
+  const workspace = materializeHistoricalPrismaWorkspace({
+    sourceRoot,
+    tempBase: resolve(sourceRoot, "tmp"),
+  });
+  const injectedMigration = resolve(
+    workspace.migrationsDirectory,
+    "admin_security_c2a_runtime",
+    "migration.sql",
+  );
+  mkdirSync(dirname(injectedMigration));
+  writeFileSync(injectedMigration, "-- forbidden C2a migration\n", {
+    flag: "wx",
+  });
+  assert.throws(
+    () => cleanupHistoricalPrismaWorkspace(workspace),
+    /inventory changed or contains an unexpected artifact/u,
+  );
+});
+
+test("materialise puis nettoie sans modifier les sources Prisma courantes", () => {
+  const before = historicalArtifactManifest().map(({ sourcePath }) => ({
+    bytes: readFileSync(resolve(repositoryRoot, sourcePath)),
+    sourcePath,
+  }));
+  const workspace = materializeHistoricalPrismaWorkspace();
+  assert.equal(workspace.tempBaseCreated, true);
+  cleanupHistoricalPrismaWorkspace(workspace);
+  assert.equal(existsSync(workspace.tempBase), false);
+  for (const entry of before) {
+    assert.deepEqual(
+      readFileSync(resolve(repositoryRoot, entry.sourcePath)),
+      entry.bytes,
+    );
+  }
+});
+
+test("préserve une base temporaire préexistante et vide", (context) => {
+  const sourceRoot = historicalFixture(context);
+  const tempBase = resolve(sourceRoot, "tmp");
+  mkdirSync(tempBase);
+  const workspace = materializeHistoricalPrismaWorkspace({
+    sourceRoot,
+    tempBase,
+  });
+  assert.equal(workspace.tempBaseCreated, false);
+  cleanupHistoricalPrismaWorkspace(workspace);
+  assert.equal(existsSync(tempBase), true);
+  assert.deepEqual(readdirSync(tempBase), []);
+});
+
+test("refuse sans supprimer un artefact historique substitué à octets identiques", (context) => {
+  const sourceRoot = historicalFixture(context);
+  const workspace = materializeHistoricalPrismaWorkspace({
+    sourceRoot,
+    tempBase: resolve(sourceRoot, "tmp"),
+  });
+  const bytes = readFileSync(workspace.schemaPath);
+  unlinkSync(workspace.schemaPath);
+  writeFileSync(workspace.schemaPath, bytes, { flag: "wx" });
+  assert.throws(
+    () => cleanupHistoricalPrismaWorkspace(workspace),
+    /historical workspace artifact was substituted/u,
+  );
+  assert.equal(existsSync(workspace.schemaPath), true);
+  assert.deepEqual(readFileSync(workspace.schemaPath), bytes);
+});
 
 function shortReadinessOptions(overrides = {}) {
   return {

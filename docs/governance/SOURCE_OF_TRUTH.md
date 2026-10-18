@@ -1273,3 +1273,33 @@ statique et 11 scénarios réels. Les 61 skips conditionnels restent répartis e
 Windows/POSIX reste **NON DEMONSTRATED**, les fournisseurs de production
 restent **NON QUALIFIÉS**, et `pg@8.22.0` reste qualifié uniquement sur les
 chemins exercés. C2b/C3 ne sont pas commencés ; politique OSS différée.
+
+## 2026-10-18 — R2, gate historique C1 autonome qualifié localement
+
+Le run Infrastructure `39135914973` reste FAILURE et ses steps C2a restent
+skipped. Sa cause est bornée : trois migrations C1 et une projection attendue à
+39 modèles étaient comparées au schéma courant C2a à 48 modèles ; le parcours
+vide n'était pas isolé de la quatrième migration.
+
+Le validateur R2 utilise directement une copie byte-exacte du schéma C1 de
+`d514b87cbef21dfae4585f4d143889aca2d8b229` : 36 144 octets, blob
+`e02e0cd7ee86a7c08738b2965adb19d56cd3e776`, SHA-256
+`812fe0b405009e153fbc5221aae66f3527ea2e9e2e6f818f173a0bf61601827f`.
+Il vérifie ces identités et les 39 noms de modèles avant toute utilisation. Le
+workspace temporaire ne contient que la configuration, ce schéma, les trois
+migrations et le lock C1 figés ; il ne dépend ni de Git à l'exécution, ni du
+réseau, ni d'un checkout profond, n'exécute aucune génération historique et
+désactive C2a pour le provisionneur. Il capture l'identité filesystem de chaque
+objet créé et la revérifie avant emploi ou suppression ; une substitution à
+octets identiques est refusée sans suppression. La base `tmp` est supprimée
+uniquement si cette invocation l'a créée, qu'elle est identique et vide ; une
+base préexistante reste intacte.
+
+Les bases historiques A/B passent à 39 modèles, 40 tables et trois migrations,
+avec projection identique, ACL et refus attendus. La suite C1 courante passe
+47/47 et l'état Prisma courant reste inchangé. Les deux wrappers C2a passent
+ensuite séparément : Foundations 34/34, puis 12 contrôles réussis — 1 contrôle
+statique et 11 scénarios réels PostgreSQL/Redis/HTTP — avec C1 47/47. Le
+tooling passe 536/536 et `tmp` est absent après campagne. Il s'agit d'un GO local borné, sans requalification de
+la CI ou de Linux. Signal gracieux Windows/POSIX NON DEMONSTRATED, fournisseurs
+de production NON QUALIFIÉS, C2b/C3 non commencés et politique OSS différée.

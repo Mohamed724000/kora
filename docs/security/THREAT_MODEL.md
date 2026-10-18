@@ -1361,3 +1361,20 @@ C2b/C3, OSS et publication hors périmètre.
 | Limite de plateforme ou fournisseur effacée | signal OS Windows/POSIX NON DEMONSTRATED ; providers NON QUALIFIÉS ; `pg@8.22.0` borné aux chemins exercés                       | limite conservée                   | qualification production hors lot                |
 
 C2b/C3 restent non commencés et la politique OSS reste différée.
+
+## C2a R2 — référence historique C1 autonome — 2026-10-18
+
+| Menace R2                                      | Contrôle qualifié                                                                                                                                                                            | Preuve locale                                      | Limite résiduelle                                |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------ |
+| Drift masqué entre schéma C1 et schéma courant | artefact C1 exact de `d514b87…`, taille/OID/SHA-256 et liste ordonnée des 39 modèles figés ; aucune suppression regex de modèles C2a                                                         | tests absent, altéré, OID faux et identité exacte  | évolution C1 future exige une nouvelle référence |
+| Checkout CI peu profond                        | aucune lecture Git historique, fetch ou réseau à l'exécution ; fixture qualifiée sans `.git`                                                                                                 | tooling 536/536                                    | succès Linux/CI R2 non encore démontré           |
+| Migration C2a appliquée au gate C1             | workspace limité à la configuration, au schéma, aux trois migrations et au lock C1 ; C2a explicitement désactivé dans le provisionneur                                                       | bases A/B 39 modèles, 40 tables, 3 migrations PASS | run CI `39135914973` reste FAILURE historique    |
+| Substitution ou nettoyage d'un objet étranger  | identité filesystem root/dossiers/fichiers revérifiée avant usage et suppression ; substitution byte-identique refusée sans suppression ; base retirée seulement si créée, identique et vide | adversarial PASS ; `tmp` absent après C1           | base préexistante volontairement préservée       |
+| Corruption des sources ou du client courant    | aucune génération historique ; signatures avant/après du schéma, des migrations, de la configuration et du client généré ; nettoyage ciblé strict                                            | invariance PASS ; C1 courant 47/47                 | fichiers inattendus font échouer le nettoyage    |
+| Régression C2a après le gate historique        | wrappers séparés après C1 : Foundations 34/34 puis métier 1 statique + 11 scénarios réels et C1 47/47                                                                                        | PostgreSQL/Redis/HTTP réel PASS                    | fournisseurs et panne distribuée non qualifiés   |
+
+Le résultat R2 est local et ne requalifie ni Linux, ni le run Infrastructure
+échoué, ni ses steps skipped. L'arrêt gracieux par signal OS Windows/POSIX
+reste NON DEMONSTRATED, les fournisseurs de production restent NON QUALIFIÉS,
+`pg@8.22.0` reste borné aux chemins exercés, C2b/C3 ne sont pas commencés et la
+politique OSS reste différée.

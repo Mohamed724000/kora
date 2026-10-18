@@ -500,3 +500,41 @@ OS Windows/POSIX reste **NON DEMONSTRATED**. Les fournisseurs de production
 restent **NON QUALIFIÉS** ; le succès local de `pg@8.22.0` reste limité aux
 chemins exercés. C2b/C3 ne sont pas commencés et la politique OSS reste
 différée.
+
+## R2 — remédiation locale du validateur historique C1 — 2026-10-18
+
+Le run Infrastructure `39135914973` et son diagnostic restent historiques :
+le parcours upgrade appliquait les trois migrations C1, mais `migrate diff`
+utilisait le schéma courant C2a à 48 modèles ; le parcours vide pouvait en plus
+déployer la quatrième migration. La projection C1 attendue à 39 modèles ne
+pouvait donc pas être cohérente. Aucun step C2a skipped dans ce run n'est
+transformé en PASS.
+
+La correction ajoute une référence de validation autonome, pas un schéma
+applicatif : copie byte-exacte du schéma à `d514b87…`, 36 144 octets, blob
+`e02e0cd…`, SHA-256 `812fe0b4…`. Le validateur vérifie ces trois identités, les
+39 modèles exacts, la configuration, les trois migrations, le lock et le
+toolchain Prisma 7.9.1 avant emploi. Il matérialise uniquement ces six fichiers
+dans un workspace unique sous `tmp`, refuse traversée, reparse point et entrée
+supplémentaire, désactive C2a dans le provisionneur et nettoie fichier par
+fichier. L'identité filesystem du root, des répertoires et fichiers est
+mémorisée puis revérifiée ; une substitution byte-identique est refusée sans
+suppression. La base `tmp` créée par l'invocation n'est retirée qu'identique et
+vide, tandis qu'une base préexistante est préservée. Il n'exécute ni
+`git show`, fetch, checkout profond, ni génération Prisma historique.
+
+La campagne C1 réelle passe : bases A/B à 39 modèles, 40 tables et trois
+migrations, projection A/B identique, contraintes, ACL et neuf refus de
+provisioning/membership ; le workspace est retiré et schéma, migrations,
+configuration et client généré courants restent inchangés. La suite HTTP C1
+sur le schéma courant passe 47/47. Les wrappers suivants passent séparément :
+Foundations C2a 34/34 ; métier C2a, 12 contrôles réussis — 1 contrôle statique
+et 11 scénarios réels PostgreSQL/Redis/HTTP — avec C1 47/47. Le tooling passe
+536/536 et `tmp` est absent après campagne. Le premier lancement direct de `npm.cmd` reste NON-PASS
+d'orchestration (`spawn EINVAL`, aucun test exécuté) ; la reprise causale via
+`cmd.exe`, rejouée après le durcissement, est la preuve sélectionnée.
+
+Ce résultat est local. Il ne requalifie ni le run CI échoué, ni Linux, ni les
+fournisseurs. L'arrêt gracieux par signal OS Windows/POSIX reste NON
+DEMONSTRATED ; `pg@8.22.0` reste borné aux chemins exercés, C2b/C3 ne sont pas
+commencés et la politique OSS reste différée.

@@ -90,6 +90,7 @@ try {
     --env POSTGRES_USER=kora_s1203c1_admin `
     --env POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password `
     --env POSTGRES_DB=postgres `
+    --env KORA_POSTGRES_C2A_ENABLED=false `
     --mount "type=bind,source=$ownerSecretFile,target=/run/secrets/postgres_password,readonly" `
     --mount "type=bind,source=$readerSecretFile,target=/run/secrets/postgres_runtime_password,readonly" `
     --mount "type=bind,source=$writerSecretFile,target=/run/secrets/postgres_admin_writer_password,readonly" `
@@ -184,6 +185,7 @@ try {
   docker exec `
     --env "POSTGRES_DB=$e2eDatabase" `
     --env POSTGRES_USER=kora_s1203c1_admin `
+    --env KORA_POSTGRES_C2A_ENABLED=false `
     --env KORA_POSTGRES_RUNTIME_USER=kora_s1203c1_reader `
     --env KORA_POSTGRES_ADMIN_WRITER_USER=kora_s1203c1_writer `
     $container sh /usr/local/bin/kora-provision-postgresql-runtime.sh

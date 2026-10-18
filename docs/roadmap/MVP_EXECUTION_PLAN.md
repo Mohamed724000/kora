@@ -1034,3 +1034,26 @@ L'arrêt gracieux par signal OS Windows/POSIX reste NON DEMONSTRATED,
 `pg@8.22.0` n'est qualifié que sur les chemins exercés, et les fournisseurs de
 production restent NON QUALIFIÉS. C2b/C3 ne sont pas commencés ; politique OSS
 différée.
+
+### C2a R2 — gate C1 historique autonome qualifié localement — 2026-10-18
+
+Infrastructure `39135914973` reste en échec historique : le gate C1 combinait
+les trois migrations et la projection C1 avec le schéma courant C2a, tandis que
+le parcours vide n'excluait pas la migration C2a. Les steps suivants restent
+skipped et aucun succès CI ou Linux n'est reconstruit.
+
+R2 ajoute uniquement une référence de validation C1 byte-exacte de `d514b87…`
+et rend les parcours upgrade/vide cohérents à 39 modèles, 40 tables et trois
+migrations. Le validateur contrôle taille, OID, SHA-256 et identité des modèles,
+travaille dans un workspace temporaire strict, ne dépend ni du réseau ni d'un
+objet Git historique à l'exécution, désactive C2a pour le provisionneur et
+atteste l'état Prisma courant inchangé. Il revérifie l'identité filesystem de
+chaque objet temporaire, refuse sans suppression toute substitution et retire
+la base temporaire seulement si l'invocation l'a créée, qu'elle est identique
+et vide.
+
+La reprise locale passe le wrapper C1 historique, 47/47 HTTP C1, Foundations
+C2a 34/34, puis la campagne métier à 1 contrôle statique + 11 scénarios réels
+avec C1 47/47. Tooling passe 536/536 et `tmp` est absent. Le jalon reste local, non indexé et non
+publié ; PR #52 reste Draft. Signal gracieux Windows/POSIX NON DEMONSTRATED,
+fournisseurs NON QUALIFIÉS, C2b/C3 non commencés et politique OSS différée.

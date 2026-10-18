@@ -634,3 +634,36 @@ Windows/POSIX reste **NON DEMONSTRATED** ; les fournisseurs de production
 restent **NON QUALIFIÉS** et `pg@8.22.0` n'est qualifié que sur les chemins
 effectivement exercés. C2b/C3 ne sont pas commencés et la politique OSS reste
 différée.
+
+## R2 — gate historique C1 autonome — 2026-10-18
+
+Le run Infrastructure `39135914973` reste un échec historique : le validateur
+C1 comparait les bases à 39 modèles et trois migrations au schéma courant C2a
+à 48 modèles, tandis que le parcours vide pouvait voir la quatrième migration.
+Les steps C2a alors skipped ne sont pas requalifiés par la reprise locale.
+
+R2 fige désormais le schéma C1 de `d514b87cbef21dfae4585f4d143889aca2d8b229`
+dans un artefact autonome de 36 144 octets, blob Git
+`e02e0cd7ee86a7c08738b2965adb19d56cd3e776` et SHA-256
+`812fe0b405009e153fbc5221aae66f3527ea2e9e2e6f818f173a0bf61601827f`.
+Avant emploi, le validateur contrôle taille, OID, SHA-256 et identité exacte des
+39 modèles. Il matérialise dans `tmp` une configuration, un schéma, trois
+migrations et un lock compatibles, tous à empreintes figées, sans `git show`,
+fetch, checkout historique ni génération Prisma historique. Le provisionneur
+y désactive explicitement C2a. Le nettoyage est borné à cet inventaire et
+refuse un objet inattendu. L'identité filesystem du root, des répertoires et
+des fichiers créés est capturée puis revérifiée avant emploi et suppression :
+une copie byte-identique substituée est refusée sans être supprimée. La base
+`tmp` n'est retirée que si l'invocation l'a créée, qu'elle conserve son identité
+et qu'elle est encore vide ; une base préexistante est préservée.
+
+La reprise réelle qualifie les bases A/B à 39 modèles, 40 tables avec historique
+et trois migrations, une projection identique, les ACL et refus C1, puis 47/47
+tests HTTP C1 sur le schéma courant. L'état Prisma courant, ses migrations, sa
+configuration et le client généré sont attestés inchangés. Les wrappers C2a
+courants passent ensuite séparément : Foundations 34/34 et campagne métier
+12 contrôles réussis — 1 contrôle statique et 11 scénarios réels — avec
+non-régression C1 47/47. Le tooling ciblé passe 536/536. Ce GO reste local : il
+ne transforme ni le run CI échoué ni ses skipped en succès et ne qualifie pas
+Linux. L'arrêt gracieux par signal OS Windows/POSIX reste NON DEMONSTRATED ;
+les fournisseurs de production restent NON QUALIFIÉS.
