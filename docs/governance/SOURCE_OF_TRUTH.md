@@ -4,11 +4,12 @@ Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-03C1 FUSIONNÉ DANS MAIN AU
 MERGE dc97eeef72c4e299988ed19d66460011a8551cf3, NON DÉPLOYÉ — PR #50
 FERMÉE/FUSIONNÉE — S1.2-03C2-P0/R1–R5 PUBLIÉS DANS LA DRAFT PR #51 AU HEAD
 7d0e0e01f2618dab59d2e21d0091892f98c7b6ae — R6 QUALIFIÉ LOCALEMENT ET
-AUTORISÉ POUR PUBLICATION SOUS GATES, CI R6 NON ACQUISE — RUNTIME NON
-IMPLÉMENTÉ — FOURNISSEURS DE PRODUCTION NON QUALIFIÉS — C3 NOT STARTED**
+AUTORISÉ POUR PUBLICATION SOUS GATES, CI R6 NON ACQUISE — C2a FOUNDATIONS ET
+MÉTIER P0–P9 QUALIFIÉS LOCALEMENT, NON PUBLIÉS — FOURNISSEURS DE PRODUCTION
+NON QUALIFIÉS — C2b/C3 NOT STARTED**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-10-13
+Dernière réconciliation documentaire : 2026-10-16
 
 ## Hiérarchie normative
 
@@ -1100,3 +1101,175 @@ UNPUBLISHED DRAFT ONLY** ; les constats historiques BLOCK restent inchangés et
 la dérogation ne couvre ni les octets techniques finaux, ni le candidat final,
 ni une preuve de validation. Au présent gel documentaire, aucune CI R6 n'est
 encore acquise et le corps live de la PR #51 reste inchangé.
+
+## S1.2-03C2a — fondations locales de sécurité admin
+
+Le lot C2a part du commit exact
+`d514b87cbef21dfae4585f4d143889aca2d8b229` sur la branche
+`feat/s1-2-03c2a-admin-security-runtime`. Il implémente uniquement les
+fondations locales autorisées : modèle Prisma et migration PostgreSQL,
+contrats d'atomicité et de causalité, exécuteur transactionnel conforme à R6,
+quatre identités PostgreSQL à privilèges minimaux, frontières d'ACL exactes,
+configuration désactivée par défaut et validateur éphémère isolé.
+
+Le modèle conserve les versions historiques représentables et ajoute les
+écritures atomiques nécessaires aux demandes de reset, invitations,
+expirations, acceptations, annulations et remplacements. Les relations entre
+audit, état métier et outbox sont validées par contraintes différées. Le
+succès d'acceptation est un événement BUSINESS et la création du compte dans la
+transaction est attestée par un marqueur `xid8` posé exclusivement à l'INSERT,
+que les UPDATE ultérieurs ne peuvent ni créer ni rafraîchir. Le
+pliage des adresses email est ASCII et déterministe ; il ne repose pas sur une
+collation implicite. L'exécuteur sérialise les requêtes d'un callback,
+interdit les commandes transactionnelles brutes, attend le
+`ReadyForQuery=I` causal et distingue explicitement le rejet de commit de
+`COMMIT_UNKNOWN`.
+
+Les services C2a sont désactivés par défaut. Les rôles writer, notification,
+expiration et bootstrap utilisent quatre secrets distincts et un inventaire
+d'ACL exact incluant namespace, multiplicité et grantor propriétaire ; les
+surfaces `PUBLIC`, héritages, grantors alternatifs, homonymes hors `public` et
+privilèges directs non prévus sont refusés. Les quatre fichiers secrets C2a
+sont montés séparément sans altérer l'invariant historique des trois secrets
+Compose lorsque C2a est désactivé. Le
+validateur ne peut fonctionner que dans un PostgreSQL
+éphémère dédié et doit prouver la suppression de ses ressources ainsi que le
+retour à l'inventaire Docker initial.
+
+Les tables partagées de snapshot et d'idempotence portent des valeurs d'enum
+réservées à C2b. Aucune donnée ni identité C2b n'existe dans C2a ; une isolation
+par ligne ou une séparation physique doit être conçue, migrée et qualifiée
+avant tout démarrage de C2b. Ce point est un gate explicite, pas une permission
+transverse accordée au futur runtime.
+
+Docker/Linux Engine est désormais disponible depuis Codex. La campagne
+PostgreSQL 18.4 isolée passe migration fraîche et upgrade, préservation,
+contraintes, provisioning des quatre identités, ACL positives et négatives,
+contaminations, exécuteur R6 réel, non-régression C1, quiescence et nettoyage.
+L'inventaire étranger observé avant création est préservé après nettoyage.
+
+Les gates format, lint, typecheck, tests API qualifiés, build, génération,
+scanner, workflows, licences et audits npm passent. Le premier
+`openapi:validate`, bloqué par l'ancienne référence exacte de 39 modèles, et le
+premier `test:tooling` à 451/522 restent des **NON-PASS historiques**. L'avenant
+ciblé autorise ensuite uniquement le validateur et son test : la reprise passe
+avec 60 chemins, 67 opérations, 141 schémas OpenAPI, exactement 48 modèles
+Prisma — 39 historiques et neuf C2a. Le premier candidat aligné, pourtant vert
+à 378/378 et 527/527, reste **NON-PASS de contre-revue** : un modèle
+supplémentaire indenté échappait à l'extracteur. La correction causale reconnaît
+les déclarations indentées ; la reprise finale passe 379/379 tests adversariaux
+et 528/528 tests tooling. La génération officielle `--check` et le scanner passent aussi,
+sans modification du schéma, de la migration, du runtime, des dépendances, du
+lockfile, des workflows, de l'OpenAPI ou du contrat généré.
+Les onze opérations HTTP, les workers et le bootstrap métier sont
+**NON IMPLÉMENTÉS**. C2b et C3 sont **NON COMMENCÉS**. Fournisseurs
+**NON QUALIFIÉS** et politique OSS différée. Aucun `git add`, commit,
+push, changement GitHub, Ready, approval, merge, tag, release ou déploiement
+n'est autorisé par cette qualification locale.
+
+## 2026-10-15 — C2a métier P0 qualifié localement
+
+Le mandat P0 autorise uniquement les preuves transactionnelles et l’isolation
+des capacités préalables au runtime métier. Le writer C2a gagne la projection
+colonne minimale `accessTokenJti`, `stepUpPurpose`, `stepUpExpiresAt` ; les
+colonnes voisines sensibles, `SELECT *` et toute mutation step-up restent
+refusés. Les quatre profils `HTTP`, `NOTIFICATION`, `EXPIRATION`, `BOOTSTRAP`
+sont exclusifs : un seul credential et un seul pool C2a par processus, aucun
+choix public de rôle et aucun pool C2a lorsque la fonction est désactivée.
+
+La campagne réelle PostgreSQL 18.4 passe fresh/upgrade, préservation,
+provisioning idempotent, identités, ACL, refus de contamination, frontière C1
+et transaction R6. Les deux suites réelles passent 33/33, le nettoyage ciblé
+est confirmé et l’inventaire Docker étranger est préservé. Les trois lectures
+notification du validateur sont sérialisées ; stderr est vide et le warning
+`pg@8.22.0` n’est pas reproduit sur ce seul parcours. Aucune qualification
+générale du driver n’en découle.
+
+Les gates proportionnés passent : format, lint, typecheck, tests config/
+boundaries, intégration partagée, build API, scanner officiel et tooling
+528/528. Les NON-PASS d’environnement et d’archivage restent historiques. Les
+huit arbitrages du chapitre 10 sont consignés hors dépôt comme propositions à
+arbitrer, sans activation implicite. Aucun endpoint, worker, bootstrap CLI,
+provider ou SDK n’est créé ; P1–P9, C2b et C3 ne sont pas commencés.
+
+## 2026-10-16 — C2a métier P1–P9 qualifié localement
+
+Le mandat CTO P1–P9 autorise et fixe les arbitrages A1–A8. L'état courant
+implémente localement les onze opérations C2a, les workers notification et
+expiration ainsi que le bootstrap stdin. Le profil `HTTP` monte C2a ensemble,
+les trois autres capacités restent isolées, C1 fonctionne sans configuration
+C2a et C2b n'est pas monté.
+
+Les invariants intégrés restent l'autorité : preuve serveur finale sous verrou,
+step-up, rôles et statuts bornés, cinq idempotences, deux listes à snapshots,
+huit erreurs JSON avant contrôleur, sinks par stade de preuve, atomicité métier,
+outbox PostgreSQL, sérialisation R6, deadlines, discard unique et neutralité de
+`COMMIT_UNKNOWN`. Les adaptateurs déterministes sont de test uniquement et
+annoncent `PROVIDER_ACCEPTED_FOR_TEST`; ils ne constituent ni un envoi réel ni
+une qualification de fournisseur.
+
+La campagne isolée compte 8 contrôles réussis : 1 contrôle statique et 7
+scénarios réels PostgreSQL/Redis/HTTP. Elle confirme onze opérations, cinq
+idempotences, deux snapshots, huit erreurs JSON, notification, expiration,
+bootstrap, concurrence, sinks et non-régression C1.
+Elle ferme quatre findings causaux : ACL de l'INSERT AuditLog, échéance
+d'idempotence fondée sur l'horloge murale PostgreSQL `clock_timestamp()`
+capturée dans la transaction après le verrou et conservation
+des erreurs HTTP de domaine enveloppées, puis durabilité des audits de refus
+post-preuve par retour typé avant COMMIT et erreur HTTP après COMMIT confirmé.
+La branche `COMMIT_UNKNOWN` reste sans replay ni second sink. Les conteneurs,
+le réseau et les secrets créés ont été supprimés ciblément; l'inventaire
+étranger est préservé.
+
+Les gates locaux passent : format ciblé, lint, typecheck, tests API (186 pass,
+56 skips conditionnels), build, OpenAPI 60 chemins/67 opérations/141 schémas,
+379/379 régressions adversariales, génération `--check`, scanner historique,
+tooling 530/530, licences et audits npm complet/production à zéro
+vulnérabilité. Les NON-PASS précédents restent des preuves historiques.
+
+Le succès de `pg@8.22.0` qualifie uniquement les chemins exécutés; il ne
+qualifie ni le driver globalement, ni la charge ou la panne réseau distribuée.
+Fournisseurs notification/HIBP/keyring de production NON QUALIFIÉS, politique
+OSS différée, C2b/C3 non commencés et aucune publication autorisée.
+
+## C2a R1 — clôture locale C-05 — 2026-10-18
+
+L'avenant C-05 autorise et qualifie une fenêtre d'idempotence exactement égale
+à 24 heures selon l'horloge murale PostgreSQL `clock_timestamp()`, capturée une
+fois dans une CTE matérialisée après le verrou. La borne est demi-ouverte; une clé
+expirée reçoit atomiquement une nouvelle génération, sans suppression de son
+historique. La concurrence, les payloads identiques ou différents et
+l'impossibilité pour une invocation ancienne d'écraser le nouveau résultat
+sont verrouillés par PostgreSQL.
+
+La migration C2a locale a pu être amendée parce qu'elle n'était ni intégrée à
+`main`, ni appliquée à une base persistante à préserver. Aucune migration C1
+ou C2-P0 intégrée n'a changé. Fresh/upgrade, contraintes, ACL, rollback,
+`COMMIT_UNKNOWN`, métier C2a et non-régression C1 ont été rejoués réellement.
+
+Résultats sélectionnés : Foundations 34/34. La campagne métier compte
+12 contrôles réussis : 1 contrôle statique et 11 scénarios réels
+PostgreSQL/Redis/HTTP. C1 passe 47/47, les tests API comptent 211 pass avec 61
+skips conditionnels, le tooling passe 530/530 et tous les gates affectés sont
+concluants. Les NON-PASS antérieurs restent historiques. Sur Windows, la
+quiescence est prouvée par le canal de contrôle, pas par l'observation d'un
+handler gracieux après signal OS. Les fournisseurs restent NON QUALIFIÉS,
+`pg@8.22.0` conserve sa réserve globale, C2b/C3 ne sont pas commencés et la
+publication reste interdite.
+
+## 2026-10-18 — C2a candidat de publication raccordé à Infrastructure
+
+Un mandat distinct autorise désormais la préparation de publication. Le
+workflow Infrastructure génère Prisma, conserve le gate C1 et exécute les deux
+wrappers C2a qualifiés avant les contrôles Compose, lifecycle et santé API.
+Cet instantané ne revendique encore aucun succès Linux ou CI : ces résultats
+restent **EN ATTENTE** sur le futur SHA publié.
+
+Les preuves locales ne changent pas de sens. L'historique P1–P9 compte
+8 contrôles réussis : 1 contrôle statique et 7 scénarios réels
+PostgreSQL/Redis/HTTP ; le gel final compte 12 contrôles réussis : 1 contrôle
+statique et 11 scénarios réels. Les 61 skips conditionnels restent répartis en
+11 C2a, 46 C1 et 4 Foundations-P0. L'arrêt gracieux par signal OS
+Windows/POSIX reste **NON DEMONSTRATED**, les fournisseurs de production
+restent **NON QUALIFIÉS**, et `pg@8.22.0` reste qualifié uniquement sur les
+chemins exercés. C2b/C3 ne sont pas commencés ; politique OSS différée.

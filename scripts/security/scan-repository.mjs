@@ -207,6 +207,14 @@ const REQUIRED_REPOSITORY_FILES = new Set([
   "packages/contracts/package.json",
   "packages/ui/package.json",
 ]);
+const ADMIN_C2A_EXECUTION_SURFACE_PATHS = Object.freeze({
+  bootstrap: "apps/api/src/admin-security/admin-bootstrap.main.ts",
+  businessValidator: "apps/api/prisma/validate-admin-security-c2a-business.mjs",
+  businessWrapper:
+    "apps/api/prisma/run-admin-security-c2a-business-validation.ps1",
+  expiration: "apps/api/src/admin-security/admin-recovery-expiration.main.ts",
+  notification: "apps/api/src/admin-security/admin-notification.main.ts",
+});
 const SECRET_PATTERNS = [
   ["private-key", /-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/u],
   ["github-token", /\bgh[pousr]_[A-Za-z0-9]{36,}\b/u],
@@ -237,6 +245,188 @@ export function findSecretTypes(content) {
   return SECRET_PATTERNS.filter(([, pattern]) => pattern.test(content)).map(
     ([name]) => name,
   );
+}
+
+function requireSurfaceText(errors, source, label, required) {
+  if (!source.includes(required)) {
+    errors.push(`${label} must retain ${required}`);
+  }
+}
+
+export function validateAdminC2aExecutionSurfaces(sources) {
+  const errors = [];
+  for (const path of Object.values(ADMIN_C2A_EXECUTION_SURFACE_PATHS)) {
+    if (typeof sources[path] !== "string") {
+      errors.push(`missing C2a execution surface: ${path}`);
+    }
+  }
+  if (errors.length > 0) return errors;
+
+  const notification = sources[ADMIN_C2A_EXECUTION_SURFACE_PATHS.notification];
+  requireSurfaceText(
+    errors,
+    notification,
+    "C2a notification runner",
+    "config.profile !== 'NOTIFICATION'",
+  );
+  requireSurfaceText(
+    errors,
+    notification,
+    "C2a notification runner",
+    ".assertIdentity()",
+  );
+  requireSurfaceText(
+    errors,
+    notification,
+    "C2a notification runner",
+    "await qualifiedWorker.assertReady()",
+  );
+  if (
+    notification.indexOf("await qualifiedWorker.assertReady()") === -1 ||
+    notification.indexOf("qualifiedActivation.activate()") <
+      notification.indexOf("await qualifiedWorker.assertReady()")
+  ) {
+    errors.push(
+      "C2a notification activation must follow readiness qualification",
+    );
+  }
+
+  const expiration = sources[ADMIN_C2A_EXECUTION_SURFACE_PATHS.expiration];
+  requireSurfaceText(
+    errors,
+    expiration,
+    "C2a expiration runner",
+    "config.profile !== 'EXPIRATION'",
+  );
+  requireSurfaceText(
+    errors,
+    expiration,
+    "C2a expiration runner",
+    ".assertIdentity()",
+  );
+  requireSurfaceText(
+    errors,
+    expiration,
+    "C2a expiration runner",
+    "now() - runnerStartedAt >= ADMIN_RECOVERY_EXPIRATION_POLICY.readinessStaleMs",
+  );
+  requireSurfaceText(
+    errors,
+    expiration,
+    "C2a expiration runner",
+    "await worker.awaitQuiescence",
+  );
+
+  const bootstrap = sources[ADMIN_C2A_EXECUTION_SURFACE_PATHS.bootstrap];
+  requireSurfaceText(
+    errors,
+    bootstrap,
+    "C2a bootstrap runner",
+    "process.argv.length !== 2",
+  );
+  requireSurfaceText(
+    errors,
+    bootstrap,
+    "C2a bootstrap runner",
+    "readAdminBootstrapStdin(process.stdin)",
+  );
+  requireSurfaceText(
+    errors,
+    bootstrap,
+    "C2a bootstrap runner",
+    "config.profile !== 'BOOTSTRAP'",
+  );
+  requireSurfaceText(
+    errors,
+    bootstrap,
+    "C2a bootstrap runner",
+    ".assertIdentity()",
+  );
+  requireSurfaceText(
+    errors,
+    bootstrap,
+    "C2a bootstrap runner",
+    "logger: false",
+  );
+
+  const validator =
+    sources[ADMIN_C2A_EXECUTION_SURFACE_PATHS.businessValidator];
+  requireSurfaceText(
+    errors,
+    validator,
+    "C2a business validator",
+    "test/admin-security-c2a.integration.spec.ts",
+  );
+  requireSurfaceText(
+    errors,
+    validator,
+    "C2a business validator",
+    "S1203C2A_BUSINESS_E2E: '1'",
+  );
+  requireSurfaceText(
+    errors,
+    validator,
+    "C2a business validator",
+    "<redacted:${name}>",
+  );
+  requireSurfaceText(
+    errors,
+    validator,
+    "C2a business validator",
+    "quoteIdentifier(candidate)",
+  );
+  requireSurfaceText(
+    errors,
+    validator,
+    "C2a business validator",
+    "for (const createdDatabase of [...createdDatabases].reverse())",
+  );
+  requireSurfaceText(
+    errors,
+    validator,
+    "C2a business validator",
+    "DROP DATABASE ${quoteIdentifier(createdDatabase)}",
+  );
+  if ((validator.match(/shell: false/gu) ?? []).length < 3) {
+    errors.push(
+      "C2a business validator must disable shell execution for every child process",
+    );
+  }
+  if (/shell\s*:\s*true/gu.test(validator)) {
+    errors.push("C2a business validator must not enable shell execution");
+  }
+
+  const wrapper = sources[ADMIN_C2A_EXECUTION_SURFACE_PATHS.businessWrapper];
+  for (const required of [
+    "postgres:18.4-alpine3.24",
+    "sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15",
+    "redis:7.2.15-alpine3.21",
+    "sha256:05a97a479bc73de66f087dc05b569010772880f778cc8671fa6b8aadee32e5c6",
+    "--label kora.slice=s1.2-03c2a-business",
+    "--publish 127.0.0.1::5432",
+    "--publish 127.0.0.1::6379",
+    "--tmpfs /var/lib/postgresql:rw,nosuid,nodev",
+    "--tmpfs /data:rw,nosuid,nodev",
+    "Assert-SameInventory -Before $initialInventory -After $finalInventory",
+    "Targeted cleanup refused unowned container",
+    "Targeted cleanup refused unexpected container identity",
+    "Targeted cleanup refused an unowned C2a business network",
+    "Targeted C2a business secret cleanup refused a reparse point",
+  ]) {
+    requireSurfaceText(errors, wrapper, "C2a business wrapper", required);
+  }
+  if (
+    /docker\s+(?:system|container|image|network|volume)\s+prune/iu.test(
+      wrapper,
+    ) ||
+    /dockerInference/iu.test(wrapper) ||
+    /(?:Start|Stop|Restart)-Service/iu.test(wrapper)
+  ) {
+    errors.push(
+      "C2a business wrapper contains a forbidden Docker control or global cleanup",
+    );
+  }
+  return errors;
 }
 
 const DEFAULT_REPOSITORY_OPERATIONS = Object.freeze({
@@ -2411,6 +2601,16 @@ export function scanRepository(repositoryRoot = process.cwd(), options = {}) {
   errors.push(...validateSharpOverride(manifests, lockfile));
   errors.push(...validateNestMulterOverride(manifests, lockfile));
   errors.push(...validatePackageLock(lockfile));
+  errors.push(
+    ...validateAdminC2aExecutionSurfaces(
+      Object.fromEntries(
+        Object.values(ADMIN_C2A_EXECUTION_SURFACE_PATHS).map((path) => [
+          path,
+          readFileSync(resolve(repositoryRoot, path), "utf8"),
+        ]),
+      ),
+    ),
+  );
   errors.push(
     ...validateDependabotPolicy(
       readFileSync(

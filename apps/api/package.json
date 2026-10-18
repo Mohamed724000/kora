@@ -8,6 +8,9 @@
     "npm": "10.9.3"
   },
   "scripts": {
+    "admin:bootstrap": "node dist/src/admin-security/admin-bootstrap.main.js",
+    "admin:notification-worker": "node dist/src/admin-security/admin-notification.main.js",
+    "admin:recovery-expiration-worker": "node dist/src/admin-security/admin-recovery-expiration.main.js",
     "build": "nest build",
     "db:generate": "prisma generate --config prisma.config.ts",
     "format": "prettier --check . && prisma format --schema prisma/schema.prisma",

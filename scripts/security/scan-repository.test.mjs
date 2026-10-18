@@ -4,13 +4,15 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { deepmerge } from "deepmerge-ts";
 
@@ -23,6 +25,7 @@ import {
   scanTrackedFiles,
   snapshotRepositoryFiles,
   validateAdminAuthSupplyChain,
+  validateAdminC2aExecutionSurfaces,
   validateBraceExpansionOverride,
   validateDependabotPolicy,
   validateManifestLockConsistency,
@@ -43,6 +46,19 @@ import {
   verifyRepositoryFileSnapshot,
 } from "./scan-repository.mjs";
 
+const repositoryRoot = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+);
+const adminC2aExecutionSurfacePaths = [
+  "apps/api/src/admin-security/admin-bootstrap.main.ts",
+  "apps/api/prisma/validate-admin-security-c2a-business.mjs",
+  "apps/api/prisma/run-admin-security-c2a-business-validation.ps1",
+  "apps/api/src/admin-security/admin-recovery-expiration.main.ts",
+  "apps/api/src/admin-security/admin-notification.main.ts",
+];
+
 const requiredRepositoryFiles = [
   ".github/dependabot.yml",
   "apps/admin/package.json",
@@ -56,6 +72,15 @@ const requiredRepositoryFiles = [
   "packages/contracts/package.json",
   "packages/ui/package.json",
 ];
+
+function currentAdminC2aExecutionSurfaces() {
+  return Object.fromEntries(
+    adminC2aExecutionSurfacePaths.map((path) => [
+      path,
+      readFileSync(resolve(repositoryRoot, path), "utf8"),
+    ]),
+  );
+}
 
 function withTemporaryDirectory(prefix, operation) {
   const directory = mkdtempSync(join(tmpdir(), prefix));
@@ -143,6 +168,76 @@ function frozenGitOperations(snapshot) {
     statSync,
   };
 }
+
+test("C2a runners and local validators retain their qualified security boundaries", () => {
+  assert.deepEqual(
+    validateAdminC2aExecutionSurfaces(currentAdminC2aExecutionSurfaces()),
+    [],
+  );
+});
+
+test("C2a execution-surface validation rejects adversarial boundary removal and substitution", () => {
+  const baseline = currentAdminC2aExecutionSurfaces();
+  const cases = [
+    {
+      expected: /notification runner must retain config\.profile/u,
+      path: "apps/api/src/admin-security/admin-notification.main.ts",
+      replacement: "config.profile !== 'HTTP'",
+      target: "config.profile !== 'NOTIFICATION'",
+    },
+    {
+      expected: /expiration runner must retain now\(\) - runnerStartedAt >=/u,
+      path: "apps/api/src/admin-security/admin-recovery-expiration.main.ts",
+      replacement: "now() - runnerStartedAt >",
+      target: "now() - runnerStartedAt >=",
+    },
+    {
+      expected: /bootstrap runner must retain process\.argv\.length !== 2/u,
+      path: "apps/api/src/admin-security/admin-bootstrap.main.ts",
+      replacement: "process.argv.length < 2",
+      target: "process.argv.length !== 2",
+    },
+    {
+      expected: /validator must not enable shell execution/u,
+      path: "apps/api/prisma/validate-admin-security-c2a-business.mjs",
+      replacement: "shell: true",
+      target: "shell: false",
+    },
+    {
+      expected: /business validator must retain DROP DATABASE/u,
+      path: "apps/api/prisma/validate-admin-security-c2a-business.mjs",
+      replacement: "DROP DATABASE ${createdDatabase}",
+      target: "DROP DATABASE ${quoteIdentifier(createdDatabase)}",
+    },
+    {
+      expected: /business wrapper must retain sha256:9a8afc/u,
+      path: "apps/api/prisma/run-admin-security-c2a-business-validation.ps1",
+      replacement: "sha256:" + "0".repeat(64),
+      target:
+        "sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15",
+    },
+  ];
+  for (const adversarial of cases) {
+    const sources = { ...baseline };
+    sources[adversarial.path] = sources[adversarial.path].replace(
+      adversarial.target,
+      adversarial.replacement,
+    );
+    assert.match(
+      validateAdminC2aExecutionSurfaces(sources).join("\n"),
+      adversarial.expected,
+    );
+  }
+
+  const globalCleanup = { ...baseline };
+  const wrapperPath =
+    "apps/api/prisma/run-admin-security-c2a-business-validation.ps1";
+  globalCleanup[wrapperPath] += "\ndocker system prune --force\n";
+  assert.match(
+    validateAdminC2aExecutionSurfaces(globalCleanup).join("\n"),
+    /forbidden Docker control or global cleanup/u,
+  );
+});
 
 test("Git path parsing preserves NUL-delimited names exactly", () => {
   assert.deepEqual(

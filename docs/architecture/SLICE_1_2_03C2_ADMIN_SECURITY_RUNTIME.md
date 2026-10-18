@@ -2,7 +2,8 @@
 
 Statut : **P0/R1–R5 PUBLIÉS DANS LA DRAFT PR #51 — R6 QUALIFIÉ LOCALEMENT
 ET AUTORISÉ POUR PUBLICATION SOUS GATES, CI R6 NON ACQUISE AU 2026-10-13 —
-RUNTIME NON IMPLÉMENTÉ**
+FOUNDATIONS C2a ET MÉTIER P0–P9 QUALIFIÉS LOCALEMENT, NON PUBLIÉS — C2b/C3
+NON COMMENCÉS**
 
 Date : 2026-10-12
 
@@ -393,3 +394,243 @@ tentative de machine d'état, jamais le rejeu d'une mutation au résultat inconn
 Les six traces normatives — rollback confirmé, rollback rejeté, rollback
 suspendu, connexion perdue, COMMIT confirmé et COMMIT inconnu — sont générées
 depuis OpenAPI et soumises aux mutations adversariales R6.
+
+## C2a — fondations runtime locales
+
+Le mandat C2a matérialise seulement le modèle physique, la migration,
+l’exécuteur transactionnel R6, les quatre identités PostgreSQL, leur matrice
+ACL, la configuration désactivée par défaut et les validateurs. Les onze
+opérations HTTP C2a, leurs workers métier et le bootstrap exécutable restent
+**NON IMPLÉMENTÉS**. C2b, C3 et tous les fournisseurs restent hors périmètre.
+
+### Modèle et causalité
+
+La migration `admin_security_c2a_runtime` préserve AuditLog v1/v2 et ajoute les
+écritures v3 explicites. Elle matérialise les demandes PASSWORD_RESET et leur
+contexte dédié, les recovery cases, invitations, outboxes chiffrés, snapshots,
+items, garde singleton et idempotence. Les contraintes différées exigent dans
+un même commit :
+
+- événement LOGIN + demande reset + outbox PASSWORD_RESET ;
+- AuditLog v3 `createAdminInvitation` + invitation + outbox INVITATION ;
+- expiration du recovery case + AuditLog SYSTEM exact ;
+- acceptation + utilisateur PENDING_MFA + préauth dix minutes + événement lié
+  BUSINESS au même utilisateur et à la même invitation, avec marqueur `xid8`
+  posé uniquement par le trigger d'INSERT de l'utilisateur dans la transaction
+  courante, immuable sous UPDATE, et invitation non expirée ;
+- bootstrap + premier SUPER_ADMIN PENDING_MFA + garde singleton + audit.
+
+La consommation du contexte reset et l'approbation d'un recovery case sont
+également refusées après expiration. Les côtés événement/audit et état métier
+portent chacun un trigger différé : un événement reset ou d'acceptation, un
+audit d'invitation ou une annulation isolés ne peuvent donc pas committer seuls.
+
+Un remplacement lie l’ancien objet et son outbox : même utilisateur pour le
+reset, même e-mail ASCII canonique pour l’invitation, ancien objet terminalisé,
+ancien outbox annulé et nouveaux `replaced*Id` cohérents. Le pliage e-mail est
+un `translate(A-Z,a-z)` ASCII déterministe, identique pour le preflight login,
+l’unicité et l’acceptation. Une annulation de recovery case causée par la
+création d’un nouveau case exige deux cases distincts portant le même sujet.
+
+### Exécuteur transactionnel R6
+
+Les budgets sont verrouillés à acquisition 2 000 ms, BEGIN 2 000 ms, callback
+5 000 ms, rollback 2 000 ms, accusé COMMIT 2 000 ms et grâce terminale 500 ms
+non renouvelable. Le callback reçoit un signal d’abandon et une file de
+requêtes sérialisée ; l’observation `ReadyForQuery` n’est armée que lorsque la
+commande devient active sur le client acquis. Les commandes `BEGIN`,
+`COMMIT`, `ROLLBACK`, `START TRANSACTION`, savepoints et variantes terminales
+sont interdites dans le SQL callback, y compris `PREPARE TRANSACTION`,
+`SET TRANSACTION` et `SET SESSION CHARACTERISTICS AS TRANSACTION`. Un
+`PREPARE name AS ...` SQL ordinaire reste distinct et autorisé.
+
+Le runtime vérifie `pg@8.22.0`, `pg-pool@3.14.0`, le code interne qualifié et
+`getTransactionStatus()`. BEGIN/ROLLBACK/COMMIT exigent aussi le
+`QueryResult.command` correspondant. Une réponse serveur `ROLLBACK` à COMMIT
+est un rejet explicite, jamais un succès. Une issue inconnue après tentative de
+COMMIT interdit rollback et replay. Toute requête en vol, état `T`/`E`/inconnu,
+perte transport ou deadline détruit le client une seule fois et attend au plus
+la grâce terminale pour fermeture/quiescence.
+
+### Identités et ACL
+
+Le reader et le writer C1 ne sont pas élargis. Les rôles
+`kora_admin_c2a_writer`, `kora_admin_c2a_notification_worker`,
+`kora_admin_c2a_expiration_worker` et `kora_admin_c2a_bootstrap` ont des secrets
+et pools séparés. Le provisionneur compare par différence symétrique `EXCEPT
+ALL` une matrice littérale de colonnes et relations ; l’attestation applicative
+compare la même séquence exacte dans la transaction. Namespace, multiplicité
+et grantor propriétaire font partie de l'identité de chaque ACL. Le
+provisionneur refuse tout grant colonne ou relation hors `public`, depuis un
+grantor non propriétaire ou sur une relation homonyme. Elle couvre aussi CONNECT/USAGE,
+membership, ownership, attributs/configuration, grant options, routines,
+types, large objects, paramètres, default ACL et `PUBLIC`.
+
+Les enums des tables partagées de snapshot et d'idempotence incluent des
+opérations réservées à C2b. C2a ne crée ni rôle ni donnée C2b. Une politique
+RLS qualifiée ou une séparation physique est un gate bloquant avant C2b.
+
+Le worker notification ne lit les sources causales qu’au travers de deux vues
+`security_barrier`. Les producteurs ont seulement les colonnes d’INSERT sur
+les sinks et aucun `RETURNING`. L’expiration et le bootstrap ont chacun leur
+identité dédiée. Toute configuration absente laisse C1 utilisable et C2a
+désactivé.
+
+### Validation et limite de publication
+
+Le validateur exécute migration vide et upgrade C1 réaliste, projection
+A/B, collision e-mail sans mutation partielle, provisioning idempotent,
+contaminations refusées, tests positifs/négatifs par rôle, causalité,
+remplacements et exécuteur réel avec pool `max=1`. Le wrapper Docker utilise
+un digest PostgreSQL 18.4, un réseau et des noms uniques, `tmpfs`, sept secrets
+éphémères distincts et compare l’inventaire complet avant/après.
+
+La campagne réelle finale passe l'ensemble de ces preuves, atteint la
+quiescence, supprime uniquement ses ressources et restaure l'inventaire
+étranger observé. Le warning de sérialisation de trois requêtes sur un même
+client `pg@8.22.0` est une réserve de compatibilité pg 9, pas un échec de
+l'exécuteur R6.
+
+Le premier gate OpenAPI, bloqué par l'ancienne liste exacte de 39 modèles,
+reste un NON-PASS historique. L'avenant ciblé protège maintenant exactement ces
+39 modèles historiques et les neuf modèles C2a, soit 48 au total, sans déduire
+la référence du schéma contrôlé. La reprise OpenAPI passe à 60 chemins,
+67 opérations et 141 schémas ; suppression, renommage, ajout et substitution à
+cardinalité constante sont couverts par des régressions adversariales. Un
+premier candidat qui ignorait un modèle supplémentaire indenté reste NON-PASS
+de contre-revue ; l'extracteur final accepte les espaces ou tabulations avant
+`model` et la régression dédiée verrouille ce contournement.
+
+Ces fondations restent locales, non indexées, non commitées et non publiées au
+présent gel. Aucun endpoint, worker métier, SDK fournisseur, appel HIBP,
+notification, stockage d’export, Ready, merge, tag, release ou déploiement n’en
+est déduit.
+
+## C2a métier P0 — preuves transactionnelles et isolation des capacités
+
+Le sous-lot P0 du plan métier ne monte encore aucune opération HTTP, aucun
+worker et aucun bootstrap exécutable. Il ferme uniquement deux préconditions
+techniques :
+
+- le writer C2a lit `AdminSession.accessTokenJti`, `stepUpPurpose` et
+  `stepUpExpiresAt`, sans `SELECT *` et sans accès à `stepUpVerifiedAt`,
+  `refreshTokenHash`, `tokenFamilyId`, `lastActivityAt` ou `createdAt` ;
+- chaque processus choisit exactement un profil `HTTP`, `NOTIFICATION`,
+  `EXPIRATION` ou `BOOTSTRAP`, charge un seul credential/pool C2a et n’expose
+  aucun sélecteur public de rôle. Le mode désactivé ne crée aucun pool C2a et
+  préserve le démarrage C1.
+
+La campagne PostgreSQL isolée qualifie la migration fraîche et l’upgrade, la
+préservation historique, le provisioning idempotent, les quatre identités, les
+ACL positives/négatives, le refus des contaminations et memberships, la
+non-régression C1 et l’exécuteur R6 réel. Les deux suites PostgreSQL passent
+33/33 ; stderr est vide. Les trois lectures notification du validateur sont
+désormais séquentielles et le warning `pg@8.22.0` n’apparaît plus sur ce parcours
+précis. Cette observation ne qualifie pas le driver en général et n’autorise
+aucune montée de version.
+
+La capacité Docker étrangère observée — quatre conteneurs, cinq volumes, cinq
+réseaux et quatre images — est préservée après suppression du seul conteneur et
+du seul réseau éphémères de la campagne. Les adaptateurs de production et les
+huit arbitrages métier restent non activés ; leur annexe hors dépôt est une
+proposition. P1–P9, C2b et C3 ne sont pas commencés.
+
+## C2a métier P1–P9 — runtime local qualifié — 2026-10-16
+
+Cette section supplante uniquement l'état d'avancement P1–P9 des sections
+historiques précédentes. Les arbitrages A1–A8 ont été autorisés par le mandat
+CTO P1–P9 puis matérialisés sans modifier le schéma, la migration, les ADR,
+l'OpenAPI, le contrat généré, les dépendances, les lockfiles, les workflows ou
+l'exécuteur transactionnel R6 qualifié.
+
+Le profil `HTTP` monte ensemble les onze opérations C2a :
+`requestAdminPasswordReset`, `resetAdminPassword`,
+`createAdminRecoveryCase`, `listAdminRecoveryCases`,
+`getAdminRecoveryCase`, `approveAdminRecoveryCase`,
+`createAdminInvitation`, `acceptAdminInvitation`, `listAdminUsers`,
+`changeAdminUserRole` et `changeAdminUserStatus`. C1 reste monté lorsque C2a
+est désactivé et les quatre opérations C2b ne sont pas montées. Les huit corps
+JSON POST mal formés sont normalisés avant contrôleur sans modifier les
+frontières C1.
+
+Les profils `NOTIFICATION`, `EXPIRATION` et `BOOTSTRAP` restent séparés. La
+notification conserve PostgreSQL comme source de vérité, une référence
+fournisseur stable par livraison logique, les leases/fences et l'état
+`DELIVERY_UNCERTAIN` sans retry aveugle après début d'envoi. L'expiration
+utilise un scan de 60 secondes, des lots de 100 et invalide la readiness après
+180 secondes sans scan complet réussi. Le bootstrap lit un unique JSON UTF-8
+borné sur stdin, n'accepte aucun secret en argv et distingue succès, entrée
+invalide, garde déjà consommée, dépendance indisponible et `COMMIT_UNKNOWN`.
+
+Les producteurs fail-closed refusent la mutation avant consommation de
+contexte ou création d'outbox lorsque la notification ou la clé requise manque,
+tout en conservant le sink exigé au stade de preuve. HIBP et Argon2id restent
+hors callback SQL ; aucun mot de passe, hash, préfixe, suffixe ou corps HIBP
+n'est journalisé. Les adaptateurs déterministes sont explicitement de test et
+émettent `PROVIDER_ACCEPTED_FOR_TEST` ; aucun fournisseur, keyring ou HIBP de
+production n'est qualifié.
+
+La campagne réelle isolée compte 8 contrôles réussis : 1 contrôle statique et
+7 scénarios réels PostgreSQL/Redis/HTTP. Elle confirme onze opérations, cinq
+idempotences, deux snapshots, huit erreurs JSON, notification, expiration,
+bootstrap, concurrence, erreurs et sinks, avec non-régression C1. Quatre
+corrections causales ont été verrouillées : l'INSERT
+`AuditLog` respecte l'ACL sans nommer `bootstrapGuardId`, l'échéance
+d'idempotence exacte est dérivée de l'horloge murale PostgreSQL
+`clock_timestamp()` capturée dans la transaction après le verrou et
+les erreurs de domaine enveloppées par l'exécuteur conservent leur statut sans
+affaiblir `COMMIT_UNKNOWN`. Enfin, un refus post-preuve n'est plus levé dans le
+callback R6 après son INSERT : le callback retourne une rejection typée, R6
+confirme le COMMIT de l'audit, puis le service lève l'erreur HTTP durable. La
+branche `COMMIT_UNKNOWN` reste sans second sink. Les ressources Docker isolées
+ont été supprimées et l'inventaire étranger observé est préservé.
+
+Le parcours réel utilise `pg@8.22.0` avec succès. Cette preuve borne la réserve
+au chemin exécuté ; elle ne qualifie pas le driver globalement ni une panne
+réseau distribuée. C2b/C3, fournisseurs de production, politique OSS,
+publication et déploiement restent hors périmètre.
+
+## C2a R1 — fenêtre d'idempotence C-05 — 2026-10-18
+
+Les cinq mutations idempotentes utilisent désormais exclusivement l'horloge
+murale PostgreSQL `clock_timestamp()`, capturée une fois dans une CTE
+matérialisée après le verrou, pour une fenêtre demi-ouverte exacte de 24 heures :
+une génération est active tant que `database_now < expires_at`, et la même clé
+est réutilisable à la borne ou après celle-ci. Une contrainte d'unicité conserve chaque
+génération historique et un verrou advisory sérialise l'allocation de la
+génération suivante. Un appel ancien ne peut donc ni réserver durablement la
+clé ni écraser le résultat d'une génération plus récente.
+
+Le lookup, la mutation métier, le sink d'audit et l'enregistrement idempotent
+restent dans la même transaction R6. Même payload et payload différent,
+concurrence, rollback et `COMMIT_UNKNOWN` ont été exercés sur PostgreSQL réel.
+La campagne Foundations passe 34/34. La campagne métier cumulative compte
+12 contrôles réussis : 1 contrôle statique et 11 scénarios réels
+PostgreSQL/Redis/HTTP. La non-régression C1 passe 47/47. Les ressources isolées
+ont été nettoyées sans mutation de l'inventaire Docker étranger observé.
+
+Sous Windows, le stop par canal de preuve démontre la quiescence des processus,
+mais la livraison d'un signal OS termine le processus sans permettre
+d'observer le handler gracieux. Cette limite de plateforme reste explicite et
+n'est pas présentée comme une preuve POSIX. Fournisseurs de production,
+qualification globale de `pg@8.22.0`, C2b/C3, politique OSS et publication
+restent hors périmètre.
+
+## Raccordement CI C2a — instantané prépublication — 2026-10-18
+
+Le workflow Infrastructure génère explicitement le client Prisma après
+`npm ci`, conserve le gate C1, puis exécute séparément les validateurs
+Foundations PostgreSQL et métier PostgreSQL/Redis/HTTP avant Compose, lifecycle
+et santé API. Chaque wrapper conserve ses ressources isolées, ses secrets et
+ports éphémères, sa propagation d'échec et son nettoyage ciblé.
+
+Les preuves locales qualifiées restent distinctes : l'historique P1–P9 compte
+8 contrôles réussis — 1 contrôle statique et 7 scénarios réels — tandis que le
+gel final compte 12 contrôles réussis — 1 contrôle statique et 11 scénarios
+réels. Les 61 skips conditionnels restent 11 C2a, 46 C1 et 4 Foundations-P0 ;
+ils ne sont pas transformés en PASS. À cet instant, les exécutions Linux et CI
+de ces deux nouveaux steps sont **EN ATTENTE**. L'arrêt gracieux par signal OS
+Windows/POSIX reste **NON DEMONSTRATED** ; les fournisseurs de production
+restent **NON QUALIFIÉS** et `pg@8.22.0` n'est qualifié que sur les chemins
+effectivement exercés. C2b/C3 ne sont pas commencés et la politique OSS reste
+différée.

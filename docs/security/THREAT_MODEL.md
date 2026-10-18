@@ -6,8 +6,8 @@ dc97eeef72c4e299988ed19d66460011a8551cf3, NON DÉPLOYÉ + S1.2-03C2-P0/R1–R5
 PUBLIÉS DANS LA DRAFT PR #51 AU HEAD
 7d0e0e01f2618dab59d2e21d0091892f98c7b6ae + R6 QUALIFIÉ LOCALEMENT ET
 AUTORISÉ POUR PUBLICATION SOUS GATES, CI R6 NON ACQUISE AU 2026-10-13,
-RUNTIME NON IMPLÉMENTÉ — FOURNISSEURS DE PRODUCTION NON QUALIFIÉS — C3 NOT
-STARTED**.
+FOUNDATIONS C2a ET MÉTIER P0–P9 QUALIFIÉS LOCALEMENT, NON PUBLIÉS —
+FOURNISSEURS DE PRODUCTION NON QUALIFIÉS — C2b/C3 NOT STARTED**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
 commit, push ou changement GitHub S1.1 n’avait encore été effectué : il s’agit
@@ -1251,3 +1251,113 @@ réduire ces limites résiduelles. La dérogation **ACCEPTED WITH CTO WAIVER —
 UNPUBLISHED DRAFT ONLY** couvre uniquement un premier brouillon de corps PR
 jamais publié ; elle ne couvre aucun octet technique final, candidat final ou
 résultat de validation. Aucune CI R6 n'est acquise au présent gel.
+
+## S1.2-03C2a — fondations locales de sécurité admin
+
+| Menace C2a                                            | Contrôle local                                                                                                                                                                                                                     | Preuve attendue                                                                                                               | Limite résiduelle                                    |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| Faux commit durable ou résultat transactionnel ambigu | validation des commandes BEGIN/ROLLBACK/COMMIT, bornes monotones, `ReadyForQuery=I` causal, branche exclusive `COMMIT_UNKNOWN`, destruction exactement une fois                                                                    | tests unitaires adversariaux et test PostgreSQL réel                                                                          | panne réseau distribuée NON EXÉCUTÉE                 |
+| Requêtes concurrentes échangeant leurs RFQ            | sérialisation stricte des requêtes du callback et écoute causale armée avant chaque commande                                                                                                                                       | scénario unitaire concurrent et scénarios du validateur                                                                       | charge de production NON EXÉCUTÉE                    |
+| Contrôle transactionnel injecté dans le callback      | scanner lexical refusant les commandes transactionnelles brutes, dont PREPARE/SET TRANSACTION, hors chaînes, commentaires et corps dollar-quoted                                                                                   | tests d'acceptation/refus ciblés                                                                                              | SQL dynamique métier NON IMPLÉMENTÉ                  |
+| Écriture partielle ou causalité arbitraire            | contraintes différées bidirectionnelles sur audit, état et outbox ; événement d'acceptation BUSINESS ; provenance `xid8` posée uniquement à l'INSERT et immuable sous UPDATE ; sujets, temporalité et remplacements cohérents      | scénarios partiels, événement seul, expirés, compte préexistant avec no-op UPDATE, swaps et remplacements incohérents refusés | migration de production NON EXÉCUTÉE                 |
+| Collation produisant deux identités email             | pliage ASCII déterministe par `translate`, comparaison et index sur la même expression                                                                                                                                             | migration A/B et collisions contrôlées                                                                                        | Unicode internationalisé hors contrat                |
+| ACL correcte en cardinalité mais fausse en contenu    | comparaison ordonnée de la signature canonique avec namespace, multiplicité et grantor propriétaire ; `EXCEPT ALL` ; fixtures homonyme hors `public` et grantor alternatif ; refus de toute surface `PUBLIC` ou directe inattendue | boundary service, contamination et test PostgreSQL réel                                                                       | isolation des valeurs C2b exigée avant C2b           |
+| Confusion entre rôles C2a                             | quatre rôles dédiés, secrets distincts, `NOINHERIT`, matrices relation/colonne séparées et contrôles de contamination                                                                                                              | provisioner et matrice A/B                                                                                                    | rotation et coffre de production hors lot            |
+| Fuite de secrets dans les preuves                     | sept valeurs sensibles pairwise distinctes, redaction appliquée aux stdout, stderr et erreurs des processus enfants                                                                                                                | canaris du validateur et inspection des preuves                                                                               | observabilité de production hors lot                 |
+| Résidu Docker après échec                             | noms et labels uniques, tentative enregistrée avant création, nettoyage ciblé en `finally`, inventaire conteneurs/volumes/réseaux/images comparé avant et après                                                                    | campagne réelle, quiescence, nettoyage exact et comparateur sémantique v2                                                     | inventaire des périodes daemon arrêté NON CONCLUSIVE |
+
+La campagne PostgreSQL 18.4 réelle conclut sur migrations fraîche/upgrade,
+préservation, contraintes, ACL, contaminations, transactions R6 et nettoyage.
+Elle ne qualifie pas une panne réseau distribuée ni la production. Le warning
+`pg@8.22.0` sur trois requêtes soumises au même client reste une réserve de
+compatibilité pg 9 sans impact démontré sur le résultat verrouillé.
+
+Le premier gate OpenAPI, bloqué par sa liste historique de 39 modèles au lieu
+des 48 modèles incluant C2a, reste un NON-PASS historique. L'avenant ciblé
+qualifie une référence explicite de 39 modèles historiques et neuf C2a ; les
+régressions refusent manque, renommage, ajout — y compris un modèle indenté —
+et substitution à cardinalité constante. Le candidat antérieur qui acceptait
+l'ajout indenté reste NON-PASS de contre-revue. Les onze opérations HTTP, leurs workers et les fournisseurs restent
+non implémentés ; aucune menace associée à leur exploitation n'est requalifiée
+par ce lot de fondations.
+
+## S1.2-03C2a métier P0 — isolation des capacités
+
+| Menace P0                                   | Contrôle qualifié                                                                                                        | Preuve locale                                                    | Limite résiduelle                                    |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- | ---------------------------------------------------- |
+| Writer lisant un secret de session inutile  | projection limitée à JTI, purpose et expiry ; cinq colonnes voisines, `SELECT *` et mutations step-up refusés            | ACL comportementales réelles, SQLSTATE 42501                     | opérations HTTP P1–P9 non implémentées               |
+| API détenant les capacités worker/bootstrap | profil fermé ; un credential et un pool C2a ; variables étrangères refusées ; aucune façade publique choisissant le rôle | tests des quatre profils et attestation `current_user` réelle    | déploiement multi-processus non qualifié             |
+| Repli silencieux ou secret C1 réutilisé     | identité exacte, secret actif distinct de reader/writer C1, configuration C2a dormante refusée                           | tests config adversariaux                                        | coffre et rotation production non qualifiés          |
+| Driver perturbé par requêtes concurrentes   | trois lectures notification du validateur séquentielles ; R6 conserve sa sérialisation stricte                           | campagne réelle stderr vide, transaction/boundary 33/33          | `pg@8.22.0` non qualifié globalement                 |
+| Résidu de campagne touchant le socle Docker | noms/labels uniques, réseau isolé, `tmpfs`, secrets éphémères et nettoyage limité aux identités créées                   | conteneur/réseau/secrets supprimés, inventaire étranger préservé | disponibilité Docker historique NON CONCLUSIVE       |
+| Proposition métier activée sans décision    | annexe versionnée hors dépôt explicitement non activée ; aucun provider, worker, endpoint ou bootstrap CLI               | allowlist et diff P0                                             | huit arbitrages requis avant sous-lots consommateurs |
+
+La campagne qualifie aussi l’absence de contamination des quatre rôles,
+l’idempotence du provisionneur et la frontière C1 partagée. Elle ne qualifie ni
+fournisseur de notification, HIBP ou keyring de production, ni charge ou panne
+réseau distribuée. P1–P9, C2b et C3 restent non commencés.
+
+## S1.2-03C2a métier P1–P9 — contrôles locaux — 2026-10-16
+
+Cette section supplante l'état d'avancement P1–P9, mais pas les limites de
+production des sections historiques.
+
+| Menace P1–P9                                      | Contrôle local qualifié                                                                                                                              | Preuve locale                                   | Limite résiduelle                          |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------ |
+| Route C2a partielle ou C2b exposé                 | montage atomique des onze opérations par le seul profil HTTP; C1 seul quand C2a est désactivé; C2b absent                                            | tests module/factory + campagne HTTP réelle     | déploiement NON EXÉCUTÉ                    |
+| Preuve, rôle ou step-up périmé                    | revalidation serveur finale sous verrou, rôles/opération exacts, step-up lié au purpose et à l'expiry                                                | unitaires adversariaux + PostgreSQL réel        | charge distribuée NON EXÉCUTÉE             |
+| Replay, snapshot incohérent ou no-op masqué       | cinq idempotences à fenêtre exacte DB, deux snapshots stables, replay autorisé avant no-op nouveau après nouvelle autorisation                       | campagne réelle 11/5/2                          | reprise inter-région NON EXÉCUTÉE          |
+| Double envoi après résultat fournisseur incertain | référence stable, lease/fencing, budget et backoffs bornés; tout doute après début d'appel devient `DELIVERY_UNCERTAIN` sans retry automatique       | fake déterministe et tests de crash/concurrence | fournisseur réel NON QUALIFIÉ              |
+| Secret outbox ou HIBP divulgué                    | ciphertext authentifié/AAD/keyring versionné; aucun secret ou fragment HIBP dans logs/audits; HIBP/Argon2id hors transaction                         | unitaires redaction et fail-closed              | keyring/HIBP production NON QUALIFIÉS      |
+| Expiration concurrente ou worker non prêt         | CAS sous verrou, génération, lot 100, scan 60 s, readiness invalide après `>=180 s`, shutdown 30 s sans prolonger R6                                 | unitaires frontière + réel                      | ordonnanceur de production NON QUALIFIÉ    |
+| Secret bootstrap dans argv ou faux succès         | entrée JSON bornée sur stdin, aucune donnée supplémentaire, codes distincts, garde/audit atomiques, `COMMIT_UNKNOWN` sans retry ni succès            | unitaires + PostgreSQL réel                     | coffre de production NON QUALIFIÉ          |
+| ACL d'audit contournée                            | INSERT générique limité aux colonnes autorisées, sans `bootstrapGuardId`; quatre identités séparées et attestation active                            | SQLSTATE/ACL et campagne réelle                 | rotation de secrets production hors lot    |
+| Erreur métier reclassée en 503 générique          | déballage borné de l'erreur de domaine enveloppée par R6, neutralité conservée pour `COMMIT_UNKNOWN`                                                 | régression service + concurrence réelle         | panne réseau distribuée NON EXÉCUTÉE       |
+| Faux envoi local présenté comme réel              | adaptateurs marqués test uniquement et événement `PROVIDER_ACCEPTED_FOR_TEST`; absence de capacité de production = fail-closed avant mutation/outbox | tests config/adapters et campagne locale        | tous fournisseurs production NON QUALIFIÉS |
+
+La campagne isolée compte 8 contrôles réussis : 1 contrôle statique et 7
+scénarios réels PostgreSQL/Redis/HTTP. Elle confirme onze opérations, cinq
+idempotences, deux snapshots, huit POST JSON mal formés, notification,
+expiration, bootstrap, sinks, concurrence et C1. Les ressources créées sont
+supprimées ciblément et l'inventaire étranger observé est préservé.
+Le succès avec `pg@8.22.0` ne qualifie que ce parcours. C2b/C3, fournisseurs,
+politique OSS, publication et déploiement restent hors périmètre.
+
+La contre-revue finale a identifié un rollback silencieux des audits de refus
+post-preuve : l'exception HTTP était levée dans le callback R6 après l'INSERT.
+Le runtime retourne désormais une rejection typée afin de confirmer d'abord le
+COMMIT, puis de lever l'erreur `ALREADY_DURABLE`. Les preuves PostgreSQL réelles
+vérifient un sink unique et durable pour les refus rôle, step-up, idempotence,
+ressource absente ou expirée et concurrence du dernier SUPER_ADMIN. Lorsque la
+revalidation concurrente invalide l'acteur, le sink reste
+`AdminSecurityEvent`; lorsque la preuve reste valide et le conflit est métier,
+le sink est `AuditLog`. Aucun second sink n'est permis après `COMMIT_UNKNOWN`.
+
+## C2a R1 — idempotence C-05 — 2026-10-18
+
+| Menace C-05                                      | Contrôle qualifié                                                                                                                  | Preuve locale                         | Limite résiduelle                                  |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | -------------------------------------------------- |
+| Horloge processus avançant ou retardant l'expiry | timestamp et décision active/expirée calculés par PostgreSQL; borne demi-ouverte exacte à 24 heures                                | réel, multi-timezone et borne exacte  | dérive d'horloge PostgreSQL hors preuve            |
+| Clé expirée réservée définitivement              | nouvelle génération atomique, historique append-only et absence de suppression globale                                             | fresh/upgrade et réutilisation réelle | rétention opérationnelle future hors lot           |
+| Double mutation concurrente                      | verrou advisory sur la clé avant lookup/allocation; unicité clé/génération                                                         | concurrence même clé                  | charge distribuée de production NON EXÉCUTÉE       |
+| Résultat ancien écrasant le nouveau              | chaque résultat est lié à sa génération; l'invocation ancienne ne peut finaliser la génération suivante                            | oracle génération et course           | panne réseau distribuée NON EXÉCUTÉE               |
+| Mutation sans audit ou résultat                  | mutation, audit et idempotence dans la même transaction R6; rollback et `COMMIT_UNKNOWN` fermés                                    | PostgreSQL réel                       | qualification globale du driver NON ACQUISE        |
+| Lecture ou écriture par une identité étrangère   | ACL de colonne/relation et provisioning restreints; aucune nouvelle capacité accordée aux identités non autorisées                 | matrice ACL réelle                    | rotation des secrets production hors lot           |
+| Faux arrêt gracieux sous Windows                 | canal de preuve qualifie la quiescence; la terminaison OS Windows est rapportée séparément, sans être assimilée à un handler POSIX | processus réels                       | handler gracieux par signal OS Windows NON OBSERVÉ |
+
+Les campagnes sélectionnées passent Foundations 34/34. La campagne métier
+compte 12 contrôles réussis : 1 contrôle statique et 11 scénarios réels
+PostgreSQL/Redis/HTTP. C1 passe 47/47. Les anciens NON-PASS et la réserve
+globale `pg@8.22.0` restent visibles. Fournisseurs de production NON QUALIFIÉS;
+C2b/C3, OSS et publication hors périmètre.
+
+## C2a — raccordement CI prépublication — 2026-10-18
+
+| Menace de publication                       | Contrôle raccordé                                                                                                                | État avant publication             | Limite résiduelle                                |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------ |
+| Gate C2a absent du pipeline                 | génération Prisma puis deux steps Infrastructure distincts pour Foundations et métier ; C1/Compose/lifecycle/santé API préservés | vérification statique ; CI pending | succès Linux non encore démontré                 |
+| Échec masqué ou ressource étrangère touchée | wrappers non optionnels, sortie non neutralisée, noms/ports/secrets éphémères et nettoyage ciblé                                 | contrats locaux qualifiés          | inventaire du runner seulement observable en CI  |
+| Compteurs locaux présentés comme CI         | historique 1 statique + 7 réels, final local 1 statique + 11 réels, 61 skips séparés en 11 C2a / 46 C1 / 4 Foundations-P0        | réconciliation documentaire        | les futurs logs CI font foi pour leur propre run |
+| Limite de plateforme ou fournisseur effacée | signal OS Windows/POSIX NON DEMONSTRATED ; providers NON QUALIFIÉS ; `pg@8.22.0` borné aux chemins exercés                       | limite conservée                   | qualification production hors lot                |
+
+C2b/C3 restent non commencés et la politique OSS reste différée.

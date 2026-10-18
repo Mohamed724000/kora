@@ -5304,7 +5304,7 @@ function hasExactPrismaLine(source, declaration) {
 
 export function validatePrismaTargetSchema(source) {
   source = maskPrismaCodeLikeStringContents(stripPrismaComments(source));
-  const requiredModels = [
+  const historicalModelsBeforeC2a = [
     "Customer",
     "CustomerDevice",
     "CustomerSession",
@@ -5318,6 +5318,18 @@ export function validatePrismaTargetSchema(source) {
     "AdminRefreshToken",
     "AdminRecoveryCodeBatch",
     "AdminSecurityEvent",
+  ];
+  const c2aModelsBeforeBusinessModels = [
+    "AdminPasswordResetRequest",
+    "AdminPasswordResetContext",
+    "AdminRecoveryCase",
+    "AdminInvitation",
+    "AdminNotificationOutbox",
+    "AdminPaginationSnapshot",
+    "AdminPaginationSnapshotItem",
+    "AdminBootstrapGuard",
+  ];
+  const historicalBusinessModels = [
     "Artist",
     "AudioContent",
     "MediaAsset",
@@ -5343,14 +5355,36 @@ export function validatePrismaTargetSchema(source) {
     "PurchasedPlaybackDescriptor",
     "IdempotencyRecord",
     "AdminIdempotencyRecord",
-    "AuditLog",
   ];
+  const c2aModelsBeforeAuditLog = ["AdminC2IdempotencyRecord"];
+  const historicalFinalModels = ["AuditLog"];
+  const historicalModels = [
+    ...historicalModelsBeforeC2a,
+    ...historicalBusinessModels,
+    ...historicalFinalModels,
+  ];
+  const c2aModels = [
+    ...c2aModelsBeforeBusinessModels,
+    ...c2aModelsBeforeAuditLog,
+  ];
+  const requiredModels = [
+    ...historicalModelsBeforeC2a,
+    ...c2aModelsBeforeBusinessModels,
+    ...historicalBusinessModels,
+    ...c2aModelsBeforeAuditLog,
+    ...historicalFinalModels,
+  ];
+  if (historicalModels.length !== 39 || c2aModels.length !== 9) {
+    fail(
+      "Prisma target model inventory must preserve 39 historical and 9 C2a models",
+    );
+  }
   const actualModels = [
-    ...source.matchAll(/^model\s+([A-Za-z][A-Za-z0-9_]*)\s*\{/gm),
+    ...source.matchAll(/^[ \t]*model\s+([A-Za-z][A-Za-z0-9_]*)\s*\{/gm),
   ].map((match) => match[1]);
   if (!stableEqual(actualModels, requiredModels)) {
     fail(
-      `Prisma target models must be exactly the ${requiredModels.length} approved models`,
+      "Prisma target models must be exactly the 39 historical and 9 C2a approved models (48 total)",
     );
   }
   for (const name of requiredModels) {
@@ -5847,6 +5881,8 @@ export function validatePrismaTargetSchema(source) {
   }
 
   return {
+    c2aModels: c2aModels.length,
+    historicalModels: historicalModels.length,
     integerFinancialFields: integerMoneyFields.length,
     models: actualModels.length,
   };
@@ -5876,6 +5912,6 @@ const direct =
 if (direct) {
   const result = readAndValidateOpenApi();
   console.log(
-    `S1.2-03C2-P0 admin-security contract valid: ${result.openapi.paths} paths, ${result.openapi.operations} operations, ${result.openapi.schemas} schemas, ${result.openapi.invariants} inherited invariants, ${result.prisma.models} preserved target models.`,
+    `S1.2-03C2-P0 admin-security contract valid: ${result.openapi.paths} paths, ${result.openapi.operations} operations, ${result.openapi.schemas} schemas, ${result.openapi.invariants} inherited invariants, ${result.prisma.models} preserved target models (${result.prisma.historicalModels} historical and ${result.prisma.c2aModels} C2a).`,
   );
 }

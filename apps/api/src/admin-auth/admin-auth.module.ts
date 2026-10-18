@@ -65,7 +65,14 @@ export class AdminAuthModule {
 
     return {
       controllers: [AdminAuthController],
-      exports: [AdminAuthService, AdminSessionService, ADMIN_KEY_PROVIDER],
+      exports: [
+        AdminAuthService,
+        AdminSessionService,
+        ADMIN_AUTH_CRYPTO,
+        ADMIN_KEY_PROVIDER,
+        ADMIN_RATE_LIMITER,
+        ADMIN_REQUEST_POLICY,
+      ],
       module: AdminAuthModule,
       providers: [
         keyProvider,

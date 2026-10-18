@@ -28,9 +28,17 @@ jobs:
           cache: npm
       - name: Install npm dependencies
         run: npm ci
+      - name: Generate Prisma Client for C2a validators
+        run: npm run db:generate
       - name: Validate Admin Auth Session PostgreSQL runtime
         shell: pwsh
         run: ./apps/api/prisma/run-admin-auth-runtime-validation.ps1
+      - name: Validate C2a PostgreSQL foundations
+        shell: pwsh
+        run: ./apps/api/prisma/run-admin-security-c2a-runtime-validation.ps1
+      - name: Validate C2a business runtime
+        shell: pwsh
+        run: ./apps/api/prisma/run-admin-security-c2a-business-validation.ps1
       - name: Prepare and validate Compose
         run: |
           npm run infra:prepare

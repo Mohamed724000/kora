@@ -787,3 +787,91 @@ absent ni résultat NON-PASS n’est reconstruit ou requalifié.
 | C2-R6-08 | Préserver surface et frontière            | 60 chemins, 67 opérations, 141 schémas ; aucun runtime/Prisma/migration/dépendance/workflow                                      | Scope preserved         |
 | C2-R6-09 | Préserver la preuve sous dérogation       | premier brouillon jamais publié couvert seul par waiver ; constats BLOCK historiques inchangés ; gel et candidat finaux exclus   | Waiver scope verified   |
 | C2-R6-10 | Qualifier l'entrée de publication         | manifestes indépendants identiques ; patch 84 021 octets ; candidat final 26 378 octets ; publication sous gates, CI non acquise | Preflight verified      |
+
+## S1.2-03C2a — fondations locales de sécurité admin
+
+| ID     | Exigence                                  | Implémentation et preuve attendue                                                                                                                                       | État local final          |
+| ------ | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| C2A-01 | Préserver le périmètre                    | Allowlist fermée ; services désactivés ; aucun endpoint, worker, bootstrap métier, SDK fournisseur, dépendance, workflow ou lockfile ajouté                             | Scope preserved           |
+| C2A-02 | Modéliser les états C2a                   | Prisma et migration versionnés pour reset, recovery case, invitation, préautorisation, événements, outbox, snapshots et bootstrap                                       | Implemented locally       |
+| C2A-03 | Garantir l'atomicité causale              | Contraintes différées sur reset, invitation, expiration, acceptation, annulation et remplacement ; scénarios partiels, arbitraires et permutés attendus en échec        | PostgreSQL real PASS      |
+| C2A-04 | Respecter le contrat transactionnel R6    | Bornes monotones ; BEGIN confirmé ; sérialisation callback ; `ReadyForQuery` causal ; validation de commande ; disposition exactement une ; `COMMIT_UNKNOWN` exclusif   | Unit tests passed         |
+| C2A-05 | Isoler quatre identités PostgreSQL        | Writer, notification, expiration et bootstrap avec secrets distincts, non héritables et sans login superflu                                                             | Provisioning implemented  |
+| C2A-06 | Vérifier les ACL exactes                  | Signature canonique de chaque privilège colonne/relation ; refus de `PUBLIC`, héritage, routines, types, paramètres, gros objets et permutation à cardinalité constante | PostgreSQL real PASS      |
+| C2A-07 | Qualifier les frontières de configuration | Activation explicite, variables et fichiers de secrets dédiés, valeurs fail-closed, absence de fuite de secrets dans les sorties                                        | Unit/static checks passed |
+| C2A-08 | Prouver PostgreSQL réel                   | PostgreSQL 18.4 éphémère ; migrations A/B ; contamination ; scénarios positifs et négatifs ; empreintes ; stdout/stderr/code séparés                                    | PASS                      |
+| C2A-09 | Prouver le nettoyage Docker               | Ressources nommées et labellisées, suppression ciblée même après échec, inventaire conteneurs/volumes/réseaux/images identique avant/après                              | PASS                      |
+| C2A-10 | Clore par un gel reproductible            | Deux manifestes indépendants byte-identiques, postflight Git/GitHub, gates applicables et trois revues en lecture seule sur les mêmes octets                            | Verified locally          |
+
+La preuve PostgreSQL réelle qualifie C2A-03, C2A-06, C2A-08 et C2A-09. Elle ne
+remplace pas le gate OpenAPI protégé. Le premier résultat 39/48 reste NON-PASS ;
+l'avenant ciblé qualifie ensuite exactement 39 modèles historiques et neuf C2a,
+avec 60 chemins, 67 opérations, 141 schémas OpenAPI, 379/379 tests
+adversariaux, 528/528 tests tooling, génération `--check` et scanner officiel.
+Le candidat précédent à 378/378 et 527/527 reste NON-PASS de contre-revue car
+un modèle supplémentaire indenté échappait à l'extracteur.
+Les onze opérations HTTP et leurs exécuteurs métier restent hors périmètre, non
+implémentés et non publiés.
+
+## C2a métier P0 — préconditions transactionnelles et isolation
+
+| ID        | Exigence                                | Matérialisation et vérification                                                                                                                        | État local                    |
+| --------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------- |
+| C2A-P0-01 | Projection session strictement minimale | Writer : SELECT JTI/purpose/expiry ; refus verifiedAt, hashes, family, activity, createdAt, SELECT global et écritures step-up                         | PostgreSQL real PASS          |
+| C2A-P0-02 | Une capacité C2a par processus          | Quatre profils fermés ; un credential/pool ; variables étrangères, identité renommée et partage C1 refusés ; aucun sélecteur transactionnel public     | Unit + PostgreSQL PASS        |
+| C2A-P0-03 | Préserver le démarrage C1               | C2a désactivé ne construit aucun pool ; intégration partagée 12 pass ; frontière C1 PostgreSQL préservée                                               | PASS                          |
+| C2A-P0-04 | Qualifier provisioning et contamination | Fresh/upgrade, deux exécutions identiques, rôles exacts, memberships/attributs/ownership/ACL étrangers refusés avant mutation                          | PostgreSQL real PASS          |
+| C2A-P0-05 | Préserver les garanties R6              | Requêtes sérialisées, pool max=1, rollback/COMMIT, RFQ causal, discard unique ; suites réelles transaction/boundary 33/33                              | PostgreSQL real PASS          |
+| C2A-P0-06 | Traiter causalement la réserve pg       | Trois lectures notification séquentielles ; replay stderr vide ; conclusion bornée à ce parcours, sans qualification générale ni changement de version | Targeted path PASS            |
+| C2A-P0-07 | Qualifier les gates proportionnés       | Format/lint/typecheck, config/boundary 15 pass, build API, scanner 396 fichiers, tooling 528/528 ; NON-PASS sandbox et collecteur conservés            | PASS with history preserved   |
+| C2A-P0-08 | Ne pas anticiper le métier              | Aucun endpoint, worker, bootstrap CLI, fournisseur, SDK ou dépendance ; huit arbitrages hors dépôt proposés mais non activés                           | Scope preserved; P1–P9 closed |
+
+## C2a métier P1–P9 — traçabilité locale — 2026-10-16
+
+Les lignes P0 ci-dessus décrivent l'instantané du 2026-10-15. Le mandat
+ultérieur autorise A1–A8 et l'implémentation P1–P9; les exigences suivantes
+décrivent l'état local courant sans requalifier les fournisseurs de production.
+
+| ID          | Exigence                                | Matérialisation et vérification                                                                                                                                                                                  | État local                  |
+| ----------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| C2A-P1P9-01 | Monter exactement onze opérations C2a   | Profil HTTP, 11 operationIds contractés; C1 sans C2a; quatre opérations C2b absentes                                                                                                                             | Unit + HTTP/PostgreSQL PASS |
+| C2A-P1P9-02 | Préserver preuves, step-up et sinks     | Preuve finale transactionnelle, rôles exacts, step-up ciblé, sink unique par stade, huit POST JSON pré-contrôleur                                                                                                | Real campaign PASS          |
+| C2A-P1P9-03 | Garantir idempotence et pagination      | Cinq idempotences à fenêtre exacte fondée sur l'horloge PostgreSQL; deux snapshots stables                                                                                                                       | Real campaign PASS          |
+| C2A-P1P9-04 | Rendre les mutations atomiques          | Mutation, source causale, idempotence/outbox et audit sous R6; erreurs domaine conservées; `COMMIT_UNKNOWN` neutre                                                                                               | Unit + PostgreSQL PASS      |
+| C2A-P1P9-05 | Borner la notification                  | Lease/fence, cinq tentatives, backoffs autorisés, 10 s provider, `DELIVERY_UNCERTAIN` sans retry aveugle; PostgreSQL durable, Redis opaque                                                                       | Deterministic + real PASS   |
+| C2A-P1P9-06 | Expirer sans course                     | Scan 60 s, lot 100, CAS/génération, readiness `>=180 s`, shutdown 30 s, course perdue no-op                                                                                                                      | Unit + real PASS            |
+| C2A-P1P9-07 | Bootstrapper sans fuite                 | JSON UTF-8 stdin unique, aucun secret argv/log, garde et audit atomiques, codes 0/1/2/3/4/5, aucune reprise aveugle après issue inconnue                                                                         | Unit + real PASS            |
+| C2A-P1P9-08 | Échouer fermé sans faux fournisseur     | Notification, HIBP ou clé absente: refus avant mutation/outbox avec sink requis; adaptateurs marqués `PROVIDER_ACCEPTED_FOR_TEST`                                                                                | Adversarial PASS            |
+| C2A-P1P9-09 | Préserver C1 et le moindre privilège    | Quatre identités C2a, ACL exactes, C1 non régressé; INSERT AuditLog sans colonne `bootstrapGuardId` interdite au writer générique                                                                                | PostgreSQL PASS             |
+| C2A-P1P9-10 | Fermer localement avec preuves honnêtes | 8 contrôles réussis : 1 contrôle statique et 7 scénarios réels PostgreSQL/Redis/HTTP. API 186 pass + 56 skips; OpenAPI 60/67/141; adversarial 379/379; tooling 530/530; licences/audits PASS; NON-PASS conservés | PASS, publication interdite |
+| C2A-P1P9-11 | Rendre le refus post-preuve durable     | Le callback retourne une rejection typée; l'audit est commité avant l'erreur HTTP. Rôle, step-up, idempotence, absent, expiré et dernier SUPER_ADMIN vérifient le sink durable exact                             | PostgreSQL réel PASS        |
+
+Fournisseurs notification/HIBP/keyring de production, charge et panne réseau
+distribuée, qualification globale de `pg@8.22.0`, C2b, C3, politique OSS et
+déploiement restent hors preuve.
+
+## C2a R1 — remédiation C-05
+
+| ID        | Exigence                            | Matérialisation et vérification                                                                                                                                                                                                                                              | État local             |
+| --------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| C2A-C05-1 | Temps PostgreSQL et borne exacte    | `clock_timestamp()` capturé une fois après verrou dans une CTE matérialisée; actif si et seulement si `database_now < expires_at`; intervalle exact de 24 heures et tests avant/à/après la borne                                                                             | PostgreSQL réel PASS   |
+| C2A-C05-2 | Réutilisation atomique              | génération monotone sous verrou advisory, unicité clé/génération, historique append-only; clé expirée réutilisable sans réservation permanente                                                                                                                               | PostgreSQL réel PASS   |
+| C2A-C05-3 | Concurrence et payload              | même clé concurrente sérialisée; replay de payload identique; conflit de payload différent; ancienne génération incapable d'écraser la suivante                                                                                                                              | Unit + PostgreSQL PASS |
+| C2A-C05-4 | Atomicité et moindre privilège      | lookup, mutation, audit et résultat sous R6; rollback y compris après le dernier INSERT idempotent, `COMMIT_UNKNOWN`; ACL writer bornée et refus des identités non autorisées                                                                                                | PostgreSQL réel PASS   |
+| C2A-C05-5 | Requalification cumulative          | Foundations 34/34. Métier : 12 contrôles réussis : 1 contrôle statique et 11 scénarios réels PostgreSQL/Redis/HTTP. C1 47/47; API 211 pass + 61 skips conditionnels; format/lint/typecheck/build/OpenAPI/génération/tooling 530/530/scanner/licences PASS; lockfile inchangé | Local PASS             |
+| C2A-C05-6 | Limite de signal Windows explicitée | arrêt par canal de preuve et quiescence PASS; signal OS Windows observé comme terminaison sans handler gracieux observable, sans revendiquer la preuve POSIX                                                                                                                 | Limite documentée      |
+
+Les anciens NON-PASS restent archivés. Les audits npm déjà concluants restent
+applicables aux mêmes dépendances. Fournisseurs de production NON QUALIFIÉS,
+réserve globale `pg@8.22.0`, C2b/C3 et politique OSS inchangés.
+
+## C2a — raccordement CI prépublication
+
+| ID        | Exigence                                      | Matérialisation attendue                                                                                                      | État prépublication |
+| --------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| C2A-CI-01 | Exécuter les deux gates C2a en Infrastructure | `db:generate`, gate C1, wrapper Foundations, wrapper métier, puis Compose/lifecycle/santé API préservés                       | Wired; CI pending   |
+| C2A-CI-02 | Propager l'échec et isoler les ressources     | Steps non optionnels ; ports, secrets et noms éphémères ; nettoyage ciblé sans prune global                                   | Statically verified |
+| C2A-CI-03 | Préserver les compteurs de preuve             | Historique 1 statique + 7 réels ; final local 1 statique + 11 réels ; 61 skips = 11 C2a + 46 C1 + 4 Foundations-P0            | Reconciled          |
+| C2A-CI-04 | Ne pas anticiper la CI ni la production       | Linux/CI pending ; signal OS Windows/POSIX NON DEMONSTRATED ; providers NON QUALIFIÉS ; `pg@8.22.0` borné aux chemins exercés | Limits preserved    |
+
+C2b/C3 restent non commencés et la politique OSS reste différée.
