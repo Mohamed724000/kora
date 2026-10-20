@@ -667,3 +667,36 @@ non-régression C1 47/47. Le tooling ciblé passe 536/536. Ce GO reste local : i
 ne transforme ni le run CI échoué ni ses skipped en succès et ne qualifie pas
 Linux. L'arrêt gracieux par signal OS Windows/POSIX reste NON DEMONSTRATED ;
 les fournisseurs de production restent NON QUALIFIÉS.
+
+## C2a R3 — identité d'image et cleanup conditionnel — 2026-10-18
+
+Le run Infrastructure R2 `39168610286` prouve l'échec de l'ancienne comparaison
+textuelle à une ligne et l'échec secondaire de `infra:down`, mais pas les
+valeurs historiquement comparées : la cause du runner Linux reste **NON
+CONCLUSIVE**. R3 sépare désormais le digest de manifeste de l'ID local, exige
+l'inspection exacte `tag@digest` et le `RepoDigest` attendu, puis joint
+l'inventaire par ID sans imposer une représentation textuelle unique.
+
+L'absence échoue fermée sauf preuve `No such image` exacte, daemon sain, sondes
+tag et repo-digest absentes et inventaire non contradictoire. Une image
+préexistante n'est jamais supprimée. Une acquisition nouvelle doit être
+instantanément identifiée, inutilisée par tout conteneur actif ou arrêté et
+sans référence nouvelle avant retrait de la seule référence exacte. Le workflow
+emploie une instance Compose unique et une machine d'état atomique ; `down`
+n'est exécuté qu'après préparation démontrée, tandis qu'une préparation
+partielle ne nettoie que le sous-ensemble attesté. Après préparation complète,
+le manifeste doit contenir exactement les cinq fichiers et les deux répertoires
+attendus. Leur identité no-follow (`type`, `dev`, `ino`, `mode`, `birthtimeNs`),
+ainsi que celle du manifeste d'ownership, est capturée puis revérifiée avant
+toute suppression ; une substitution byte-identique est préservée et échoue.
+
+Sur les octets finaux, les cinq régressions R3 causales passent 5/5 et le
+tooling complet passe 541/541, donc les 39 contrôles du fichier concerné sont
+également réussis dans cette campagne sélectionnée. Le run direct précédent
+37/39 reste NON-PASS : ses deux échecs portent sur des tests historiques de
+deadline/socket, sans lien avec R3. Les wrappers réels, inchangés depuis leur
+qualification, passent Foundations 34/34, puis métier 1 contrôle statique + 11
+scénarios réels et C1 47/47, avec inventaire Docker étranger restauré. Les
+autres essais intermédiaires, dont tooling sandboxé 538/541, restent NON-PASS.
+Ce résultat est local : Linux/CI R3 n'est pas qualifié et la limite signal OS
+reste inchangée.

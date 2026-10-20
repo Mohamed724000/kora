@@ -1378,3 +1378,25 @@ Le résultat R2 est local et ne requalifie ni Linux, ni le run Infrastructure
 reste NON DEMONSTRATED, les fournisseurs de production restent NON QUALIFIÉS,
 `pg@8.22.0` reste borné aux chemins exercés, C2b/C3 ne sont pas commencés et la
 politique OSS reste différée.
+
+## C2a R3 — identité Docker et nettoyage conditionnel
+
+| Menace R3                                     | Contrôle local                                                                                                                                                                                     | Preuve sélectionnée                                              | Limite résiduelle                         |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------- |
+| Confusion digest de manifeste / ID local      | inspect exact `tag@digest`, RepoDigest obligatoire, ID local utilisé seulement comme jointure d'inventaire ; plusieurs lignes permises                                                             | fixtures sur les deux wrappers + Docker réel                     | cause CI historique NON CONCLUSIVE        |
+| Faux absent sur erreur d'accès ou daemon      | `No such image` exact, info daemon, sondes tag et repo-digest, inventaire non contradictoire ; sorties vides, multiples, invalides ou autres erreurs refusées                                      | adversarial PASS                                                 | messages Docker dépendent du contrat CLI  |
+| Suppression d'une image étrangère ou partagée | snapshot après tentative d'acquisition ; ID absent des IDs initiaux ; RepoTags/RepoDigests/inventaire inchangés ; tous conteneurs actifs et arrêtés contrôlés                                      | fixtures acquisition/concurrence/référence                       | ambiguïté conservée comme résidu en échec |
+| Suppression trop large                        | retrait de la seule référence exacte ; jamais ID, `--force`, prune ou cleanup global ; postcondition absence de référence et d'ID acquis                                                           | tests post-rm et wrappers réels                                  | acquisition nouvelle non exercée en réel  |
+| `down` sur un projet non préparé ou étranger  | instance CI unique, préimage absente, états atomiques ; `down` seulement pour prepared/up_started/running                                                                                          | workflow exécuté sur cinq états                                  | succès Linux CI R3 non démontré           |
+| Fichiers partiels substitués                  | manifeste lié à l'état ; ensemble complet exact de cinq fichiers et deux répertoires ; identité no-follow `type/dev/ino/mode/birthtimeNs` ; toute substitution, même byte-identique, est préservée | fixtures substitution, manifeste réduit et préparation partielle | runner réel GitHub non rejoué             |
+
+Le finding `S-R3-01` est fermé par les régressions R3 finales 5/5. Le tooling
+sélectionné passe 541/541 et inclut les 39 contrôles du fichier concerné. Le run
+direct final 37/39 reste NON-PASS sur deux tests historiques de deadline/socket,
+alors que la première reprise tooling, initialement observée incomplète, a
+finalement terminé 541/541 au code 0 en chevauchant la reprise causale également
+réussie 541/541 ; elle n'est plus NON CONCLUSIVE. Les wrappers réels passent
+Foundations 34/34, métier 1 statique + 11 scénarios et C1 47/47, avec inventaire
+Docker étranger restauré. Le tooling sandboxé 538/541 reste aussi NON-PASS
+(`EACCES`). Le signal gracieux Windows/POSIX reste NON DEMONSTRATED ; Linux/CI
+R3 et fournisseurs de production restent NON QUALIFIÉS.

@@ -1303,3 +1303,32 @@ statique et 11 scénarios réels PostgreSQL/Redis/HTTP — avec C1 47/47. Le
 tooling passe 536/536 et `tmp` est absent après campagne. Il s'agit d'un GO local borné, sans requalification de
 la CI ou de Linux. Signal gracieux Windows/POSIX NON DEMONSTRATED, fournisseurs
 de production NON QUALIFIÉS, C2b/C3 non commencés et politique OSS différée.
+
+## C2a R3 — état local après échec Infrastructure R2
+
+Le head publié R2 reste `5ca12f03…` et le run Infrastructure `39168610286`
+reste FAILURE sans rerun. Son log démontre une hypothèse rigide sur la ligne
+d'inventaire Docker, sans conserver les valeurs comparées ; l'origine précise
+reste **NON CONCLUSIVE**.
+
+Le candidat local R3 contrôle séparément le digest de manifeste, le RepoDigest
+et l'ID local, accepte plusieurs représentations du même ID et refuse de classer
+une erreur Docker indéterminée comme absence. Le cleanup ne peut retirer que la
+référence exacte d'une acquisition attestée, jamais une image préexistante ou
+partagée. Le workflow initialise un état explicite sur une instance Compose
+unique et rend `infra:down` conditionnel à une préparation démontrée. Le
+cleanup lie à cet état l'identité no-follow du manifeste, des cinq fichiers et
+des deux répertoires attendus ; il exige l'ensemble complet après préparation
+et préserve toute substitution, y compris byte-identique.
+
+Les preuves locales sélectionnées sur les octets finaux sont : syntaxe et
+workflow PASS, régressions R3 5/5, tooling 541/541 — incluant les 39 contrôles
+du fichier ciblé —, Foundations 34/34, métier 1 contrôle statique + 11 scénarios
+réels, C1 47/47 et inventaire Docker étranger restauré. Le direct 37/39 après
+le finding Security reste NON-PASS sur deux tests historiques de deadline et
+socket. La première reprise tooling, d'abord observée sans métadonnées finales,
+a finalement terminé 541/541 au code 0 ; elle a chevauché la reprise causale
+également réussie 541/541 et n'est plus classée NON CONCLUSIVE. Les autres
+NON-PASS, dont 538/541 sandboxé, sont conservés. Linux/CI R3 reste NON QUALIFIÉ,
+de même que les fournisseurs ; signal gracieux Windows/POSIX toujours NON
+DEMONSTRATED.

@@ -538,3 +538,59 @@ Ce résultat est local. Il ne requalifie ni le run CI échoué, ni Linux, ni les
 fournisseurs. L'arrêt gracieux par signal OS Windows/POSIX reste NON
 DEMONSTRATED ; `pg@8.22.0` reste borné aux chemins exercés, C2b/C3 ne sont pas
 commencés et la politique OSS reste différée.
+
+## R3 — identité d'image Docker et cleanup conditionnel
+
+### Diagnostic sélectionné
+
+Le log brut Infrastructure `39168610286` échoue dans le wrapper Foundations sur
+la comparaison entre inventaire et inspection exacte, puis `infra:down` échoue
+secondairement parce que `infra:prepare` n'avait pas été atteint. Les valeurs
+comparées n'ont pas été journalisées : la reproduction de l'hypothèse « une
+seule ligne tag/digest/ID » n'est pas une preuve de la cause historique, qui
+reste **NON CONCLUSIVE**.
+
+R3 journalise uniquement référence publique, digest attendu, codes,
+classification, ID, RepoTags, RepoDigests et lignes d'inventaire liées. Il
+sépare digest de manifeste et ID local, accepte les représentations multiples,
+et ne reconnaît l'absence qu'après quatre preuves cohérentes. Le nettoyage exige
+une acquisition photographiée, refuse les consommateurs actifs ou arrêtés et
+les références partagées, puis retire uniquement `tag@digest`. Le workflow
+utilise une instance unique et un état atomique. Le finding de contre-revue
+`S-R3-01` est fermé : le cas partiel ne nettoie que le sous-ensemble attesté,
+les états complets exigent exactement cinq fichiers et deux répertoires, et
+l'identité no-follow (`type/dev/ino/mode/birthtimeNs`) de ces objets comme du
+manifeste d'ownership est revérifiée. Une substitution byte-identique ou un
+manifeste réduit est préservé et fait échouer le cleanup.
+
+### Résultats locaux
+
+- parsing PowerShell et validation du workflow : PASS ;
+- régressions R3 causalement concernées : 5/5 ;
+- tooling final hors sandbox : 541/541 ;
+- Foundations réel : 34/34, ACL/transactions/C-05 et cleanup PASS ;
+- métier réel : 1 contrôle statique + 11 scénarios PostgreSQL/Redis/HTTP ;
+- non-régression C1 : 47/47 ;
+- inventaire Docker étranger : restauré après chaque wrapper.
+
+Les tentatives intermédiaires 36/38 puis 34/38 restent NON-PASS. Elles ont mené
+au finding causal d'ordre : les nouvelles fixtures PowerShell lourdes
+précédaient des tests historiques à deadline très courte. Après déplacement en
+fin de fichier, la même suite passe 39/39. Le premier lancement réel du wrapper
+reste NON-PASS sans ressource créée : résolution Windows multiple de
+`docker.exe`, corrigée en sélectionnant l'exécutable déterministe.
+La tentative tooling sandboxée 538/541 reste également NON-PASS : deux sockets
+locales et une fixture Git temporaire ont reçu `EACCES`. La reprise causale hors
+sandbox passe 541/541. Après fermeture de `S-R3-01`, le run direct du fichier
+sur les octets finaux reste NON-PASS 37/39 à cause de deux tests historiques de
+deadline/socket ; ses cinq contrôles R3 passent. La première reprise tooling,
+initialement observée avant l'apparition de ses métadonnées finales, termine en
+réalité au code 0 avec 541/541 et stderr vide. Elle chevauche pendant environ
+34 secondes la reprise causale, elle aussi conclue 541/541 sans modification
+technique supplémentaire. Cette dernière inclut les 39 contrôles du fichier
+ciblé et reste la preuve finale sélectionnée ; la première n'est plus classée
+NON CONCLUSIVE.
+
+Ce PASS est local et ne vaut pas succès Linux/CI. La preuve de signal gracieux
+Windows/POSIX reste NON DEMONSTRATED ; fournisseurs NON QUALIFIÉS, C2b/C3 non
+commencés et politique OSS différée.

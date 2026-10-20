@@ -1,17 +1,22 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
+  chmodSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, resolve } from "node:path";
+import { delimiter, dirname, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
@@ -50,6 +55,372 @@ const repositoryRoot = resolve(
   "..",
   "..",
 );
+
+const pinnedImageFunctionNames = [
+  "ConvertTo-DockerImageInventoryEntries",
+  "Test-DockerNoSuchImageResult",
+  "Resolve-PinnedImageIdentity",
+  "Assert-PinnedImageCleanupSafe",
+  "Assert-PinnedImageRemovalPostcondition",
+];
+
+function runPowerShellImageFixture(wrapperPath, body) {
+  const fixtureRoot = mkdtempSync(
+    resolve(tmpdir(), "kora-image-identity-fixture-"),
+  );
+  try {
+    const fixturePath = resolve(fixtureRoot, "fixture.ps1");
+    const escapedWrapper = wrapperPath.replaceAll("'", "''");
+    const names = pinnedImageFunctionNames
+      .map((name) => `'${name}'`)
+      .join(", ");
+    writeFileSync(
+      fixturePath,
+      `$ErrorActionPreference = 'Stop'\n` +
+        `$wrapperPath = '${escapedWrapper}'\n` +
+        `$tokens = $null\n$parseErrors = $null\n` +
+        `$ast = [Management.Automation.Language.Parser]::ParseFile($wrapperPath, [ref]$tokens, [ref]$parseErrors)\n` +
+        `if ($parseErrors.Count -ne 0) { throw 'Wrapper parse failed.' }\n` +
+        `$functionNames = @(${names})\n` +
+        `foreach ($name in $functionNames) {\n` +
+        `  $definition = $ast.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name }, $true)\n` +
+        `  if ($null -eq $definition) { throw "Missing function $name." }\n` +
+        `  . ([scriptblock]::Create($definition.Extent.Text))\n` +
+        `}\n` +
+        body,
+      { encoding: "utf8", flag: "wx" },
+    );
+    return spawnSync(
+      process.platform === "win32" ? "pwsh.exe" : "pwsh",
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", fixturePath],
+      { encoding: "utf8", windowsHide: true },
+    );
+  } finally {
+    rmSync(fixtureRoot, { force: true, recursive: true });
+  }
+}
+
+function imageIdentityFixtureBody() {
+  return String.raw`
+function New-Result([int]$ExitCode, [string]$Stdout, [string]$Stderr, [bool]$TimedOut = $false) {
+  return [pscustomobject]@{ ExitCode = $ExitCode; Stdout = $Stdout; Stderr = $Stderr; TimedOut = $TimedOut }
+}
+function Assert-FixtureThrows([scriptblock]$Action) {
+  $threw = $false
+  try { & $Action } catch { $threw = $true }
+  if (-not $threw) { throw 'Expected fixture action to throw.' }
+}
+$manifestDigest = 'sha256:' + ('a' * 64)
+$imageId = 'sha256:' + ('b' * 64)
+$otherId = 'sha256:' + ('c' * 64)
+$image = "postgres:18.4-alpine3.24@$manifestDigest"
+$tag = 'postgres:18.4-alpine3.24'
+$repoDigest = "postgres@$manifestDigest"
+$identity = [pscustomobject]@{
+  Id = $imageId
+  RepoTags = @($tag, $repoDigest)
+  RepoDigests = @($repoDigest)
+}
+$inspectOk = New-Result 0 ($identity | ConvertTo-Json -Compress) ''
+$inventory = @(
+  "$tag|$manifestDigest|$imageId",
+  "mirror:copy|sha256:$('d' * 64)|$imageId"
+)
+$present = Resolve-PinnedImageIdentity -Image $image -ExpectedRepoDigest $repoDigest -InventoryImages $inventory -InspectResult $inspectOk
+if (-not $present.Present -or $present.Id -ne $imageId -or $imageId -eq $manifestDigest -or
+    $present.InventoryEntries.Count -ne 2) {
+  throw 'Valid distinct local image identity or multi-reference inventory was rejected.'
+}
+
+$wrongDigestIdentity = [pscustomobject]@{
+  Id = $imageId; RepoTags = @($tag); RepoDigests = @("postgres@sha256:$('e' * 64)")
+}
+Assert-FixtureThrows {
+  Resolve-PinnedImageIdentity -Image $image -ExpectedRepoDigest $repoDigest -InventoryImages $inventory -InspectResult (New-Result 0 ($wrongDigestIdentity | ConvertTo-Json -Compress) '')
+}
+Assert-FixtureThrows {
+  Resolve-PinnedImageIdentity -Image $image -ExpectedRepoDigest $repoDigest -InventoryImages $inventory -InspectResult (New-Result 0 '' '')
+}
+$multiple = @($identity, $identity) | ConvertTo-Json -Compress
+Assert-FixtureThrows {
+  Resolve-PinnedImageIdentity -Image $image -ExpectedRepoDigest $repoDigest -InventoryImages $inventory -InspectResult (New-Result 0 $multiple '')
+}
+Assert-FixtureThrows {
+  Resolve-PinnedImageIdentity -Image $image -ExpectedRepoDigest $repoDigest -InventoryImages $inventory -InspectResult (New-Result 0 '{invalid' '')
+}
+
+function New-NoSuch([string]$Reference) {
+  return New-Result 1 '' "Error response from daemon: No such image: $Reference"
+}
+$absent = Resolve-PinnedImageIdentity -Image $image -ExpectedRepoDigest $repoDigest -InventoryImages @() -InspectResult (New-NoSuch $image) -DaemonInfoResult (New-Result 0 '{}' '') -TagInspectResult (New-NoSuch $tag) -DigestInspectResult (New-NoSuch $repoDigest)
+if ($absent.Present -or $absent.Classification -ne 'no_such_image') {
+  throw 'Exact absent image fixture was not classified as absent.'
+}
+Assert-FixtureThrows {
+  Resolve-PinnedImageIdentity -Image $image -ExpectedRepoDigest $repoDigest -InventoryImages @() -InspectResult (New-NoSuch $image) -DaemonInfoResult (New-Result 1 '' 'daemon unavailable') -TagInspectResult (New-NoSuch $tag) -DigestInspectResult (New-NoSuch $repoDigest)
+}
+Assert-FixtureThrows {
+  Resolve-PinnedImageIdentity -Image $image -ExpectedRepoDigest $repoDigest -InventoryImages @() -InspectResult (New-Result 1 '' 'permission denied') -DaemonInfoResult (New-Result 0 '{}' '') -TagInspectResult (New-NoSuch $tag) -DigestInspectResult (New-NoSuch $repoDigest)
+}
+Assert-FixtureThrows {
+  Resolve-PinnedImageIdentity -Image $image -ExpectedRepoDigest $repoDigest -InventoryImages @("$tag|$manifestDigest|$imageId") -InspectResult (New-NoSuch $image) -DaemonInfoResult (New-Result 0 '{}' '') -TagInspectResult (New-NoSuch $tag) -DigestInspectResult (New-NoSuch $repoDigest)
+}
+Assert-FixtureThrows {
+  Resolve-PinnedImageIdentity -Image $image -ExpectedRepoDigest $repoDigest -InventoryImages @() -InspectResult (New-NoSuch $image) -DaemonInfoResult (New-Result 0 '{}' '') -TagInspectResult $inspectOk -DigestInspectResult (New-NoSuch $repoDigest)
+}
+
+$ownedInventory = @("$tag|$manifestDigest|$imageId")
+$acquired = [pscustomobject]@{
+  Present = $true; Id = $imageId; RepoTags = @($tag, $repoDigest); RepoDigests = @($repoDigest);
+  InventoryEntries = @($ownedInventory); Classification = 'present'; InspectExitCode = 0; DaemonInfoExitCode = $null
+}
+if (-not (Assert-PinnedImageCleanupSafe -Image $image -ExpectedRepoDigest $repoDigest -AcquisitionAttempted $true -AcquiredState $acquired -CurrentState $acquired -InitialImageIds @($otherId) -CurrentInventoryImages $ownedInventory -ContainerIdentities @())) {
+  throw 'Owned acquired image cleanup fixture was rejected.'
+}
+Assert-FixtureThrows {
+  Assert-PinnedImageCleanupSafe -Image $image -ExpectedRepoDigest $repoDigest -AcquisitionAttempted $false -AcquiredState $acquired -CurrentState $acquired -InitialImageIds @($otherId) -CurrentInventoryImages $ownedInventory -ContainerIdentities @()
+}
+Assert-FixtureThrows {
+  Assert-PinnedImageCleanupSafe -Image $image -ExpectedRepoDigest $repoDigest -AcquisitionAttempted $true -AcquiredState $acquired -CurrentState $acquired -InitialImageIds @($imageId) -CurrentInventoryImages $ownedInventory -ContainerIdentities @()
+}
+$shared = [pscustomobject]@{
+  Present = $true; Id = $imageId; RepoTags = @($tag, $repoDigest, 'foreign:shared');
+  RepoDigests = @($repoDigest); InventoryEntries = @($ownedInventory, "foreign:shared|<none>|$imageId");
+  Classification = 'present'; InspectExitCode = 0; DaemonInfoExitCode = $null
+}
+Assert-FixtureThrows {
+  Assert-PinnedImageCleanupSafe -Image $image -ExpectedRepoDigest $repoDigest -AcquisitionAttempted $true -AcquiredState $acquired -CurrentState $shared -InitialImageIds @($otherId) -CurrentInventoryImages @($ownedInventory + "foreign:shared|<none>|$imageId") -ContainerIdentities @()
+}
+Assert-FixtureThrows {
+  Assert-PinnedImageCleanupSafe -Image $image -ExpectedRepoDigest $repoDigest -AcquisitionAttempted $true -AcquiredState $acquired -CurrentState $acquired -InitialImageIds @($otherId) -CurrentInventoryImages $ownedInventory -ContainerIdentities @([pscustomobject]@{ Id = ('f' * 64); Image = $imageId })
+}
+$changed = [pscustomobject]@{
+  Present = $true; Id = $otherId; RepoTags = @($tag, $repoDigest); RepoDigests = @($repoDigest);
+  InventoryEntries = @("$tag|$manifestDigest|$otherId"); Classification = 'present'; InspectExitCode = 0;
+  DaemonInfoExitCode = $null
+}
+Assert-FixtureThrows {
+  Assert-PinnedImageCleanupSafe -Image $image -ExpectedRepoDigest $repoDigest -AcquisitionAttempted $true -AcquiredState $acquired -CurrentState $changed -InitialImageIds @() -CurrentInventoryImages @("$tag|$manifestDigest|$otherId") -ContainerIdentities @()
+}
+if (-not (Assert-PinnedImageRemovalPostcondition -Image $image -AcquiredImageId $imageId -PostRemovalState $absent -PostRemovalInventoryImages @())) {
+  throw 'Clean image removal postcondition was rejected.'
+}
+Assert-FixtureThrows {
+  Assert-PinnedImageRemovalPostcondition -Image $image -AcquiredImageId $imageId -PostRemovalState $absent -PostRemovalInventoryImages $ownedInventory
+}
+Assert-FixtureThrows {
+  Assert-PinnedImageRemovalPostcondition -Image $image -AcquiredImageId $imageId -PostRemovalState $acquired -PostRemovalInventoryImages $ownedInventory
+}
+`;
+}
+
+function workflowRunStep(stepName) {
+  const lines = readFileSync(
+    resolve(repositoryRoot, ".github", "workflows", "infrastructure.yml"),
+    "utf8",
+  ).split(/\r?\n/u);
+  const stepStart = lines.findIndex(
+    (line) => line === `      - name: ${stepName}`,
+  );
+  assert.notEqual(stepStart, -1, `missing workflow step ${stepName}`);
+  const runStart = lines.findIndex(
+    (line, index) => index > stepStart && line === "        run: |",
+  );
+  assert.notEqual(runStart, -1, `missing run block for ${stepName}`);
+  const body = [];
+  for (let index = runStart + 1; index < lines.length; index += 1) {
+    if (lines[index].startsWith("      - name: ")) break;
+    if (lines[index].startsWith("          "))
+      body.push(lines[index].slice(10));
+  }
+  return `${body.join("\n")}\n`;
+}
+
+function sha256Hex(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+function noFollowIdentity(path) {
+  const stats = lstatSync(path, { bigint: true });
+  return {
+    type: stats.isFile()
+      ? "file"
+      : stats.isDirectory()
+        ? "directory"
+        : stats.isSymbolicLink()
+          ? "symlink"
+          : "other",
+    dev: stats.dev.toString(),
+    ino: stats.ino.toString(),
+    mode: stats.mode.toString(),
+    birthtimeNs: stats.birthtimeNs.toString(),
+  };
+}
+
+function powerShellParseResult(script) {
+  const root = mkdtempSync(resolve(tmpdir(), "kora-pwsh-parse-fixture-"));
+  try {
+    const path = resolve(root, "script.ps1");
+    writeFileSync(path, script, { encoding: "utf8", flag: "wx" });
+    return spawnSync(
+      process.platform === "win32" ? "pwsh.exe" : "pwsh",
+      [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "$tokens=$null;$errors=$null;[Management.Automation.Language.Parser]::ParseFile($env:KORA_PWSH_PARSE_PATH,[ref]$tokens,[ref]$errors)|Out-Null;if($errors.Count){$errors|ForEach-Object{[Console]::Error.WriteLine($_.Message)};exit 1}",
+      ],
+      {
+        encoding: "utf8",
+        env: { ...process.env, KORA_PWSH_PARSE_PATH: path },
+        windowsHide: true,
+      },
+    );
+  } finally {
+    rmSync(root, { force: true, recursive: true });
+  }
+}
+
+function workflowCleanupFixture(
+  context,
+  { phase, mutation = null, npmExit = 0 },
+) {
+  const root = mkdtempSync(resolve(tmpdir(), "kora-workflow-cleanup-fixture-"));
+  context.after(() => {
+    if (existsSync(root)) rmSync(root, { force: true, recursive: true });
+  });
+  const runnerTemp = resolve(root, "runner-temp");
+  const workspace = resolve(root, "workspace");
+  const bin = resolve(root, "bin");
+  mkdirSync(runnerTemp, { recursive: true });
+  mkdirSync(workspace, { recursive: true });
+  mkdirSync(bin, { recursive: true });
+  const statePath = resolve(runnerTemp, "kora-infra-job-state");
+
+  const instance = "ci-123-1";
+  const instanceRoot = resolve(
+    workspace,
+    "infra",
+    ".local",
+    "instances",
+    instance,
+  );
+  const ownershipPath = resolve(runnerTemp, "kora-infra-job-owned-files.json");
+  if (phase !== null && phase !== "not_started") {
+    const relativePaths =
+      phase === "prepare_started"
+        ? ["compose.env", "secrets/postgres_password"]
+        : [
+            "compose.env",
+            "secrets/postgres_admin_writer_password",
+            "secrets/postgres_password",
+            "secrets/postgres_runtime_password",
+            "secrets/redis_password",
+          ];
+    let files = relativePaths.map((relativePath, index) => {
+      const path = resolve(instanceRoot, ...relativePath.split("/"));
+      mkdirSync(dirname(path), { recursive: true });
+      const bytes = Buffer.from(`fixture-${index}\n`, "utf8");
+      writeFileSync(path, bytes, { flag: "wx" });
+      return {
+        identity: noFollowIdentity(path),
+        length: bytes.length,
+        relativePath,
+        sha256: sha256Hex(bytes),
+      };
+    });
+    const directories = [
+      { identity: noFollowIdentity(instanceRoot), relativePath: "." },
+      {
+        identity: noFollowIdentity(resolve(instanceRoot, "secrets")),
+        relativePath: "secrets",
+      },
+    ];
+    if (mutation === "manifest-reduced") files = files.slice(0, -1);
+    writeFileSync(
+      ownershipPath,
+      JSON.stringify({ directories, files, instanceRoot }),
+      {
+        encoding: "utf8",
+        flag: "wx",
+      },
+    );
+    writeFileSync(
+      statePath,
+      JSON.stringify({
+        ownershipManifestIdentity: noFollowIdentity(ownershipPath),
+        phase,
+      }),
+      { flag: "wx" },
+    );
+    if (mutation === "content") {
+      writeFileSync(resolve(instanceRoot, "compose.env"), "substituted\n");
+    }
+    if (mutation === "same-bytes-replacement") {
+      const target = resolve(instanceRoot, "compose.env");
+      const bytes = readFileSync(target);
+      renameSync(target, resolve(root, "original-compose.env"));
+      writeFileSync(target, bytes, { flag: "wx" });
+    }
+    if (mutation === "manifest-same-bytes-replacement") {
+      const bytes = readFileSync(ownershipPath);
+      renameSync(ownershipPath, resolve(root, "original-ownership.json"));
+      writeFileSync(ownershipPath, bytes, { flag: "wx" });
+    }
+  } else if (phase !== null) {
+    writeFileSync(statePath, JSON.stringify({ phase }), { flag: "wx" });
+  }
+
+  const npmRecord = resolve(root, "npm-record.json");
+  const fakeNpmScript = resolve(bin, "fake-npm.mjs");
+  writeFileSync(
+    fakeNpmScript,
+    `import { writeFileSync } from 'node:fs';\n` +
+      `writeFileSync(process.env.KORA_FAKE_NPM_RECORD, JSON.stringify(process.argv.slice(2)));\n` +
+      `process.exit(Number(process.env.KORA_FAKE_NPM_EXIT || '0'));\n`,
+    { encoding: "utf8", flag: "wx" },
+  );
+  if (process.platform === "win32") {
+    writeFileSync(
+      resolve(bin, "npm.cmd"),
+      `@echo off\r\n"${process.execPath}" "${fakeNpmScript}" %*\r\n`,
+      { encoding: "utf8", flag: "wx" },
+    );
+  } else {
+    const npmPath = resolve(bin, "npm");
+    writeFileSync(
+      npmPath,
+      `#!/bin/sh\nexec "${process.execPath}" "${fakeNpmScript}" "$@"\n`,
+      { encoding: "utf8", flag: "wx" },
+    );
+    chmodSync(npmPath, 0o755);
+  }
+
+  const cleanupPath = resolve(root, "cleanup.ps1");
+  writeFileSync(cleanupPath, workflowRunStep("Stop local infrastructure"), {
+    encoding: "utf8",
+    flag: "wx",
+  });
+  const result = spawnSync(
+    process.platform === "win32" ? "pwsh.exe" : "pwsh",
+    ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", cleanupPath],
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        GITHUB_WORKSPACE: workspace,
+        KORA_FAKE_NPM_EXIT: String(npmExit),
+        KORA_FAKE_NPM_RECORD: npmRecord,
+        KORA_INFRA_EPHEMERAL_INSTANCE: instance,
+        PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
+        RUNNER_TEMP: runnerTemp,
+      },
+      windowsHide: true,
+    },
+  );
+  return { instanceRoot, npmRecord, ownershipPath, result };
+}
 
 function historicalFixture(context, { alterPath, omitPath } = {}) {
   const sourceRoot = mkdtempSync(resolve(tmpdir(), "kora-c1-history-fixture-"));
@@ -1177,4 +1548,124 @@ test("conserve le resultat non nul explicitement allowFailure", () => {
       stdout: "",
     },
   );
+});
+
+for (const wrapper of [
+  "apps/api/prisma/run-admin-security-c2a-runtime-validation.ps1",
+  "apps/api/prisma/run-admin-security-c2a-business-validation.ps1",
+]) {
+  test(`qualifie l'identité Docker et le cleanup sémantiques de ${wrapper}`, () => {
+    const result = runPowerShellImageFixture(
+      resolve(repositoryRoot, ...wrapper.split("/")),
+      imageIdentityFixtureBody(),
+    );
+    assert.equal(
+      result.status,
+      0,
+      `PowerShell fixture failed for ${wrapper}:\n${result.stdout}\n${result.stderr}`,
+    );
+  });
+}
+
+test("exécute le cleanup workflow avant, pendant et après préparation", (context) => {
+  const notStarted = workflowCleanupFixture(context, {
+    phase: "not_started",
+  });
+  assert.equal(
+    notStarted.result.status,
+    0,
+    `${notStarted.result.stdout}\n${notStarted.result.stderr}`,
+  );
+  assert.equal(existsSync(notStarted.npmRecord), false);
+
+  const partial = workflowCleanupFixture(context, {
+    phase: "prepare_started",
+  });
+  assert.equal(
+    partial.result.status,
+    0,
+    `${partial.result.stdout}\n${partial.result.stderr}`,
+  );
+  assert.equal(existsSync(partial.instanceRoot), false);
+  assert.equal(existsSync(partial.npmRecord), false);
+
+  for (const phase of ["prepared", "up_started", "running"]) {
+    const normal = workflowCleanupFixture(context, { phase });
+    assert.equal(
+      normal.result.status,
+      0,
+      `${phase}:\n${normal.result.stdout}\n${normal.result.stderr}`,
+    );
+    assert.deepEqual(JSON.parse(readFileSync(normal.npmRecord, "utf8")), [
+      "run",
+      "infra:down",
+    ]);
+    assert.equal(existsSync(normal.instanceRoot), false);
+  }
+});
+
+test("valide la syntaxe des quatre scripts PowerShell du workflow", () => {
+  for (const stepName of [
+    "Initialize infrastructure cleanup state",
+    "Prepare and validate Compose",
+    "Start and verify lifecycle",
+    "Stop local infrastructure",
+  ]) {
+    const result = powerShellParseResult(workflowRunStep(stepName));
+    assert.equal(
+      result.status,
+      0,
+      `${stepName}:\n${result.stdout}\n${result.stderr}`,
+    );
+  }
+});
+
+test("échoue fermé sur état, substitution ou down non concluant", (context) => {
+  const missingState = workflowCleanupFixture(context, { phase: null });
+  assert.notEqual(missingState.result.status, 0);
+
+  const substituted = workflowCleanupFixture(context, {
+    mutation: "content",
+    phase: "prepare_started",
+  });
+  assert.notEqual(substituted.result.status, 0);
+  assert.equal(
+    existsSync(resolve(substituted.instanceRoot, "compose.env")),
+    true,
+  );
+
+  const byteIdenticalSubstitution = workflowCleanupFixture(context, {
+    mutation: "same-bytes-replacement",
+    phase: "prepare_started",
+  });
+  assert.notEqual(byteIdenticalSubstitution.result.status, 0);
+  assert.equal(
+    existsSync(resolve(byteIdenticalSubstitution.instanceRoot, "compose.env")),
+    true,
+  );
+
+  const replacedManifest = workflowCleanupFixture(context, {
+    mutation: "manifest-same-bytes-replacement",
+    phase: "prepare_started",
+  });
+  assert.notEqual(replacedManifest.result.status, 0);
+  assert.equal(existsSync(replacedManifest.ownershipPath), true);
+
+  const reducedManifest = workflowCleanupFixture(context, {
+    mutation: "manifest-reduced",
+    phase: "prepared",
+  });
+  assert.notEqual(reducedManifest.result.status, 0);
+  assert.equal(existsSync(reducedManifest.instanceRoot), true);
+
+  const failedDown = workflowCleanupFixture(context, {
+    npmExit: 23,
+    phase: "running",
+  });
+  assert.notEqual(failedDown.result.status, 0);
+  assert.deepEqual(JSON.parse(readFileSync(failedDown.npmRecord, "utf8")), [
+    "run",
+    "infra:down",
+  ]);
+  assert.equal(existsSync(failedDown.instanceRoot), false);
 });

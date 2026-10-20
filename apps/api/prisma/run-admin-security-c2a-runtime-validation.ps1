@@ -63,6 +63,288 @@ function Assert-SameInventory {
   }
 }
 
+function ConvertTo-DockerImageInventoryEntries {
+  param([AllowEmptyCollection()][string[]]$Images)
+  return @(
+    $Images | ForEach-Object {
+      $fields = @($_ -split '\|')
+      if ($fields.Count -ne 3 -or $fields[2] -notmatch '^sha256:[0-9a-f]{64}$') {
+        throw "Docker image inventory returned an unexpected entry: $_"
+      }
+      [pscustomobject]@{
+        Raw = $_
+        RepositoryTag = $fields[0]
+        Digest = $fields[1]
+        Id = $fields[2]
+      }
+    }
+  )
+}
+
+function Invoke-DockerCapture {
+  param(
+    [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Arguments,
+    [int]$TimeoutMilliseconds = 30000
+  )
+  $dockerCommand = @(Get-Command docker -CommandType Application -ErrorAction Stop)[0]
+  $start = [Diagnostics.ProcessStartInfo]::new()
+  $start.FileName = $dockerCommand.Source
+  $start.UseShellExecute = $false
+  $start.CreateNoWindow = $true
+  $start.RedirectStandardOutput = $true
+  $start.RedirectStandardError = $true
+  foreach ($argument in $Arguments) { [void]$start.ArgumentList.Add($argument) }
+  $process = [Diagnostics.Process]::Start($start)
+  if ($process -eq $null) { throw 'Unable to start the Docker CLI.' }
+  try {
+    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+    $stderrTask = $process.StandardError.ReadToEndAsync()
+    $timedOut = -not $process.WaitForExit($TimeoutMilliseconds)
+    if ($timedOut) {
+      $process.Kill($true)
+      $process.WaitForExit()
+    }
+    return [pscustomobject]@{
+      ExitCode = if ($timedOut) { $null } else { $process.ExitCode }
+      Stdout = $stdoutTask.GetAwaiter().GetResult()
+      Stderr = $stderrTask.GetAwaiter().GetResult()
+      TimedOut = $timedOut
+    }
+  }
+  finally {
+    $process.Dispose()
+  }
+}
+
+function Test-DockerNoSuchImageResult {
+  param(
+    [Parameter(Mandatory = $true)]$Result,
+    [Parameter(Mandatory = $true)][string]$Reference
+  )
+  if ($Result.TimedOut -or $Result.ExitCode -eq 0) { return $false }
+  return $Result.Stderr.Trim() -ceq "Error response from daemon: No such image: $Reference"
+}
+
+function Resolve-PinnedImageIdentity {
+  param(
+    [Parameter(Mandatory = $true)][string]$Image,
+    [Parameter(Mandatory = $true)][string]$ExpectedRepoDigest,
+    [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$InventoryImages,
+    [Parameter(Mandatory = $true)]$InspectResult,
+    $DaemonInfoResult = $null,
+    $TagInspectResult = $null,
+    $DigestInspectResult = $null
+  )
+  $inventoryEntries = @(ConvertTo-DockerImageInventoryEntries -Images $InventoryImages)
+  $imageParts = @($Image -split '@', 2)
+  $digestParts = @($ExpectedRepoDigest -split '@', 2)
+  if ($imageParts.Count -ne 2 -or $digestParts.Count -ne 2) {
+    throw 'Pinned image reference is malformed.'
+  }
+  $requestedTag = $imageParts[0]
+  $expectedRepository = $digestParts[0]
+  $expectedDigest = $digestParts[1]
+
+  if ($InspectResult.TimedOut) { throw "Pinned image inspection timed out for $Image." }
+  if ($InspectResult.ExitCode -eq 0) {
+    if ([string]::IsNullOrWhiteSpace($InspectResult.Stdout)) {
+      throw "Pinned image inspection was empty for $Image."
+    }
+    try { $details = @(($InspectResult.Stdout) | ConvertFrom-Json) }
+    catch { throw "Pinned image inspection returned invalid JSON for $Image." }
+    if ($details.Count -ne 1 -or
+        $details[0].Id -notmatch '^sha256:[0-9a-f]{64}$' -or
+        @($details[0].RepoDigests) -notcontains $ExpectedRepoDigest) {
+      throw "Pinned image identity mismatch for $Image."
+    }
+    $matchingEntries = @($inventoryEntries | Where-Object { $_.Id -eq $details[0].Id })
+    if ($matchingEntries.Count -eq 0) {
+      throw "Pinned image inventory does not contain inspected identity $($details[0].Id)."
+    }
+    return [pscustomobject]@{
+      Present = $true
+      Classification = 'present'
+      Id = $details[0].Id
+      RepoTags = @($details[0].RepoTags | Sort-Object -Unique)
+      RepoDigests = @($details[0].RepoDigests | Sort-Object -Unique)
+      InventoryEntries = @($matchingEntries.Raw | Sort-Object -Unique)
+      InspectExitCode = 0
+      DaemonInfoExitCode = $null
+    }
+  }
+
+  if (-not (Test-DockerNoSuchImageResult -Result $InspectResult -Reference $Image)) {
+    throw "Pinned image inspection failed without an exact no-such-image result for $Image."
+  }
+  if ($DaemonInfoResult -eq $null -or $DaemonInfoResult.TimedOut -or $DaemonInfoResult.ExitCode -ne 0) {
+    throw "Docker is unavailable while resolving pinned image state for $Image."
+  }
+  if ($TagInspectResult -eq $null -or
+      -not (Test-DockerNoSuchImageResult -Result $TagInspectResult -Reference $requestedTag)) {
+    throw "Pinned image tag state is inconsistent for $requestedTag."
+  }
+  if ($DigestInspectResult -eq $null -or
+      -not (Test-DockerNoSuchImageResult -Result $DigestInspectResult -Reference $ExpectedRepoDigest)) {
+    throw "Pinned image repository digest state is inconsistent for $ExpectedRepoDigest."
+  }
+  $contradictoryEntries = @(
+    $inventoryEntries | Where-Object {
+      $_.RepositoryTag -eq $requestedTag -or
+      ($_.RepositoryTag -match ('^' + [regex]::Escape($expectedRepository) + ':') -and
+       $_.Digest -eq $expectedDigest)
+    }
+  )
+  if ($contradictoryEntries.Count -ne 0) {
+    throw "Pinned image inventory contradicts exact absence for $Image."
+  }
+  return [pscustomobject]@{
+    Present = $false
+    Classification = 'no_such_image'
+    Id = $null
+    RepoTags = @()
+    RepoDigests = @()
+    InventoryEntries = @()
+    InspectExitCode = $InspectResult.ExitCode
+    DaemonInfoExitCode = $DaemonInfoResult.ExitCode
+  }
+}
+
+function Write-PinnedImageDiagnostic {
+  param(
+    [Parameter(Mandatory = $true)][string]$Phase,
+    [Parameter(Mandatory = $true)][string]$Image,
+    [Parameter(Mandatory = $true)][string]$ExpectedRepoDigest,
+    [Parameter(Mandatory = $true)]$State
+  )
+  $payload = [ordered]@{
+    phase = $Phase
+    requestedReference = $Image
+    expectedRepoDigest = $ExpectedRepoDigest
+    classification = $State.Classification
+    inspectExitCode = $State.InspectExitCode
+    daemonInfoExitCode = $State.DaemonInfoExitCode
+    imageId = $State.Id
+    repoTags = @($State.RepoTags)
+    repoDigests = @($State.RepoDigests)
+    matchingInventoryEntries = @($State.InventoryEntries)
+  }
+  [Console]::Out.WriteLine('DOCKER_IMAGE_IDENTITY ' + ($payload | ConvertTo-Json -Compress -Depth 4))
+}
+
+function Get-PinnedImageState {
+  param(
+    [Parameter(Mandatory = $true)][string]$Image,
+    [Parameter(Mandatory = $true)][string]$ExpectedRepoDigest,
+    [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$InventoryImages,
+    [Parameter(Mandatory = $true)][string]$Phase
+  )
+  $inspection = Invoke-DockerCapture -Arguments @('image', 'inspect', $Image)
+  $daemon = $null
+  $tagInspection = $null
+  $digestInspection = $null
+  if ($inspection.ExitCode -ne 0) {
+    $daemon = Invoke-DockerCapture -Arguments @('info')
+    $requestedTag = @($Image -split '@', 2)[0]
+    $tagInspection = Invoke-DockerCapture -Arguments @('image', 'inspect', $requestedTag)
+    $digestInspection = Invoke-DockerCapture -Arguments @('image', 'inspect', $ExpectedRepoDigest)
+  }
+  $state = Resolve-PinnedImageIdentity -Image $Image -ExpectedRepoDigest $ExpectedRepoDigest `
+    -InventoryImages $InventoryImages -InspectResult $inspection -DaemonInfoResult $daemon `
+    -TagInspectResult $tagInspection -DigestInspectResult $digestInspection
+  Write-PinnedImageDiagnostic -Phase $Phase -Image $Image -ExpectedRepoDigest $ExpectedRepoDigest -State $state
+  return $state
+}
+
+function Get-DockerContainerImageIdentities {
+  $containerList = Invoke-DockerCapture -Arguments @('container', 'ls', '--all', '--no-trunc', '--quiet')
+  if ($containerList.TimedOut -or $containerList.ExitCode -ne 0) {
+    throw 'Unable to enumerate Docker containers for image cleanup.'
+  }
+  $containerIds = @($containerList.Stdout -split '\r?\n' | Where-Object { $_.Length -gt 0 })
+  if ($containerIds.Count -eq 0) { return @() }
+  $inspection = Invoke-DockerCapture -Arguments (@('container', 'inspect') + $containerIds)
+  if ($inspection.TimedOut -or $inspection.ExitCode -ne 0) {
+    throw 'Unable to inspect Docker containers for image cleanup.'
+  }
+  try { $details = @(($inspection.Stdout) | ConvertFrom-Json) }
+  catch { throw 'Docker container inspection returned invalid JSON during image cleanup.' }
+  if ($details.Count -ne $containerIds.Count) {
+    throw 'Docker container inspection count changed during image cleanup.'
+  }
+  return @($details | ForEach-Object {
+      if ($_.Id -notmatch '^[0-9a-f]{64}$' -or $_.Image -notmatch '^sha256:[0-9a-f]{64}$') {
+        throw 'Docker container inspection returned an invalid identity during image cleanup.'
+      }
+      [pscustomobject]@{ Id = $_.Id; Image = $_.Image }
+    })
+}
+
+function Assert-PinnedImageCleanupSafe {
+  param(
+    [Parameter(Mandatory = $true)][string]$Image,
+    [Parameter(Mandatory = $true)][string]$ExpectedRepoDigest,
+    [Parameter(Mandatory = $true)][bool]$AcquisitionAttempted,
+    [Parameter(Mandatory = $true)]$AcquiredState,
+    [Parameter(Mandatory = $true)]$CurrentState,
+    [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$InitialImageIds,
+    [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$CurrentInventoryImages,
+    [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$ContainerIdentities
+  )
+  if (-not $AcquisitionAttempted -or $AcquiredState -eq $null) {
+    throw "Cleanup has no owned acquisition snapshot for $Image."
+  }
+  if (-not $AcquiredState.Present -or -not $CurrentState.Present -or
+      $AcquiredState.Id -ne $CurrentState.Id) {
+    throw "Acquired image identity changed before cleanup for $Image."
+  }
+  if ($InitialImageIds -contains $CurrentState.Id) {
+    throw "Cleanup refused image identity present in the initial inventory for $Image."
+  }
+  if (@($ContainerIdentities | Where-Object { $_.Image -eq $CurrentState.Id }).Count -ne 0) {
+    throw "Cleanup refused image identity used by a Docker container for $Image."
+  }
+  foreach ($surface in @('RepoTags', 'RepoDigests', 'InventoryEntries')) {
+    $difference = @(Compare-Object -ReferenceObject @($AcquiredState.$surface | Sort-Object -Unique) `
+      -DifferenceObject @($CurrentState.$surface | Sort-Object -Unique))
+    if ($difference.Count -ne 0) {
+      throw "Acquired image $surface changed before cleanup for $Image."
+    }
+  }
+  $imageParts = @($Image -split '@', 2)
+  $digestParts = @($ExpectedRepoDigest -split '@', 2)
+  $allowedTags = @($imageParts[0], $ExpectedRepoDigest)
+  if (@($CurrentState.RepoTags | Where-Object { $allowedTags -notcontains $_ }).Count -ne 0 -or
+      @($CurrentState.RepoDigests | Where-Object { $_ -ne $ExpectedRepoDigest }).Count -ne 0) {
+    throw "Cleanup refused unexpected image references for $Image."
+  }
+  $entries = @(ConvertTo-DockerImageInventoryEntries -Images $CurrentInventoryImages)
+  $ownedEntries = @($entries | Where-Object { $_.Id -eq $CurrentState.Id })
+  if ($ownedEntries.Count -eq 0 -or
+      @($ownedEntries | Where-Object {
+          $_.RepositoryTag -ne $imageParts[0] -or $_.Digest -ne $digestParts[1]
+        }).Count -ne 0) {
+    throw "Cleanup refused shared or incoherent inventory references for $Image."
+  }
+  return $true
+}
+
+function Assert-PinnedImageRemovalPostcondition {
+  param(
+    [Parameter(Mandatory = $true)][string]$Image,
+    [Parameter(Mandatory = $true)][string]$AcquiredImageId,
+    [Parameter(Mandatory = $true)]$PostRemovalState,
+    [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$PostRemovalInventoryImages
+  )
+  if ($PostRemovalState.Present) {
+    throw "Targeted cleanup left the exact acquired image reference present for $Image."
+  }
+  $postRemovalEntries = @(ConvertTo-DockerImageInventoryEntries -Images $PostRemovalInventoryImages)
+  if (@($postRemovalEntries | Where-Object { $_.Id -eq $AcquiredImageId }).Count -ne 0) {
+    throw "Targeted cleanup left the acquired image identity in inventory for $Image."
+  }
+  return $true
+}
+
 $imageRepositoryTag = 'postgres:18.4-alpine3.24'
 $imageDigest = 'sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15'
 $expectedRepoDigest = "postgres@$imageDigest"
@@ -125,50 +407,19 @@ foreach ($name in $environmentNames) {
 }
 
 $initialInventory = Get-DockerInventory
+$initialImageEntries = @(ConvertTo-DockerImageInventoryEntries -Images $initialInventory.Images)
 $initialImageIds = @(
-  $initialInventory.Images | ForEach-Object {
-    $fields = @($_ -split '\|')
-    if ($fields.Count -ne 3 -or $fields[2] -notmatch '^sha256:[0-9a-f]{64}$') {
-      throw "Docker image inventory returned an unexpected entry: $_"
-    }
-    $fields[2]
-  } | Sort-Object -Unique
+  $initialImageEntries.Id | Sort-Object -Unique
 )
-$matchingPinnedInventoryEntries = @(
-  $initialInventory.Images | Where-Object { $_.StartsWith("$imageRepositoryTag|$imageDigest|") }
-)
-$initialImageInspection = @(& docker image inspect $image 2>$null)
-$initialImageInspectExitCode = $LASTEXITCODE
-$imageInitiallyPresent = $initialImageInspectExitCode -eq 0
-$initialImageId = $null
-if ($imageInitiallyPresent) {
-  $initialImageDetails = @(($initialImageInspection -join "`n") | ConvertFrom-Json)
-  if ($initialImageDetails.Count -ne 1 -or
-      $initialImageDetails[0].Id -notmatch '^sha256:[0-9a-f]{64}$' -or
-      @($initialImageDetails[0].RepoDigests) -notcontains $expectedRepoDigest) {
-    throw 'The pinned PostgreSQL image exact inspection returned an unexpected identity.'
-  }
-  $initialImageId = $initialImageDetails[0].Id
-  $expectedImageInventoryEntry = "$imageRepositoryTag|$imageDigest|$initialImageId"
-  if ($matchingPinnedInventoryEntries.Count -ne 1 -or
-      $initialInventory.Images -notcontains $expectedImageInventoryEntry -or
-      $initialImageIds -notcontains $initialImageId) {
-    throw 'The pinned PostgreSQL image inventory and exact inspection disagree.'
-  }
-}
-else {
-  if ($matchingPinnedInventoryEntries.Count -ne 0) {
-    throw 'The pinned PostgreSQL image inventory was not confirmed by exact inspection.'
-  }
-  & docker info *> $null
-  if ($LASTEXITCODE -ne 0) {
-    throw 'Unable to distinguish an absent pinned image from a Docker daemon failure.'
-  }
-}
+$initialImageState = Get-PinnedImageState -Image $image -ExpectedRepoDigest $expectedRepoDigest `
+  -InventoryImages $initialInventory.Images -Phase 'initial'
+$imageInitiallyPresent = $initialImageState.Present
 $containerCreated = $false
 $networkCreated = $false
 $containerCreateAttempted = $false
 $networkCreateAttempted = $false
+$imageAcquisitionAttempted = $false
+$acquiredImageState = $null
 $secretDirectoryCreated = $false
 $validationError = $null
 $cleanupErrors = @()
@@ -204,6 +455,7 @@ try {
   $networkCreated = $true
 
   $containerCreateAttempted = $true
+  $imageAcquisitionAttempted = $true
   $containerId = (& docker run --detach --name $container `
     --network $network `
     --label kora.slice=s1.2-03c2a-validation `
@@ -221,10 +473,32 @@ try {
     --publish 127.0.0.1::5432 `
     --tmpfs /var/lib/postgresql:rw,nosuid,nodev `
     $image).Trim()
-  if ($LASTEXITCODE -ne 0 -or $containerId -notmatch '^[0-9a-f]{64}$') {
+  $containerRunExitCode = $LASTEXITCODE
+  $containerRunSucceeded = $containerRunExitCode -eq 0 -and $containerId -match '^[0-9a-f]{64}$'
+  if ($containerRunSucceeded) { $containerCreated = $true }
+  $acquisitionSnapshotError = $null
+  try {
+    $postRunInventory = Get-DockerInventory
+    $acquiredImageState = Get-PinnedImageState -Image $image -ExpectedRepoDigest $expectedRepoDigest `
+      -InventoryImages $postRunInventory.Images -Phase 'post_run'
+  }
+  catch { $acquisitionSnapshotError = $_.Exception }
+  if (-not $containerRunSucceeded) {
+    if ($acquisitionSnapshotError -ne $null) {
+      throw [AggregateException]::new(
+        'Docker run and pinned image acquisition snapshot both failed.',
+        [Exception[]]@(
+          [Exception]::new('Unable to create the isolated PostgreSQL C2a validation container.'),
+          $acquisitionSnapshotError
+        )
+      )
+    }
     throw 'Unable to create the isolated PostgreSQL C2a validation container.'
   }
-  $containerCreated = $true
+  if ($acquisitionSnapshotError -ne $null) { throw $acquisitionSnapshotError }
+  if (-not $acquiredImageState.Present) {
+    throw 'Pinned PostgreSQL image was absent after successful container creation.'
+  }
 
   $portLine = & docker port $container 5432/tcp
   if ($LASTEXITCODE -ne 0 -or $portLine -notmatch '^127\.0\.0\.1:(\d+)$') {
@@ -347,34 +621,38 @@ finally {
   catch { $cleanupErrors += $_.Exception }
   if (-not $imageInitiallyPresent) {
     try {
-      $finalImageInspection = @(& docker image inspect $image 2>$null)
-      $finalImageInspectExitCode = $LASTEXITCODE
-      if ($finalImageInspectExitCode -eq 0) {
-        $finalImageDetails = @(($finalImageInspection -join "`n") | ConvertFrom-Json)
-        if ($finalImageDetails.Count -ne 1 -or
-            $finalImageDetails[0].Id -notmatch '^sha256:[0-9a-f]{64}$' -or
-            @($finalImageDetails[0].RepoDigests) -notcontains $expectedRepoDigest) {
-          throw 'Targeted cleanup refused an unexpected acquired image identity.'
+      $currentImageInventory = Get-DockerInventory
+      $currentImageState = Get-PinnedImageState -Image $image -ExpectedRepoDigest $expectedRepoDigest `
+        -InventoryImages $currentImageInventory.Images -Phase 'pre_cleanup'
+      if ($currentImageState.Present) {
+        if (-not $imageAcquisitionAttempted -or $acquiredImageState -eq $null) {
+          throw 'Targeted cleanup refused a present image without an owned acquisition snapshot.'
         }
-        $acquiredImageId = $finalImageDetails[0].Id
-        if ($initialImageIds -contains $acquiredImageId) {
-          throw 'Targeted cleanup refused to remove an image ID present in the initial inventory.'
+        $containerIdentities = @(Get-DockerContainerImageIdentities)
+        Assert-PinnedImageCleanupSafe -Image $image -ExpectedRepoDigest $expectedRepoDigest `
+          -AcquisitionAttempted $imageAcquisitionAttempted -AcquiredState $acquiredImageState `
+          -CurrentState $currentImageState -InitialImageIds $initialImageIds `
+          -CurrentInventoryImages $currentImageInventory.Images `
+          -ContainerIdentities $containerIdentities | Out-Null
+        $removeResult = Invoke-DockerCapture -Arguments @('image', 'rm', $image)
+        if ($removeResult.TimedOut -or $removeResult.ExitCode -ne 0) {
+          throw 'Targeted cleanup failed to remove the exact acquired image reference.'
         }
-        $currentImageInventory = Get-DockerInventory
-        $expectedAcquiredImageEntry = "$imageRepositoryTag|$imageDigest|$acquiredImageId"
-        $acquiredImageEntries = @(
-          $currentImageInventory.Images | Where-Object { $_.EndsWith("|$acquiredImageId") }
-        )
-        if ($acquiredImageEntries.Count -ne 1 -or
-            $acquiredImageEntries[0] -ne $expectedAcquiredImageEntry) {
-          throw 'Targeted cleanup refused an acquired image with unexpected references.'
-        }
-        & docker image rm $acquiredImageId | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw 'Targeted cleanup failed for the newly acquired image.' }
-        Write-Output "TARGETED_C2A_VALIDATION_IMAGE_REMOVED id=$acquiredImageId"
+        $postRemovalInventory = Get-DockerInventory
+        $postRemovalState = Get-PinnedImageState -Image $image -ExpectedRepoDigest $expectedRepoDigest `
+          -InventoryImages $postRemovalInventory.Images -Phase 'post_cleanup'
+        Assert-PinnedImageRemovalPostcondition -Image $image -AcquiredImageId $acquiredImageState.Id `
+          -PostRemovalState $postRemovalState -PostRemovalInventoryImages $postRemovalInventory.Images | Out-Null
+        Write-Output "TARGETED_C2A_VALIDATION_IMAGE_REFERENCE_REMOVED reference=$image"
+      }
+      elseif ($acquiredImageState -ne $null -and $acquiredImageState.Present) {
+        throw 'Acquired image disappeared before targeted cleanup.'
       }
     }
-    catch { $cleanupErrors += $_.Exception }
+    catch {
+      [Console]::Error.WriteLine("DOCKER_IMAGE_CLEANUP_ERROR phase=image_cleanup reference=$image error=$($_.Exception.Message)")
+      $cleanupErrors += $_.Exception
+    }
   }
   try {
     $finalInventory = Get-DockerInventory
@@ -384,6 +662,12 @@ finally {
   catch { $cleanupErrors += $_.Exception }
 }
 
+if ($validationError -ne $null) {
+  [Console]::Error.WriteLine("C2A_VALIDATION_ERROR phase=validation error=$($validationError.Message)")
+}
+foreach ($cleanupError in $cleanupErrors) {
+  [Console]::Error.WriteLine("C2A_CLEANUP_ERROR phase=cleanup error=$($cleanupError.Message)")
+}
 if ($validationError -ne $null -and $cleanupErrors.Count -gt 0) {
   throw [AggregateException]::new(
     'C2a validation and targeted cleanup failed.',

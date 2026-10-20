@@ -18,7 +18,23 @@ jobs:
   compose:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      KORA_INFRA_EPHEMERAL_INSTANCE: "ci-${{ github.run_id }}-${{ github.run_attempt }}"
     steps:
+      - name: Initialize infrastructure cleanup state
+        shell: pwsh
+        run: |
+          $statePath = Join-Path $env:RUNNER_TEMP 'kora-infra-job-state'
+          if (Test-Path -LiteralPath $statePath) {
+            throw 'Infrastructure cleanup state unexpectedly exists before job initialization.'
+          }
+          $temporaryState = "$statePath.$PID.$([guid]::NewGuid().ToString('N'))"
+          [IO.File]::WriteAllText(
+            $temporaryState,
+            '{"phase":"not_started"}',
+            [Text.UTF8Encoding]::new($false)
+          )
+          [IO.File]::Move($temporaryState, $statePath)
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Node.js 22.18.0
@@ -40,20 +56,322 @@ jobs:
         shell: pwsh
         run: ./apps/api/prisma/run-admin-security-c2a-business-validation.ps1
       - name: Prepare and validate Compose
+        shell: pwsh
         run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $statePath = Join-Path $env:RUNNER_TEMP 'kora-infra-job-state'
+          $ownershipPath = Join-Path $env:RUNNER_TEMP 'kora-infra-job-owned-files.json'
+          $instanceRoot = [IO.Path]::GetFullPath((Join-Path $env:GITHUB_WORKSPACE "infra/.local/instances/$env:KORA_INFRA_EPHEMERAL_INSTANCE"))
+          $instancesRoot = [IO.Path]::GetFullPath((Join-Path $env:GITHUB_WORKSPACE 'infra/.local/instances'))
+          if (-not $instanceRoot.StartsWith($instancesRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::Ordinal)) {
+            throw 'Infrastructure instance path escaped its expected parent.'
+          }
+          if (Test-Path -LiteralPath $instanceRoot) {
+            throw 'Infrastructure instance root must be absent before preparation.'
+          }
+          function Get-NoFollowIdentity([string]$Path) {
+            $script = "const s=require('node:fs').lstatSync(process.argv[1],{bigint:true});const type=s.isFile()?'file':s.isDirectory()?'directory':s.isSymbolicLink()?'symlink':'other';console.log(JSON.stringify({type,dev:s.dev.toString(),ino:s.ino.toString(),mode:s.mode.toString(),birthtimeNs:s.birthtimeNs.toString()}))"
+            $raw = @(& node -e $script $Path)
+            if ($LASTEXITCODE -ne 0 -or $raw.Count -ne 1) {
+              throw "Unable to capture no-follow filesystem identity: $Path"
+            }
+            try { return ($raw[0] | ConvertFrom-Json) }
+            catch { throw "Invalid no-follow filesystem identity: $Path" }
+          }
+          function Set-InfraPhase([string]$Expected, [string]$Next) {
+            $stateInfo = Get-Item -LiteralPath $statePath -Force
+            if ($stateInfo.PSIsContainer -or
+                ($stateInfo.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+              throw 'Infrastructure state is not an owned regular file.'
+            }
+            try { $state = [IO.File]::ReadAllText($statePath) | ConvertFrom-Json }
+            catch { throw 'Infrastructure state is invalid JSON.' }
+            if ($state.phase -cne $Expected) {
+              throw "Illegal infrastructure state transition from expected $Expected."
+            }
+            $nextState = [ordered]@{ phase = $Next }
+            if ($null -ne $state.ownershipManifestIdentity) {
+              $nextState.ownershipManifestIdentity = $state.ownershipManifestIdentity
+            }
+            $temporaryState = "$statePath.$PID.$([guid]::NewGuid().ToString('N'))"
+            [IO.File]::WriteAllText(
+              $temporaryState,
+              ($nextState | ConvertTo-Json -Depth 4 -Compress),
+              [Text.UTF8Encoding]::new($false)
+            )
+            [IO.File]::Move($temporaryState, $statePath, $true)
+          }
+          Set-InfraPhase 'not_started' 'prepare_started'
           npm run infra:prepare
+          $prepareExitCode = $LASTEXITCODE
+          $expectedFiles = @(
+            'compose.env',
+            'secrets/postgres_admin_writer_password',
+            'secrets/postgres_password',
+            'secrets/postgres_runtime_password',
+            'secrets/redis_password'
+          )
+          $ownedFiles = @()
+          foreach ($relativePath in $expectedFiles) {
+            $path = [IO.Path]::GetFullPath((Join-Path $instanceRoot $relativePath))
+            if (Test-Path -LiteralPath $path) {
+              $file = Get-Item -LiteralPath $path -Force
+              if ($file.PSIsContainer -or ($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "Prepared infrastructure path is not an owned regular file: $relativePath"
+              }
+              $ownedFiles += [ordered]@{
+                relativePath = $relativePath
+                length = $file.Length
+                sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+                identity = Get-NoFollowIdentity $path
+              }
+            }
+          }
+          $ownedDirectories = @()
+          foreach ($relativePath in @('.', 'secrets')) {
+            $path = [IO.Path]::GetFullPath((Join-Path $instanceRoot $relativePath))
+            if (Test-Path -LiteralPath $path) {
+              $identity = Get-NoFollowIdentity $path
+              if ($identity.type -cne 'directory') {
+                throw "Prepared infrastructure directory is not an owned directory: $relativePath"
+              }
+              $ownedDirectories += [ordered]@{
+                relativePath = $relativePath
+                identity = $identity
+              }
+            }
+          }
+          $ownership = [ordered]@{
+            instanceRoot = $instanceRoot
+            files = $ownedFiles
+            directories = $ownedDirectories
+          }
+          $temporaryOwnership = "$ownershipPath.$PID.$([guid]::NewGuid().ToString('N'))"
+          [IO.File]::WriteAllText(
+            $temporaryOwnership,
+            ($ownership | ConvertTo-Json -Depth 4 -Compress),
+            [Text.UTF8Encoding]::new($false)
+          )
+          [IO.File]::Move($temporaryOwnership, $ownershipPath)
+          $manifestIdentity = Get-NoFollowIdentity $ownershipPath
+          if ($manifestIdentity.type -cne 'file') {
+            throw 'Infrastructure ownership manifest is not a regular file.'
+          }
+          $stateWithOwnership = [ordered]@{
+            phase = 'prepare_started'
+            ownershipManifestIdentity = $manifestIdentity
+          }
+          $temporaryState = "$statePath.$PID.$([guid]::NewGuid().ToString('N'))"
+          [IO.File]::WriteAllText(
+            $temporaryState,
+            ($stateWithOwnership | ConvertTo-Json -Depth 4 -Compress),
+            [Text.UTF8Encoding]::new($false)
+          )
+          [IO.File]::Move($temporaryState, $statePath, $true)
+          if ($prepareExitCode -ne 0) { exit $prepareExitCode }
+          if ($ownedFiles.Count -ne $expectedFiles.Count) {
+            throw 'Infrastructure prepare did not create the complete owned file set.'
+          }
+          if ($ownedDirectories.Count -ne 2) {
+            throw 'Infrastructure prepare did not create the complete owned directory set.'
+          }
+          Set-InfraPhase 'prepare_started' 'prepared'
           npm run infra:validate
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run infra:pull
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Start and verify lifecycle
+        shell: pwsh
         run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $statePath = Join-Path $env:RUNNER_TEMP 'kora-infra-job-state'
+          function Set-InfraPhase([string]$Expected, [string]$Next) {
+            $stateInfo = Get-Item -LiteralPath $statePath -Force
+            if ($stateInfo.PSIsContainer -or
+                ($stateInfo.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+              throw "Illegal infrastructure state transition from expected $Expected."
+            }
+            try { $state = [IO.File]::ReadAllText($statePath) | ConvertFrom-Json }
+            catch { throw 'Infrastructure state is invalid JSON.' }
+            if ($state.phase -cne $Expected -or $null -eq $state.ownershipManifestIdentity) {
+              throw "Illegal infrastructure state transition from expected $Expected."
+            }
+            $nextState = [ordered]@{
+              phase = $Next
+              ownershipManifestIdentity = $state.ownershipManifestIdentity
+            }
+            $temporaryState = "$statePath.$PID.$([guid]::NewGuid().ToString('N'))"
+            [IO.File]::WriteAllText(
+              $temporaryState,
+              ($nextState | ConvertTo-Json -Depth 4 -Compress),
+              [Text.UTF8Encoding]::new($false)
+            )
+            [IO.File]::Move($temporaryState, $statePath, $true)
+          }
+          Set-InfraPhase 'prepared' 'up_started'
           npm run infra:up
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Set-InfraPhase 'up_started' 'running'
           npm run infra:status
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run infra:check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run infra:verify
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build and verify API health transitions
         run: |
           npm run build --workspace @kora-plus/api
           npm run infra:verify-api
       - name: Stop local infrastructure
         if: always()
-        run: npm run infra:down
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $statePath = Join-Path $env:RUNNER_TEMP 'kora-infra-job-state'
+          $ownershipPath = Join-Path $env:RUNNER_TEMP 'kora-infra-job-owned-files.json'
+          $cleanupErrors = [Collections.Generic.List[string]]::new()
+          if (-not (Test-Path -LiteralPath $statePath -PathType Leaf)) {
+            throw 'Infrastructure cleanup state is absent or not a regular file.'
+          }
+          $stateInfo = Get-Item -LiteralPath $statePath -Force
+          if (($stateInfo.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw 'Infrastructure cleanup state is a reparse point.'
+          }
+          try { $state = [IO.File]::ReadAllText($statePath) | ConvertFrom-Json }
+          catch { throw 'Infrastructure cleanup state is invalid JSON.' }
+          $phase = $state.phase
+          if (@('not_started', 'prepare_started', 'prepared', 'up_started', 'running') -notcontains $phase) {
+            throw "Infrastructure cleanup state is invalid: $phase"
+          }
+
+          function Get-NoFollowIdentity([string]$Path) {
+            $script = "const s=require('node:fs').lstatSync(process.argv[1],{bigint:true});const type=s.isFile()?'file':s.isDirectory()?'directory':s.isSymbolicLink()?'symlink':'other';console.log(JSON.stringify({type,dev:s.dev.toString(),ino:s.ino.toString(),mode:s.mode.toString(),birthtimeNs:s.birthtimeNs.toString()}))"
+            $raw = @(& node -e $script $Path)
+            if ($LASTEXITCODE -ne 0 -or $raw.Count -ne 1) {
+              throw "Unable to read no-follow filesystem identity: $Path"
+            }
+            try { return ($raw[0] | ConvertFrom-Json) }
+            catch { throw "Invalid no-follow filesystem identity: $Path" }
+          }
+
+          function Assert-NoFollowIdentity([string]$Path, $Expected, [string]$Kind) {
+            if ($null -eq $Expected) { throw "$Kind identity is absent." }
+            $actual = Get-NoFollowIdentity $Path
+            foreach ($field in @('type', 'dev', 'ino', 'mode', 'birthtimeNs')) {
+              if ([string]$actual.$field -cne [string]$Expected.$field) {
+                throw "$Kind filesystem identity changed: $Path"
+              }
+            }
+          }
+
+          function Remove-OwnedInfrastructureFiles {
+            if (-not (Test-Path -LiteralPath $ownershipPath -PathType Leaf)) {
+              throw 'Infrastructure ownership manifest is absent.'
+            }
+            $ownershipInfo = Get-Item -LiteralPath $ownershipPath -Force
+            if (($ownershipInfo.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+              throw 'Infrastructure ownership manifest is a reparse point.'
+            }
+            Assert-NoFollowIdentity $ownershipPath $state.ownershipManifestIdentity 'Infrastructure ownership manifest'
+            try { $ownership = [IO.File]::ReadAllText($ownershipPath) | ConvertFrom-Json }
+            catch { throw 'Infrastructure ownership manifest is invalid JSON.' }
+            $expectedRoot = [IO.Path]::GetFullPath((Join-Path $env:GITHUB_WORKSPACE "infra/.local/instances/$env:KORA_INFRA_EPHEMERAL_INSTANCE"))
+            if ($ownership.instanceRoot -cne $expectedRoot) {
+              throw 'Infrastructure ownership root changed.'
+            }
+            $allowed = @(
+              'compose.env',
+              'secrets/postgres_admin_writer_password',
+              'secrets/postgres_password',
+              'secrets/postgres_runtime_password',
+              'secrets/redis_password'
+            )
+            $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+            foreach ($entry in @($ownership.files)) {
+              if ($allowed -notcontains $entry.relativePath -or -not $seen.Add($entry.relativePath)) {
+                throw 'Infrastructure ownership manifest contains an unexpected or duplicate path.'
+              }
+              $path = [IO.Path]::GetFullPath((Join-Path $expectedRoot $entry.relativePath))
+              if (-not $path.StartsWith($expectedRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::Ordinal)) {
+                throw 'Owned infrastructure file escaped its expected root.'
+              }
+              if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+                throw "Owned infrastructure file disappeared: $($entry.relativePath)"
+              }
+              $file = Get-Item -LiteralPath $path -Force
+              $sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+              if (($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+                  $file.Length -ne $entry.length -or $sha256 -cne $entry.sha256) {
+                throw "Owned infrastructure file identity changed: $($entry.relativePath)"
+              }
+              Assert-NoFollowIdentity $path $entry.identity 'Owned infrastructure file'
+            }
+            $missingAllowedFiles = @($allowed | Where-Object { -not $seen.Contains($_) })
+            if (@('prepared', 'up_started', 'running') -contains $phase -and
+                ($seen.Count -ne $allowed.Count -or $missingAllowedFiles.Count -ne 0)) {
+              throw 'Infrastructure ownership manifest does not contain the complete owned file set.'
+            }
+            $allowedDirectories = @('.', 'secrets')
+            $seenDirectories = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+            foreach ($entry in @($ownership.directories)) {
+              if ($allowedDirectories -notcontains $entry.relativePath -or
+                  -not $seenDirectories.Add($entry.relativePath)) {
+                throw 'Infrastructure ownership manifest contains an unexpected or duplicate directory.'
+              }
+              $path = [IO.Path]::GetFullPath((Join-Path $expectedRoot $entry.relativePath))
+              if ($entry.relativePath -ne '.' -and
+                  -not $path.StartsWith($expectedRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::Ordinal)) {
+                throw 'Owned infrastructure directory escaped its expected root.'
+              }
+              Assert-NoFollowIdentity $path $entry.identity 'Owned infrastructure directory'
+            }
+            $missingAllowedDirectories = @(
+              $allowedDirectories | Where-Object { -not $seenDirectories.Contains($_) }
+            )
+            if (@('prepared', 'up_started', 'running') -contains $phase -and
+                ($seenDirectories.Count -ne $allowedDirectories.Count -or
+                 $missingAllowedDirectories.Count -ne 0)) {
+              throw 'Infrastructure ownership manifest does not contain the complete owned directory set.'
+            }
+            foreach ($entry in @($ownership.files)) {
+              Remove-Item -LiteralPath (Join-Path $expectedRoot $entry.relativePath)
+            }
+            foreach ($directory in @((Join-Path $expectedRoot 'secrets'), $expectedRoot)) {
+              if (Test-Path -LiteralPath $directory) {
+                $directoryInfo = Get-Item -LiteralPath $directory -Force
+                if (-not $directoryInfo.PSIsContainer -or
+                    ($directoryInfo.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+                    $directoryInfo.GetFileSystemInfos().Count -ne 0) {
+                  throw "Owned infrastructure directory is substituted or not empty: $directory"
+                }
+                [IO.Directory]::Delete($directory, $false)
+              }
+            }
+          }
+
+          if ($phase -eq 'not_started') {
+            if (Test-Path -LiteralPath $ownershipPath) {
+              throw 'Ownership manifest exists although infrastructure preparation never started.'
+            }
+            [Console]::Out.WriteLine('INFRA_COMPOSE_CLEANUP_NOT_APPLICABLE phase=not_started')
+            exit 0
+          }
+
+          if (@('prepared', 'up_started', 'running') -contains $phase) {
+            npm run infra:down
+            if ($LASTEXITCODE -ne 0) {
+              $cleanupErrors.Add("infra:down exited with code $LASTEXITCODE")
+            }
+          }
+          else {
+            [Console]::Out.WriteLine('INFRA_COMPOSE_DOWN_NOT_APPLICABLE phase=prepare_started')
+          }
+          try { Remove-OwnedInfrastructureFiles }
+          catch { $cleanupErrors.Add($_.Exception.Message) }
+          if ($cleanupErrors.Count -ne 0) {
+            foreach ($cleanupError in $cleanupErrors) {
+              [Console]::Error.WriteLine("INFRA_CLEANUP_ERROR phase=$phase error=$cleanupError")
+            }
+            throw "Infrastructure cleanup failed with $($cleanupErrors.Count) error(s)."
+          }
+          [Console]::Out.WriteLine("INFRA_COMPOSE_CLEANUP_PASS phase=$phase")

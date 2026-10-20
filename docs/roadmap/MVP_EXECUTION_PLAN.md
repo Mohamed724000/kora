@@ -1057,3 +1057,31 @@ C2a 34/34, puis la campagne métier à 1 contrôle statique + 11 scénarios rée
 avec C1 47/47. Tooling passe 536/536 et `tmp` est absent. Le jalon reste local, non indexé et non
 publié ; PR #52 reste Draft. Signal gracieux Windows/POSIX NON DEMONSTRATED,
 fournisseurs NON QUALIFIÉS, C2b/C3 non commencés et politique OSS différée.
+
+### C2a R3 — correction locale du gate Docker/cleanup — 2026-10-18
+
+Le run Infrastructure R2 `39168610286` reste FAILURE et n'est pas rejoué. R3
+remplace l'hypothèse d'une ligne Docker unique par une identité sémantique :
+référence exacte et digest de manifeste vérifiés, ID local joint à toutes ses
+représentations, absence classifiée seulement après sondes cohérentes. Le
+cleanup ne vise jamais une image initiale et ne retire que la référence exacte
+d'une acquisition attestée, sans force ni prune.
+
+Le workflow emploie une instance Compose unique et des transitions atomiques.
+Avant `prepare`, `down` est non applicable ; une préparation partielle nettoie
+uniquement son sous-ensemble attesté ; après préparation ou démarrage,
+`infra:down` reste obligatoire et ses échecs ne sont pas masqués. Les états
+complets exigent cinq fichiers et deux répertoires exacts ; leurs identités
+no-follow et celle du manifeste d'ownership interdisent aussi une substitution
+byte-identique.
+
+Sur les octets finaux, les régressions R3 passent 5/5 et le tooling 541/541,
+incluant les 39 contrôles du fichier concerné. Foundations 34/34, métier 1
+contrôle statique + 11 scénarios réels et C1 47/47 restent applicables. Le run
+direct 37/39 et les autres NON-PASS, dont le sandboxé 538/541, sont conservés.
+La première reprise tooling, d'abord observée incomplète, a finalement terminé
+541/541 au code 0 en chevauchant la reprise causale également réussie 541/541 ;
+elle n'est plus NON CONCLUSIVE. L'inventaire Docker étranger a été restauré. Le
+jalon reste local, non indexé et non publié ; PR #52 reste Draft. Aucun succès
+Linux/CI R3 n'est revendiqué, signal OS reste NON DEMONSTRATED, fournisseurs
+NON QUALIFIÉS, C2b/C3 non commencés et OSS différée.
