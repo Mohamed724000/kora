@@ -25,11 +25,14 @@ import { fileURLToPath } from "node:url";
 import pg from "pg";
 
 import {
+  assertQualifiedPrismaToolchainStateUnchanged,
+  captureQualifiedPrismaToolchainState,
   cleanupHistoricalPrismaWorkspace,
   gitBlobOid,
   historicalArtifactManifest,
   historicalReferenceMetadata,
   materializeHistoricalPrismaWorkspace,
+  validateQualifiedPrismaToolchainLock,
   validateHistoricalArtifactBuffer,
   waitForPostgresReadiness,
 } from "../../apps/api/prisma/validate-admin-auth-runtime.mjs";
@@ -492,6 +495,85 @@ test("refuse le schema C1 historique manquant ou altéré", (context) => {
         tempBase: resolve(alteredRoot, "tmp"),
       }),
     /historical artifact (?:SHA-256|Git blob) changed/u,
+  );
+});
+
+test("refuse une migration C1 historique altérée", (context) => {
+  const migrationPath =
+    "apps/api/prisma/migrations/20261002170022_admin_auth_session_runtime/migration.sql";
+  const alteredRoot = historicalFixture(context, { alterPath: migrationPath });
+  assert.throws(
+    () =>
+      materializeHistoricalPrismaWorkspace({
+        sourceRoot: alteredRoot,
+        tempBase: resolve(alteredRoot, "tmp"),
+      }),
+    /historical artifact (?:SHA-256|Git blob) changed/u,
+  );
+});
+
+test("accepte Vite hors projection et refuse une dérive Prisma protégée", () => {
+  const packageLock = JSON.parse(
+    readFileSync(resolve(repositoryRoot, "package-lock.json"), "utf8"),
+  );
+  const qualified = validateQualifiedPrismaToolchainLock(
+    JSON.stringify(packageLock),
+  );
+  assert.deepEqual(qualified, {
+    packageCount: 131,
+    prismaVersion: "7.9.1",
+    projectionSha256:
+      "4ee0f8df901d14c7d6eec658575eba6ddaa45860f21d0aa15cf4b0c9a14d5bcb",
+  });
+
+  const viteOnly = structuredClone(packageLock);
+  viteOnly.packages[""].devDependencies.vite = "99.0.0-test";
+  viteOnly.packages["node_modules/vite"].version = "99.0.0-test";
+  assert.deepEqual(
+    validateQualifiedPrismaToolchainLock(JSON.stringify(viteOnly)),
+    qualified,
+  );
+
+  const prismaDrift = structuredClone(packageLock);
+  prismaDrift.packages["node_modules/prisma"].version = "7.9.2-test";
+  assert.throws(
+    () => validateQualifiedPrismaToolchainLock(JSON.stringify(prismaDrift)),
+    /protected Prisma toolchain projection changed/u,
+  );
+});
+
+test("refuse une mutation du lockfile pendant la validation", (context) => {
+  const root = mkdtempSync(resolve(tmpdir(), "kora-c1-toolchain-fixture-"));
+  context.after(() => rmSync(root, { force: true, recursive: true }));
+  const packageLockPath = resolve(root, "package-lock.json");
+  const prismaPackagePath = resolve(
+    root,
+    "node_modules",
+    "prisma",
+    "package.json",
+  );
+  mkdirSync(dirname(prismaPackagePath), { recursive: true });
+  writeFileSync(
+    packageLockPath,
+    readFileSync(resolve(repositoryRoot, "package-lock.json")),
+    { flag: "wx" },
+  );
+  writeFileSync(prismaPackagePath, '{"version":"7.9.1"}\n', {
+    encoding: "utf8",
+    flag: "wx",
+  });
+  const state = captureQualifiedPrismaToolchainState({
+    packageLockPath,
+    prismaPackagePath,
+  });
+  const changed = JSON.parse(readFileSync(packageLockPath, "utf8"));
+  changed.packages[""].devDependencies.vite = "99.0.0-during-validation";
+  writeFileSync(packageLockPath, `${JSON.stringify(changed, null, 2)}\n`, {
+    encoding: "utf8",
+  });
+  assert.throws(
+    () => assertQualifiedPrismaToolchainStateUnchanged(state),
+    /package-lock.json changed during validation/u,
   );
 });
 

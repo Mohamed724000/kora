@@ -691,3 +691,52 @@ autres NON-PASS restent conservés sans reclassification.
 
 Cette clôture est locale, non indexée et non publiée. PR #52 reste OPEN/Draft ;
 fournisseurs NON QUALIFIÉS, C2b/C3 non commencés et politique OSS différée.
+
+## C2a R6 — correction INFRA-C1-LOCK-01 — 2026-10-21
+
+Le run Infrastructure `39622417014` reste un BLOCK historique. Après
+`npm ci` et génération Prisma, le validateur C1 comparait le blob OID du
+`package-lock.json` complet à `405fea63…`. Le lock R5 `cfcf0522…`, dont le
+delta est limité aux trois déclarations Vite et à l'unique entrée Vite
+`8.1.6`, était donc refusé avant toute campagne C1/C2a. Une comparaison directe
+des deux locks confirme pourtant que la projection protégée Prisma est
+identique.
+
+R6 sépare désormais deux garanties :
+
+- la reproductibilité historique porte sur le schéma autonome C1, les six
+  artefacts à empreintes fixes, les trois migrations, et une projection
+  canonique du sous-graphe npm réellement atteignable depuis `prisma@7.9.1` ;
+- la non-mutation pendant l'exécution porte sur les octets et l'identité
+  filesystem du lockfile courant et du manifeste Prisma installé, capturés
+  avant la campagne et revérifiés après son cleanup.
+
+La projection qualifiée comprend 131 paquets du lock npm v3 et porte le
+SHA-256 `4ee0f8df901d14c7d6eec658575eba6ddaa45860f21d0aa15cf4b0c9a14d5bcb`.
+Elle est identique sur les locks R4 et R5. Vite n'est accepté que parce qu'il
+n'appartient pas à cette fermeture de dépendances ; une dérive d'une entrée
+Prisma protégée reste refusée. Toute mutation du lockfile pendant la campagne,
+y compris Vite, fait échouer le postflight.
+
+Preuves locales sélectionnées :
+
+- schéma historique absent/altéré : refus ;
+- migration C1 historique altérée : refus ;
+- changement Vite hors projection : accepté ; dérive Prisma : refus ;
+- mutation du lockfile entre préflight et postflight : refus ;
+- tests ciblés : 42/42 ; tooling complet : 544/544 ;
+- wrapper C1 réel : bases A/B à 39 modèles, 40 tables et trois migrations,
+  projection identique, contraintes, ACL et neuf refus de
+  provisioning/membership ; HTTP réel 47/47 ;
+- scanner officiel : 428 fichiers, historique activé, zéro suppression suivie
+  omise ;
+- inventaires Docker conteneurs, volumes, réseaux et images byte-identiques
+  avant/après ; ressources éphémères et secrets ciblés supprimés.
+
+Les tentatives sandboxées `EPERM/EACCES`, l'installation npm refusée par le
+sandbox et l'invocation initiale avec un chemin `pwsh` absent restent
+NON-PASS ou NON EXÉCUTÉES selon leur stade ; leurs reprises causales sont
+archivées séparément. R6 ne modifie ni dépendance, lockfile, migration, schéma,
+runtime métier, scanner ou workflow. Le GO décrit ici est local et
+prépublication ; aucune CI R6 n'est affirmée. Fournisseurs NON QUALIFIÉS,
+C2b/C3 non commencés et politique OSS différée.

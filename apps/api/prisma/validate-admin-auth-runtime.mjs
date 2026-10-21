@@ -38,8 +38,10 @@ const HISTORICAL_MIGRATIONS = [
 ];
 const C1_MIGRATION = '20261002170022_admin_auth_session_runtime';
 const LOCK_SHA256 = '99836963713b4f5b269ad49af0ed3d7b0b2e336115c2f92dc9ac683d139d0900';
-const EXPECTED_PACKAGE_LOCK_OID = '405fea639dfb5f7a2d79465b04e02921993fe59c';
 const EXPECTED_PRISMA_VERSION = '7.9.1';
+const EXPECTED_PRISMA_TOOLCHAIN_PACKAGES = 131;
+const EXPECTED_PRISMA_TOOLCHAIN_SHA256 =
+  '4ee0f8df901d14c7d6eec658575eba6ddaa45860f21d0aa15cf4b0c9a14d5bcb';
 const EXPECTED_MODELS = 39;
 const EXPECTED_TABLES_WITH_MIGRATION_HISTORY = 40;
 const EXPECTED_HISTORICAL_MODELS = [
@@ -710,17 +712,155 @@ function currentPrismaStateSignature() {
   );
 }
 
-function verifyHistoricalToolchain() {
-  const packageLock = readFileSync(resolve(repositoryRoot, 'package-lock.json'));
-  if (gitBlobOid(packageLock) !== EXPECTED_PACKAGE_LOCK_OID)
-    fail('package-lock.json no longer matches the qualified Prisma toolchain');
-  const prismaPackage = JSON.parse(
-    readFileSync(resolve(repositoryRoot, 'node_modules', 'prisma', 'package.json'), 'utf8'),
-  );
+function canonicalJsonValue(value) {
+  if (Array.isArray(value)) return value.map(canonicalJsonValue);
+  if (value !== null && typeof value === 'object')
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort((left, right) => left.localeCompare(right, 'en'))
+        .map((key) => [key, canonicalJsonValue(value[key])]),
+    );
+  return value;
+}
+
+function resolveLockedDependency(packages, fromPath, dependency) {
+  let cursor = fromPath;
+  for (;;) {
+    const candidate = cursor
+      ? `${cursor}/node_modules/${dependency}`
+      : `node_modules/${dependency}`;
+    if (Object.hasOwn(packages, candidate)) return candidate;
+    const nestedMarker = cursor.lastIndexOf('/node_modules/');
+    if (nestedMarker >= 0) {
+      cursor = cursor.slice(0, nestedMarker);
+      continue;
+    }
+    if (cursor.startsWith('node_modules/')) {
+      cursor = '';
+      continue;
+    }
+    return undefined;
+  }
+}
+
+export function qualifiedPrismaToolchainProjection(packageLock) {
+  let parsed;
+  try {
+    parsed = JSON.parse(Buffer.isBuffer(packageLock) ? packageLock.toString('utf8') : packageLock);
+  } catch {
+    fail('package-lock.json is not valid JSON');
+  }
+  if (
+    parsed.lockfileVersion !== 3 ||
+    parsed.packages === null ||
+    typeof parsed.packages !== 'object'
+  )
+    fail('package-lock.json is not a supported npm lockfile');
+  const apiWorkspace = parsed.packages['apps/api'];
+  if (apiWorkspace?.devDependencies?.prisma !== EXPECTED_PRISMA_VERSION)
+    fail(`API Prisma declaration ${EXPECTED_PRISMA_VERSION} is required`);
+
+  const pending = ['node_modules/prisma'];
+  const visited = new Set();
+  while (pending.length > 0) {
+    const packagePath = pending.pop();
+    if (visited.has(packagePath)) continue;
+    const entry = parsed.packages[packagePath];
+    if (entry === undefined) fail(`protected Prisma toolchain package is missing: ${packagePath}`);
+    visited.add(packagePath);
+    for (const collection of ['dependencies', 'optionalDependencies']) {
+      for (const dependency of Object.keys(entry[collection] ?? {}).sort()) {
+        const resolved = resolveLockedDependency(parsed.packages, packagePath, dependency);
+        if (resolved === undefined)
+          fail(
+            `protected Prisma toolchain dependency is unresolved: ${packagePath} -> ${dependency}`,
+          );
+        pending.push(resolved);
+      }
+    }
+  }
+
+  return canonicalJsonValue({
+    lockfileVersion: parsed.lockfileVersion,
+    packages: [...visited]
+      .sort((left, right) => left.localeCompare(right, 'en'))
+      .map((path) => ({ path, value: parsed.packages[path] })),
+    workspace: { prisma: apiWorkspace.devDependencies.prisma },
+  });
+}
+
+export function validateQualifiedPrismaToolchainLock(packageLock) {
+  const projection = qualifiedPrismaToolchainProjection(packageLock);
+  const projectionSha256 = sha256(JSON.stringify(projection));
+  if (
+    projection.packages.length !== EXPECTED_PRISMA_TOOLCHAIN_PACKAGES ||
+    projectionSha256 !== EXPECTED_PRISMA_TOOLCHAIN_SHA256
+  )
+    fail('protected Prisma toolchain projection changed');
+  const prisma = projection.packages.find(({ path }) => path === 'node_modules/prisma');
+  if (prisma?.value?.version !== EXPECTED_PRISMA_VERSION)
+    fail(`locked Prisma CLI ${EXPECTED_PRISMA_VERSION} is required`);
+  return {
+    packageCount: projection.packages.length,
+    prismaVersion: prisma.value.version,
+    projectionSha256,
+  };
+}
+
+export function captureQualifiedPrismaToolchainState({
+  emit = true,
+  packageLockPath = resolve(repositoryRoot, 'package-lock.json'),
+  prismaPackagePath = resolve(repositoryRoot, 'node_modules', 'prisma', 'package.json'),
+} = {}) {
+  const resolvedPackageLockPath = resolve(packageLockPath);
+  const resolvedPrismaPackagePath = resolve(prismaPackagePath);
+  assertRegularFile(resolvedPackageLockPath, 'package-lock.json');
+  assertRegularFile(resolvedPrismaPackagePath, 'installed Prisma package');
+  const packageLock = readFileSync(resolvedPackageLockPath);
+  const toolchain = validateQualifiedPrismaToolchainLock(packageLock);
+  const prismaPackageBytes = readFileSync(resolvedPrismaPackagePath);
+  const prismaPackage = JSON.parse(prismaPackageBytes.toString('utf8'));
   if (prismaPackage.version !== EXPECTED_PRISMA_VERSION)
     fail(`Prisma CLI ${EXPECTED_PRISMA_VERSION} is required`);
+  const state = {
+    packageLock: {
+      identity: filesystemIdentity(resolvedPackageLockPath, 'file', 'package-lock.json'),
+      path: resolvedPackageLockPath,
+      sha256: sha256(packageLock),
+    },
+    prismaPackage: {
+      identity: filesystemIdentity(resolvedPrismaPackagePath, 'file', 'installed Prisma package'),
+      path: resolvedPrismaPackagePath,
+      sha256: sha256(prismaPackageBytes),
+    },
+    toolchain,
+  };
+  if (emit)
+    process.stdout.write(
+      `C1_HISTORICAL_TOOLCHAIN_PASS prisma=${toolchain.prismaVersion} protected_packages=${toolchain.packageCount} projection_sha256=${toolchain.projectionSha256} package_lock_sha256=${state.packageLock.sha256}\n`,
+    );
+  return state;
+}
+
+export function assertQualifiedPrismaToolchainStateUnchanged(state) {
+  const current = captureQualifiedPrismaToolchainState({
+    emit: false,
+    packageLockPath: state.packageLock.path,
+    prismaPackagePath: state.prismaPackage.path,
+  });
+  if (
+    JSON.stringify(current.packageLock.identity) !== JSON.stringify(state.packageLock.identity) ||
+    current.packageLock.sha256 !== state.packageLock.sha256
+  )
+    fail('package-lock.json changed during validation');
+  if (
+    JSON.stringify(current.prismaPackage.identity) !==
+      JSON.stringify(state.prismaPackage.identity) ||
+    current.prismaPackage.sha256 !== state.prismaPackage.sha256
+  )
+    fail('installed Prisma package changed during validation');
   process.stdout.write(
-    `C1_HISTORICAL_TOOLCHAIN_PASS prisma=${EXPECTED_PRISMA_VERSION} package_lock_oid=${EXPECTED_PACKAGE_LOCK_OID}\n`,
+    `C1_TOOLCHAIN_STATE_UNCHANGED_PASS package_lock_sha256=${state.packageLock.sha256} prisma_package_sha256=${state.prismaPackage.sha256}\n`,
   );
 }
 
@@ -2151,7 +2291,7 @@ async function runC1Validation(workspace) {
 
 async function main() {
   assertEnvironment();
-  verifyHistoricalToolchain();
+  const historicalToolchainState = captureQualifiedPrismaToolchainState();
   const currentStateBefore = currentPrismaStateSignature();
   let primaryError;
   let workspace;
@@ -2175,6 +2315,11 @@ async function main() {
     const currentStateAfter = currentPrismaStateSignature();
     if (currentStateAfter !== currentStateBefore)
       fail('current Prisma sources, migrations, configuration, or generated client changed');
+  } catch (error) {
+    cleanupErrors.push(error);
+  }
+  try {
+    assertQualifiedPrismaToolchainStateUnchanged(historicalToolchainState);
   } catch (error) {
     cleanupErrors.push(error);
   }
