@@ -36,6 +36,37 @@ interface AdminRecoveryExpirationApplicationContext {
   get<T>(token: unknown): T;
 }
 
+interface AdminRecoveryExpirationProofInput {
+  listenerCount(event: 'data'): number;
+  on(event: 'data', listener: (value: Buffer | string) => void): unknown;
+  pause(): unknown;
+  readonly readableFlowing: boolean | null;
+  removeListener(event: 'data', listener: (value: Buffer | string) => void): unknown;
+}
+
+export function installAdminRecoveryExpirationProofInput(
+  source: AdminRecoveryExpirationProofInput = process.stdin,
+  emitSignal: () => void = () => {
+    process.emit('SIGTERM');
+  },
+): () => void {
+  const initiallyFlowing = source.readableFlowing === true;
+  let active = true;
+  const dispose = (): void => {
+    if (!active) return;
+    active = false;
+    source.removeListener('data', onData);
+    if (!initiallyFlowing && source.listenerCount('data') === 0) source.pause();
+  };
+  const onData = (value: Buffer | string): void => {
+    if (String(value).trim() !== 'SIGTERM') return;
+    dispose();
+    emitSignal();
+  };
+  source.on('data', onData);
+  return dispose;
+}
+
 export interface AdminRecoveryExpirationMainDependencies {
   readonly clearReadinessInterval?: (timer: ReturnType<typeof setInterval>) => void;
   readonly createApplicationContext?: () => Promise<AdminRecoveryExpirationApplicationContext>;
@@ -107,16 +138,19 @@ export async function runAdminRecoveryExpirationMain(
   } finally {
     const shutdownDeadline = now() + shutdownMs;
     stopSignal.stop();
-    stopSignal.dispose();
-    if (readinessTimer !== undefined) clearReadinessInterval(readinessTimer);
-    if (worker !== undefined) {
-      const quiescence = await worker.awaitQuiescence(Math.max(0, shutdownDeadline - now()));
-      if (quiescence === 'TIMEOUT') forceExit = true;
-      else if (quiescence === 'FAILED') failed = true;
-    }
-    if (application !== undefined) {
-      const closed = await within(application.close(), Math.max(0, shutdownDeadline - now()));
-      if (!closed) forceExit = true;
+    try {
+      if (readinessTimer !== undefined) clearReadinessInterval(readinessTimer);
+      if (worker !== undefined) {
+        const quiescence = await worker.awaitQuiescence(Math.max(0, shutdownDeadline - now()));
+        if (quiescence === 'TIMEOUT') forceExit = true;
+        else if (quiescence === 'FAILED') failed = true;
+      }
+      if (application !== undefined) {
+        const closed = await within(application.close(), Math.max(0, shutdownDeadline - now()));
+        if (!closed) forceExit = true;
+      }
+    } finally {
+      stopSignal.dispose();
     }
   }
   return { failed: failed || forceExit, forceExit };
@@ -132,12 +166,7 @@ if (invokedDirectly) {
   if (proof && process.env.NODE_ENV !== 'test') {
     throw new Error('C2a process-proof output requires NODE_ENV=test.');
   }
-  if (proof) {
-    process.stdin.setEncoding('utf8');
-    process.stdin.once('data', (value: string) => {
-      if (value.trim() === 'SIGTERM') process.emit('SIGTERM');
-    });
-  }
+  const disposeProofInput = proof ? installAdminRecoveryExpirationProofInput() : undefined;
   void runAdminRecoveryExpirationMain(
     proof
       ? {
@@ -146,6 +175,7 @@ if (invokedDirectly) {
       : {},
   ).then(
     (outcome) => {
+      disposeProofInput?.();
       if (proof) {
         process.stdout.write(`C2A_EXPIRATION_PROCESS_PROOF_OUTCOME ${JSON.stringify(outcome)}\n`);
       }
@@ -153,6 +183,7 @@ if (invokedDirectly) {
       if (outcome.failed) process.exitCode = 1;
     },
     () => {
+      disposeProofInput?.();
       process.exitCode = 1;
     },
   );

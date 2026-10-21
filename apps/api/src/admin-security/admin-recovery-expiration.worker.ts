@@ -18,7 +18,7 @@ export interface AdminRecoveryExpirationScanResult {
 }
 
 interface ProcessSignalSource {
-  once(event: 'SIGINT' | 'SIGTERM', listener: () => void): unknown;
+  on(event: 'SIGINT' | 'SIGTERM', listener: () => void): unknown;
   removeListener(event: 'SIGINT' | 'SIGTERM', listener: () => void): unknown;
 }
 
@@ -33,8 +33,8 @@ export class AdminRecoveryExpirationStopSignal {
     this.completion = new Promise<void>((resolve) => {
       this.resolveCompletion = resolve;
     });
-    source.once('SIGINT', this.stop);
-    source.once('SIGTERM', this.stop);
+    source.on('SIGINT', this.stop);
+    source.on('SIGTERM', this.stop);
   }
 
   readonly stop = (): void => {

@@ -1085,3 +1085,46 @@ elle n'est plus NON CONCLUSIVE. L'inventaire Docker étranger a été restauré.
 jalon reste local, non indexé et non publié ; PR #52 reste Draft. Aucun succès
 Linux/CI R3 n'est revendiqué, signal OS reste NON DEMONSTRATED, fournisseurs
 NON QUALIFIÉS, C2b/C3 non commencés et OSS différée.
+
+### C2a R4 — arrêt des runners qualifié localement — 2026-10-20
+
+R4 ferme le seul écart runner restant sans étendre le métier. La reproduction
+Linux pré-correction montre que notification et expiration ferment leurs
+ressources et émettent un outcome sain après vrai SIGTERM, mais restent vivants
+à cause du listener stdin du mode preuve. Sa fermeture diagnostique seulement
+après le constat déclenche la sortie code 0.
+
+Le correctif rend ce listener explicitement possédé et libéré, préserve les
+listeners tiers et rend les signaux répétés idempotents pendant le cleanup. Il
+ne change ni module, base, transaction, contrat, dépendance, lockfile ou
+workflow. Après correction, les deux exécutables Linux sortent à code 0 avec
+stdin parent ouvert, sans SIGKILL. Les tests ciblés passent 34/34, la campagne
+métier passe 1 contrôle statique + 11 scénarios réels, et C1 passe 47/47. Les
+gates API, scanner et tooling 541/541 passent.
+
+Une première contre-revue a bloqué le candidat qui retirait encore ses handlers
+avant quiescence/close. La correction terminale les conserve jusqu'après le
+cleanup. Un harnais Linux envoie désormais deux vrais SIGTERM à chaque runner,
+le second pendant le cleanup : fermeture unique, code 0, signal null et aucun
+SIGKILL. La tentative combinée finale passe le métier 12/12 mais reste NON-PASS
+sur watchdog C1 `code=null`; le validateur C1 dédié passe séparément 47/47 sur
+les mêmes octets et nettoie ses ressources.
+
+Le NON-PASS R3 10/12 reste historique. Ce jalon R4 est local, non indexé et non
+publié ; PR #52 reste Draft. La terminaison OS Windows reste non gracieuse, CI
+R4 et fournisseurs restent NON QUALIFIÉS, C2b/C3 non commencés et OSS différée.
+
+### C2a R5 — résolution Vite qualifiée localement — 2026-10-21
+
+R5 fixe Vite `8.1.6` par pins directs à la racine, dans API et dans Admin. Le
+pin racine ancre le singleton partagé par Vitest et son mocker. L'override
+Vitest du candidat BLOCK est retiré par avenant terminal ; les autres overrides
+restent inchangés et le lockfile régénéré demeure byte-identique.
+
+Installation vierge, arbre npm complet, scanner et audits complet/production
+passent. Les snapshots du graphe résolu avant/après sont byte-identiques ; les
+preuves API, Admin, builds, tooling et R4 hôte/Linux restent donc applicables
+sans replay Docker. Les candidats NON-PASS/BLOCK restent historiques. Le jalon
+est un GO local seulement : PR #52 reste Draft et toute publication requiert
+une décision CTO distincte. Fournisseurs NON QUALIFIÉS, C2b/C3 non commencés
+et OSS différée.

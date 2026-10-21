@@ -700,3 +700,66 @@ scénarios réels et C1 47/47, avec inventaire Docker étranger restauré. Les
 autres essais intermédiaires, dont tooling sandboxé 538/541, restent NON-PASS.
 Ce résultat est local : Linux/CI R3 n'est pas qualifié et la limite signal OS
 reste inchangée.
+
+## C2a R4 — arrêt des runners et preuve POSIX locale — 2026-10-20
+
+La reproduction Linux pré-correction a lancé les deux exécutables compilés
+Node 22.18.0 avec PostgreSQL et Redis réels dans un réseau Docker isolé. Le
+parent a conservé `stdin` ouvert et envoyé un vrai `SIGTERM`. Les contextes
+Nest, le pool PostgreSQL et Redis/BullMQ ont terminé, puis chaque runner a émis
+un outcome `failed:false`/`forceExit:false`, mais le processus est resté vivant.
+La fermeture diagnostique de `stdin`, seulement après ce constat, a provoqué
+une sortie immédiate à code 0. La cause R4 démontrée est le listener `stdin` du
+mode preuve, non libéré après le signal ; elle n'est pas une fuite des
+frontières métier.
+
+Chaque point d'entrée possède désormais explicitement son listener de preuve,
+le retire sur message ou terminaison et remet le flux en pause seulement s'il
+n'était pas déjà actif et qu'aucun listener tiers ne subsiste. Le flux n'est ni
+fermé ni détruit. Les handlers SIGINT/SIGTERM restent enregistrés jusqu'à la
+fin du cleanup afin que des signaux répétés restent idempotents, puis seuls les
+handlers possédés sont retirés. Aucun `process.exit(0)`, allongement du budget
+de 45 secondes, faux signal stdin ou changement de module/transaction n'est
+introduit.
+
+La première contre-revue a invalidé le gel candidat parce que ces handlers
+étaient encore retirés avant la quiescence et `application.close()`. La reprise
+les conserve désormais dans un `try/finally` jusqu'après ces deux étapes. Un
+harnais Linux sans mode preuve a envoyé, pour chacun des deux runners, un
+premier vrai `SIGTERM`, attendu le marqueur de cleanup actif, puis envoyé un
+second vrai `SIGTERM` : chaque fermeture est restée unique et le processus est
+sorti avec code 0, signal terminal null et sans SIGKILL.
+
+Après correction, les mêmes exécutables Linux reçoivent un vrai `SIGTERM` avec
+`stdin` parent toujours ouvert et sortent spontanément à code 0, sans SIGKILL.
+Les tests ciblés passent 34/34. La campagne réelle passe 12 contrôles — 1
+statique et 11 scénarios PostgreSQL/Redis/HTTP — et C1 passe 47/47. Format,
+lint, typecheck, build API, scanner et tooling 541/541 passent. La terminaison
+OS Windows continue d'être rapportée séparément comme non gracieuse ; aucune
+qualification Linux de production ou fournisseur n'en est déduite.
+
+La reprise combinée finale conserve toutefois un NON-PASS distinct : après les
+12/12 contrôles métier réussis, son sous-processus C1 a atteint son watchdog et
+retourné un code null. Le validateur C1 dédié, relancé isolément sur les mêmes
+octets et des ressources neuves, passe ensuite 47/47 et nettoie ses ressources.
+Ces deux résultats ne sont ni fusionnés ni réécrits.
+
+## C2a R5 — résolution Vite 8.1.6 qualifiée localement — 2026-10-21
+
+R5 épingle directement Vite `8.1.6` à la racine, dans API et dans Admin. Le
+pin racine fournit l'ancrage de hoisting commun à Vitest 4.1.11 et à
+`@vitest/mocker` 4.1.11 ; l'override Vitest candidat a été retiré après revue,
+sans changer les autres overrides. La régénération npm conserve le lockfile
+byte-identique au candidat précédent.
+
+Une installation vierge résout une seule copie physique et verrouillée de
+Vite `8.1.6`. Racine, API, Admin, Vitest et mocker partagent cette copie, sans
+peer invalide ni version `8.0.0–8.1.5`. Les snapshots avant/après du graphe
+résolu sont byte-identiques pour les versions, emplacements, intégrités et
+relations de dépendance. Le scanner officiel et les audits npm complet et
+production passent ensuite. Les preuves API, Admin, builds, tooling 541/541 et
+R4 hôte/Linux restent applicables au graphe inchangé et ne sont pas rejouées.
+
+Les candidats R5 antérieurs restent NON-PASS/BLOCK historiques. R5 demeure
+local, non indexé et non publié ; la PR #52 reste Draft. Fournisseurs de
+production NON QUALIFIÉS, C2b/C3 non commencés et politique OSS différée.

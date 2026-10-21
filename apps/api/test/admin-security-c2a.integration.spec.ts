@@ -94,6 +94,7 @@ interface ProcessProofOutcome {
   readonly code: number | null;
   readonly signal: NodeJS.Signals | null;
   readonly stderr: string;
+  readonly stdinOpenAtSignal?: boolean;
   readonly stdout: string;
 }
 
@@ -265,6 +266,10 @@ function startRunningProcessProof(
     },
     async terminateBySignal(signal = 'SIGTERM'): Promise<ProcessProofOutcome> {
       signalPromise ??= (async () => {
+        const stdinOpenAtSignal = child.stdin.writable && !child.stdin.destroyed;
+        if (!stdinOpenAtSignal) {
+          throw new Error(`C2a ${label} parent stdin was not open before ${signal}.`);
+        }
         if (terminalOutcome === undefined && terminalError === undefined && !child.kill(signal)) {
           throw new Error(`C2a ${label} process rejected the ${signal} delivery request.`);
         }
@@ -307,10 +312,11 @@ function startRunningProcessProof(
             requestedSignal: signal,
             signal: signaled.outcome.signal,
             stderr: signaled.outcome.stderr,
+            stdinOpenAtSignal,
             stdout: signaled.outcome.stdout,
           })}\n`,
         );
-        return signaled.outcome;
+        return { ...signaled.outcome, stdinOpenAtSignal };
       })();
       return signalPromise;
     },
@@ -1269,6 +1275,7 @@ realBusiness('Admin C2a real PostgreSQL/Redis/HTTP', { timeout: 300_000 }, () =>
     try {
       await signalRunner.waitFor('C2A_NOTIFICATION_PROCESS_PROOF_READY');
       const signalOutcome = await signalRunner.terminateBySignal('SIGTERM');
+      expect(signalOutcome.stdinOpenAtSignal).toBe(true);
       if (process.platform === 'win32') {
         expect(signalOutcome).toMatchObject({ code: null, signal: 'SIGTERM', stderr: '' });
         expect(signalOutcome.stdout).not.toContain('C2A_NOTIFICATION_PROCESS_PROOF_OUTCOME');
@@ -1347,6 +1354,7 @@ realBusiness('Admin C2a real PostgreSQL/Redis/HTTP', { timeout: 300_000 }, () =>
     try {
       await signalRunner.waitFor('C2A_EXPIRATION_PROCESS_PROOF_READY');
       const signalOutcome = await signalRunner.terminateBySignal('SIGTERM');
+      expect(signalOutcome.stdinOpenAtSignal).toBe(true);
       if (process.platform === 'win32') {
         expect(signalOutcome).toMatchObject({ code: null, signal: 'SIGTERM', stderr: '' });
         expect(signalOutcome.stdout).not.toContain('C2A_EXPIRATION_PROCESS_PROOF_OUTCOME');

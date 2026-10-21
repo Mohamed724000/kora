@@ -1,7 +1,11 @@
 import { ConfigService } from '@nestjs/config';
+import { PassThrough } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import { AdminC2aBoundariesService } from '../database/admin-c2a-boundaries.service';
-import { runAdminRecoveryExpirationMain } from './admin-recovery-expiration.main';
+import {
+  installAdminRecoveryExpirationProofInput,
+  runAdminRecoveryExpirationMain,
+} from './admin-recovery-expiration.main';
 import {
   ADMIN_RECOVERY_EXPIRATION_POLICY,
   AdminRecoveryExpirationStopSignal,
@@ -28,6 +32,23 @@ function recoveryCase(id: string, generation: number): AdminRecoveryCaseRecord {
     subjectAdminUserId: 'subject',
   };
 }
+
+describe('AdminRecoveryExpiration proof input', () => {
+  it('releases its listener and restores an initially paused stdin without closing it', () => {
+    const input = new PassThrough();
+    input.pause();
+    const emitSignal = vi.fn();
+    installAdminRecoveryExpirationProofInput(input, emitSignal);
+
+    input.emit('data', 'SIGTERM\n');
+
+    expect(emitSignal).toHaveBeenCalledOnce();
+    expect(input.listenerCount('data')).toBe(0);
+    expect(input.isPaused()).toBe(true);
+    expect(input.destroyed).toBe(false);
+    input.destroy();
+  });
+});
 
 describe('AdminRecoveryExpirationWorker', () => {
   it('expires a bounded locked batch and records lost CAS races', async () => {
@@ -121,7 +142,7 @@ describe('AdminRecoveryExpirationWorker', () => {
   it('leaves a non-settling scan immediately on a process stop and bounds quiescence', async () => {
     const source = {
       listeners: new Map<string, () => void>(),
-      once(event: string, listener: () => void): void {
+      on(event: string, listener: () => void): void {
         this.listeners.set(event, listener);
       },
       removeListener(event: string): void {
@@ -147,7 +168,7 @@ describe('AdminRecoveryExpirationWorker', () => {
     try {
       const source = {
         listeners: new Map<string, () => void>(),
-        once(event: string, listener: () => void): void {
+        on(event: string, listener: () => void): void {
           this.listeners.set(event, listener);
         },
         removeListener(event: string): void {
@@ -172,6 +193,27 @@ describe('AdminRecoveryExpirationWorker', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('treats repeated process signals as one idempotent stop until disposal', () => {
+    const source = {
+      listeners: new Map<string, () => void>(),
+      on(event: string, listener: () => void): void {
+        this.listeners.set(event, listener);
+      },
+      removeListener(event: string): void {
+        this.listeners.delete(event);
+      },
+    };
+    const stop = new AdminRecoveryExpirationStopSignal(source);
+
+    source.listeners.get('SIGTERM')?.();
+    source.listeners.get('SIGTERM')?.();
+    source.listeners.get('SIGINT')?.();
+
+    expect(stop.stopped).toBe(true);
+    stop.dispose();
+    expect(source.listeners.size).toBe(0);
   });
 
   it('clears its quiescence timer when an active scan finishes before the deadline', async () => {
@@ -207,7 +249,7 @@ describe('AdminRecoveryExpirationWorker', () => {
     try {
       const source = {
         listeners: new Map<string, () => void>(),
-        once(event: string, listener: () => void): void {
+        on(event: string, listener: () => void): void {
           this.listeners.set(event, listener);
         },
         removeListener(event: string): void {
@@ -241,6 +283,10 @@ describe('AdminRecoveryExpirationWorker', () => {
       await vi.advanceTimersByTimeAsync(0);
       expect(transaction).toHaveBeenCalledOnce();
       source.listeners.get('SIGTERM')?.();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(source.listeners.size).toBe(2);
+      source.listeners.get('SIGTERM')?.();
+      source.listeners.get('SIGINT')?.();
       await vi.advanceTimersByTimeAsync(50);
       await expect(running).resolves.toEqual({ failed: true, forceExit: true });
       expect(close).toHaveBeenCalledOnce();
@@ -256,7 +302,7 @@ describe('AdminRecoveryExpirationWorker', () => {
     try {
       const source = {
         listeners: new Map<string, () => void>(),
-        once(event: string, listener: () => void): void {
+        on(event: string, listener: () => void): void {
           this.listeners.set(event, listener);
         },
         removeListener(event: string): void {
@@ -311,7 +357,7 @@ describe('AdminRecoveryExpirationWorker', () => {
     try {
       const source = {
         listeners: new Map<string, () => void>(),
-        once(event: string, listener: () => void): void {
+        on(event: string, listener: () => void): void {
           this.listeners.set(event, listener);
         },
         removeListener(event: string): void {

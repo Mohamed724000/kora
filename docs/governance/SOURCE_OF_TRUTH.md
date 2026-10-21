@@ -1332,3 +1332,60 @@ a finalement terminé 541/541 au code 0 ; elle a chevauché la reprise causale
 NON-PASS, dont 538/541 sandboxé, sont conservés. Linux/CI R3 reste NON QUALIFIÉ,
 de même que les fournisseurs ; signal gracieux Windows/POSIX toujours NON
 DEMONSTRATED.
+
+## Instantané local C2a R4 — arrêt des runners — 2026-10-20
+
+La publication R3 reste la baseline Git ; R4 est un correctif local non indexé
+et non publié. Le run R3 métier 10/12 reste NON-PASS : les runners notification
+et expiration avaient dépassé 45 secondes après SIGTERM avant SIGKILL, tandis
+que C1 47/47 et Foundations 34/34 restaient réussis.
+
+R4 reproduit ce défaut sous Linux avec les exécutables compilés, un parent
+conservant stdin ouvert et un vrai SIGTERM. Les deux runners ferment leurs
+ressources et émettent un outcome sain, mais ne sortent qu'après fermeture
+diagnostique post-constat de stdin. La cause démontrée est le listener stdin du
+mode preuve resté actif. Le correctif retire seulement ce listener, restaure
+l'état non actif du flux sans le fermer et conserve des handlers OS idempotents
+jusqu'à la fin du cleanup.
+
+Une première contre-revue a détecté que le candidat retirait encore ces
+handlers avant la quiescence et la fermeture Nest. Le correctif terminal les
+conserve donc dans un `finally` jusqu'après le cleanup. Sous Linux, chacun des
+deux runners reçoit ensuite deux vrais `SIGTERM`, le second seulement après le
+marqueur de cleanup actif : fermeture unique, code 0, signal terminal null et
+aucun SIGKILL.
+
+Sur les octets R4, les deux runners Linux sortent à code 0 avec stdin parent
+ouvert, sans SIGKILL. Les tests ciblés passent 34/34, la campagne métier compte
+12 contrôles réussis — 1 contrôle statique et 11 scénarios réels
+PostgreSQL/Redis/HTTP — et C1 passe 47/47. Format, lint, typecheck, build API,
+scanner et tooling 541/541 passent. Les NON-PASS intermédiaires et R3 restent
+historiques. La terminaison OS Windows demeure non gracieuse ; CI R4,
+fournisseurs de production et Linux de production restent NON QUALIFIÉS.
+C2b/C3 ne sont pas commencés et la politique OSS reste différée.
+
+La tentative combinée terminale passe son étage métier 12/12, mais reste
+NON-PASS parce que le sous-processus C1 atteint son watchdog avec `code=null`.
+La reprise C1 dédiée, sur les mêmes octets et des ressources neuves, passe
+47/47 avec cleanup complet. Les deux résultats sont conservés séparément.
+
+## Instantané local C2a R5 — résolution Vite — 2026-10-21
+
+R5 conserve les pins directs exacts Vite `8.1.6` à la racine, dans API et dans
+Admin. Le pin racine permet le hoisting unique attendu pour Vitest 4.1.11 et
+`@vitest/mocker` 4.1.11. L'override Vitest du candidat BLOCK est retiré par
+avenant terminal, sans modification des autres overrides ; npm régénère un
+lockfile byte-identique.
+
+L'installation propre, `npm ls vite --all` et l'arbre complet passent. Une
+seule copie Vite `8.1.6` existe dans le lock et sur disque, aucune version
+`8.0.0–8.1.5` ne subsiste et les peers sont satisfaits. Les snapshots résolus
+avant/après sont byte-identiques pour version, emplacement, intégrité et
+relations. Le scanner officiel et les audits npm complet/production passent.
+Le graphe installé étant inchangé, API 217 PASS/61 SKIP, Admin 13/13, builds,
+tooling 541/541 et R4 hôte/Linux 34/34 restent applicables sans nouveau replay
+Docker.
+
+Tous les candidats NON-PASS/BLOCK et leurs erreurs restent archivés. R5 est
+local, non indexé et non publié ; PR #52 OPEN/Draft inchangée. Fournisseurs de
+production NON QUALIFIÉS, C2b/C3 non commencés et politique OSS différée.

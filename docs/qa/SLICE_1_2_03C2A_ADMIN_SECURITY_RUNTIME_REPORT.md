@@ -594,3 +594,100 @@ NON CONCLUSIVE.
 Ce PASS est local et ne vaut pas succès Linux/CI. La preuve de signal gracieux
 Windows/POSIX reste NON DEMONSTRATED ; fournisseurs NON QUALIFIÉS, C2b/C3 non
 commencés et politique OSS différée.
+
+## C2a R4 — arrêt des runners et preuve POSIX locale — 2026-10-20
+
+### Historique et reproduction sélectionnée
+
+Le résultat R3 métier 10/12 reste NON-PASS : C1 47/47 et Foundations 34/34
+étaient réussis, mais notification et expiration avaient dépassé 45 secondes
+après SIGTERM avant le SIGKILL de sécurité. R4 ne reclassifie pas ce run.
+
+La reproduction pré-correction emploie l'image Linux
+`node:22.18.0-bookworm-slim@sha256:752ea8a2f758c34002a0461bd9f1cee4f9a3c36d48494586f60ffce1fc708e0e`,
+des conteneurs PostgreSQL/Redis et un réseau dédiés. Les sources sont copiées
+sans `node_modules` Windows, puis installées depuis le lockfile et compilées
+dans le conteneur. Pour chaque exécutable, le parent conserve stdin ouvert et
+envoie un vrai SIGTERM. Le runner ferme ses ressources et écrit son outcome
+sain, mais ne sort pas dans les cinq secondes suivantes. La fermeture
+diagnostique de stdin, postérieure au constat, entraîne une sortie immédiate à
+code 0. Cette comparaison démontre le rôle causal du listener stdin du mode
+preuve, sans attribuer l'origine des incidents Docker ou R3.
+
+### Correction
+
+Les deux points d'entrée possèdent désormais explicitement leur listener de
+preuve. Ils le retirent sur message ou terminaison, puis pausent le flux
+uniquement lorsqu'il n'était pas déjà actif et qu'aucun listener tiers ne
+subsiste. Ils ne ferment, ne détruisent ni ne déréférencent stdin. Les handlers
+SIGINT/SIGTERM emploient une écoute persistante pendant le cleanup afin que des
+signaux répétés appellent un stop idempotent, puis retirent seulement leurs
+propres listeners. Les modules Nest et la frontière PostgreSQL n'ont pas été
+modifiés, car la preuve pré-correction montrait leur fermeture effective.
+
+La première contre-revue a classé le gel candidat BLOCK : les handlers étaient
+alors retirés au début du `finally`, avant `awaitQuiescence` et
+`application.close()`. Le correctif terminal les maintient jusqu'après ces
+étapes et garantit leur retrait dans un `finally` imbriqué.
+
+### Preuves après correction
+
+- Linux : notification et expiration reçoivent chacun un vrai SIGTERM avec
+  stdin parent ouvert, sortent à code 0 et signal terminal null, sans SIGKILL ;
+  outcomes `failed:false` et `forceExit:false`.
+- Linux, reprise du finding de revue : chacun reçoit un premier vrai SIGTERM,
+  le harnais attend le marqueur de cleanup actif, puis envoie un second vrai
+  SIGTERM ; fermeture unique, code 0, signal null, sans SIGKILL.
+- Tests ciblés : 34/34, incluant ressource stdin possédée, listener tiers,
+  opération active, signaux répétés, quiescence et échec de close.
+- Campagne réelle : 12 contrôles réussis — 1 contrôle statique et 11 scénarios
+  réels PostgreSQL/Redis/HTTP — avec processus compilés, BullMQ, bootstrap,
+  notification, expiration et cleanup ciblé.
+- Non-régression C1 : 47/47.
+- Non-régressions transactionnelles ciblées R6/frontières : 30 pass et 4
+  skips conditionnels ; les chemins PostgreSQL réels applicables sont couverts
+  séparément par la campagne métier réussie.
+- Gates : format, lint, typecheck, build API, scanner et tooling 541/541 PASS.
+
+La campagne combinée finale a réussi ses 12/12 contrôles métier, puis son
+sous-processus C1 a atteint le watchdog et retourné `code=null` : cette
+tentative reste NON-PASS. La validation C1 dédiée sur les mêmes octets et des
+ressources neuves passe ensuite 47/47, avec cleanup ciblé complet. Elle fournit
+la preuve C1 sélectionnée sans reclasser la tentative combinée.
+
+Les essais `spawn EINVAL`, EPERM sandbox, l'interpréteur PowerShell 5.1
+incompatible et le premier post-fix stdin incomplet restent NON-PASS ou NON
+EXÉCUTÉS selon leur nature. Le warning de détection OpenSSL Prisma dans l'image
+Node slim est conservé ; migrations, génération, build et processus réels ont
+néanmoins terminé à code 0. La terminaison OS Windows reste non gracieuse et
+n'est pas transformée en preuve POSIX. CI R4, Linux de production et
+fournisseurs restent NON QUALIFIÉS ; `pg@8.22.0` reste borné aux chemins
+exercés, C2b/C3 non commencés et politique OSS différée.
+
+## Requalification C2a R5 — Vite 8.1.6 — 2026-10-21
+
+R5 remédie l'advisory Vite par trois pins directs exacts `8.1.6` : racine,
+API et Admin. Le candidat avec override `vitest@4.1.11` résolvait déjà le bon
+graphe mais restait BLOCK, car le scanner officiel interdit ce sélecteur.
+L'avenant terminal autorise son retrait seul ; tous les autres overrides sont
+préservés et `package-lock.json` reste byte-identique après régénération npm.
+
+La reprise qualifiée démontre :
+
+- `npm ci --ignore-scripts --no-audit` code 0 dans une copie vierge ;
+- `npm ls vite --all` et `npm ls --all` code 0 ;
+- un seul Vite verrouillé et installé en `8.1.6`, partagé par racine, API,
+  Admin, Vitest et mocker ;
+- aucune copie `8.0.0–8.1.5`, peer invalide ou dérive de production ;
+- snapshots avant/après byte-identiques pour versions, emplacements,
+  intégrités et relations de dépendance ;
+- scanner officiel et audits npm complet/production frais code 0.
+
+Le graphe installé étant identique au candidat déjà testé, les preuves API
+217 PASS/61 SKIP, Admin 13/13, builds, tooling 541/541 et R4 hôte/Linux 34/34
+restent applicables sans nouveau Docker. Les quatre candidats antérieurs,
+l'erreur interne npm `Exit handler never called`, les erreurs sandbox et les
+autres NON-PASS restent conservés sans reclassification.
+
+Cette clôture est locale, non indexée et non publiée. PR #52 reste OPEN/Draft ;
+fournisseurs NON QUALIFIÉS, C2b/C3 non commencés et politique OSS différée.

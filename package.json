@@ -49,6 +49,9 @@
       "qs": "6.16.0"
     }
   },
+  "devDependencies": {
+    "vite": "8.1.6"
+  },
   "scripts": {
     "env:check": "node scripts/check-environment.mjs",
     "format": "node scripts/run-workspace-task.mjs format",

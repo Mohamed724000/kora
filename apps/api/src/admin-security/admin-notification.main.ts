@@ -94,9 +94,46 @@ interface AdminNotificationApplicationContext {
   get<T>(token: unknown): T;
 }
 
+interface AdminNotificationSignalSource {
+  on(event: 'SIGINT' | 'SIGTERM', listener: () => void): unknown;
+  removeListener(event: 'SIGINT' | 'SIGTERM', listener: () => void): unknown;
+}
+
+interface AdminNotificationProofInput {
+  listenerCount(event: 'data'): number;
+  on(event: 'data', listener: (value: Buffer | string) => void): unknown;
+  pause(): unknown;
+  readonly readableFlowing: boolean | null;
+  removeListener(event: 'data', listener: (value: Buffer | string) => void): unknown;
+}
+
+export function installAdminNotificationProofInput(
+  source: AdminNotificationProofInput = process.stdin,
+  emitSignal: () => void = () => {
+    process.emit('SIGTERM');
+  },
+): () => void {
+  const initiallyFlowing = source.readableFlowing === true;
+  let active = true;
+  const dispose = (): void => {
+    if (!active) return;
+    active = false;
+    source.removeListener('data', onData);
+    if (!initiallyFlowing && source.listenerCount('data') === 0) source.pause();
+  };
+  const onData = (value: Buffer | string): void => {
+    if (String(value).trim() !== 'SIGTERM') return;
+    dispose();
+    emitSignal();
+  };
+  source.on('data', onData);
+  return dispose;
+}
+
 export interface AdminNotificationMainDependencies {
   readonly createApplicationContext?: () => Promise<AdminNotificationApplicationContext>;
   readonly onReady?: () => void;
+  readonly signalSource?: AdminNotificationSignalSource;
   readonly shutdownMs?: number;
 }
 
@@ -116,6 +153,7 @@ export async function runAdminNotificationMain(
         logger: false,
       })) as AdminNotificationApplicationContext);
   const shutdownMs = dependencies.shutdownMs ?? SHUTDOWN_TIMEOUT_MS;
+  const signalSource = dependencies.signalSource ?? process;
   let application: AdminNotificationApplicationContext | undefined;
   let activation: AdminNotificationActivationGate | undefined;
   let worker: AdminNotificationWorker | undefined;
@@ -134,8 +172,8 @@ export async function runAdminNotificationMain(
     wake?.();
     resolveStop?.();
   };
-  process.once('SIGINT', stop);
-  process.once('SIGTERM', stop);
+  signalSource.on('SIGINT', stop);
+  signalSource.on('SIGTERM', stop);
   try {
     application = await createApplicationContext();
     const config = application
@@ -186,23 +224,29 @@ export async function runAdminNotificationMain(
     const shutdownDeadline = Date.now() + shutdownMs;
     stop();
     activation?.deactivate();
-    process.removeListener('SIGINT', stop);
-    process.removeListener('SIGTERM', stop);
-    if (worker !== undefined) {
-      const quiescence = await worker.awaitQuiescence(Math.max(0, shutdownDeadline - Date.now()));
-      if (quiescence === 'TIMEOUT') forceExit = true;
-      else if (quiescence === 'FAILED') failed = true;
-    }
-    if (application !== undefined) {
-      try {
-        processedWakeups = application
-          .get<AdminNotificationWakeupProcessor>(AdminNotificationWakeupProcessor)
-          .processedSignalCount();
-      } catch {
-        failed = true;
+    try {
+      if (worker !== undefined) {
+        const quiescence = await worker.awaitQuiescence(Math.max(0, shutdownDeadline - Date.now()));
+        if (quiescence === 'TIMEOUT') forceExit = true;
+        else if (quiescence === 'FAILED') failed = true;
       }
-      const closed = await within(application.close(), Math.max(0, shutdownDeadline - Date.now()));
-      if (!closed) forceExit = true;
+      if (application !== undefined) {
+        try {
+          processedWakeups = application
+            .get<AdminNotificationWakeupProcessor>(AdminNotificationWakeupProcessor)
+            .processedSignalCount();
+        } catch {
+          failed = true;
+        }
+        const closed = await within(
+          application.close(),
+          Math.max(0, shutdownDeadline - Date.now()),
+        );
+        if (!closed) forceExit = true;
+      }
+    } finally {
+      signalSource.removeListener('SIGINT', stop);
+      signalSource.removeListener('SIGTERM', stop);
     }
   }
   return { failed: failed || forceExit, forceExit, processedWakeups };
@@ -215,14 +259,10 @@ const invokedDirectly =
 
 if (invokedDirectly) {
   const proof = processProofEnabled();
-  if (proof) {
-    process.stdin.setEncoding('utf8');
-    process.stdin.once('data', (value: string) => {
-      if (value.trim() === 'SIGTERM') process.emit('SIGTERM');
-    });
-  }
+  const disposeProofInput = proof ? installAdminNotificationProofInput() : undefined;
   void runAdminNotificationMain(directDependencies()).then(
     (outcome) => {
+      disposeProofInput?.();
       if (proof) {
         process.stdout.write(`C2A_NOTIFICATION_PROCESS_PROOF_OUTCOME ${JSON.stringify(outcome)}\n`);
       }
@@ -230,6 +270,7 @@ if (invokedDirectly) {
       if (outcome.failed) process.exitCode = 1;
     },
     () => {
+      disposeProofInput?.();
       process.exitCode = 1;
     },
   );

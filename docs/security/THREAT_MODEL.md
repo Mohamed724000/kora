@@ -1400,3 +1400,43 @@ Foundations 34/34, métier 1 statique + 11 scénarios et C1 47/47, avec inventai
 Docker étranger restauré. Le tooling sandboxé 538/541 reste aussi NON-PASS
 (`EACCES`). Le signal gracieux Windows/POSIX reste NON DEMONSTRATED ; Linux/CI
 R3 et fournisseurs de production restent NON QUALIFIÉS.
+
+## C2a R4 — arrêt borné des runners et preuve POSIX locale
+
+| Menace R4                                       | Contrôle qualifié                                                                                                                                       | Preuve locale                                         | Limite résiduelle                            |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- | -------------------------------------------- |
+| Processus maintenu par un handle de preuve      | listener stdin explicitement possédé et retiré sur message ou terminaison ; pause seulement si flux initialement non actif et sans listener tiers       | Linux pré/post avec stdin parent ouvert               | harnais de preuve uniquement                 |
+| Cleanup métier confondu avec la cause           | outcome sain observé après fermeture Nest/PostgreSQL/Redis-BullMQ avant le hang ; modules et frontières DB inchangés                                    | processus compilés et services réels                  | panne distribuée de production NON EXÉCUTÉE  |
+| Second signal interrompant une fermeture active | handlers SIGINT/SIGTERM persistants jusqu'à la fin du cleanup, stop idempotent, retrait ciblé ensuite                                                   | deux vrais SIGTERM par runner, second pendant cleanup | rafale supérieure à deux signaux hors preuve |
+| Faux succès forcé                               | aucun `process.exit(0)`, hausse de deadline, faux signal stdin, fermeture stdin préalable ou masquage d'échec ; SIGKILL réservé au garde-fou du harnais | code 0 spontané, signal terminal null                 | terminaison OS Windows reste non gracieuse   |
+| Régression transactionnelle ou C1               | campagne réelle 1 statique + 11 scénarios PostgreSQL/Redis/HTTP, processus BullMQ réels et C1 47/47                                                     | wrapper isolé avec cleanup ciblé PASS                 | `pg@8.22.0` borné aux seuls chemins exercés  |
+
+Les deux exécutables Linux Node 22.18.0 sortent désormais spontanément après
+un vrai SIGTERM alors que stdin parent reste ouvert, sans SIGKILL et avec
+outcomes `failed:false`/`forceExit:false`. Les tests ciblés passent 34/34 et le
+tooling 541/541. Le run R3 10/12 reste NON-PASS historique ; aucune
+qualification CI R4, Windows gracieux, Linux de production ou fournisseur
+n'est revendiquée. Fournisseurs NON QUALIFIÉS, C2b/C3 non commencés et
+politique OSS différée.
+
+Le premier gel candidat R4 reste BLOCK historique : sa contre-revue a démontré
+que les handlers étaient retirés avant quiescence et fermeture. Le correctif
+terminal les maintient jusqu'après le cleanup. La campagne combinée finale
+passe 12/12 contrôles métier mais reste NON-PASS sur watchdog C1 avec
+`code=null`; le validateur C1 dédié passe ensuite 47/47 sur les mêmes octets,
+sans effacer le NON-PASS combiné.
+
+## C2a R5 — fermeture de l'advisory Vite
+
+| Menace R5                                  | Contrôle qualifié                                                                                                                               | Preuve locale                              | Limite résiduelle                   |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | ----------------------------------- |
+| Copie Vite vulnérable ou parallèle         | pins directs racine/API/Admin `8.1.6` ; singleton lock et physique ; refus explicite de toute version `8.0.0–8.1.5`                             | installation vierge + inventaire no-follow | fournisseurs NON QUALIFIÉS          |
+| Peer Vitest/mocker invalide                | racine, API, Admin, Vitest et mocker résolvent le même Vite ; arbres npm code 0                                                                 | `npm ls vite --all` et `npm ls --all`      | comportement fournisseur hors scope |
+| Override masquant une dérive               | retrait du seul override Vitest candidat ; autres overrides préservés ; scanner officiel code 0                                                 | scanner officiel                           | nouvelle montée à requalifier       |
+| Dérive silencieuse du graphe après retrait | lockfile inchangé ; snapshots avant/après byte-identiques pour versions, emplacements, intégrités et relations ; audits complet/production PASS | comparaison indépendante et audits frais   | registre futur non préqualifié      |
+
+Le graphe installé est identique au candidat déjà soumis aux gates API, Admin,
+builds, tooling et R4 hôte/Linux ; ces preuves restent applicables sans replay
+Docker. Les candidats antérieurs et leurs erreurs restent NON-PASS/BLOCK
+historiques. R5 reste local et non publié ; PR #52 reste Draft, fournisseurs
+NON QUALIFIÉS, C2b/C3 non commencés et politique OSS différée.

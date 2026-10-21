@@ -1,4 +1,12 @@
+import { ConfigService } from '@nestjs/config';
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
+import { AdminC2aBoundariesService } from '../database/admin-c2a-boundaries.service';
+import {
+  installAdminNotificationProofInput,
+  runAdminNotificationMain,
+} from './admin-notification.main';
 import type { AdminNotificationPort } from './admin-notification.port';
 import type { AdminSecurityCrypto } from './admin-security.crypto';
 import { AdminSecurityCryptoError } from './admin-security.crypto';
@@ -297,6 +305,148 @@ describe('AdminNotificationWorker', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('AdminNotification process lifecycle', () => {
+  it('releases only its proof stdin listener and restores an initially paused stream', () => {
+    const input = new PassThrough();
+    input.pause();
+    const emitSignal = vi.fn();
+    installAdminNotificationProofInput(input, emitSignal);
+
+    input.emit('data', Buffer.from('SIGTERM\n', 'utf8'));
+
+    expect(emitSignal).toHaveBeenCalledOnce();
+    expect(input.listenerCount('data')).toBe(0);
+    expect(input.isPaused()).toBe(true);
+    input.destroy();
+  });
+
+  it('preserves a caller-owned stdin listener when its own listener is disposed', () => {
+    const input = new PassThrough();
+    const callerListener = vi.fn();
+    input.on('data', callerListener);
+    const dispose = installAdminNotificationProofInput(input, vi.fn());
+
+    dispose();
+
+    expect(input.listeners('data')).toEqual([callerListener]);
+    input.removeListener('data', callerListener);
+    input.destroy();
+  });
+
+  it('quiesces an active operation, tolerates repeated signals and closes once without proof mode', async () => {
+    const signalSource = new EventEmitter();
+    let resolveProcess: ((value: 'IDLE') => void) | undefined;
+    const activeProcess = new Promise<'IDLE'>((resolve) => {
+      resolveProcess = resolve;
+    });
+    const processOne = vi.fn(() => activeProcess);
+    const awaitQuiescence = vi.fn(async () => {
+      await activeProcess;
+      return 'QUIESCED' as const;
+    });
+    const worker = {
+      assertReady: vi.fn().mockResolvedValue(undefined),
+      awaitQuiescence,
+      processOne,
+    };
+    const activation = new AdminNotificationActivationGate();
+    const close = vi.fn().mockResolvedValue(undefined);
+    const application = {
+      close,
+      get<T>(token: unknown): T {
+        if (token === ConfigService) {
+          return { get: () => ({ enabled: true, profile: 'NOTIFICATION' }) } as T;
+        }
+        if (token === AdminC2aBoundariesService) {
+          return { assertIdentity: vi.fn().mockResolvedValue(undefined) } as T;
+        }
+        if (token === AdminNotificationWorker) return worker as T;
+        if (token === AdminNotificationActivationGate) return activation as T;
+        if (token === AdminNotificationWakeupProcessor) {
+          return { processedSignalCount: () => 0 } as T;
+        }
+        throw new Error('Unexpected notification lifecycle token.');
+      },
+    };
+    let ready: (() => void) | undefined;
+    const readyPromise = new Promise<void>((resolve) => {
+      ready = resolve;
+    });
+    const running = runAdminNotificationMain({
+      createApplicationContext: vi.fn().mockResolvedValue(application),
+      onReady: () => ready?.(),
+      signalSource,
+    });
+    await readyPromise;
+    await vi.waitFor(() => expect(processOne).toHaveBeenCalledOnce());
+
+    signalSource.emit('SIGTERM');
+    await vi.waitFor(() => expect(awaitQuiescence).toHaveBeenCalledOnce());
+    expect(signalSource.listenerCount('SIGINT')).toBe(1);
+    expect(signalSource.listenerCount('SIGTERM')).toBe(1);
+    signalSource.emit('SIGTERM');
+    signalSource.emit('SIGINT');
+    resolveProcess?.('IDLE');
+
+    await expect(running).resolves.toEqual({
+      failed: false,
+      forceExit: false,
+      processedWakeups: 0,
+    });
+    expect(awaitQuiescence).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
+    expect(activation.isActive()).toBe(false);
+    expect(signalSource.listenerCount('SIGINT')).toBe(0);
+    expect(signalSource.listenerCount('SIGTERM')).toBe(0);
+  });
+
+  it('fails closed when application resource closure rejects', async () => {
+    const signalSource = new EventEmitter();
+    const worker = {
+      assertReady: vi.fn().mockResolvedValue(undefined),
+      awaitQuiescence: vi.fn().mockResolvedValue('QUIESCED'),
+      processOne: vi.fn().mockResolvedValue('IDLE'),
+    };
+    const application = {
+      close: vi.fn().mockRejectedValue(new Error('controlled close failure')),
+      get<T>(token: unknown): T {
+        if (token === ConfigService) {
+          return { get: () => ({ enabled: true, profile: 'NOTIFICATION' }) } as T;
+        }
+        if (token === AdminC2aBoundariesService) {
+          return { assertIdentity: vi.fn().mockResolvedValue(undefined) } as T;
+        }
+        if (token === AdminNotificationWorker) return worker as T;
+        if (token === AdminNotificationActivationGate) {
+          return new AdminNotificationActivationGate() as T;
+        }
+        if (token === AdminNotificationWakeupProcessor) {
+          return { processedSignalCount: () => 0 } as T;
+        }
+        throw new Error('Unexpected notification close-failure token.');
+      },
+    };
+    let ready: (() => void) | undefined;
+    const readyPromise = new Promise<void>((resolve) => {
+      ready = resolve;
+    });
+    const running = runAdminNotificationMain({
+      createApplicationContext: vi.fn().mockResolvedValue(application),
+      onReady: () => ready?.(),
+      signalSource,
+    });
+    await readyPromise;
+    signalSource.emit('SIGTERM');
+
+    await expect(running).resolves.toEqual({
+      failed: true,
+      forceExit: true,
+      processedWakeups: 0,
+    });
+    expect(application.close).toHaveBeenCalledOnce();
   });
 });
 
