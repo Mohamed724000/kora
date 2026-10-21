@@ -1389,3 +1389,48 @@ Docker.
 Tous les candidats NON-PASS/BLOCK et leurs erreurs restent archivés. R5 est
 local, non indexé et non publié ; PR #52 OPEN/Draft inchangée. Fournisseurs de
 production NON QUALIFIÉS, C2b/C3 non commencés et politique OSS différée.
+
+## Instantané local C2a R8 — verrou Foundations R7 et Vitest 4.1.12 — 2026-10-21
+
+R7 remplace le hash global historique du lock Foundations par les entrées
+réellement protégées : projection Prisma `7.9.1` à 131 paquets, fermeture
+`pg@8.22.0` à 14 paquets, entrée Vitest qualifiée, trois migrations
+historiques et non-mutation byte-à-byte du lock pendant la campagne. Son
+parcours local C1 47/47, Foundations 34/34 et métier 1 contrôle statique +
+11 scénarios réels avec C1 47/47 était techniquement vert, mais l'audit complet
+R7 restait BLOCK sur les avis Vitest.
+
+R8 porte les quatre déclarations directes Vitest et la couverture API à
+`4.1.12` exacte. Le scanner vérifie versions, URL, intégrités, licence,
+parents, installation physique et cohérence Vitest/mocker/coverage, et refuse
+explicitement `4.1.11`. Vite reste `8.1.6`; les projections Prisma et pg
+restent byte-identiques à R7 et le graphe de production ne dérive pas.
+
+La résolution du lock conserve npm `10.9.3` comme outil du projet. L'erreur
+Arborist `edgesOut`, déclenchée par le peer optionnel
+`@vitest/browser-webdriverio` non publié en `4.1.12`, est contournée
+uniquement dans une fixture hors dépôt par npm `11.6.0`. Après retrait des
+déclarations temporaires, npm `10.9.3` finalise le lock et réussit
+`npm ci`, `npm ls --all` et l'arbre Vitest/Vite sans peer invalide.
+
+Sur le candidat local final, les tests passent pour API 217 avec 61 skips
+conditionnels, Admin 13/13, Web 10/10 et UI 11/11 ; tooling passe 549/549,
+le scanner adversarial 109/109, lint, typecheck et builds passent. Les audits
+npm complet et production trouvent zéro vulnérabilité, 931 paquets ont une
+signature de registre vérifiée, 192 une attestation, et l'inventaire de
+933 paquets ne contient aucune licence non déclarée ou non approuvée.
+
+La preuve R4 fraîche passe 34/34 sur l'hôte et sous Linux ; notification et
+expiration reçoivent chacune deux vrais SIGTERM pendant le cleanup et sortent
+code 0, signal null, sans SIGKILL. La chaîne réelle séquentielle passe C1
+47/47, Foundations 34/34, puis métier 1 contrôle statique + 11 scénarios réels
+et sa non-régression C1 47/47. Les ressources de campagne sont nettoyées et
+l'inventaire étranger est préservé.
+
+Les NON-PASS historiques et de reprise restent archivés. Le warning source map
+AdminLTE et le warning OpenSSL de l'image Node slim sont conservés sans échec
+du test, de la génération ou du build. L'arrêt gracieux Windows par signal OS
+reste non démontré ; la preuve POSIX est locale et ne qualifie pas Linux de
+production. Fournisseurs de production NON QUALIFIÉS, C2b/C3 non commencés et
+politique OSS différée. La publication et la CI restent soumises aux conditions
+terminales distinctes du mandat R8.

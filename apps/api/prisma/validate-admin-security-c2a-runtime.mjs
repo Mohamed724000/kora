@@ -1,12 +1,15 @@
 import { spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import pg from 'pg';
 
-import { waitForPostgresReadiness } from './validate-admin-auth-runtime.mjs';
+import {
+  validateQualifiedPrismaToolchainLock,
+  waitForPostgresReadiness,
+} from './validate-admin-auth-runtime.mjs';
 
 const { Client } = pg;
 const prismaDirectory = dirname(fileURLToPath(import.meta.url));
@@ -17,7 +20,19 @@ const vitestEntry = resolve(repositoryRoot, 'node_modules', 'vitest', 'vitest.mj
 const migrationsDirectory = resolve(prismaDirectory, 'migrations');
 const provisionScriptContainerPath = '/usr/local/bin/kora-provision-postgresql-runtime.sh';
 const lockPath = resolve(repositoryRoot, 'package-lock.json');
-const LOCK_SHA256 = 'a1b9744d0b132e6a2f20809c606b7b7525a17230c147dc6155ec05b5ba4aa2f3';
+const prismaPackagePath = resolve(repositoryRoot, 'node_modules', 'prisma', 'package.json');
+const pgPackagePath = resolve(repositoryRoot, 'node_modules', 'pg', 'package.json');
+const vitestPackagePath = resolve(repositoryRoot, 'node_modules', 'vitest', 'package.json');
+const EXPECTED_PRISMA_VERSION = '7.9.1';
+const EXPECTED_PG_VERSION = '8.22.0';
+const EXPECTED_PG_TOOLCHAIN_PACKAGES = 14;
+const EXPECTED_PG_TOOLCHAIN_SHA256 =
+  '27d546111f7b0947315339dd6bc6f1d852398ed00d8ab0b2b5fa15166f1b7b26';
+const EXPECTED_VITEST_VERSION = '4.1.12';
+const EXPECTED_VITEST_INTEGRITY =
+  'sha512-5eWdz2yb3ajxWF3C8C4TjkXl7FGm3n2E/VlazALrQHzK7nYMSGFnCZto0bbPNl77AwkOZVLk0YnBAejUu0NiWA==';
+const EXPECTED_VITEST_ENTRY_SHA256 =
+  '42482ad2b55f0e22b07e2a01237dc34a2cf23b804b75ee8dcd3dc7ee5d675568';
 const HISTORICAL_MIGRATIONS = Object.freeze([
   [
     '20260914000000_canonical_postgresql_baseline',
@@ -46,6 +61,292 @@ function sha256(value) {
 
 function fail(message) {
   throw new Error(`S1.2-03C2a PostgreSQL validation failed: ${message}`);
+}
+
+function canonicalJsonValue(value) {
+  if (Array.isArray(value)) return value.map(canonicalJsonValue);
+  if (value !== null && typeof value === 'object')
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort((left, right) => left.localeCompare(right, 'en'))
+        .map((key) => [key, canonicalJsonValue(value[key])]),
+    );
+  return value;
+}
+
+function parseSupportedPackageLock(packageLock) {
+  let parsed;
+  try {
+    parsed = JSON.parse(Buffer.isBuffer(packageLock) ? packageLock.toString('utf8') : packageLock);
+  } catch {
+    fail('package-lock.json is not valid JSON');
+  }
+  if (
+    parsed.lockfileVersion !== 3 ||
+    parsed.packages === null ||
+    typeof parsed.packages !== 'object'
+  )
+    fail('package-lock.json is not a supported npm lockfile');
+  return parsed;
+}
+
+function resolveLockedDependency(packages, fromPath, dependency) {
+  let cursor = fromPath;
+  for (;;) {
+    const candidate = cursor
+      ? `${cursor}/node_modules/${dependency}`
+      : `node_modules/${dependency}`;
+    if (Object.hasOwn(packages, candidate)) return candidate;
+    const nestedMarker = cursor.lastIndexOf('/node_modules/');
+    if (nestedMarker >= 0) {
+      cursor = cursor.slice(0, nestedMarker);
+      continue;
+    }
+    if (cursor.startsWith('node_modules/')) {
+      cursor = '';
+      continue;
+    }
+    return undefined;
+  }
+}
+
+export function qualifiedPgToolchainProjection(packageLock) {
+  const parsed = parseSupportedPackageLock(packageLock);
+  const apiWorkspace = parsed.packages['apps/api'];
+  if (apiWorkspace?.dependencies?.pg !== EXPECTED_PG_VERSION)
+    fail(`API pg declaration ${EXPECTED_PG_VERSION} is required`);
+
+  const pending = ['node_modules/pg'];
+  const visited = new Set();
+  while (pending.length > 0) {
+    const packagePath = pending.pop();
+    if (visited.has(packagePath)) continue;
+    const entry = parsed.packages[packagePath];
+    if (entry === undefined) fail(`protected pg toolchain package is missing: ${packagePath}`);
+    visited.add(packagePath);
+    for (const collection of ['dependencies', 'optionalDependencies']) {
+      for (const dependency of Object.keys(entry[collection] ?? {}).sort()) {
+        const resolved = resolveLockedDependency(parsed.packages, packagePath, dependency);
+        if (resolved === undefined)
+          fail(`protected pg toolchain dependency is unresolved: ${packagePath} -> ${dependency}`);
+        pending.push(resolved);
+      }
+    }
+  }
+
+  return canonicalJsonValue({
+    lockfileVersion: parsed.lockfileVersion,
+    packages: [...visited]
+      .sort((left, right) => left.localeCompare(right, 'en'))
+      .map((path) => ({ path, value: parsed.packages[path] })),
+    workspace: { pg: apiWorkspace.dependencies.pg },
+  });
+}
+
+export function validateQualifiedFoundationsToolchainLock(packageLock) {
+  let prisma;
+  try {
+    prisma = validateQualifiedPrismaToolchainLock(packageLock);
+  } catch (error) {
+    fail(`protected Prisma toolchain rejected: ${String(error?.message ?? error)}`);
+  }
+
+  const parsed = parseSupportedPackageLock(packageLock);
+  const pgProjection = qualifiedPgToolchainProjection(packageLock);
+  const pgProjectionSha256 = sha256(JSON.stringify(pgProjection));
+  if (
+    pgProjection.packages.length !== EXPECTED_PG_TOOLCHAIN_PACKAGES ||
+    pgProjectionSha256 !== EXPECTED_PG_TOOLCHAIN_SHA256
+  )
+    fail('protected pg toolchain projection changed');
+  const pgEntry = pgProjection.packages.find(({ path }) => path === 'node_modules/pg');
+  if (pgEntry?.value?.version !== EXPECTED_PG_VERSION)
+    fail(`locked pg ${EXPECTED_PG_VERSION} is required`);
+
+  const apiWorkspace = parsed.packages['apps/api'];
+  if (apiWorkspace?.devDependencies?.vitest !== EXPECTED_VITEST_VERSION)
+    fail(`API Vitest declaration ${EXPECTED_VITEST_VERSION} is required`);
+  const vitestEntry = parsed.packages['node_modules/vitest'];
+  if (
+    vitestEntry?.version !== EXPECTED_VITEST_VERSION ||
+    vitestEntry.integrity !== EXPECTED_VITEST_INTEGRITY ||
+    sha256(JSON.stringify(canonicalJsonValue(vitestEntry))) !== EXPECTED_VITEST_ENTRY_SHA256
+  )
+    fail('protected Vitest entry changed');
+
+  return {
+    pg: {
+      packageCount: pgProjection.packages.length,
+      projectionSha256: pgProjectionSha256,
+      version: pgEntry.value.version,
+    },
+    prisma,
+    vitest: {
+      entrySha256: EXPECTED_VITEST_ENTRY_SHA256,
+      integrity: vitestEntry.integrity,
+      version: vitestEntry.version,
+    },
+  };
+}
+
+function assertRegularFile(path, label) {
+  let stats;
+  try {
+    stats = lstatSync(path);
+  } catch (error) {
+    fail(`${label} is missing: ${error.code ?? error.name}`);
+  }
+  if (!stats.isFile() || stats.isSymbolicLink()) fail(`${label} is not a regular file`);
+  if (realpathSync(path) !== resolve(path))
+    fail(`${label} resolves through a link or reparse point`);
+}
+
+function filesystemIdentity(path, label) {
+  let stats;
+  try {
+    stats = lstatSync(path, { bigint: true });
+  } catch (error) {
+    fail(`${label} identity is unavailable: ${error.code ?? error.name}`);
+  }
+  if (!stats.isFile() || stats.isSymbolicLink()) fail(`${label} identity changed type`);
+  if (stats.ino === 0n) fail(`${label} has no stable filesystem identity`);
+  return {
+    birthtimeNs: stats.birthtimeNs.toString(),
+    dev: stats.dev.toString(),
+    ino: stats.ino.toString(),
+    kind: 'file',
+    mode: stats.mode.toString(),
+  };
+}
+
+function installedPackageState(path, expectedVersion, label) {
+  const resolvedPath = resolve(path);
+  assertRegularFile(resolvedPath, label);
+  const bytes = readFileSync(resolvedPath);
+  let manifest;
+  try {
+    manifest = JSON.parse(bytes.toString('utf8'));
+  } catch {
+    fail(`${label} is not valid JSON`);
+  }
+  if (manifest.version !== expectedVersion) fail(`${label} ${expectedVersion} is required`);
+  return {
+    identity: filesystemIdentity(resolvedPath, label),
+    path: resolvedPath,
+    sha256: sha256(bytes),
+    version: manifest.version,
+  };
+}
+
+export function captureQualifiedFoundationsToolchainState({
+  emit = true,
+  migrationsRoot = migrationsDirectory,
+  packageLockPath = lockPath,
+  pgManifestPath = pgPackagePath,
+  prismaManifestPath = prismaPackagePath,
+  vitestManifestPath = vitestPackagePath,
+} = {}) {
+  const resolvedLockPath = resolve(packageLockPath);
+  assertRegularFile(resolvedLockPath, 'package-lock.json');
+  const packageLock = readFileSync(resolvedLockPath);
+  const toolchain = validateQualifiedFoundationsToolchainLock(packageLock);
+  const historicalMigrations = HISTORICAL_MIGRATIONS.map(([name, expectedSha256]) => {
+    const path = resolve(migrationsRoot, name, 'migration.sql');
+    assertRegularFile(path, `historical migration ${name}`);
+    const bytes = readFileSync(path);
+    const actualSha256 = sha256(bytes);
+    if (actualSha256 !== expectedSha256) fail(`historical migration changed: ${name}`);
+    return {
+      identity: filesystemIdentity(path, `historical migration ${name}`),
+      name,
+      path,
+      sha256: actualSha256,
+    };
+  });
+  const state = {
+    historicalMigrations,
+    packageLock: {
+      identity: filesystemIdentity(resolvedLockPath, 'package-lock.json'),
+      path: resolvedLockPath,
+      sha256: sha256(packageLock),
+    },
+    packages: {
+      pg: installedPackageState(pgManifestPath, EXPECTED_PG_VERSION, 'installed pg package'),
+      prisma: installedPackageState(
+        prismaManifestPath,
+        EXPECTED_PRISMA_VERSION,
+        'installed Prisma package',
+      ),
+      vitest: installedPackageState(
+        vitestManifestPath,
+        EXPECTED_VITEST_VERSION,
+        'installed Vitest package',
+      ),
+    },
+    toolchain,
+  };
+  if (emit) {
+    process.stdout.write(
+      `C2A_QUALIFIED_TOOLCHAIN_PASS prisma=${toolchain.prisma.prismaVersion} prisma_packages=${toolchain.prisma.packageCount} pg=${toolchain.pg.version} pg_packages=${toolchain.pg.packageCount} vitest=${toolchain.vitest.version} package_lock_sha256=${state.packageLock.sha256}\n`,
+    );
+    process.stdout.write('C2A_IMMUTABLE_INPUTS_PASS history=3 lock=captured\n');
+  }
+  return state;
+}
+
+export function assertQualifiedFoundationsToolchainStateUnchanged(state) {
+  const current = captureQualifiedFoundationsToolchainState({
+    emit: false,
+    migrationsRoot: dirname(dirname(state.historicalMigrations[0].path)),
+    packageLockPath: state.packageLock.path,
+    pgManifestPath: state.packages.pg.path,
+    prismaManifestPath: state.packages.prisma.path,
+    vitestManifestPath: state.packages.vitest.path,
+  });
+  if (
+    JSON.stringify(current.packageLock.identity) !== JSON.stringify(state.packageLock.identity) ||
+    current.packageLock.sha256 !== state.packageLock.sha256
+  )
+    fail('package-lock.json changed during validation');
+  for (const name of ['pg', 'prisma', 'vitest']) {
+    if (
+      JSON.stringify(current.packages[name].identity) !==
+        JSON.stringify(state.packages[name].identity) ||
+      current.packages[name].sha256 !== state.packages[name].sha256
+    )
+      fail(`installed ${name} package changed during validation`);
+  }
+  if (JSON.stringify(current.historicalMigrations) !== JSON.stringify(state.historicalMigrations))
+    fail('historical migration state changed during validation');
+  process.stdout.write(
+    `C2A_TOOLCHAIN_STATE_UNCHANGED_PASS package_lock_sha256=${state.packageLock.sha256} prisma_package_sha256=${state.packages.prisma.sha256} pg_package_sha256=${state.packages.pg.sha256} vitest_package_sha256=${state.packages.vitest.sha256}\n`,
+  );
+}
+
+export async function runWithProtectedFoundationsInputs(run, captureOptions = {}) {
+  const immutableState = captureQualifiedFoundationsToolchainState(captureOptions);
+  let validationError;
+  try {
+    await run();
+  } catch (error) {
+    validationError = error;
+  }
+
+  let immutabilityError;
+  try {
+    assertQualifiedFoundationsToolchainStateUnchanged(immutableState);
+  } catch (error) {
+    immutabilityError = error;
+  }
+
+  if (validationError !== undefined && immutabilityError !== undefined)
+    throw new AggregateError(
+      [validationError, immutabilityError],
+      'C2a validation failed and protected inputs changed during the campaign',
+      { cause: validationError },
+    );
+  if (validationError !== undefined) throw validationError;
+  if (immutabilityError !== undefined) throw immutabilityError;
 }
 
 function normalized(value) {
@@ -468,15 +769,6 @@ async function expectTransactionDenied(client, label, callback, expectedCodes = 
     fail(`${label} failed with unexpected PostgreSQL code ${String(error?.code)}`);
   }
   fail(`${label} unexpectedly committed`);
-}
-
-function verifyImmutableInputs() {
-  if (sha256(readFileSync(lockPath)) !== LOCK_SHA256) fail('lockfile hash changed');
-  for (const [name, expected] of HISTORICAL_MIGRATIONS) {
-    const actual = sha256(readFileSync(resolve(migrationsDirectory, name, 'migration.sql')));
-    if (actual !== expected) fail(`historical migration changed: ${name}`);
-  }
-  process.stdout.write('C2A_IMMUTABLE_INPUTS_PASS history=3 lock=unchanged\n');
 }
 
 async function catalogSignature(client) {
@@ -3066,9 +3358,7 @@ function assertEnvironment() {
     fail('runtime secrets must be pairwise distinct 43-character values');
 }
 
-async function main() {
-  assertEnvironment();
-  verifyImmutableInputs();
+async function runValidation() {
   const readiness = await waitForPostgresReadiness({
     createClient: ({ connectionTimeoutMillis }) =>
       new Client({ ...adminConfiguration(), connectionTimeoutMillis }),
@@ -3173,6 +3463,11 @@ async function main() {
   }
   if (cleanupErrors.length > 0)
     throw new AggregateError(cleanupErrors, 'C2a targeted database cleanup failed');
+}
+
+async function main() {
+  assertEnvironment();
+  await runWithProtectedFoundationsInputs(runValidation);
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

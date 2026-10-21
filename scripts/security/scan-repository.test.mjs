@@ -1830,27 +1830,27 @@ const validR2Manifests = {
     dependencies: { next: "16.3.8" },
     devDependencies: {
       "eslint-config-next": "16.3.8",
-      vitest: "4.1.11",
+      vitest: "4.1.12",
     },
   },
   "apps/api": {
     dependencies: { "@nestjs/platform-express": "11.1.28" },
     devDependencies: {
-      "@vitest/coverage-v8": "4.1.11",
-      vitest: "4.1.11",
+      "@vitest/coverage-v8": "4.1.12",
+      vitest: "4.1.12",
     },
   },
   "apps/web": {
     dependencies: { next: "16.3.8" },
     devDependencies: {
       "eslint-config-next": "16.3.8",
-      vitest: "4.1.11",
+      vitest: "4.1.12",
     },
   },
   "packages/ui": {
     devDependencies: {
       "eslint-config-next": "16.3.8",
-      vitest: "4.1.11",
+      vitest: "4.1.12",
     },
   },
 };
@@ -1878,10 +1878,23 @@ const validR2Lock = {
     "node_modules/@next/swc-linux-x64-musl": { version: "16.3.8" },
     "node_modules/@next/swc-win32-arm64-msvc": { version: "16.3.8" },
     "node_modules/@next/swc-win32-x64-msvc": { version: "16.3.8" },
-    "node_modules/@vitest/mocker": { version: "4.1.11" },
+    "node_modules/@vitest/mocker": {
+      dependencies: { "@vitest/spy": "4.1.12" },
+      integrity:
+        "sha512-fKShNpKZzupWZuY0z7egydvL0sqW4INEZBEExMBMAa6izlENEVHwoXgdaTCaBZ5fwlr4xf2o1wXC83n9RpO+NA==",
+      license: "MIT",
+      resolved: "https://registry.npmjs.org/@vitest/mocker/-/mocker-4.1.12.tgz",
+      version: "4.1.12",
+    },
     "node_modules/@vitest/coverage-v8": {
-      peerDependencies: { vitest: "4.1.11" },
-      version: "4.1.11",
+      dependencies: { "@vitest/utils": "4.1.12" },
+      integrity:
+        "sha512-6S7/iVknKglLAxMFxQGNppBI0iqJS2NgM6FBxavitj7KaDq/vywOWGf6dGu7F2L1Qy0G6S3uTp7aGshHrzK8JA==",
+      license: "MIT",
+      peerDependencies: { vitest: "4.1.12" },
+      resolved:
+        "https://registry.npmjs.org/@vitest/coverage-v8/-/coverage-v8-4.1.12.tgz",
+      version: "4.1.12",
     },
     "node_modules/body-parser": {
       dependencies: { qs: "^6.15.2" },
@@ -1976,9 +1989,13 @@ const validR2Lock = {
       version: "10.3.0",
     },
     "node_modules/vitest": {
-      dependencies: { "@vitest/mocker": "4.1.11" },
-      peerDependencies: { "@vitest/coverage-v8": "4.1.11" },
-      version: "4.1.11",
+      dependencies: { "@vitest/mocker": "4.1.12" },
+      integrity:
+        "sha512-5eWdz2yb3ajxWF3C8C4TjkXl7FGm3n2E/VlazALrQHzK7nYMSGFnCZto0bbPNl77AwkOZVLk0YnBAejUu0NiWA==",
+      license: "MIT",
+      peerDependencies: { "@vitest/coverage-v8": "4.1.12" },
+      resolved: "https://registry.npmjs.org/vitest/-/vitest-4.1.12.tgz",
+      version: "4.1.12",
     },
   },
 };
@@ -2335,11 +2352,11 @@ test("rejects duplicate and unapproved Next support package parents", () => {
 
 test("rejects every Vitest or @vitest/mocker bypass", () => {
   const manifests = structuredClone(validR2Manifests);
-  manifests["apps/admin"].devDependencies.vitest = "4.1.10";
+  manifests["apps/admin"].devDependencies.vitest = "4.1.11";
   manifests[""].overrides["@vitest/mocker"] = "4.1.11";
   const lockfile = structuredClone(validR2Lock);
   lockfile.packages["node_modules/vitest"].dependencies["@vitest/mocker"] =
-    "4.1.10";
+    "4.1.11";
   lockfile.packages["node_modules/example"] = {
     optionalDependencies: {
       "@vitest/mocker": "4.1.11",
@@ -2347,13 +2364,13 @@ test("rejects every Vitest or @vitest/mocker bypass", () => {
     },
   };
   lockfile.packages["node_modules/example/node_modules/@vitest/mocker"] = {
-    version: "4.1.10",
+    version: "4.1.11",
   };
 
   const errors = validateVitestSupplyChain(manifests, lockfile);
   assert.ok(
     errors.includes(
-      "apps/admin must pin vitest to exact 4.1.11 in devDependencies",
+      "apps/admin must pin vitest to exact 4.1.12 in devDependencies",
     ),
   );
   assert.ok(
@@ -2362,7 +2379,7 @@ test("rejects every Vitest or @vitest/mocker bypass", () => {
     ),
   );
   assert.ok(
-    errors.includes("vitest@4.1.11 must depend on @vitest/mocker 4.1.11"),
+    errors.includes("vitest@4.1.12 must depend on @vitest/mocker 4.1.12"),
   );
   assert.ok(
     errors.includes(
@@ -2377,7 +2394,7 @@ test("rejects every Vitest or @vitest/mocker bypass", () => {
   assert.ok(
     errors.some((error) =>
       error.startsWith(
-        "@vitest/mocker must have one physical installation at node_modules/@vitest/mocker@4.1.11",
+        "@vitest/mocker must have one physical installation at node_modules/@vitest/mocker@4.1.12",
       ),
     ),
   );

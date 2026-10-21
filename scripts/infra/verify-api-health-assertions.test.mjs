@@ -38,6 +38,13 @@ import {
 } from "../../apps/api/prisma/validate-admin-auth-runtime.mjs";
 
 import {
+  assertQualifiedFoundationsToolchainStateUnchanged,
+  captureQualifiedFoundationsToolchainState,
+  runWithProtectedFoundationsInputs,
+  validateQualifiedFoundationsToolchainLock,
+} from "../../apps/api/prisma/validate-admin-security-c2a-runtime.mjs";
+
+import {
   assertNoSensitiveValue,
   assertOwnerRoleRejected,
   capturedOutputSummary,
@@ -574,6 +581,174 @@ test("refuse une mutation du lockfile pendant la validation", (context) => {
   assert.throws(
     () => assertQualifiedPrismaToolchainStateUnchanged(state),
     /package-lock.json changed during validation/u,
+  );
+});
+
+const foundationsHistoricalMigrations = [
+  "20260914000000_canonical_postgresql_baseline",
+  "20260914000100_canonical_sql_constraints",
+  "20261002170022_admin_auth_session_runtime",
+];
+
+function foundationsToolchainFixture(context) {
+  const root = mkdtempSync(
+    resolve(tmpdir(), "kora-c2a-foundations-toolchain-fixture-"),
+  );
+  context.after(() => rmSync(root, { force: true, recursive: true }));
+  const packageLockPath = resolve(root, "package-lock.json");
+  const migrationsRoot = resolve(root, "migrations");
+  const manifestPaths = {
+    pgManifestPath: resolve(root, "node_modules", "pg", "package.json"),
+    prismaManifestPath: resolve(root, "node_modules", "prisma", "package.json"),
+    vitestManifestPath: resolve(root, "node_modules", "vitest", "package.json"),
+  };
+  writeFileSync(
+    packageLockPath,
+    readFileSync(resolve(repositoryRoot, "package-lock.json")),
+    { flag: "wx" },
+  );
+  for (const [name, path, version] of [
+    ["pg", manifestPaths.pgManifestPath, "8.22.0"],
+    ["prisma", manifestPaths.prismaManifestPath, "7.9.1"],
+    ["vitest", manifestPaths.vitestManifestPath, "4.1.12"],
+  ]) {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, `${JSON.stringify({ name, version })}\n`, {
+      encoding: "utf8",
+      flag: "wx",
+    });
+  }
+  for (const migration of foundationsHistoricalMigrations) {
+    const destination = resolve(migrationsRoot, migration, "migration.sql");
+    mkdirSync(dirname(destination), { recursive: true });
+    writeFileSync(
+      destination,
+      readFileSync(
+        resolve(
+          repositoryRoot,
+          "apps",
+          "api",
+          "prisma",
+          "migrations",
+          migration,
+          "migration.sql",
+        ),
+      ),
+      { flag: "wx" },
+    );
+  }
+  return { migrationsRoot, packageLockPath, ...manifestPaths };
+}
+
+test("qualifie Foundations avec Vite 8.1.6 sans protéger Vite globalement", () => {
+  const packageLock = JSON.parse(
+    readFileSync(resolve(repositoryRoot, "package-lock.json"), "utf8"),
+  );
+  const qualified = validateQualifiedFoundationsToolchainLock(
+    JSON.stringify(packageLock),
+  );
+  assert.equal(qualified.prisma.prismaVersion, "7.9.1");
+  assert.equal(qualified.prisma.packageCount, 131);
+  assert.equal(qualified.pg.version, "8.22.0");
+  assert.equal(qualified.pg.packageCount, 14);
+  assert.equal(
+    qualified.pg.projectionSha256,
+    "27d546111f7b0947315339dd6bc6f1d852398ed00d8ab0b2b5fa15166f1b7b26",
+  );
+  assert.equal(qualified.vitest.version, "4.1.12");
+  assert.equal(packageLock.packages["node_modules/vite"].version, "8.1.6");
+
+  const independentViteUpdate = structuredClone(packageLock);
+  independentViteUpdate.packages[""].devDependencies.vite = "8.1.7-test";
+  independentViteUpdate.packages["apps/api"].devDependencies.vite =
+    "8.1.7-test";
+  independentViteUpdate.packages["apps/admin"].devDependencies.vite =
+    "8.1.7-test";
+  independentViteUpdate.packages["node_modules/vite"].version = "8.1.7-test";
+  independentViteUpdate.packages["node_modules/vite"].integrity =
+    "sha512-independent-vite-fixture";
+  assert.deepEqual(
+    validateQualifiedFoundationsToolchainLock(
+      JSON.stringify(independentViteUpdate),
+    ),
+    qualified,
+  );
+});
+
+test("refuse une dérive Prisma protégée dans Foundations", () => {
+  const packageLock = JSON.parse(
+    readFileSync(resolve(repositoryRoot, "package-lock.json"), "utf8"),
+  );
+  packageLock.packages["node_modules/prisma"].version = "7.9.2-test";
+  assert.throws(
+    () =>
+      validateQualifiedFoundationsToolchainLock(JSON.stringify(packageLock)),
+    /protected Prisma toolchain rejected/u,
+  );
+});
+
+test("refuse une dérive pg protégée dans Foundations", () => {
+  const packageLock = JSON.parse(
+    readFileSync(resolve(repositoryRoot, "package-lock.json"), "utf8"),
+  );
+  packageLock.packages["node_modules/pg"].integrity = "sha512-pg-drift-fixture";
+  assert.throws(
+    () =>
+      validateQualifiedFoundationsToolchainLock(JSON.stringify(packageLock)),
+    /protected pg toolchain projection changed/u,
+  );
+});
+
+test("refuse une migration historique Foundations altérée", (context) => {
+  const fixture = foundationsToolchainFixture(context);
+  const state = captureQualifiedFoundationsToolchainState({
+    emit: false,
+    ...fixture,
+  });
+  const migrationPath = resolve(
+    fixture.migrationsRoot,
+    foundationsHistoricalMigrations[2],
+    "migration.sql",
+  );
+  const changed = readFileSync(migrationPath);
+  changed[0] ^= 1;
+  writeFileSync(migrationPath, changed);
+  assert.throws(
+    () => assertQualifiedFoundationsToolchainStateUnchanged(state),
+    /historical migration changed/u,
+  );
+});
+
+test("refuse une mutation du lock Foundations même après un échec de campagne", async (context) => {
+  const fixture = foundationsToolchainFixture(context);
+  const campaignError = new Error("expected campaign failure");
+  await assert.rejects(
+    runWithProtectedFoundationsInputs(
+      async () => {
+        const changed = JSON.parse(
+          readFileSync(fixture.packageLockPath, "utf8"),
+        );
+        changed.packages["node_modules/vite"].version =
+          "8.1.7-during-failed-campaign";
+        writeFileSync(
+          fixture.packageLockPath,
+          `${JSON.stringify(changed, null, 2)}\n`,
+          { encoding: "utf8" },
+        );
+        throw campaignError;
+      },
+      { emit: false, ...fixture },
+    ),
+    (error) => {
+      assert(error instanceof AggregateError);
+      assert.equal(error.cause, campaignError);
+      assert.equal(error.errors[0], campaignError);
+      assert.match(
+        error.errors[1].message,
+        /package-lock.json changed during validation/u,
+      );
+      return true;
+    },
   );
 });
 

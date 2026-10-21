@@ -740,3 +740,121 @@ archivées séparément. R6 ne modifie ni dépendance, lockfile, migration, sch�
 runtime métier, scanner ou workflow. Le GO décrit ici est local et
 prépublication ; aucune CI R6 n'est affirmée. Fournisseurs NON QUALIFIÉS,
 C2b/C3 non commencés et politique OSS différée.
+
+## C2a R7 — verrou Foundations — 2026-10-21
+
+Le run Infrastructure R6 `39672953748` est conservé comme BLOCK historique.
+Il démontre C1 réel 47/47, puis Foundations refuse l'ancien SHA-256 global du
+lock R4 `a1b9744d…` face au lock R5 qualifié `5470b8d8…`. Les étapes
+Foundations restantes, métier, lifecycle et API health de ce run ne sont pas
+présentées comme exécutées.
+
+R7 remplace cette égalité globale par les références effectivement utilisées :
+
+- projection Prisma R6 : version `7.9.1`, 131 paquets, SHA-256
+  `4ee0f8df901d14c7d6eec658575eba6ddaa45860f21d0aa15cf4b0c9a14d5bcb` ;
+- fermeture `pg@8.22.0` : 14 paquets, SHA-256
+  `27d546111f7b0947315339dd6bc6f1d852398ed00d8ab0b2b5fa15166f1b7b26` ;
+- entrée Vitest `4.1.11` protégée par version, intégrité et projection canonique ;
+- trois migrations historiques conservées à leurs empreintes exactes.
+
+Le lockfile complet et les manifestes installés Prisma, pg et Vitest sont
+capturés avant la campagne par octets et identité no-follow, puis comparés
+après le cleanup. Ce postflight s'exécute également après une erreur de
+validation et conserve conjointement l'erreur principale et une éventuelle
+mutation des entrées protégées.
+
+Preuves locales sélectionnées sur le même candidat :
+
+- Vite 8.1.6 et une mutation Vite indépendante hors fermetures : acceptés ;
+- dérive Prisma, dérive pg et migration historique altérée : refusées ;
+- mutation du lockfile pendant une campagne déjà en échec : refusée ;
+- régressions ciblées post-format : 47/47 ; tooling complet : 549/549 ;
+- C1 réel : projections A/B, ACL et HTTP 47/47 ;
+- Foundations réel : fresh/upgrade, projection A/B, ACL, provisioning,
+  transactions et 34/34 ;
+- métier réel : 1 contrôle statique + 11 scénarios PostgreSQL/Redis/HTTP et
+  non-régression C1 47/47 ;
+- inventaires Docker étrangers conteneurs, volumes, réseaux et images
+  byte-identiques avant/après.
+
+Le gate supply-chain terminal reste rouge : l'audit production frais passe à
+zéro vulnérabilité, mais l'audit complet frais termine au code 1 avec trois
+vulnérabilités modérées dans le graphe Vitest, associées à
+`GHSA-qxg6-89mg-rqv8` et `GHSA-xp26-3454-mjgp`. R7 n'autorise aucun changement
+de dépendance, lockfile, `audit fix` ou `--force`. Le candidat est donc conservé
+localement sans indexation, commit, push ou nouvelle CI. Fournisseurs NON
+QUALIFIÉS, C2b/C3 non commencés et politique OSS différée.
+
+## C2a R8 — remédiation Vitest 4.1.12 et finalisation R7+R8 — 2026-10-21
+
+### Graphe et bridge npm qualifié
+
+Les quatre workspaces consommateurs déclarent désormais `vitest: "4.1.12"`
+exact, et API déclare `@vitest/coverage-v8: "4.1.12"`. Le lock sélectionné
+compte 518 223 octets et porte le SHA-256
+`b762f32dce62c9b9dbc5d2864571520894f7860147278e9810a58d8283900fe8`.
+Il ne modifie que les quatre métadonnées workspace et 14 entrées de
+développement liées à la famille Vitest et à ses résolutions nécessaires ;
+toutes les dépendances de production restent identiques.
+
+npm `10.9.3` échoue pendant la résolution initiale dans Arborist sur
+`edgesOut`. Le diagnostic relie ce chemin au peer optionnel
+`@vitest/browser-webdriverio ^4.1.11` de Vitest 4.1.12 : la version 4.1.12 de
+ce peer n'est pas publiée et la version 4.1.11 exige Vitest 4.1.11. Le bridge
+autorisé utilise npm `11.6.0` seulement dans une fixture hors dépôt, ajoute
+temporairement les trois entrées `@emnapi` historiques nécessaires, retire
+ces déclarations avec `npm pkg delete`, vérifie le manifeste racine
+byte-identique, puis laisse npm `10.9.3` finaliser le lock. Aucune intégrité
+n'est éditée manuellement ; Node `22.18.0`, npm `10.9.3` et
+`packageManager` restent inchangés.
+
+Les preuves sélectionnées sont :
+
+- `npm ci --no-audit --no-fund` isolé et dans le worktree : code 0 ;
+- `npm ls --all` et arbre Vitest/Vite : code 0, aucun `invalid` ou
+  `ELSPROBLEMS` ;
+- Vitest, mocker et coverage `4.1.12`, Vite `8.1.6`, aucune copie Vitest
+  `4.1.11` installée ;
+- entrées `@emnapi` historiques conservées et graphe production inchangé ;
+- projections Prisma `7.9.1`/131 paquets et pg `8.22.0`/14 paquets
+  inchangées.
+
+### Gates sélectionnés
+
+- scanner officiel : 428 fichiers, historique actif, zéro suppression suivie
+  omise ; scanner adversarial 109/109 avec refus explicite de 4.1.11 ;
+- protections R7 : 47/47 ; tooling complet, repris seul après un NON-PASS de
+  contention à 547/549, passe 549/549 sans changement de borne ;
+- API 217 pass/61 skips conditionnels, Admin 13/13, Web 10/10, UI 11/11 ;
+- lint et typecheck des quatre workspaces, builds API/UI et reprises causales
+  des builds Next Admin/Web : PASS ;
+- audits npm complet et production : code 0, zéro vulnérabilité, stderr vide ;
+- signatures : 931 paquets vérifiés et 192 attestations ; licences :
+  933 paquets, zéro non déclarée, zéro non approuvée ;
+- R4 hôte 34/34 et Linux 34/34 ; notification et expiration reçoivent chacune
+  deux vrais SIGTERM pendant le cleanup, puis sortent code 0/signal null sans
+  SIGKILL ;
+- C1 réel : projections A/B, ACL et HTTP 47/47 ;
+- Foundations réel : fresh/upgrade, ACL, provisioning, transactions et 34/34 ;
+- métier réel : 1 contrôle statique + 11 scénarios PostgreSQL/Redis/HTTP, puis
+  non-régression C1 47/47.
+
+### Historique et limites conservés
+
+Les essais npm `edgesOut`, le lock npm 11 qui écartait des entrées historiques,
+les erreurs de lancement, les échecs sandbox, les builds Next sans droit de
+jonction et le tooling concurrent 547/549 restent NON-PASS ou NON EXÉCUTÉS
+selon leur stade. Le test Admin passe avec un warning de source map AdminLTE
+absente. La campagne Linux conserve le warning de détection OpenSSL Prisma ;
+installation, génération, build, tests et signaux terminent néanmoins au code 0. La terminaison OS Windows observée par le wrapper métier reste non
+gracieuse ; seule la preuve POSIX Linux locale est établie.
+
+Toutes les ressources C1/Foundations/métier et le conteneur Linux sont
+supprimés. L'image Node acquise par R8, absente de l'inventaire d'entrée, est
+également retirée sans force après vérification qu'aucun conteneur ne la
+référence. Les services Docker étrangers restent préservés.
+
+Le candidat R7+R8 reste local jusqu'au gel reproductible et aux trois revues
+terminales. Fournisseurs NON QUALIFIÉS, Linux de production NON QUALIFIÉ,
+C2b/C3 non commencés et politique OSS différée.

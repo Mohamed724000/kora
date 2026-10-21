@@ -102,12 +102,25 @@ const ESLINT_CONFIG_NEXT_PACKAGE = "eslint-config-next";
 const ESLINT_CONFIG_NEXT_SAFE_VERSION = "16.3.8";
 const ESLINT_CONFIG_NEXT_WORKSPACES = ["apps/admin", "apps/web", "packages/ui"];
 const VITEST_PACKAGE = "vitest";
-const VITEST_SAFE_VERSION = "4.1.11";
+const VITEST_SAFE_VERSION = "4.1.12";
+const VITEST_PATH = `node_modules/${VITEST_PACKAGE}`;
+const VITEST_INTEGRITY =
+  "sha512-5eWdz2yb3ajxWF3C8C4TjkXl7FGm3n2E/VlazALrQHzK7nYMSGFnCZto0bbPNl77AwkOZVLk0YnBAejUu0NiWA==";
+const VITEST_RESOLVED = "https://registry.npmjs.org/vitest/-/vitest-4.1.12.tgz";
 const VITEST_WORKSPACES = ["apps/admin", "apps/api", "apps/web", "packages/ui"];
 const VITEST_MOCKER_PACKAGE = "@vitest/mocker";
-const VITEST_MOCKER_SAFE_VERSION = "4.1.11";
+const VITEST_MOCKER_SAFE_VERSION = "4.1.12";
+const VITEST_MOCKER_PATH = `node_modules/${VITEST_MOCKER_PACKAGE}`;
+const VITEST_MOCKER_INTEGRITY =
+  "sha512-fKShNpKZzupWZuY0z7egydvL0sqW4INEZBEExMBMAa6izlENEVHwoXgdaTCaBZ5fwlr4xf2o1wXC83n9RpO+NA==";
+const VITEST_MOCKER_RESOLVED =
+  "https://registry.npmjs.org/@vitest/mocker/-/mocker-4.1.12.tgz";
 const VITEST_COVERAGE_PACKAGE = "@vitest/coverage-v8";
 const VITEST_COVERAGE_PATH = `node_modules/${VITEST_COVERAGE_PACKAGE}`;
+const VITEST_COVERAGE_INTEGRITY =
+  "sha512-6S7/iVknKglLAxMFxQGNppBI0iqJS2NgM6FBxavitj7KaDq/vywOWGf6dGu7F2L1Qy0G6S3uTp7aGshHrzK8JA==";
+const VITEST_COVERAGE_RESOLVED =
+  "https://registry.npmjs.org/@vitest/coverage-v8/-/coverage-v8-4.1.12.tgz";
 const JS_YAML_PACKAGE = "js-yaml";
 const JS_YAML_OVERRIDES = new Map([["js-yaml@4.3.0", "4.3.2"]]);
 const JS_YAML_PARENTS = [
@@ -1925,19 +1938,84 @@ export function validateVitestSupplyChain(manifests, lockfile) {
     }
   }
 
+  for (const { integrity, packageName, packagePath, resolved, version } of [
+    {
+      integrity: VITEST_INTEGRITY,
+      packageName: VITEST_PACKAGE,
+      packagePath: VITEST_PATH,
+      resolved: VITEST_RESOLVED,
+      version: VITEST_SAFE_VERSION,
+    },
+    {
+      integrity: VITEST_MOCKER_INTEGRITY,
+      packageName: VITEST_MOCKER_PACKAGE,
+      packagePath: VITEST_MOCKER_PATH,
+      resolved: VITEST_MOCKER_RESOLVED,
+      version: VITEST_MOCKER_SAFE_VERSION,
+    },
+    {
+      integrity: VITEST_COVERAGE_INTEGRITY,
+      packageName: VITEST_COVERAGE_PACKAGE,
+      packagePath: VITEST_COVERAGE_PATH,
+      resolved: VITEST_COVERAGE_RESOLVED,
+      version: VITEST_SAFE_VERSION,
+    },
+  ]) {
+    const metadata = lockfile.packages?.[packagePath];
+    if (
+      metadata?.version !== version ||
+      metadata?.integrity !== integrity ||
+      metadata?.resolved !== resolved ||
+      metadata?.license !== "MIT"
+    ) {
+      errors.push(
+        `${packageName}@${version} lock metadata must retain its qualified resolved URL, integrity and MIT license`,
+      );
+    }
+  }
+
   if (
-    lockfile.packages?.[`node_modules/${VITEST_PACKAGE}`]?.dependencies?.[
-      VITEST_MOCKER_PACKAGE
-    ] !== VITEST_MOCKER_SAFE_VERSION
+    lockfile.packages?.[VITEST_PATH]?.dependencies?.[VITEST_MOCKER_PACKAGE] !==
+    VITEST_MOCKER_SAFE_VERSION
   ) {
-    errors.push("vitest@4.1.11 must depend on @vitest/mocker 4.1.11");
+    errors.push(
+      `vitest@${VITEST_SAFE_VERSION} must depend on @vitest/mocker ${VITEST_MOCKER_SAFE_VERSION}`,
+    );
+  }
+  if (
+    lockfile.packages?.[VITEST_PATH]?.peerDependencies?.[
+      VITEST_COVERAGE_PACKAGE
+    ] !== VITEST_SAFE_VERSION
+  ) {
+    errors.push(
+      `vitest@${VITEST_SAFE_VERSION} must peer-depend on ${VITEST_COVERAGE_PACKAGE} ${VITEST_SAFE_VERSION}`,
+    );
+  }
+  if (
+    lockfile.packages?.[VITEST_MOCKER_PATH]?.dependencies?.["@vitest/spy"] !==
+    VITEST_SAFE_VERSION
+  ) {
+    errors.push(
+      `@vitest/mocker@${VITEST_MOCKER_SAFE_VERSION} must depend on @vitest/spy ${VITEST_SAFE_VERSION}`,
+    );
   }
   if (
     lockfile.packages?.[VITEST_COVERAGE_PATH]?.peerDependencies?.[
       VITEST_PACKAGE
     ] !== VITEST_SAFE_VERSION
   ) {
-    errors.push("@vitest/coverage-v8@4.1.11 must peer-depend on vitest 4.1.11");
+    errors.push(
+      `@vitest/coverage-v8@${VITEST_SAFE_VERSION} must peer-depend on vitest ${VITEST_SAFE_VERSION}`,
+    );
+  }
+  if (
+    lockfile.packages?.[VITEST_COVERAGE_PATH]?.dependencies?.[
+      "@vitest/utils"
+    ] !== VITEST_SAFE_VERSION
+  ) {
+    errors.push(
+      `@vitest/coverage-v8@${VITEST_SAFE_VERSION} must depend on @vitest/utils ${VITEST_SAFE_VERSION}`,
+    );
   }
   for (const parentPath of unexpectedDependencyParentPaths(
     lockfile,
