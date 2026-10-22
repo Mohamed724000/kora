@@ -1,9 +1,9 @@
 # S1.2-03C2 — Admin Security Runtime Contract
 
-Statut : **P0/R1–R5 PUBLIÉS DANS LA DRAFT PR #51 — R6 QUALIFIÉ LOCALEMENT
-ET AUTORISÉ POUR PUBLICATION SOUS GATES, CI R6 NON ACQUISE AU 2026-10-13 —
-FOUNDATIONS C2a ET MÉTIER P0–P9 QUALIFIÉS LOCALEMENT, NON PUBLIÉS — C2b/C3
-NON COMMENCÉS**
+Statut : **C2a R9 PUBLIÉ DANS LA DRAFT PR #52 AU HEAD
+`fd0f084fc6316c379454ef701307e79471ed92e2` — R10+R11 QUALIFIÉS
+LOCALEMENT, PUBLICATION ET CI R11 ENCORE À VENIR — NON FUSIONNÉ, NON DÉPLOYÉ
+— C2b/C3 NON COMMENCÉS**
 
 Date : 2026-10-12
 
@@ -763,3 +763,71 @@ R4 hôte/Linux restent applicables au graphe inchangé et ne sont pas rejouées.
 Les candidats R5 antérieurs restent NON-PASS/BLOCK historiques. R5 demeure
 local, non indexé et non publié ; la PR #52 reste Draft. Fournisseurs de
 production NON QUALIFIÉS, C2b/C3 non commencés et politique OSS différée.
+
+## C2a R6–R9 — état publié courant — 2026-10-22
+
+R6 remplace le hash global du lockfile C1 par les entrées réellement protégées
+de la projection Prisma historique. R7 applique la même séparation aux
+Foundations, avec des projections explicites pour Prisma `7.9.1`,
+`pg@8.22.0` et Vitest. R8 porte Vitest et ses consommateurs directs à
+`4.1.12`, conserve Vite à `8.1.6`, puis qualifie le graphe avec npm `10.9.3`,
+les audits, les licences, le scanner et la chaîne réelle C1 → Foundations →
+métier. Les NON-PASS et BLOCK intermédiaires R6–R8 restent historiques.
+
+R9 corrige exclusivement l'identité de projet du reset lifecycle :
+`resetProject(PROJECT_NAME)` emploie la valeur résolue par `lib.mjs`. La
+campagne isolée démontre lifecycle, persistance après restart, reset ciblé,
+idempotence et transitions API health sans modifier les ressources étrangères.
+Son incident local antérieur reste conservé : deux conteneurs étrangers ont
+été recréés avant échec d'authentification puis restaurés de manière ciblée ;
+l'intégrité byte-à-byte des volumes et l'état logique exhaustif préincident
+restent **NON DEMONSTRATED**.
+
+Le head R9 `fd0f084fc6316c379454ef701307e79471ed92e2` est publié dans la
+Draft PR #52. Les quatre workflows `pull_request` de tentative 1 sont verts :
+Infrastructure `39818813532`, Launcher Windows `39818813686`, Security
+`39818813647` et Quality Linux `39818813472`. Ils portent sur ce head source et
+sur le merge synthétique `8cc7c81b40c8d7e197a6920b08a734d9dc23ea5e`.
+Infrastructure exécute C1 47/47, Foundations 34/34 et le métier sous la forme
+exacte **1 contrôle statique + 11 scénarios réels**, ainsi que lifecycle, API
+health, arrêt POSIX des runners et cleanup. Les 61 tests ignorés de la suite
+API générale restent des SKIP et ne sont pas reclassés PASS.
+
+La PR reste `OPEN/Draft`, non fusionnée et non déployée. Le signal gracieux
+Windows reste **NON DEMONSTRATED** ; Linux de production et les fournisseurs
+de production restent non qualifiés ; C2b/C3 ne sont pas commencés et la
+politique OSS reste différée.
+
+## C2a R10–R11 — clôture locale avant publication — 2026-10-22
+
+R10 retire exclusivement le LF surnuméraire final de la migration C2a : la
+postimage de 90 033 octets, SHA-256
+`eba1a1e4729b57041d681ea7beafa8608d0e7731be94afa014f0e6171f415c8a`,
+égale la préimage privée de ce seul octet et conserve un LF final. La campagne
+Foundations éphémère passe 34/34 avec fresh/upgrade, projections, historique,
+ACL, transactions et idempotence C-05. Aucun checksum d'installation
+persistante n'est réécrit ; une installation externe non observable reste hors
+preuve.
+
+Le BLOCK supply-chain découvert par les audits R10 sur Next.js `16.3.8` est
+fermé localement par R11. Admin et Web épinglent Next.js `16.4.1`; Admin, Web
+et UI alignent `eslint-config-next` et le plugin sur `16.4.1`. Le lock contient
+une seule famille Next/env/SWC 16.4.1 et sharp `0.35.5`. Vite `8.1.6`, Vitest
+`4.1.12` et les projections Prisma/pg restent inchangés. L'alias
+`fast-glob -> tinyglobby@0.2.17` demeure unique, résolu depuis le plugin,
+contrôlé par intégrité et couvert par des refus adversariaux.
+
+L'installation propre et l'arbre npm passent ; les audits complet/production
+trouvent zéro vulnérabilité. Signatures et licences sont conformes. Le scanner,
+ses régressions, le tooling 554/554, format, lint, typecheck, tests et builds
+Admin/Web/UI passent. Les smokes des builds de production sur loopback et une
+optimisation PNG vers WebP avec Next.js 16.4.1/sharp 0.35.5 passent. Le premier
+tooling 552/554 et les candidats npm/smoke rejetés restent NON-PASS
+historiques.
+
+Cet état est une qualification locale prépublication : le head GitHub demeure
+R9 tant que le commit/push conditionnel R10+R11 n'a pas eu lieu, et aucune CI
+R11 n'est encore acquise. La PR reste `OPEN/Draft`. L'incident R9, ses limites
+sur les volumes, le signal Windows **NON DEMONSTRATED**, Linux et fournisseurs
+de production non qualifiés, les 61 SKIP, C2b/C3 non commencés et la politique
+OSS différée restent inchangés.

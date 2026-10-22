@@ -2232,4 +2232,3 @@ ALTER TABLE public."AuditLog"
   ADD CONSTRAINT "AuditLog_bootstrapGuardId_fkey"
     FOREIGN KEY ("bootstrapGuardId") REFERENCES public."AdminBootstrapGuard"("singletonKey")
     ON DELETE RESTRICT ON UPDATE RESTRICT DEFERRABLE INITIALLY DEFERRED;
-

@@ -1128,3 +1128,48 @@ sans replay Docker. Les candidats NON-PASS/BLOCK restent historiques. Le jalon
 est un GO local seulement : PR #52 reste Draft et toute publication requiert
 une décision CTO distincte. Fournisseurs NON QUALIFIÉS, C2b/C3 non commencés
 et OSS différée.
+
+### C2a R6–R9 — publication dans la Draft PR #52 — 2026-10-22
+
+R6 borne la reproductibilité C1 aux entrées Prisma historiques protégées. R7
+étend cette approche aux Foundations avec des projections explicites Prisma,
+`pg` et Vitest. Le BLOCK supply-chain R7 est fermé par R8, qui conserve Vite
+`8.1.6` et porte Vitest à `4.1.12`, puis qualifie installation, audits,
+licences, scanner, consommateurs et chaîne réelle C1 → Foundations → métier.
+
+R9 utilise `PROJECT_NAME` pour le reset lifecycle. Après l'incident local et
+la restauration ciblée des services étrangers, la reprise isolée qualifie
+persistance, reset, idempotence, API health et cleanup. L'intégrité
+byte-à-byte des volumes et l'état logique exhaustif préincident restent
+**NON DEMONSTRATED** et ne sont pas reconstruits rétrospectivement.
+
+Le candidat R9 est publié au head
+`fd0f084fc6316c379454ef701307e79471ed92e2` dans la PR #52 `OPEN/Draft`.
+Infrastructure `39818813532`, Launcher Windows `39818813686`, Security
+`39818813647` et Quality Linux `39818813472` sont verts. Infrastructure
+confirme C1 47/47, Foundations 34/34, métier 1 contrôle statique + 11
+scénarios réels, lifecycle, API health, arrêts Linux et cleanup. Les 61 SKIP
+restent des SKIP. Le signal gracieux Windows reste **NON DEMONSTRATED**.
+
+Ce jalon ne constitue ni fusion ni qualification production. Fournisseurs et
+Linux de production restent non qualifiés ; C2b/C3 ne sont pas commencés et
+la politique OSS reste différée.
+
+### C2a R10–R11 — candidat local de clôture — 2026-10-22
+
+R10 clôt le format de la migration par retrait byte-exact d'un LF et qualifie
+Foundations 34/34 sur fresh/upgrade. Les documents vivants sont réconciliés
+avec R9. L'audit prépublication R10 découvre ensuite Next.js 16.3.8 vulnérable
+et bloque légitimement la publication.
+
+R11 porte Next.js, env, SWC, `eslint-config-next` et son plugin à `16.4.1`,
+conserve sharp `0.35.5`, Vite `8.1.6`, Vitest `4.1.12` et les projections Prisma/pg,
+puis qualifie installation, arbre, audits à zéro, signatures/licences,
+scanner, tooling 554/554, consommateurs Admin/Web/UI, builds et smokes HTTP et
+image. Les candidats et gates rouges intermédiaires restent historiques.
+
+Le prochain jalon est conditionnel : gel reproductible, trois GO, audits frais,
+un commit/push, puis quatre workflows verts avant une unique réconciliation du
+corps PR. Aucun de ces faits futurs n'est annoncé ici. PR #52 reste OPEN/Draft
+au head R9 ; aucune fusion ou qualification production n'est acquise. Les
+réserves R9/Windows/61 SKIP/production, C2b/C3 et OSS sont conservées.

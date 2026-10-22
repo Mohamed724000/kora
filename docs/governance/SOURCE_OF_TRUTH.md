@@ -1,15 +1,13 @@
 # KORA+ Final — Source de vérité
 
 Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-03C1 FUSIONNÉ DANS MAIN AU
-MERGE dc97eeef72c4e299988ed19d66460011a8551cf3, NON DÉPLOYÉ — PR #50
-FERMÉE/FUSIONNÉE — S1.2-03C2-P0/R1–R5 PUBLIÉS DANS LA DRAFT PR #51 AU HEAD
-7d0e0e01f2618dab59d2e21d0091892f98c7b6ae — R6 QUALIFIÉ LOCALEMENT ET
-AUTORISÉ POUR PUBLICATION SOUS GATES, CI R6 NON ACQUISE — C2a FOUNDATIONS ET
-MÉTIER P0–P9 QUALIFIÉS LOCALEMENT, NON PUBLIÉS — FOURNISSEURS DE PRODUCTION
-NON QUALIFIÉS — C2b/C3 NOT STARTED**
+MERGE dc97eeef72c4e299988ed19d66460011a8551cf3, NON DÉPLOYÉ — C2a R9 PUBLIÉ
+DANS LA DRAFT PR #52 AU HEAD `fd0f084fc6316c379454ef701307e79471ed92e2`,
+R10+R11 QUALIFIÉS LOCALEMENT, PUBLICATION/CI R11 NON ACQUISES — FOURNISSEURS
+DE PRODUCTION NON QUALIFIÉS — C2b/C3 NOT STARTED**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-10-16
+Dernière réconciliation documentaire : 2026-10-22
 
 ## Hiérarchie normative
 
@@ -1434,3 +1432,61 @@ reste non démontré ; la preuve POSIX est locale et ne qualifie pas Linux de
 production. Fournisseurs de production NON QUALIFIÉS, C2b/C3 non commencés et
 politique OSS différée. La publication et la CI restent soumises aux conditions
 terminales distinctes du mandat R8.
+
+## État courant C2a publié dans la Draft PR #52 — 2026-10-22
+
+L'état courant n'est plus l'instantané local R5. Les étapes R6 et R7 ont
+remplacé les verrouillages globaux du lockfile par les projections protégées
+C1/Foundations ; R8 a qualifié Vite `8.1.6` avec Vitest `4.1.12`; R9 a corrigé
+le reset lifecycle afin qu'il utilise l'identité `PROJECT_NAME` résolue.
+
+Le head source publié est
+`fd0f084fc6316c379454ef701307e79471ed92e2`, arbre
+`761251da5c6f624bdcaf40186ccb6a542fa35217`, sur la base
+`d514b87cbef21dfae4585f4d143889aca2d8b229`. La PR #52 reste `OPEN/Draft`,
+non fusionnée et non déployée. Les quatre workflows R9 sont verts :
+Infrastructure `39818813532`, Launcher Windows `39818813686`, Security
+`39818813647` et Quality Linux `39818813472`. Ils ont exécuté le head source
+via le merge synthétique `8cc7c81b40c8d7e197a6920b08a734d9dc23ea5e`.
+
+La preuve Infrastructure distingue C1 47/47, Foundations 34/34 et métier
+**1 contrôle statique + 11 scénarios réels**. Lifecycle, API health, arrêt
+gracieux POSIX des runners et cleanup sont qualifiés. Les 61 SKIP de la suite
+API générale restent 46 C1, 11 C2a et 4 Foundations-P0 ; les campagnes réelles
+séparées démontrent leur portée conditionnelle sans les transformer en PASS.
+
+L'incident local R9 et sa restauration restent des faits historiques. La
+configuration des services étrangers a été rétablie et leur état observable
+préservé après la reprise isolée, mais l'intégrité byte-à-byte des volumes et
+l'état logique exhaustif préincident restent **NON DEMONSTRATED**. Le signal
+gracieux Windows reste **NON DEMONSTRATED**. Linux de production et les
+fournisseurs de production restent non qualifiés ; C2b/C3 ne sont pas
+commencés et la politique OSS reste différée.
+
+## Candidat local C2a R10+R11 — clôture et Next.js 16.4.1 — 2026-10-22
+
+R10 ferme les deux findings de la revue cumulative : la migration C2a ne perd
+que son LF terminal surnuméraire et passe Foundations 34/34 sur fresh/upgrade,
+projections, données historiques, ACL, transactions et C-05 ; les sept
+documents vivants distinguent état courant et historique. Aucun checksum de
+base persistante n'est réconcilié ou réécrit. La limite d'une installation
+externe non observable reste explicite.
+
+Les audits R10 ont découvert séparément deux advisories critiques sur Next.js
+`16.3.8`. R11 porte Admin/Web à Next.js `16.4.1`, aligne
+`eslint-config-next`/plugin pour Admin/Web/UI, verrouille Next/env/SWC 16.4.1
+et sharp `0.35.5`, et conserve Vite `8.1.6`, Vitest `4.1.12`, Prisma et pg.
+Le lock généré par le bridge isolé est finalement accepté par npm `10.9.3`,
+sans dépendance temporaire ni intégrité éditée à la main.
+
+Installation propre, arbre npm, audits à zéro, signatures, licences, scanner,
+régressions, tooling 554/554, lint, typecheck, tests, builds et smokes
+Admin/Web/UI passent. Une image PNG bénigne est optimisée en WebP via
+Next.js 16.4.1/sharp 0.35.5. Le NON-PASS tooling 552/554 et les candidats npm
+ou smoke rejetés restent archivés sans être requalifiés.
+
+R10+R11 restent locaux au présent instantané. Le head publié et les quatre
+workflows verts restent ceux de R9 ; aucune publication ni CI R11 n'est encore
+affirmée. L'incident R9 et ses limites, le signal Windows NON DEMONSTRATED,
+les 61 SKIP, Linux et fournisseurs de production non qualifiés, C2b/C3 non
+commencés et la politique OSS différée restent inchangés.

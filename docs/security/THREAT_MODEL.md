@@ -2,12 +2,10 @@
 
 Périmètre durable couvert : **BASELINE À S1.2-03B FUSIONNÉES + S1.2-03C1
 FUSIONNÉ DANS MAIN AU MERGE
-dc97eeef72c4e299988ed19d66460011a8551cf3, NON DÉPLOYÉ + S1.2-03C2-P0/R1–R5
-PUBLIÉS DANS LA DRAFT PR #51 AU HEAD
-7d0e0e01f2618dab59d2e21d0091892f98c7b6ae + R6 QUALIFIÉ LOCALEMENT ET
-AUTORISÉ POUR PUBLICATION SOUS GATES, CI R6 NON ACQUISE AU 2026-10-13,
-FOUNDATIONS C2a ET MÉTIER P0–P9 QUALIFIÉS LOCALEMENT, NON PUBLIÉS —
-FOURNISSEURS DE PRODUCTION NON QUALIFIÉS — C2b/C3 NOT STARTED**.
+dc97eeef72c4e299988ed19d66460011a8551cf3, NON DÉPLOYÉ + C2a R9 PUBLIÉ DANS
+LA DRAFT PR #52 AU HEAD `fd0f084fc6316c379454ef701307e79471ed92e2`,
+R10+R11 QUALIFIÉS LOCALEMENT, PUBLICATION/CI R11 NON ACQUISES — FOURNISSEURS
+DE PRODUCTION NON QUALIFIÉS — C2b/C3 NOT STARTED**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
 commit, push ou changement GitHub S1.1 n’avait encore été effectué : il s’agit
@@ -1440,3 +1438,40 @@ builds, tooling et R4 hôte/Linux ; ces preuves restent applicables sans replay
 Docker. Les candidats antérieurs et leurs erreurs restent NON-PASS/BLOCK
 historiques. R5 reste local et non publié ; PR #52 reste Draft, fournisseurs
 NON QUALIFIÉS, C2b/C3 non commencés et politique OSS différée.
+
+## C2a R6–R9 — protections courantes et publication Draft
+
+| Menace courante                                                        | Contrôle et preuve                                                                                                                        | Limite conservée                                       |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| Mise à jour indépendante du lock confondue avec une dérive de sécurité | R6/R7 protègent séparément les projections Prisma `7.9.1`, `pg@8.22.0` et Vitest, ainsi que la non-mutation du lock pendant les campagnes | `pg@8.22.0` qualifié seulement sur les chemins exercés |
+| Graphe Vitest/Vite vulnérable ou incohérent                            | R8 protège Vite `8.1.6`, Vitest `4.1.12`, mocker/coverage, intégrités, parents et installation ; audits complet/production à zéro         | registre futur et Linux de production non qualifiés    |
+| Reset lifecycle dirigé vers une autre instance                         | R9 résout `PROJECT_NAME`, refuse une confirmation croisée avant Docker et qualifie une instance éphémère dédiée                           | incident local antérieur conservé                      |
+| Surinterprétation des campagnes                                        | C1 47/47, Foundations 34/34 et métier 1 contrôle statique + 11 scénarios réels sont distincts ; 61 SKIP restent SKIP                      | campagnes et plateformes non exercées non supposées    |
+
+Le head `fd0f084fc6316c379454ef701307e79471ed92e2` est publié dans la Draft
+PR #52. Les quatre workflows R9 Infrastructure `39818813532`, Launcher
+Windows `39818813686`, Security `39818813647` et Quality Linux `39818813472`
+sont verts sur le head source exact et le merge synthétique
+`8cc7c81b40c8d7e197a6920b08a734d9dc23ea5e`. L'arrêt gracieux POSIX des deux
+runners est démontré ; le signal Windows reste **NON DEMONSTRATED**.
+
+La restauration ciblée suivant l'incident R9 ne démontre pas l'intégrité
+byte-à-byte des volumes ni l'état logique exhaustif préincident. Les
+fournisseurs de production et Linux de production restent non qualifiés ;
+C2b/C3 ne sont pas commencés et la politique OSS reste différée.
+
+## C2a R10–R11 — clôture locale et remédiation Next.js
+
+| Menace ou dérive                                    | Contrôle R10/R11                                                                                                                                                               | Preuve locale                                                                | Limite conservée                                                |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Migration modifiée au-delà du format                | postimage égale à la préimage privée d'un LF ; SHA-256 `eba1a1e4…5c8a` ; exactement un LF final                                                                                | Foundations 34/34 fresh/upgrade/projections/historique/ACL/transactions/C-05 | installation persistante externe non observable non attestée    |
+| RCE/DoS Next.js 16.3.8                              | Admin/Web sur Next.js `16.4.1` ; env/SWC cohérents ; sharp `0.35.5` ; aucune copie 16.3.8/16.4.2                                                                               | installation propre, arbres npm et audits complet/production à zéro          | futurs advisories et exploitation production non préqualifiés   |
+| Dérive du plugin ESLint ou contournement fast-glob  | plugin/config `16.4.1` ; alias unique tinyglobby 0.2.17 résolu depuis le contexte du plugin ; intégrité, parents et emplacement exact protégés                                 | test dédié 7/7, scanner adversarial 112/112, tooling 554/554                 | toute future topologie npm doit être requalifiée                |
+| Régression applicative ou image                     | lint/typecheck/tests/builds Admin/Web/UI ; smokes production loopback ; optimisation PNG bénigne vers WebP avec Next.js `16.4.1`/sharp `0.35.5` ; source HTTP invalide rejetée | Admin 13/13, Web 10/10, UI 11/11 et smokes code 0                            | aucun exploit réel, fournisseur ou Linux de production qualifié |
+| Historique favorable substitué à la preuve courante | audits, scanner, tooling et smokes R11 sélectionnés séparément ; tooling 552/554, candidats npm et premier smoke conservés                                                     | preuves horodatées avec stdout/stderr/code distincts                         | quatre workflows R9 ne valent pas CI R11                        |
+
+R10+R11 restent locaux au présent instantané. Le head GitHub demeure R9 et
+aucune publication ou CI R11 n'est affirmée. L'incident R9 et les limites sur
+les volumes, le signal Windows NON DEMONSTRATED, les 61 SKIP, Linux et les
+fournisseurs de production non qualifiés, C2b/C3 non commencés et la politique
+OSS différée restent inchangés.

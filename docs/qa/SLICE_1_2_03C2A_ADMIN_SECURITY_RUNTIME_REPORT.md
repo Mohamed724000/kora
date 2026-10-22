@@ -2,7 +2,8 @@
 
 ## Statut
 
-**GO LOCAL — fondations C2a et métier P0–P9 qualifiés, non publiés.**
+**C2a R9 PUBLIÉ DANS LA DRAFT PR #52 — R10+R11 QUALIFIÉS LOCALEMENT,
+PUBLICATION ET CI R11 ENCORE À VENIR — NON FUSIONNÉ, NON DÉPLOYÉ.**
 
 Docker Desktop/Linux Engine est disponible depuis Codex et reste démarré.
 La campagne PostgreSQL isolée est concluante. L'avenant ciblé aligne désormais
@@ -10,11 +11,11 @@ le validateur OpenAPI sur exactement 48 modèles Prisma : 39 historiques et neuf
 C2a. Les précédents NO-GO Docker et le premier NON-PASS OpenAPI/tooling restent
 historiques et ne sont pas requalifiés.
 
-Le lot local est fondé sur le commit
-`d514b87cbef21dfae4585f4d143889aca2d8b229`, branche
-`feat/s1-2-03c2a-admin-security-runtime`. Aucun fichier n'est indexé, commité
-ou publié. Aucun changement GitHub, Ready, approval, merge, tag, release ou
-déploiement n'est autorisé.
+Le candidat publié est au commit
+`fd0f084fc6316c379454ef701307e79471ed92e2`, branche
+`feat/s1-2-03c2a-admin-security-runtime`, sur la base
+`d514b87cbef21dfae4585f4d143889aca2d8b229`. La PR #52 reste `OPEN/Draft`.
+Aucun Ready, approval, merge, tag, release ou déploiement n'est acquis.
 
 ## Périmètre observé
 
@@ -925,7 +926,76 @@ première exécution via `cmd.exe`, silencieuse pendant l'observation mais
 concluante 551/551 en 115 secondes, a été rejointe par erreur par la reprise
 également concluante 551/551 pendant ses 6,6 dernières secondes. Cette double
 exécution accidentelle est conservée comme incident d'orchestration et n'est
-pas présentée comme une reprise nécessaire. La qualification présente est
-locale ; aucune réussite CI R9 n'est encore affirmée. Fournisseurs de
+pas présentée comme une reprise nécessaire. Au moment de cet instantané local,
+aucune réussite CI R9 n'était encore acquise ; l'état publié postérieur est
+consigné ci-dessous.
+
+## Publication R9 et état CI courant — 2026-10-22
+
+Le head source `fd0f084fc6316c379454ef701307e79471ed92e2`, arbre
+`761251da5c6f624bdcaf40186ccb6a542fa35217`, est publié dans la Draft PR #52
+sur la base `d514b87cbef21dfae4585f4d143889aca2d8b229`. La PR reste
+`OPEN/Draft`, non fusionnée et non déployée.
+
+Les quatre runs `pull_request`, tentative 1, sont verts sur le head source
+exact et le merge synthétique `8cc7c81b40c8d7e197a6920b08a734d9dc23ea5e` :
+
+- Infrastructure `39818813532` ;
+- Launcher Windows `39818813686` ;
+- Security `39818813647` ;
+- Quality Linux `39818813472`.
+
+Infrastructure exécute C1 47/47, Foundations 34/34 et le métier sous la forme
+exacte **1 contrôle statique + 11 scénarios réels**, puis lifecycle, API
+health, arrêt gracieux POSIX des runners et cleanup. La suite API générale
+conserve 217 PASS et 61 SKIP — 46 C1, 11 C2a et 4 Foundations-P0. Les
+campagnes réelles séparées couvrent les scénarios conditionnels concernés ;
+les 61 SKIP ne sont pas reclassés PASS.
+
+R8 a qualifié le graphe courant Vite `8.1.6` / Vitest `4.1.12`. Les mentions
+R5 de Vitest `4.1.11`, les BLOCK R6–R8 et l'échec CI R8 au lifecycle restent
+des instantanés historiques. L'incident local R9 et sa restauration ciblée
+restent également conservés : l'intégrité byte-à-byte des volumes et l'état
+logique exhaustif préincident demeurent **NON DEMONSTRATED**.
+
+Le signal gracieux Windows reste **NON DEMONSTRATED**. Fournisseurs de
 production NON QUALIFIÉS, Linux de production NON QUALIFIÉ, C2b/C3 non
 commencés et politique OSS différée.
+
+## Qualification locale R10+R11 — 2026-10-22
+
+R10 ferme F-01 et F-02. La migration passe de 90 034 à 90 033 octets par
+retrait du seul LF surnuméraire final ; SHA-256 final
+`eba1a1e4729b57041d681ea7beafa8608d0e7731be94afa014f0e6171f415c8a`.
+Foundations passe 34/34 sur une instance éphémère et exerce fresh/upgrade,
+projections, préservation historique, provisioning, ACL, transactions et C-05.
+Aucun checksum d'une installation persistante n'a été modifié. Les documents
+ci-dessus distinguent désormais l'état R9 publié des instantanés locaux.
+
+Les audits R10 ont ensuite ouvert `R10-SC-01` sur Next.js `16.3.8`. R11 le
+ferme localement avec Next.js `16.4.1` dans Admin/Web,
+`eslint-config-next`/plugin `16.4.1` dans Admin/Web/UI, Next/env/SWC cohérents
+et sharp `0.35.5`. Le lock final conserve Vite `8.1.6`, Vitest/mocker `4.1.12` et les
+projections Prisma/pg. Le bridge npm reste une fixture hors dépôt ; npm 10.9.3
+accepte ensuite le lock par installation et arbre complets.
+
+Résultats sélectionnés sur les octets techniques finaux :
+
+- audits complet/production : code 0, zéro vulnérabilité ;
+- signatures : 929 signatures de registre et 190 attestations ;
+- licences : 931 paquets installés, zéro licence absente ou non approuvée ;
+- scanner officiel et régressions 112/112 : PASS ;
+- test de compatibilité Next 7/7 et tooling complet 554/554 : PASS ;
+- Admin 13/13, Web 10/10, UI 11/11, lint/typecheck/builds : PASS ;
+- smokes production loopback et optimisation PNG→WebP : PASS.
+
+Le tooling 552/554 antérieur, les erreurs sandbox, les candidats npm rejetés et
+le premier smoke à attente 400 trop stricte restent NON-PASS ou NON CONCLUANTS
+selon leur nature. Ils ne sont pas effacés par les reprises causales.
+
+Le candidat R10+R11 reste local au présent instantané. La PR #52 est toujours
+`OPEN/Draft` au head R9 `fd0f084fc6316c379454ef701307e79471ed92e2` et
+aucune CI R11 n'est encore acquise. L'incident R9, l'intégrité byte-à-byte des
+volumes et l'état logique complet préincident NON DEMONSTRATED, le signal
+Windows NON DEMONSTRATED, les 61 SKIP, Linux et fournisseurs de production non
+qualifiés, C2b/C3 non commencés et la politique OSS différée sont conservés.
