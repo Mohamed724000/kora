@@ -20,7 +20,7 @@ import { delimiter, dirname, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import pg from "pg";
 
@@ -430,6 +430,95 @@ function workflowCleanupFixture(
     },
   );
   return { instanceRoot, npmRecord, ownershipPath, result };
+}
+
+function lifecycleProjectIdentityFixture(context) {
+  const root = mkdtempSync(
+    resolve(tmpdir(), "kora-lifecycle-project-fixture-"),
+  );
+  context.after(() => rmSync(root, { force: true, recursive: true }));
+
+  const lifecycleSource = readFileSync(
+    resolve(repositoryRoot, "scripts", "infra", "verify-lifecycle.mjs"),
+    "utf8",
+  );
+  const importMarker = 'from "./lib.mjs";';
+  assert.equal(lifecycleSource.split(importMarker).length - 1, 1);
+  writeFileSync(
+    resolve(root, "verify-lifecycle.mjs"),
+    lifecycleSource.replace(importMarker, 'from "./fixture-lib.mjs";'),
+    { encoding: "utf8", flag: "wx" },
+  );
+
+  writeFileSync(
+    resolve(root, "fixture-lib.mjs"),
+    `export const PROJECT_NAME = process.env.KORA_EXPECTED_PROJECT_NAME;\n` +
+      `function record(event, value = null) { console.log(JSON.stringify({ event, value })); }\n` +
+      `export function assertPersistenceMarkers() { record("assertPersistenceMarkers"); }\n` +
+      `export function assertPersistenceMarkersAbsent() { record("assertPersistenceMarkersAbsent"); }\n` +
+      `export function checkInfrastructure() { record("checkInfrastructure"); }\n` +
+      `export function createPersistenceMarkers(value) { record("createPersistenceMarkers", value); }\n` +
+      `export function downProject() { record("downProject"); }\n` +
+      `export function prepareLocalFiles() { record("prepareLocalFiles"); }\n` +
+      `export function resetProject(confirmation) {\n` +
+      `  if (confirmation !== PROJECT_NAME) { throw new Error("wrong reset confirmation: " + confirmation); }\n` +
+      `  record("resetProject", confirmation);\n` +
+      `}\n` +
+      `export function runCompose(args) { record("runCompose", args); }\n` +
+      `export function upProject() { record("upProject"); }\n` +
+      `export function validateCompose() { record("validateCompose"); }\n` +
+      `export function waitForServiceHealthy(service) { record("waitForServiceHealthy", service); }\n`,
+    { encoding: "utf8", flag: "wx" },
+  );
+
+  const expectedProjectName = "kora-plus-r9-lifecycle-fixture";
+  const result = spawnSync(
+    process.execPath,
+    [resolve(root, "verify-lifecycle.mjs")],
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        KORA_EXPECTED_PROJECT_NAME: expectedProjectName,
+        KORA_INFRA_ALLOW_LEGACY_LIFECYCLE_CONFIRMATION: "false",
+      },
+      windowsHide: true,
+    },
+  );
+  return { expectedProjectName, result };
+}
+
+function rejectedCrossInstanceResetFixture(context) {
+  const root = mkdtempSync(resolve(tmpdir(), "kora-reset-refusal-fixture-"));
+  context.after(() => rmSync(root, { force: true, recursive: true }));
+  const libUrl = pathToFileURL(
+    resolve(repositoryRoot, "scripts", "infra", "lib.mjs"),
+  ).href;
+  const probe =
+    `import { resetProject } from ${JSON.stringify(libUrl)};\n` +
+    `try {\n` +
+    `  resetProject("kora-plus-local");\n` +
+    `  console.error("cross-instance reset was accepted");\n` +
+    `  process.exitCode = 24;\n` +
+    `} catch (error) {\n` +
+    `  console.error(error instanceof Error ? error.message : String(error));\n` +
+    `  process.exitCode = 23;\n` +
+    `}\n`;
+  const environment = { ...process.env };
+  for (const key of Object.keys(environment)) {
+    if (key.toLowerCase() === "path") {
+      delete environment[key];
+    }
+  }
+  environment.PATH = root;
+  environment.KORA_INFRA_EPHEMERAL_INSTANCE = "r9-lifecycle-fixture";
+  delete environment.KORA_INFRA_ALLOW_LEGACY_LIFECYCLE_CONFIRMATION;
+
+  return spawnSync(process.execPath, ["--input-type=module", "--eval", probe], {
+    encoding: "utf8",
+    env: environment,
+    windowsHide: true,
+  });
 }
 
 function historicalFixture(context, { alterPath, omitPath } = {}) {
@@ -1875,6 +1964,31 @@ test("valide la syntaxe des quatre scripts PowerShell du workflow", () => {
       `${stepName}:\n${result.stdout}\n${result.stderr}`,
     );
   }
+});
+
+test("raccorde le lifecycle a l'identite de projet ephemere resolue", (context) => {
+  const { expectedProjectName, result } =
+    lifecycleProjectIdentityFixture(context);
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  const events = result.stdout
+    .split(/\r?\n/u)
+    .filter((line) => line.startsWith("{"))
+    .map((line) => JSON.parse(line));
+  const resets = events.filter(({ event }) => event === "resetProject");
+  assert.deepEqual(resets, [
+    { event: "resetProject", value: expectedProjectName },
+  ]);
+});
+
+test("refuse une confirmation d'une autre instance avant Docker", (context) => {
+  const result = rejectedCrossInstanceResetFixture(context);
+  assert.equal(result.status, 23, `${result.stdout}\n${result.stderr}`);
+  assert.equal(result.stdout, "");
+  assert.match(
+    result.stderr,
+    /Reset refused\. Use --confirm=kora-plus-r9-lifecycle-fixture\./u,
+  );
+  assert.doesNotMatch(result.stderr, /Docker command failed|ENOENT|spawn/u);
 });
 
 test("échoue fermé sur état, substitution ou down non concluant", (context) => {

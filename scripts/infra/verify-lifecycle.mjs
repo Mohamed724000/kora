@@ -7,6 +7,7 @@ import {
   createPersistenceMarkers,
   downProject,
   prepareLocalFiles,
+  PROJECT_NAME,
   resetProject,
   runCompose,
   upProject,
@@ -28,7 +29,7 @@ try {
   assertPersistenceMarkers(marker);
   console.log("PostgreSQL and Redis markers survived a simple restart.");
 
-  resetProject("kora-plus-local");
+  resetProject(PROJECT_NAME);
   assertPersistenceMarkersAbsent();
   checkInfrastructure();
   console.log("Targeted reset removed only the KORA+ technical markers.");

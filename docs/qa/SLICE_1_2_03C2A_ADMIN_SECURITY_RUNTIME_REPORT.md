@@ -858,3 +858,74 @@ référence. Les services Docker étrangers restent préservés.
 Le candidat R7+R8 reste local jusqu'au gel reproductible et aux trois revues
 terminales. Fournisseurs NON QUALIFIÉS, Linux de production NON QUALIFIÉ,
 C2b/C3 non commencés et politique OSS différée.
+
+## C2a R9 — identité d'instance lifecycle — 2026-10-22
+
+### Correctif et régressions
+
+Le lifecycle n'utilise plus la confirmation codée en dur `kora-plus-local` :
+il importe `PROJECT_NAME` depuis `lib.mjs` et transmet cette identité résolue à
+`resetProject`. Les contrôles existants de confirmation, labels, volumes et
+propriété ne sont pas affaiblis. Deux fixtures comportementales démontrent que
+le reset reçoit le projet éphémère résolu et qu'une confirmation appartenant à
+une autre instance est refusée avant toute commande Docker, sans activer la
+compatibilité legacy.
+
+### Incident conservé et restauration séparée
+
+La première campagne réelle R9 n'était pas isolée. Le lanceur hors dépôt fondé
+sur un assemblage `set/cmd` fragile n'a transmis aucune variable `KORA_*` au
+processus enfant ; celui-ci a résolu `local`, recréé les conteneurs PostgreSQL
+et Redis étrangers, puis échoué à l'authentification de la migration. Le reset,
+la création de marqueurs et le provisioning n'ont pas été atteints. Cet
+incident reste archivé comme BLOCK historique.
+
+Une intervention distincte a sauvegardé les observables, puis restauré chaque
+service depuis sa source Compose qualifiée, sans `down` global, prune,
+suppression de volume, migration ou provisioning. PostgreSQL et Redis sont
+revenus sains et conformes ; STREAM et les autres ressources ont été
+préservés. Les sauvegardes capturent l'état observable au moment de l'incident,
+mais l'intégrité byte-à-byte des volumes et l'état logique préincident exhaustif
+restent **NON DEMONSTRATED**.
+
+### Reprise isolée qualifiée
+
+Le lanceur corrigé reste hors dépôt et transmet les variables par un objet
+`env` explicite. Le même processus enfant atteste, avant import du script
+cible, l'instance dédiée, le `PROJECT_NAME`, le répertoire local, les ports et
+l'empreinte de la configuration. Les cas variable absente, valeur `local`,
+divergence et substitution sont refusés avant Docker ; la fixture préventive
+passe 5/5.
+
+Sur l'instance unique `r9-20261022t1120z-a91c`, absente au préflight :
+
+- le lifecycle complet démontre persistance après restart, reset ciblé,
+  disparition des marqueurs, idempotence start/stop et état final sain ;
+- API health démontre `live=200` et `ready=200`, puis les transitions attendues
+  lors des indisponibilités Redis et PostgreSQL, leur récupération et le reset
+  ciblé ;
+- après lifecycle, API health et cleanup, les inventaires étrangers et les
+  inspections protégées KORA/STREAM restent sémantiquement identiques ;
+- seuls deux conteneurs, deux volumes, un réseau et le répertoire local ignoré
+  de la campagne sont retirés.
+
+### Gates, historique et limites
+
+- régressions R9 : PASS ; tooling officiel : 551/551 ;
+- scanner officiel : PASS ;
+- audits npm complet et production : code 0, zéro vulnérabilité, stderr vide ;
+- les preuves C1 47/47, Foundations 34/34, métier 1 contrôle statique +
+  11 scénarios réels, R4 Linux et supply-chain R8 restent applicables, leurs
+  surfaces et dépendances étant inchangées.
+
+Les micro-fixtures ayant atteint leurs très courtes fenêtres de scheduling et
+les refus sandbox `EACCES`/`EPERM` restent NON-PASS. Le `spawn EINVAL` de
+l'appel direct à `npm.cmd` n'a démarré aucun test et reste NON EXÉCUTÉ. La
+première exécution via `cmd.exe`, silencieuse pendant l'observation mais
+concluante 551/551 en 115 secondes, a été rejointe par erreur par la reprise
+également concluante 551/551 pendant ses 6,6 dernières secondes. Cette double
+exécution accidentelle est conservée comme incident d'orchestration et n'est
+pas présentée comme une reprise nécessaire. La qualification présente est
+locale ; aucune réussite CI R9 n'est encore affirmée. Fournisseurs de
+production NON QUALIFIÉS, Linux de production NON QUALIFIÉ, C2b/C3 non
+commencés et politique OSS différée.
