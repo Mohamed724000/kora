@@ -156,6 +156,69 @@ enum AdminReasonCode {
   INVITATION_ADMINISTRATION
 }
 
+enum AdminAuditOutcome {
+  SUCCESS
+  REJECTED
+}
+
+enum AdminAuditFailureCode {
+  FORBIDDEN
+  STEP_UP_REQUIRED
+  STEP_UP_EXPIRED
+  STEP_UP_INVALID
+  INTEGRITY_REJECTED
+  DEPENDENCY_UNAVAILABLE
+  VALIDATION_ERROR
+  IDEMPOTENCY_CONFLICT
+  RESOURCE_NOT_FOUND
+  RESOURCE_CONFLICT
+  RESOURCE_EXPIRED
+  PROJECTION_BUDGET_EXCEEDED
+}
+
+enum AdminRecoveryCaseState {
+  PENDING
+  APPROVED
+  CANCELLED
+  EXPIRED
+}
+
+enum AdminInvitationState {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
+enum AdminNotificationPurpose {
+  PASSWORD_RESET
+  INVITATION
+}
+
+enum AdminNotificationState {
+  PENDING
+  CLAIMED
+  DELIVERED
+  FAILED
+  DELIVERY_UNCERTAIN
+  CANCELLED
+}
+
+enum AdminSnapshotOperation {
+  LIST_ADMIN_RECOVERY_CASES
+  LIST_ADMIN_USERS
+  LIST_ADMIN_AUDIT_LOGS
+}
+
+enum AdminC2IdempotencyOperation {
+  CREATE_ADMIN_RECOVERY_CASE
+  APPROVE_ADMIN_RECOVERY_CASE
+  CREATE_ADMIN_AUDIT_LOG_EXPORT
+  CREATE_ADMIN_INVITATION
+  CHANGE_ADMIN_USER_ROLE
+  CHANGE_ADMIN_USER_STATUS
+}
+
 model Customer {
   id                 String              @id @default(uuid())
   verifiedPhone      String              @unique
@@ -236,16 +299,17 @@ model OtpChallenge {
 }
 
 model AdminUser {
-  id                      String                   @id @default(uuid())
-  email                   String                   @unique
+  id                      String                      @id @default(uuid())
+  email                   String                      @unique
   passwordHash            String
   role                    AdminRole
-  status                  AdminStatus              @default(DISABLED)
-  authorizationVersion    Int                      @default(1)
+  status                  AdminStatus                 @default(DISABLED)
+  authorizationVersion    Int                         @default(1)
   totpSecretEncrypted     String?
   totpEnabledAt           DateTime?
   lastAcceptedTotpCounter BigInt?
-  createdAt               DateTime                 @default(now())
+  createdAt               DateTime                    @default(now())
+  c2aInvitationCreatedXid BigInt?
   sessions                AdminSession[]
   recoveryCodes           AdminRecoveryCode[]
   preAuthContexts         AdminPreAuthContext[]
@@ -254,13 +318,23 @@ model AdminUser {
   refreshTokens           AdminRefreshToken[]
   recoveryCodeBatches     AdminRecoveryCodeBatch[]
   securityEvents          AdminSecurityEvent[]
-  createdArtists          Artist[]                 @relation("ArtistCreatedByAdmin")
-  createdAudioContents    AudioContent[]           @relation("AudioContentCreatedByAdmin")
+  createdArtists          Artist[]                    @relation("ArtistCreatedByAdmin")
+  createdAudioContents    AudioContent[]              @relation("AudioContentCreatedByAdmin")
   publications            ContentPublication[]
-  actorAuditLogs          AuditLog[]               @relation("AuditActor")
-  subjectAuditLogs        AuditLog[]               @relation("AuditSubject")
-  delegatedAuditLogs      AuditLog[]               @relation("AuditDelegatedBy")
+  actorAuditLogs          AuditLog[]                  @relation("AuditActor")
+  subjectAuditLogs        AuditLog[]                  @relation("AuditSubject")
+  delegatedAuditLogs      AuditLog[]                  @relation("AuditDelegatedBy")
   idempotencyRecords      AdminIdempotencyRecord[]
+  passwordResetRequests   AdminPasswordResetRequest[]
+  passwordResetContexts   AdminPasswordResetContext[]
+  recoveryCasesAsSubject  AdminRecoveryCase[]         @relation("RecoveryCaseSubject")
+  recoveryCasesAsCreator  AdminRecoveryCase[]         @relation("RecoveryCaseCreator")
+  recoveryCasesAsApprover AdminRecoveryCase[]         @relation("RecoveryCaseApprover")
+  createdInvitations      AdminInvitation[]           @relation("InvitationCreator")
+  acceptedInvitations     AdminInvitation[]           @relation("InvitationAcceptedAdmin")
+  c2Snapshots             AdminPaginationSnapshot[]
+  c2IdempotencyRecords    AdminC2IdempotencyRecord[]
+  bootstrapGuard          AdminBootstrapGuard?
 }
 
 model AdminSession {
@@ -400,19 +474,197 @@ model AdminRecoveryCodeBatch {
 }
 
 model AdminSecurityEvent {
-  id             String                    @id @default(uuid())
-  adminUserId    String?
-  adminUser      AdminUser?                @relation(fields: [adminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  eventClass     AdminAuditEventClass
-  action         String
-  outcome        AdminSecurityEventOutcome
-  failureCode    String?
-  requestId      String
-  subjectRefHash String?
-  createdAt      DateTime                  @default(now())
+  id                   String                     @id @default(uuid())
+  adminUserId          String?
+  adminUser            AdminUser?                 @relation(fields: [adminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  eventClass           AdminAuditEventClass
+  action               String
+  outcome              AdminSecurityEventOutcome
+  failureCode          String?
+  requestId            String
+  subjectRefHash       String?
+  entityType           String?
+  entityId             String?
+  adminInvitationId    String?
+  adminInvitation      AdminInvitation?           @relation("InvitationSecurityEvents", fields: [adminInvitationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  passwordResetRequest AdminPasswordResetRequest? @relation("PasswordResetSourceEvent")
+  notificationOutboxes AdminNotificationOutbox[]  @relation("OutboxSecurityEventSource")
+  auditCausations      AuditLog[]                 @relation("AuditSecurityCausation")
+  createdAt            DateTime                   @default(now())
 
+  @@unique([id, entityId])
   @@index([adminUserId, createdAt])
   @@index([eventClass, action, createdAt])
+  @@index([entityType, entityId, createdAt])
+}
+
+// PASSWORD_RESET is physically separate from the C1 MFA recovery context.
+model AdminPasswordResetRequest {
+  id                 String                     @id @default(uuid())
+  adminUserId        String
+  adminUser          AdminUser                  @relation(fields: [adminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  securityEventId    String                     @unique
+  securityEvent      AdminSecurityEvent         @relation("PasswordResetSourceEvent", fields: [securityEventId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  replacedRequestId  String?                    @unique
+  replacedRequest    AdminPasswordResetRequest? @relation("PasswordResetReplacement", fields: [replacedRequestId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  replacementRequest AdminPasswordResetRequest? @relation("PasswordResetReplacement")
+  expiresAt          DateTime
+  revokedAt          DateTime?
+  createdAt          DateTime                   @default(now())
+  context            AdminPasswordResetContext?
+  notificationOutbox AdminNotificationOutbox?
+
+  @@unique([id, adminUserId])
+  @@unique([securityEventId, id])
+  @@index([adminUserId, createdAt])
+  @@index([expiresAt])
+}
+
+model AdminPasswordResetContext {
+  id                     String                    @id @default(uuid())
+  passwordResetRequestId String                    @unique
+  passwordResetRequest   AdminPasswordResetRequest @relation(fields: [passwordResetRequestId, adminUserId], references: [id, adminUserId], onDelete: Restrict, onUpdate: Restrict)
+  adminUserId            String
+  adminUser              AdminUser                 @relation(fields: [adminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  tokenHash              String                    @unique
+  authorizationVersion   Int
+  expiresAt              DateTime
+  consumedAt             DateTime?
+  revokedAt              DateTime?
+  createdAt              DateTime                  @default(now())
+  auditLogs              AuditLog[]                @relation("AuditPasswordReset")
+
+  @@unique([id, adminUserId])
+  @@unique([passwordResetRequestId, adminUserId])
+  @@index([adminUserId, expiresAt])
+}
+
+model AdminRecoveryCase {
+  id                  String                 @id @default(uuid())
+  subjectAdminUserId  String
+  subjectAdminUser    AdminUser              @relation("RecoveryCaseSubject", fields: [subjectAdminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  creatorAdminUserId  String
+  creatorAdminUser    AdminUser              @relation("RecoveryCaseCreator", fields: [creatorAdminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  approverAdminUserId String?
+  approverAdminUser   AdminUser?             @relation("RecoveryCaseApprover", fields: [approverAdminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  state               AdminRecoveryCaseState @default(PENDING)
+  stateGeneration     Int                    @default(1)
+  expiresAt           DateTime
+  approvedAt          DateTime?
+  cancelledAt         DateTime?
+  expiredAt           DateTime?
+  createdAt           DateTime               @default(now())
+  auditLogs           AuditLog[]             @relation("AuditRecoveryCase")
+
+  @@index([subjectAdminUserId, createdAt])
+  @@index([state, expiresAt])
+}
+
+model AdminInvitation {
+  id                     String                   @id @default(uuid())
+  emailCanonical         String
+  deliveryEmailEncrypted String
+  codeHash               String                   @unique
+  proposedRole           AdminRole
+  creatorAdminUserId     String
+  creatorAdminUser       AdminUser                @relation("InvitationCreator", fields: [creatorAdminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  createdByAuditLogId    String                   @unique
+  createdByAuditLog      AuditLog                 @relation("InvitationCreatedByAudit", fields: [createdByAuditLogId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  acceptedAdminUserId    String?                  @unique
+  acceptedAdminUser      AdminUser?               @relation("InvitationAcceptedAdmin", fields: [acceptedAdminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  replacedInvitationId   String?                  @unique
+  replacedInvitation     AdminInvitation?         @relation("InvitationReplacement", fields: [replacedInvitationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  replacementInvitation  AdminInvitation?         @relation("InvitationReplacement")
+  state                  AdminInvitationState     @default(PENDING)
+  stateGeneration        Int                      @default(1)
+  expiresAt              DateTime
+  acceptedAt             DateTime?
+  revokedAt              DateTime?
+  expiredAt              DateTime?
+  createdAt              DateTime                 @default(now())
+  notificationOutbox     AdminNotificationOutbox?
+  securityEvents         AdminSecurityEvent[]     @relation("InvitationSecurityEvents")
+  auditLogs              AuditLog[]               @relation("AuditInvitation")
+
+  @@unique([createdByAuditLogId, id])
+  @@index([emailCanonical, createdAt])
+  @@index([state, expiresAt])
+}
+
+model AdminNotificationOutbox {
+  id                          String                     @id @default(uuid())
+  purpose                     AdminNotificationPurpose
+  state                       AdminNotificationState     @default(PENDING)
+  generation                  Int                        @default(1)
+  encryptedPayload            String
+  encryptionKeyId             String
+  encryptionNonce             String
+  encryptionTag               String
+  aadHash                     String
+  sourceSecurityEventId       String?
+  sourceSecurityEvent         AdminSecurityEvent?        @relation("OutboxSecurityEventSource", fields: [sourceSecurityEventId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sourceAuditLogId            String?
+  sourceAuditLog              AuditLog?                  @relation("OutboxAuditSource", fields: [sourceAuditLogId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  passwordResetRequestId      String?                    @unique
+  passwordResetRequest        AdminPasswordResetRequest? @relation(fields: [passwordResetRequestId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  adminInvitationId           String?                    @unique
+  adminInvitation             AdminInvitation?           @relation(fields: [adminInvitationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  replacedOutboxId            String?                    @unique
+  replacedOutbox              AdminNotificationOutbox?   @relation("OutboxReplacement", fields: [replacedOutboxId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  replacementOutbox           AdminNotificationOutbox?   @relation("OutboxReplacement")
+  claimOwnerHash              String?
+  leaseExpiresAt              DateTime?
+  attemptCount                Int                        @default(0)
+  nextAttemptAt               DateTime?
+  providerAcknowledgementHash String?
+  deliveredAt                 DateTime?
+  failedAt                    DateTime?
+  uncertainAt                 DateTime?
+  cancelledAt                 DateTime?
+  createdAt                   DateTime                   @default(now())
+  auditLogs                   AuditLog[]                 @relation("AuditNotificationOutbox")
+
+  @@index([state, nextAttemptAt, createdAt])
+}
+
+model AdminPaginationSnapshot {
+  id                   String                        @id @default(uuid())
+  principalAdminUserId String
+  principalAdminUser   AdminUser                     @relation(fields: [principalAdminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  operation            AdminSnapshotOperation
+  filtersDigest        String
+  projectionVersion    Int
+  entryCount           Int
+  utf8Bytes            BigInt
+  createdAt            DateTime                      @default(now())
+  expiresAt            DateTime
+  items                AdminPaginationSnapshotItem[]
+
+  @@index([principalAdminUserId, operation, createdAt])
+  @@index([expiresAt])
+}
+
+model AdminPaginationSnapshotItem {
+  snapshotId      String
+  snapshot        AdminPaginationSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  ordinal         Int
+  resourceId      String
+  sourceCreatedAt DateTime
+  projectionJson  String
+  utf8Bytes       Int
+
+  @@id([snapshotId, ordinal])
+  @@unique([snapshotId, resourceId])
+}
+
+model AdminBootstrapGuard {
+  singletonKey        String     @id
+  adminUserId         String     @unique
+  adminUser           AdminUser  @relation(fields: [adminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  bootstrapAuditLogId String     @unique
+  bootstrapAuditLog   AuditLog   @relation("BootstrapGuardAudit", fields: [bootstrapAuditLogId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  createdAt           DateTime   @default(now())
+  auditLogs           AuditLog[] @relation("AuditBootstrapGuard")
 }
 
 model Artist {
@@ -877,38 +1129,76 @@ model AdminIdempotencyRecord {
   @@index([expiresAt])
 }
 
+// C2 idempotency has a fixed 24-hour window and does not alter C1 records.
+model AdminC2IdempotencyRecord {
+  id             String                      @id @default(uuid())
+  adminUserId    String
+  adminUser      AdminUser                   @relation(fields: [adminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  operation      AdminC2IdempotencyOperation
+  idempotencyKey String
+  requestDigest  String
+  responseCode   Int
+  resourceType   String
+  resourceId     String
+  generation     BigInt                      @default(1)
+  expiresAt      DateTime
+  createdAt      DateTime                    @default(now())
+
+  @@unique([adminUserId, operation, idempotencyKey, generation], map: "AdminC2IdempotencyRecord_key_generation_key")
+  @@index([adminUserId, operation, idempotencyKey, expiresAt, generation], map: "AdminC2IdempotencyRecord_active_lookup_idx")
+  @@index([expiresAt])
+}
+
 // Critical mutation and audit insert must share one transaction. Application
 // roles receive no UPDATE/DELETE privilege on this table.
 model AuditLog {
-  id                     String                @id @default(uuid())
-  version                Int                   @default(2)
-  actorAdminUserId       String?               @map("adminUserId")
-  actorAdminUser         AdminUser?            @relation("AuditActor", fields: [actorAdminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  subjectAdminUserId     String?
-  subjectAdminUser       AdminUser?            @relation("AuditSubject", fields: [subjectAdminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  delegatedByAdminUserId String?
-  delegatedByAdminUser   AdminUser?            @relation("AuditDelegatedBy", fields: [delegatedByAdminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  adminSessionId         String?
-  adminSession           AdminSession?         @relation("AuditSession", fields: [adminSessionId, actorAdminUserId], references: [id, adminUserId], onDelete: Restrict, onUpdate: Restrict)
-  adminRecoveryContextId String?
-  adminRecoveryContext   AdminRecoveryContext? @relation("AuditRecovery", fields: [adminRecoveryContextId, actorAdminUserId], references: [id, adminUserId], onDelete: Restrict, onUpdate: Restrict)
-  systemExecutionRefHash String?
-  eventClass             AdminAuditEventClass?
-  context                AdminAuditContext?
-  action                 String
-  entityType             String
-  entityId               String
-  maskedBefore           Json?
-  maskedAfter            Json?
-  legacyReason           String                @map("reason")
-  reasonCode             AdminReasonCode?
-  operatorReason         String?
-  requestId              String
-  causationEventId       String?
-  causationEvent         AuditLog?             @relation("AuditCausation", fields: [causationEventId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  causedEvents           AuditLog[]            @relation("AuditCausation")
-  createdAt              DateTime              @default(now())
+  id                          String                     @id @default(uuid())
+  version                     Int                        @default(2)
+  actorAdminUserId            String?                    @map("adminUserId")
+  actorAdminUser              AdminUser?                 @relation("AuditActor", fields: [actorAdminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  subjectAdminUserId          String?
+  subjectAdminUser            AdminUser?                 @relation("AuditSubject", fields: [subjectAdminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  delegatedByAdminUserId      String?
+  delegatedByAdminUser        AdminUser?                 @relation("AuditDelegatedBy", fields: [delegatedByAdminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  adminSessionId              String?
+  adminSession                AdminSession?              @relation("AuditSession", fields: [adminSessionId, actorAdminUserId], references: [id, adminUserId], onDelete: Restrict, onUpdate: Restrict)
+  adminRecoveryContextId      String?
+  adminRecoveryContext        AdminRecoveryContext?      @relation("AuditRecovery", fields: [adminRecoveryContextId, actorAdminUserId], references: [id, adminUserId], onDelete: Restrict, onUpdate: Restrict)
+  adminPasswordResetContextId String?
+  adminPasswordResetContext   AdminPasswordResetContext? @relation("AuditPasswordReset", fields: [adminPasswordResetContextId, actorAdminUserId], references: [id, adminUserId], onDelete: Restrict, onUpdate: Restrict)
+  systemExecutionRefHash      String?
+  eventClass                  AdminAuditEventClass?
+  context                     AdminAuditContext?
+  outcome                     AdminAuditOutcome?
+  failureCode                 AdminAuditFailureCode?
+  action                      String
+  entityType                  String
+  entityId                    String
+  maskedBefore                Json?
+  maskedAfter                 Json?
+  legacyReason                String                     @map("reason")
+  reasonCode                  AdminReasonCode?
+  operatorReason              String?
+  requestId                   String
+  causationEventId            String?
+  causationEvent              AuditLog?                  @relation("AuditCausation", fields: [causationEventId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  causedEvents                AuditLog[]                 @relation("AuditCausation")
+  causationSecurityEventId    String?
+  causationSecurityEvent      AdminSecurityEvent?        @relation("AuditSecurityCausation", fields: [causationSecurityEventId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  adminRecoveryCaseId         String?
+  adminRecoveryCase           AdminRecoveryCase?         @relation("AuditRecoveryCase", fields: [adminRecoveryCaseId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  adminInvitationId           String?
+  adminInvitation             AdminInvitation?           @relation("AuditInvitation", fields: [adminInvitationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  notificationOutboxId        String?
+  notificationOutbox          AdminNotificationOutbox?   @relation("AuditNotificationOutbox", fields: [notificationOutboxId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  bootstrapGuardId            String?
+  bootstrapGuard              AdminBootstrapGuard?       @relation("AuditBootstrapGuard", fields: [bootstrapGuardId], references: [singletonKey], onDelete: Restrict, onUpdate: Restrict)
+  createdInvitations          AdminInvitation[]          @relation("InvitationCreatedByAudit")
+  notificationOutboxes        AdminNotificationOutbox[]  @relation("OutboxAuditSource")
+  bootstrapGuards             AdminBootstrapGuard[]      @relation("BootstrapGuardAudit")
+  createdAt                   DateTime                   @default(now())
 
+  @@unique([id, entityId])
   @@index([entityType, entityId, createdAt])
   @@index([actorAdminUserId, createdAt], map: "AuditLog_adminUserId_createdAt_idx")
   @@index([subjectAdminUserId, createdAt])

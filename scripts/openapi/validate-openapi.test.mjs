@@ -243,6 +243,23 @@ function commentOutWithinModel(source, modelName, original, style = "line") {
   return replaceWithinModel(source, modelName, original, replacement);
 }
 
+function removePrismaModel(source, modelName) {
+  const pattern = new RegExp(`model ${modelName} \\{[\\s\\S]*?\\n\\}`);
+  const model = pattern.exec(source)?.[0];
+  assert.ok(model, `fixture must include ${modelName}`);
+  return source.replace(model, "");
+}
+
+function renamePrismaModel(source, modelName, replacementName) {
+  const declaration = `model ${modelName} {`;
+  assert.equal(
+    source.split(declaration).length,
+    2,
+    `fixture must include exactly one ${modelName} declaration`,
+  );
+  return source.replace(declaration, `model ${replacementName} {`);
+}
+
 function earningCandidate({
   basis = 101n,
   bps = 2_000n,
@@ -312,7 +329,7 @@ function predecessorFrom(result, consumedByArtistSettlementId = null) {
   };
 }
 
-test("the S1.2-03C2-P0 OpenAPI and preserved S1.2-03C1 Prisma target contracts are semantically valid", () => {
+test("the S1.2-03C2-P0 OpenAPI and exact 39 historical plus 9 C2a Prisma targets are semantically valid", () => {
   const result = readAndValidateOpenApi();
 
   assert.equal(result.openapi.paths, 60);
@@ -320,7 +337,9 @@ test("the S1.2-03C2-P0 OpenAPI and preserved S1.2-03C1 Prisma target contracts a
   assert.equal(result.openapi.invariants, 18);
   assert.equal(result.openapi.references, "resolved");
   assert.equal(result.openapi.schemas, 141);
-  assert.equal(result.prisma.models, 39);
+  assert.equal(result.prisma.models, 48);
+  assert.equal(result.prisma.historicalModels, 39);
+  assert.equal(result.prisma.c2aModels, 9);
   assert.ok(result.prisma.integerFinancialFields >= 10);
   assert.equal(EXPECTED_PATHS.length, 60);
 });
@@ -437,7 +456,74 @@ test("rejects an unapproved Prisma target model", () => {
 
   assert.throws(
     () => validatePrismaTargetSchema(invalid),
-    /Prisma target models must be exactly the 39 approved models/,
+    /Prisma target models must be exactly the 39 historical and 9 C2a approved models \(48 total\)/,
+  );
+});
+
+test("rejects an indented unapproved Prisma target model", () => {
+  const invalid = `${prismaSource}\n  model UnapprovedIndentedExtra {\n    id String @id\n  }\n`;
+
+  assert.throws(
+    () => validatePrismaTargetSchema(invalid),
+    /Prisma target models must be exactly the 39 historical and 9 C2a approved models \(48 total\)/,
+  );
+});
+
+test("rejects deletion of a historical Prisma target model", () => {
+  const invalid = removePrismaModel(prismaSource, "Customer");
+
+  assert.throws(
+    () => validatePrismaTargetSchema(invalid),
+    /Prisma target models must be exactly the 39 historical and 9 C2a approved models \(48 total\)/,
+  );
+});
+
+test("rejects renaming of a historical Prisma target model", () => {
+  const invalid = renamePrismaModel(prismaSource, "AuditLog", "AuditTrail");
+
+  assert.throws(
+    () => validatePrismaTargetSchema(invalid),
+    /Prisma target models must be exactly the 39 historical and 9 C2a approved models \(48 total\)/,
+  );
+});
+
+test("rejects deletion of a C2a Prisma target model", () => {
+  const invalid = removePrismaModel(prismaSource, "AdminInvitation");
+
+  assert.throws(
+    () => validatePrismaTargetSchema(invalid),
+    /Prisma target models must be exactly the 39 historical and 9 C2a approved models \(48 total\)/,
+  );
+});
+
+test("rejects renaming of a C2a Prisma target model", () => {
+  const invalid = renamePrismaModel(
+    prismaSource,
+    "AdminC2IdempotencyRecord",
+    "AdminC2IdempotencyEntry",
+  );
+
+  assert.throws(
+    () => validatePrismaTargetSchema(invalid),
+    /Prisma target models must be exactly the 39 historical and 9 C2a approved models \(48 total\)/,
+  );
+});
+
+test("rejects a same-count substitution in the Prisma target inventory", () => {
+  const invalid = renamePrismaModel(
+    prismaSource,
+    "AdminRecoveryCase",
+    "UnapprovedRecoveryCaseSubstitute",
+  );
+
+  assert.equal(
+    [...invalid.matchAll(/^[ \t]*model\s+([A-Za-z][A-Za-z0-9_]*)\s*\{/gm)]
+      .length,
+    48,
+  );
+  assert.throws(
+    () => validatePrismaTargetSchema(invalid),
+    /Prisma target models must be exactly the 39 historical and 9 C2a approved models \(48 total\)/,
   );
 });
 

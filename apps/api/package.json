@@ -8,6 +8,9 @@
     "npm": "10.9.3"
   },
   "scripts": {
+    "admin:bootstrap": "node dist/src/admin-security/admin-bootstrap.main.js",
+    "admin:notification-worker": "node dist/src/admin-security/admin-notification.main.js",
+    "admin:recovery-expiration-worker": "node dist/src/admin-security/admin-recovery-expiration.main.js",
     "build": "nest build",
     "db:generate": "prisma generate --config prisma.config.ts",
     "format": "prettier --check . && prisma format --schema prisma/schema.prisma",
@@ -46,7 +49,7 @@
     "@kora-plus/config": "0.0.0",
     "@nestjs/cli": "11.0.24",
     "@nestjs/testing": "11.1.28",
-    "@vitest/coverage-v8": "4.1.11",
+    "@vitest/coverage-v8": "4.1.12",
     "@types/node": "22.18.13",
     "@types/pg": "8.20.0",
     "@types/qrcode": "1.5.6",
@@ -57,7 +60,7 @@
     "supertest": "7.2.2",
     "typescript": "5.9.3",
     "typescript-eslint": "8.65.0",
-    "vite": "8.1.5",
-    "vitest": "4.1.11"
+    "vite": "8.1.6",
+    "vitest": "4.1.12"
   }
 }

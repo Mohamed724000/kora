@@ -8,6 +8,10 @@ import {
 import type { ServerResponse } from 'node:http';
 import type { Logger } from 'pino';
 import { AdminC1HttpError } from '../../admin-auth/admin-session.service';
+import {
+  AdminC2HttpError,
+  type AdminC2OperationId,
+} from '../../admin-security/admin-security.errors';
 import { safePath, type RequestWithId } from '../../observability/http-logger';
 
 interface ErrorDefinition {
@@ -37,6 +41,10 @@ type ExceptionReporter = (
   context: Readonly<{ path: string; requestId: string }>,
 ) => void;
 type AdminFailureAuditRecorder = (exception: AdminC1HttpError, requestId: string) => Promise<void>;
+type AdminC2FailureAuditRecorder = (
+  exception: AdminC2HttpError,
+  requestId: string,
+) => Promise<void>;
 type ErrorMiddlewareNext = (exception: unknown) => void;
 
 interface BodyParserError extends SyntaxError {
@@ -69,6 +77,26 @@ export function normalizeAdminC1MalformedJsonError(
       ? new AdminC1HttpError(HttpStatus.BAD_REQUEST, 'VALIDATION_ERROR')
       : exception,
   );
+}
+
+export function adminC2MalformedJsonNormalizer(operationId: AdminC2OperationId) {
+  return (
+    exception: unknown,
+    request: MountedRequest,
+    _response: unknown,
+    next: ErrorMiddlewareNext,
+  ): void => {
+    next(
+      request.method === 'POST' &&
+        typeof request.url === 'string' &&
+        safePath(request.url) === '/' &&
+        isMalformedJsonParserError(exception)
+        ? new AdminC2HttpError(operationId, 'VALIDATION_ERROR', 'RECORD_SECURITY_EVENT', {
+            details: {},
+          })
+        : exception,
+    );
+  };
 }
 
 const PUBLIC_ERRORS: Readonly<Record<number, ErrorDefinition>> = {
@@ -112,7 +140,7 @@ const INTERNAL_ERROR: ErrorDefinition = {
 };
 
 function statusFor(exception: unknown): number {
-  if (exception instanceof AdminC1HttpError) {
+  if (exception instanceof AdminC1HttpError || exception instanceof AdminC2HttpError) {
     return exception.status;
   }
   return exception instanceof HttpException
@@ -139,6 +167,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     private readonly logger: Logger,
     private readonly reportException: ExceptionReporter = () => undefined,
     private readonly recordAdminFailure?: AdminFailureAuditRecorder,
+    private readonly recordAdminC2Failure?: AdminC2FailureAuditRecorder,
   ) {}
 
   catch(exception: unknown, host: ArgumentsHost): void | Promise<void> {
@@ -149,7 +178,41 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     ) {
       return this.auditThenRespond(exception, host);
     }
+    if (
+      exception instanceof AdminC2HttpError &&
+      exception.disposition === 'RECORD_SECURITY_EVENT' &&
+      !exception.auditRecorded &&
+      this.recordAdminC2Failure !== undefined
+    ) {
+      return this.auditC2ThenRespond(exception, host);
+    }
     this.respond(exception, host);
+  }
+
+  private async auditC2ThenRespond(
+    exception: AdminC2HttpError,
+    host: ArgumentsHost,
+  ): Promise<void> {
+    const request = host.switchToHttp().getRequest<RequestWithId>();
+    const recorder = this.recordAdminC2Failure;
+    if (recorder === undefined) {
+      this.respond(exception, host);
+      return;
+    }
+    try {
+      await recorder(exception, request.id ?? 'unavailable');
+      this.respond(exception, host);
+    } catch {
+      this.respond(
+        new AdminC2HttpError(
+          exception.operationId,
+          'SERVICE_UNAVAILABLE',
+          'COMMIT_UNKNOWN_NO_SECOND_SINK',
+          { auditRecorded: true },
+        ),
+        host,
+      );
+    }
   }
 
   private async auditThenRespond(exception: AdminC1HttpError, host: ArgumentsHost): Promise<void> {
@@ -176,7 +239,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const requestId = request.id ?? 'unavailable';
 
     const body: ErrorResponse | AdminC1ErrorResponse =
-      exception instanceof AdminC1HttpError
+      exception instanceof AdminC1HttpError || exception instanceof AdminC2HttpError
         ? {
             error: {
               code: exception.code,
@@ -211,7 +274,10 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     }
 
     response.statusCode = status;
-    if (exception instanceof AdminC1HttpError && exception.retryAfterSeconds !== undefined) {
+    if (
+      (exception instanceof AdminC1HttpError || exception instanceof AdminC2HttpError) &&
+      exception.retryAfterSeconds !== undefined
+    ) {
       response.setHeader('retry-after', String(exception.retryAfterSeconds));
     }
     response.setHeader('content-type', 'application/json; charset=utf-8');

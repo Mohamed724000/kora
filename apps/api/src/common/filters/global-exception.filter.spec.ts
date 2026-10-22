@@ -2,9 +2,11 @@ import { BadRequestException, type ArgumentsHost } from '@nestjs/common';
 import type { ServerResponse } from 'node:http';
 import type { Logger } from 'pino';
 import { AdminC1HttpError } from '../../admin-auth/admin-session.service';
+import { AdminC2HttpError } from '../../admin-security/admin-security.errors';
 import { createStructuredLogger } from '../../observability/structured-logger';
 import {
   GlobalExceptionFilter,
+  adminC2MalformedJsonNormalizer,
   isMalformedJsonParserError,
   normalizeAdminC1MalformedJsonError,
 } from './global-exception.filter';
@@ -79,6 +81,37 @@ describe('GlobalExceptionFilter', () => {
       normalizeAdminC1MalformedJsonError(parserError, request, {}, next);
       expect(next).toHaveBeenCalledExactlyOnceWith(parserError);
     }
+  });
+
+  it('normalise un body JSON C2a malformé avec l’opération exacte et sans fuite', () => {
+    const canary = 'C2A_JSON_CANARY_7d21e4';
+    const parserError = Object.assign(new SyntaxError(`internal ${canary}`), {
+      body: `{"secret":"${canary}`,
+      status: 400,
+      statusCode: 400,
+      type: 'entity.parse.failed',
+    });
+    const next = vi.fn();
+
+    adminC2MalformedJsonNormalizer('approveAdminRecoveryCase')(
+      parserError,
+      { method: 'POST', url: '/' },
+      {},
+      next,
+    );
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const normalized = next.mock.calls[0]?.[0];
+    expect(normalized).toBeInstanceOf(AdminC2HttpError);
+    expect(normalized).toMatchObject({
+      auditRecorded: false,
+      code: 'VALIDATION_ERROR',
+      details: {},
+      disposition: 'RECORD_SECURITY_EVENT',
+      operationId: 'approveAdminRecoveryCase',
+      status: 400,
+    });
+    expect(JSON.stringify(normalized)).not.toContain(canary);
   });
 
   it('compose normalisation, sink et filtre sans exposer le corps ou message du parseur', async () => {
@@ -283,5 +316,62 @@ describe('GlobalExceptionFilter', () => {
       },
       requestId: 'request-audit-1',
     });
+  });
+
+  it('sépare le sink C2a du sink C1 et neutralise son échec sans second sink', async () => {
+    let body = '';
+    const response = {
+      end(payload: string): void {
+        body = payload;
+      },
+      setHeader: vi.fn(),
+      statusCode: 0,
+    } as unknown as ServerResponse;
+    const host = {
+      switchToHttp: () => ({
+        getRequest: () => ({
+          id: 'request-c2a-audit',
+          method: 'POST',
+          url: '/api/v1/admin/users/target/status-changes',
+        }),
+        getResponse: () => response,
+      }),
+    } as ArgumentsHost;
+    const c1Recorder = vi.fn().mockResolvedValue(undefined);
+    const c2Recorder = vi.fn().mockResolvedValue(undefined);
+    const filter = new GlobalExceptionFilter(
+      createStructuredLogger('silent'),
+      undefined,
+      c1Recorder,
+      c2Recorder,
+    );
+
+    const denied = new AdminC2HttpError(
+      'changeAdminUserStatus',
+      'FORBIDDEN',
+      'RECORD_SECURITY_EVENT',
+    );
+    await filter.catch(denied, host);
+    expect(c2Recorder).toHaveBeenCalledExactlyOnceWith(denied, 'request-c2a-audit');
+    expect(c1Recorder).not.toHaveBeenCalled();
+    expect(response.statusCode).toBe(403);
+
+    c2Recorder.mockRejectedValueOnce(new Error('controlled C2 sink failure'));
+    await filter.catch(
+      new AdminC2HttpError('changeAdminUserStatus', 'FORBIDDEN', 'RECORD_SECURITY_EVENT'),
+      host,
+    );
+    expect(response.statusCode).toBe(503);
+    expect(JSON.parse(body)).toEqual({
+      error: {
+        code: 'SERVICE_UNAVAILABLE',
+        details: {},
+        message: 'Service temporairement indisponible.',
+        retryable: false,
+      },
+      requestId: 'request-c2a-audit',
+    });
+    expect(c1Recorder).not.toHaveBeenCalled();
+    expect(c2Recorder).toHaveBeenCalledTimes(2);
   });
 });

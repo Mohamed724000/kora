@@ -10,38 +10,38 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 
 ## État des gates et lots
 
-| Gate ou lot         | Objectif                                      | Statut                                                                                   |
-| ------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Gate 0              | Sources approuvées et readiness clean room    | Completed                                                                                |
-| Lot 00              | Preflight read-only                           | Completed                                                                                |
-| Lot 00B             | Remédiation documentaire                      | Completed                                                                                |
-| Lot 00C             | Canonicalisation AdminLTE                     | Completed                                                                                |
-| S0.1                | Gouvernance et Git                            | Completed                                                                                |
-| S0.2                | Contrat monorepo et versions                  | Completed                                                                                |
-| S0.3                | Fondations applicatives                       | Closed and merged                                                                        |
-| S0.4                | Infrastructure locale                         | Closed and merged                                                                        |
-| S0.5                | CI, sécurité et observabilité                 | Closed and merged                                                                        |
-| M0.1                | Dependency Governance                         | Closed and merged                                                                        |
-| M0.2                | Supply-chain Security Hotfix                  | Closed and merged                                                                        |
-| S0.6                | Foundation Gate                               | Closed and merged                                                                        |
-| Slice 1 / S1.1      | Contrats, données cibles et expérience audio  | Closed and merged                                                                        |
-| Slice 1 / S1.2-01   | Contract & Data Readiness Gate                | Closed and merged                                                                        |
-| Slice 1 / S1.2-02   | Baseline PostgreSQL et contraintes SQL        | Closed and merged — PR #43                                                               |
-| Slice 1 / S1.2-03A  | Frontière PostgreSQL runtime en lecture seule | Closed and merged — PR #45                                                               |
-| Slice 1 / S1.2-03B  | Admin Security Contract Gate, sans runtime    | Closed and merged — PR #48, merge `c97992ca2c82bc4f22f9222ea98ed53714fede4c`             |
-| Slice 1 / S1.2-03C1 | Auth admin, TOTP et sessions runtime          | Closed and merged — merge dc97eeef72c4e299988ed19d66460011a8551cf3; not deployed         |
-| Slice 1 / S1.2-03C2 | Recovery, audit, invitations et RBAC runtime  | P0/R1–R5 published; R6 locally qualified, publication gates pending; runtime Not started |
-| Slice 1 / S1.2-03C3 | Interface d'authentification Admin            | Not started — separate authorization required                                            |
-| Slice 1 / S1.2-03D  | Artist API                                    | Not started                                                                              |
-| Slice 1 / S1.2-03E  | Artist Admin UI                               | Not started                                                                              |
-| Slice 1 / S1.2-03F  | Audio Draft API                               | Not started                                                                              |
-| Slice 1 / S1.2-03G  | Audio Draft Admin UI                          | Not started                                                                              |
-| Slice 1 / S1.2-03H  | Controlled Upload                             | Not started                                                                              |
-| Slice 1 / S1.2-03I  | Mux, Inbox et Outbox                          | Not started                                                                              |
-| Slice 1 / S1.2-03J  | Publication et archivage                      | Not started                                                                              |
-| Slice 1 / S1.2-03K  | Catalogue public et détail                    | Not started                                                                              |
-| Slice 1 / seed      | Seed/licences distinct                        | Not started                                                                              |
-| Slices suivantes    | Fonctionnalités produit ultérieures           | Not started                                                                              |
+| Gate ou lot         | Objectif                                      | Statut                                                                                                    |
+| ------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Gate 0              | Sources approuvées et readiness clean room    | Completed                                                                                                 |
+| Lot 00              | Preflight read-only                           | Completed                                                                                                 |
+| Lot 00B             | Remédiation documentaire                      | Completed                                                                                                 |
+| Lot 00C             | Canonicalisation AdminLTE                     | Completed                                                                                                 |
+| S0.1                | Gouvernance et Git                            | Completed                                                                                                 |
+| S0.2                | Contrat monorepo et versions                  | Completed                                                                                                 |
+| S0.3                | Fondations applicatives                       | Closed and merged                                                                                         |
+| S0.4                | Infrastructure locale                         | Closed and merged                                                                                         |
+| S0.5                | CI, sécurité et observabilité                 | Closed and merged                                                                                         |
+| M0.1                | Dependency Governance                         | Closed and merged                                                                                         |
+| M0.2                | Supply-chain Security Hotfix                  | Closed and merged                                                                                         |
+| S0.6                | Foundation Gate                               | Closed and merged                                                                                         |
+| Slice 1 / S1.1      | Contrats, données cibles et expérience audio  | Closed and merged                                                                                         |
+| Slice 1 / S1.2-01   | Contract & Data Readiness Gate                | Closed and merged                                                                                         |
+| Slice 1 / S1.2-02   | Baseline PostgreSQL et contraintes SQL        | Closed and merged — PR #43                                                                                |
+| Slice 1 / S1.2-03A  | Frontière PostgreSQL runtime en lecture seule | Closed and merged — PR #45                                                                                |
+| Slice 1 / S1.2-03B  | Admin Security Contract Gate, sans runtime    | Closed and merged — PR #48, merge `c97992ca2c82bc4f22f9222ea98ed53714fede4c`                              |
+| Slice 1 / S1.2-03C1 | Auth admin, TOTP et sessions runtime          | Closed and merged — merge dc97eeef72c4e299988ed19d66460011a8551cf3; not deployed                          |
+| Slice 1 / S1.2-03C2 | Recovery, audit, invitations et RBAC runtime  | P0/R1–R5 published; R6 and C2a Foundations/business P0–P9 locally qualified, unpublished; C2b Not started |
+| Slice 1 / S1.2-03C3 | Interface d'authentification Admin            | Not started — separate authorization required                                                             |
+| Slice 1 / S1.2-03D  | Artist API                                    | Not started                                                                                               |
+| Slice 1 / S1.2-03E  | Artist Admin UI                               | Not started                                                                                               |
+| Slice 1 / S1.2-03F  | Audio Draft API                               | Not started                                                                                               |
+| Slice 1 / S1.2-03G  | Audio Draft Admin UI                          | Not started                                                                                               |
+| Slice 1 / S1.2-03H  | Controlled Upload                             | Not started                                                                                               |
+| Slice 1 / S1.2-03I  | Mux, Inbox et Outbox                          | Not started                                                                                               |
+| Slice 1 / S1.2-03J  | Publication et archivage                      | Not started                                                                                               |
+| Slice 1 / S1.2-03K  | Catalogue public et détail                    | Not started                                                                                               |
+| Slice 1 / seed      | Seed/licences distinct                        | Not started                                                                                               |
+| Slices suivantes    | Fonctionnalités produit ultérieures           | Not started                                                                                               |
 
 ## Sprint 0 — Clean-room foundation
 
@@ -920,3 +920,256 @@ dérogation. R6 ne modifie ni Prisma, migration, provider, dépendance, lockfile
 workflow ou infrastructure. Aucun Ready, approval, merge, tag, release ou
 déploiement n’est autorisé. Fournisseurs **NON QUALIFIÉS**, OSS différée,
 runtime C2/C3 non commencé.
+
+## S1.2-03C2a — fondations runtime locales — 2026-10-14
+
+Le lot C2a est ouvert sur
+`feat/s1-2-03c2a-admin-security-runtime` à partir du commit
+`d514b87cbef21dfae4585f4d143889aca2d8b229`. Son objectif est limité aux
+fondations locales nécessaires au futur runtime de sécurité admin : modèle et
+migration PostgreSQL, atomicité causale, exécuteur transactionnel R6,
+identités et ACL minimales, configuration fail-closed et validateur isolé.
+
+Les onze opérations HTTP, les workers de notification et d'expiration, le
+bootstrap métier et toute intégration fournisseur restent explicitement hors
+de ce lot et **NON IMPLÉMENTÉS**. Le code C2a demeure désactivé par défaut et
+ne modifie ni workflow, dépendance, lockfile ni surface OpenAPI.
+
+État de qualification : Docker/Linux Engine est disponible et la campagne
+PostgreSQL 18.4 isolée passe migrations fraîche/upgrade, préservation,
+contraintes, quatre identités, ACL positives et négatives, contaminations,
+exécuteur R6 réel, non-régression C1, quiescence et nettoyage. L'inventaire
+étranger observé avant la campagne est préservé après nettoyage.
+
+Format, lint, typecheck, tests API qualifiés avec un timeout adapté au coût RSA
+préexistant, build, génération protégée, scanner, workflows, licences et audits
+npm passent. Le premier gate OpenAPI à 39/48 et le premier tooling à 451/522
+restent des NON-PASS historiques. L'avenant ciblé protège exactement les
+39 modèles Prisma historiques et les neuf ajouts C2a : la reprise passe
+OpenAPI à 60/67/141, 379/379 tests adversariaux, 528/528 tests tooling,
+génération `--check` et scanner officiel. Le candidat intermédiaire à 378/378
+et 527/527 reste NON-PASS de contre-revue parce qu'il acceptait un modèle
+supplémentaire indenté. Aucun add, commit, push, changement
+GitHub, Ready, approval, merge, tag, release ou déploiement n'est autorisé par
+ce lot local.
+
+## S1.2-03C2a métier P0 — préconditions qualifiées — 2026-10-15
+
+Le sous-lot P0 du plan métier ferme la projection session minimale et
+l’isolation des quatre capacités applicatives. Il ne livre pas encore les onze
+opérations : `HTTP`, `NOTIFICATION`, `EXPIRATION` et `BOOTSTRAP` sont des
+profils exclusifs, chacun limité à son unique credential/pool C2a, tandis que le
+mode désactivé préserve le démarrage C1.
+
+La preuve PostgreSQL réelle passe fresh/upgrade, provisioning idempotent,
+quatre identités, ACL positives/négatives, contamination, C1 et transaction R6
+avec 33/33 tests réels. La correction ciblée sérialise les trois lectures
+notification du validateur ; le warning `pg@8.22.0` est absent de ce replay,
+sans qualification générale du driver. Build API, scanner et tooling 528/528
+passent également.
+
+Les huit décisions opérationnelles du chapitre 10 disposent d’une proposition
+hors dépôt, mais restent à arbitrer avant les sous-lots qui les consomment.
+P1–P9 ne sont pas autorisés ; C2b/C3, fournisseurs, publication et déploiement
+restent non commencés ou hors périmètre.
+
+## S1.2-03C2a métier P1–P9 — qualifié localement — 2026-10-16
+
+Le mandat ultérieur adopte A1–A8 et supplante l'état d'autorisation P1–P9 de la
+section P0 historique. Les onze opérations recovery, invitation et RBAC sont
+montées ensemble sous le profil HTTP. Les workers notification/expiration et
+le bootstrap stdin utilisent leurs profils et identités séparés. C1 reste
+opérationnel lorsque C2a est désactivé; les quatre opérations C2b restent non
+montées.
+
+La campagne cumulative compte 8 contrôles réussis : 1 contrôle statique et 7
+scénarios réels PostgreSQL/Redis/HTTP. Elle couvre les onze opérations, cinq
+idempotences, deux snapshots, huit erreurs JSON, notifications, expiration,
+bootstrap, concurrence, sinks et raccordements C1. Les ressources isolées sont
+nettoyées ciblément et l'inventaire Docker étranger observé reste
+inchangé. Les gates API, OpenAPI, génération, scanner, tooling, licences et
+audits npm sont concluants sur les octets locaux.
+
+La contre-revue finale a fermé un finding transactionnel : les refus
+post-preuve retournent désormais une rejection typée au callback R6, puis
+l'erreur HTTP n'est levée qu'après COMMIT confirmé du sink. La reprise réelle
+vérifie rôle, step-up, idempotence, ressources absente/expirée et dernier
+SUPER_ADMIN avec le sink durable correspondant au stade de revalidation.
+
+Le jalon est local uniquement : aucun fournisseur notification/HIBP/keyring de
+production n'est qualifié, `pg@8.22.0` n'est pas qualifié globalement, C2b/C3
+ne sont pas commencés, la politique OSS reste différée et aucune publication
+ou livraison n'est autorisée.
+
+### C2a R1 — C-05 qualifié localement — 2026-10-18
+
+La remédiation C-05 est limitée à l'idempotence : horloge PostgreSQL, fenêtre
+demi-ouverte exacte de 24 heures et réutilisation atomique d'une clé expirée
+par génération. L'historique est conservé et une invocation ancienne ne peut
+pas écraser la génération active. La migration C2a locale, jamais intégrée à
+`main` ni appliquée à une base persistante à préserver, a été amendée sans
+toucher aux migrations intégrées.
+
+La requalification passe : Foundations 34/34. La campagne métier compte
+12 contrôles réussis : 1 contrôle statique et 11 scénarios réels
+PostgreSQL/Redis/HTTP. C1 passe 47/47. Les gates affectés passent; le lockfile
+et les dépendances restent inchangés. La limite Windows sur l'observation d'un
+handler gracieux par signal OS reste documentée et ne vaut pas preuve POSIX.
+
+Le jalon reste local, non indexé et non publié. Fournisseurs de production NON
+QUALIFIÉS, réserve globale `pg@8.22.0`, C2b/C3 non commencés et politique OSS
+différée.
+
+### C2a — candidat de publication raccordé à la CI — 2026-10-18
+
+Un mandat distinct autorise la publication sous gates. Infrastructure génère
+Prisma, conserve le parcours C1, puis exécute les wrappers C2a Foundations et
+métier avant Compose, lifecycle et santé API. L'historique local reste
+1 contrôle statique + 7 scénarios réels ; le gel final reste 1 contrôle
+statique + 11 scénarios réels. Les 61 skips restent 11 C2a, 46 C1 et
+4 Foundations-P0.
+
+Le jalon est seulement raccordé : Linux et CI restent en attente du SHA publié.
+L'arrêt gracieux par signal OS Windows/POSIX reste NON DEMONSTRATED,
+`pg@8.22.0` n'est qualifié que sur les chemins exercés, et les fournisseurs de
+production restent NON QUALIFIÉS. C2b/C3 ne sont pas commencés ; politique OSS
+différée.
+
+### C2a R2 — gate C1 historique autonome qualifié localement — 2026-10-18
+
+Infrastructure `39135914973` reste en échec historique : le gate C1 combinait
+les trois migrations et la projection C1 avec le schéma courant C2a, tandis que
+le parcours vide n'excluait pas la migration C2a. Les steps suivants restent
+skipped et aucun succès CI ou Linux n'est reconstruit.
+
+R2 ajoute uniquement une référence de validation C1 byte-exacte de `d514b87…`
+et rend les parcours upgrade/vide cohérents à 39 modèles, 40 tables et trois
+migrations. Le validateur contrôle taille, OID, SHA-256 et identité des modèles,
+travaille dans un workspace temporaire strict, ne dépend ni du réseau ni d'un
+objet Git historique à l'exécution, désactive C2a pour le provisionneur et
+atteste l'état Prisma courant inchangé. Il revérifie l'identité filesystem de
+chaque objet temporaire, refuse sans suppression toute substitution et retire
+la base temporaire seulement si l'invocation l'a créée, qu'elle est identique
+et vide.
+
+La reprise locale passe le wrapper C1 historique, 47/47 HTTP C1, Foundations
+C2a 34/34, puis la campagne métier à 1 contrôle statique + 11 scénarios réels
+avec C1 47/47. Tooling passe 536/536 et `tmp` est absent. Le jalon reste local, non indexé et non
+publié ; PR #52 reste Draft. Signal gracieux Windows/POSIX NON DEMONSTRATED,
+fournisseurs NON QUALIFIÉS, C2b/C3 non commencés et politique OSS différée.
+
+### C2a R3 — correction locale du gate Docker/cleanup — 2026-10-18
+
+Le run Infrastructure R2 `39168610286` reste FAILURE et n'est pas rejoué. R3
+remplace l'hypothèse d'une ligne Docker unique par une identité sémantique :
+référence exacte et digest de manifeste vérifiés, ID local joint à toutes ses
+représentations, absence classifiée seulement après sondes cohérentes. Le
+cleanup ne vise jamais une image initiale et ne retire que la référence exacte
+d'une acquisition attestée, sans force ni prune.
+
+Le workflow emploie une instance Compose unique et des transitions atomiques.
+Avant `prepare`, `down` est non applicable ; une préparation partielle nettoie
+uniquement son sous-ensemble attesté ; après préparation ou démarrage,
+`infra:down` reste obligatoire et ses échecs ne sont pas masqués. Les états
+complets exigent cinq fichiers et deux répertoires exacts ; leurs identités
+no-follow et celle du manifeste d'ownership interdisent aussi une substitution
+byte-identique.
+
+Sur les octets finaux, les régressions R3 passent 5/5 et le tooling 541/541,
+incluant les 39 contrôles du fichier concerné. Foundations 34/34, métier 1
+contrôle statique + 11 scénarios réels et C1 47/47 restent applicables. Le run
+direct 37/39 et les autres NON-PASS, dont le sandboxé 538/541, sont conservés.
+La première reprise tooling, d'abord observée incomplète, a finalement terminé
+541/541 au code 0 en chevauchant la reprise causale également réussie 541/541 ;
+elle n'est plus NON CONCLUSIVE. L'inventaire Docker étranger a été restauré. Le
+jalon reste local, non indexé et non publié ; PR #52 reste Draft. Aucun succès
+Linux/CI R3 n'est revendiqué, signal OS reste NON DEMONSTRATED, fournisseurs
+NON QUALIFIÉS, C2b/C3 non commencés et OSS différée.
+
+### C2a R4 — arrêt des runners qualifié localement — 2026-10-20
+
+R4 ferme le seul écart runner restant sans étendre le métier. La reproduction
+Linux pré-correction montre que notification et expiration ferment leurs
+ressources et émettent un outcome sain après vrai SIGTERM, mais restent vivants
+à cause du listener stdin du mode preuve. Sa fermeture diagnostique seulement
+après le constat déclenche la sortie code 0.
+
+Le correctif rend ce listener explicitement possédé et libéré, préserve les
+listeners tiers et rend les signaux répétés idempotents pendant le cleanup. Il
+ne change ni module, base, transaction, contrat, dépendance, lockfile ou
+workflow. Après correction, les deux exécutables Linux sortent à code 0 avec
+stdin parent ouvert, sans SIGKILL. Les tests ciblés passent 34/34, la campagne
+métier passe 1 contrôle statique + 11 scénarios réels, et C1 passe 47/47. Les
+gates API, scanner et tooling 541/541 passent.
+
+Une première contre-revue a bloqué le candidat qui retirait encore ses handlers
+avant quiescence/close. La correction terminale les conserve jusqu'après le
+cleanup. Un harnais Linux envoie désormais deux vrais SIGTERM à chaque runner,
+le second pendant le cleanup : fermeture unique, code 0, signal null et aucun
+SIGKILL. La tentative combinée finale passe le métier 12/12 mais reste NON-PASS
+sur watchdog C1 `code=null`; le validateur C1 dédié passe séparément 47/47 sur
+les mêmes octets et nettoie ses ressources.
+
+Le NON-PASS R3 10/12 reste historique. Ce jalon R4 est local, non indexé et non
+publié ; PR #52 reste Draft. La terminaison OS Windows reste non gracieuse, CI
+R4 et fournisseurs restent NON QUALIFIÉS, C2b/C3 non commencés et OSS différée.
+
+### C2a R5 — résolution Vite qualifiée localement — 2026-10-21
+
+R5 fixe Vite `8.1.6` par pins directs à la racine, dans API et dans Admin. Le
+pin racine ancre le singleton partagé par Vitest et son mocker. L'override
+Vitest du candidat BLOCK est retiré par avenant terminal ; les autres overrides
+restent inchangés et le lockfile régénéré demeure byte-identique.
+
+Installation vierge, arbre npm complet, scanner et audits complet/production
+passent. Les snapshots du graphe résolu avant/après sont byte-identiques ; les
+preuves API, Admin, builds, tooling et R4 hôte/Linux restent donc applicables
+sans replay Docker. Les candidats NON-PASS/BLOCK restent historiques. Le jalon
+est un GO local seulement : PR #52 reste Draft et toute publication requiert
+une décision CTO distincte. Fournisseurs NON QUALIFIÉS, C2b/C3 non commencés
+et OSS différée.
+
+### C2a R6–R9 — publication dans la Draft PR #52 — 2026-10-22
+
+R6 borne la reproductibilité C1 aux entrées Prisma historiques protégées. R7
+étend cette approche aux Foundations avec des projections explicites Prisma,
+`pg` et Vitest. Le BLOCK supply-chain R7 est fermé par R8, qui conserve Vite
+`8.1.6` et porte Vitest à `4.1.12`, puis qualifie installation, audits,
+licences, scanner, consommateurs et chaîne réelle C1 → Foundations → métier.
+
+R9 utilise `PROJECT_NAME` pour le reset lifecycle. Après l'incident local et
+la restauration ciblée des services étrangers, la reprise isolée qualifie
+persistance, reset, idempotence, API health et cleanup. L'intégrité
+byte-à-byte des volumes et l'état logique exhaustif préincident restent
+**NON DEMONSTRATED** et ne sont pas reconstruits rétrospectivement.
+
+Le candidat R9 est publié au head
+`fd0f084fc6316c379454ef701307e79471ed92e2` dans la PR #52 `OPEN/Draft`.
+Infrastructure `39818813532`, Launcher Windows `39818813686`, Security
+`39818813647` et Quality Linux `39818813472` sont verts. Infrastructure
+confirme C1 47/47, Foundations 34/34, métier 1 contrôle statique + 11
+scénarios réels, lifecycle, API health, arrêts Linux et cleanup. Les 61 SKIP
+restent des SKIP. Le signal gracieux Windows reste **NON DEMONSTRATED**.
+
+Ce jalon ne constitue ni fusion ni qualification production. Fournisseurs et
+Linux de production restent non qualifiés ; C2b/C3 ne sont pas commencés et
+la politique OSS reste différée.
+
+### C2a R10–R11 — candidat local de clôture — 2026-10-22
+
+R10 clôt le format de la migration par retrait byte-exact d'un LF et qualifie
+Foundations 34/34 sur fresh/upgrade. Les documents vivants sont réconciliés
+avec R9. L'audit prépublication R10 découvre ensuite Next.js 16.3.8 vulnérable
+et bloque légitimement la publication.
+
+R11 porte Next.js, env, SWC, `eslint-config-next` et son plugin à `16.4.1`,
+conserve sharp `0.35.5`, Vite `8.1.6`, Vitest `4.1.12` et les projections Prisma/pg,
+puis qualifie installation, arbre, audits à zéro, signatures/licences,
+scanner, tooling 554/554, consommateurs Admin/Web/UI, builds et smokes HTTP et
+image. Les candidats et gates rouges intermédiaires restent historiques.
+
+Le prochain jalon est conditionnel : gel reproductible, trois GO, audits frais,
+un commit/push, puis quatre workflows verts avant une unique réconciliation du
+corps PR. Aucun de ces faits futurs n'est annoncé ici. PR #52 reste OPEN/Draft
+au head R9 ; aucune fusion ou qualification production n'est acquise. Les
+réserves R9/Windows/61 SKIP/production, C2b/C3 et OSS sont conservées.

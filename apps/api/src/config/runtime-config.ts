@@ -5,6 +5,49 @@ const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'
 
 type NodeEnvironment = (typeof NODE_ENVIRONMENTS)[number];
 
+export interface RuntimePostgresqlConfig {
+  host: string;
+  port: number;
+  database: string;
+  user: string;
+  password: string;
+  ssl: boolean;
+}
+
+export const ADMIN_C2A_DATABASE_USERS = Object.freeze({
+  writer: 'kora_admin_c2a_writer',
+  notificationWorker: 'kora_admin_c2a_notification_worker',
+  expirationWorker: 'kora_admin_c2a_expiration_worker',
+  bootstrap: 'kora_admin_c2a_bootstrap',
+});
+
+export const ADMIN_C2A_PROCESS_PROFILES = [
+  'HTTP',
+  'NOTIFICATION',
+  'EXPIRATION',
+  'BOOTSTRAP',
+] as const;
+
+export type AdminC2aProcessProfile = (typeof ADMIN_C2A_PROCESS_PROFILES)[number];
+export type AdminC2aDatabaseRole = keyof typeof ADMIN_C2A_DATABASE_USERS;
+
+export const ADMIN_C2A_PROFILE_DATABASE_ROLES: Readonly<
+  Record<AdminC2aProcessProfile, AdminC2aDatabaseRole>
+> = Object.freeze({
+  HTTP: 'writer',
+  NOTIFICATION: 'notificationWorker',
+  EXPIRATION: 'expirationWorker',
+  BOOTSTRAP: 'bootstrap',
+});
+
+export type AdminC2aRuntimeConfig =
+  | { enabled: false }
+  | {
+      enabled: true;
+      profile: AdminC2aProcessProfile;
+      pool: RuntimePostgresqlConfig;
+    };
+
 export interface RuntimeConfig {
   adminAuth: {
     origin: string;
@@ -24,6 +67,7 @@ export interface RuntimeConfig {
       waitAofTimeoutMs: number;
     };
   };
+  adminC2a: AdminC2aRuntimeConfig;
   environment: NodeEnvironment;
   http: {
     host: string;
@@ -161,6 +205,16 @@ function boolean(
   return { field };
 }
 
+function booleanWithDefaultFalse(
+  environment: Record<string, string | undefined>,
+  field: string,
+): ValidationResult<boolean> {
+  if (environment[field] === undefined) {
+    return { field, value: false };
+  }
+  return boolean(environment, field);
+}
+
 function enumeration<T extends string>(
   environment: Record<string, string | undefined>,
   field: string,
@@ -230,6 +284,73 @@ export function loadRuntimeConfig(environment: Record<string, string | undefined
     1,
     10_000,
   );
+  const adminC2aEnabled = booleanWithDefaultFalse(environment, 'ADMIN_C2A_ENABLED');
+  const adminC2aProfile = enumeration(environment, 'ADMIN_C2A_PROFILE', ADMIN_C2A_PROCESS_PROFILES);
+  const adminC2aHost = requiredString(
+    environment,
+    'ADMIN_C2A_DATABASE_HOST',
+    /^(?!.*:\/\/)(?!.*\/)\S+$/,
+  );
+  const adminC2aPort = integer(environment, 'ADMIN_C2A_DATABASE_PORT', 1, 65_535);
+  const adminC2aDatabase = requiredString(
+    environment,
+    'ADMIN_C2A_DATABASE_NAME',
+    /^[A-Za-z_][A-Za-z0-9_-]*$/,
+  );
+  const adminC2aSsl = boolean(environment, 'ADMIN_C2A_DATABASE_SSL');
+  const adminC2aWriterUser = requiredString(environment, 'ADMIN_C2A_WRITER_DATABASE_USER');
+  const adminC2aWriterPassword = requiredString(environment, 'ADMIN_C2A_WRITER_DATABASE_PASSWORD');
+  const adminC2aNotificationUser = requiredString(
+    environment,
+    'ADMIN_C2A_NOTIFICATION_WORKER_DATABASE_USER',
+  );
+  const adminC2aNotificationPassword = requiredString(
+    environment,
+    'ADMIN_C2A_NOTIFICATION_WORKER_DATABASE_PASSWORD',
+  );
+  const adminC2aExpirationUser = requiredString(
+    environment,
+    'ADMIN_C2A_EXPIRATION_WORKER_DATABASE_USER',
+  );
+  const adminC2aExpirationPassword = requiredString(
+    environment,
+    'ADMIN_C2A_EXPIRATION_WORKER_DATABASE_PASSWORD',
+  );
+  const adminC2aBootstrapUser = requiredString(environment, 'ADMIN_C2A_BOOTSTRAP_DATABASE_USER');
+  const adminC2aBootstrapPassword = requiredString(
+    environment,
+    'ADMIN_C2A_BOOTSTRAP_DATABASE_PASSWORD',
+  );
+  const adminC2aCredentials = {
+    HTTP: {
+      password: adminC2aWriterPassword,
+      passwordField: 'ADMIN_C2A_WRITER_DATABASE_PASSWORD',
+      role: 'writer',
+      user: adminC2aWriterUser,
+      userField: 'ADMIN_C2A_WRITER_DATABASE_USER',
+    },
+    NOTIFICATION: {
+      password: adminC2aNotificationPassword,
+      passwordField: 'ADMIN_C2A_NOTIFICATION_WORKER_DATABASE_PASSWORD',
+      role: 'notificationWorker',
+      user: adminC2aNotificationUser,
+      userField: 'ADMIN_C2A_NOTIFICATION_WORKER_DATABASE_USER',
+    },
+    EXPIRATION: {
+      password: adminC2aExpirationPassword,
+      passwordField: 'ADMIN_C2A_EXPIRATION_WORKER_DATABASE_PASSWORD',
+      role: 'expirationWorker',
+      user: adminC2aExpirationUser,
+      userField: 'ADMIN_C2A_EXPIRATION_WORKER_DATABASE_USER',
+    },
+    BOOTSTRAP: {
+      password: adminC2aBootstrapPassword,
+      passwordField: 'ADMIN_C2A_BOOTSTRAP_DATABASE_PASSWORD',
+      role: 'bootstrap',
+      user: adminC2aBootstrapUser,
+      userField: 'ADMIN_C2A_BOOTSTRAP_DATABASE_USER',
+    },
+  } as const;
 
   const results = [
     nodeEnvironment,
@@ -257,7 +378,15 @@ export function loadRuntimeConfig(environment: Record<string, string | undefined
     adminRedisPort,
     adminRedisTls,
     adminRedisWaitAofTimeout,
+    adminC2aEnabled,
   ];
+  if (adminC2aEnabled.value === true) {
+    results.push(adminC2aProfile, adminC2aHost, adminC2aPort, adminC2aDatabase, adminC2aSsl);
+    if (adminC2aProfile.value !== undefined) {
+      const credentials = adminC2aCredentials[adminC2aProfile.value];
+      results.push(credentials.user, credentials.password);
+    }
+  }
   const invalid = invalidFields(results);
 
   if (redisPassword.value === undefined && environment.REDIS_PASSWORD !== undefined) {
@@ -285,6 +414,62 @@ export function loadRuntimeConfig(environment: Record<string, string | undefined
     invalid.push(adminDatabasePassword.field);
   }
 
+  if (adminC2aEnabled.value === true) {
+    const activeProfile = adminC2aProfile.value;
+    if (activeProfile !== undefined) {
+      const active = adminC2aCredentials[activeProfile];
+      const expectedUser = ADMIN_C2A_DATABASE_USERS[active.role];
+      if (active.user.value !== undefined && active.user.value !== expectedUser) {
+        invalid.push(active.user.field);
+      }
+      if (
+        active.user.value !== undefined &&
+        (active.user.value === databaseUser.value || active.user.value === adminDatabaseUser.value)
+      ) {
+        invalid.push(active.user.field);
+      }
+      if (
+        active.password.value !== undefined &&
+        (active.password.value === databasePassword.value ||
+          active.password.value === adminDatabasePassword.value)
+      ) {
+        invalid.push(active.password.field);
+      }
+      for (const [profile, credentials] of Object.entries(adminC2aCredentials)) {
+        if (profile === activeProfile) continue;
+        for (const field of [credentials.userField, credentials.passwordField]) {
+          if (environment[field] !== undefined) invalid.push(field);
+        }
+      }
+    } else {
+      for (const credentials of Object.values(adminC2aCredentials)) {
+        for (const field of [credentials.userField, credentials.passwordField]) {
+          if (environment[field] !== undefined) invalid.push(field);
+        }
+      }
+    }
+  } else {
+    for (const field of [
+      'ADMIN_C2A_PROFILE',
+      'ADMIN_C2A_DATABASE_HOST',
+      'ADMIN_C2A_DATABASE_PORT',
+      'ADMIN_C2A_DATABASE_NAME',
+      'ADMIN_C2A_DATABASE_SSL',
+      'ADMIN_C2A_WRITER_DATABASE_USER',
+      'ADMIN_C2A_WRITER_DATABASE_PASSWORD',
+      'ADMIN_C2A_NOTIFICATION_WORKER_DATABASE_USER',
+      'ADMIN_C2A_NOTIFICATION_WORKER_DATABASE_PASSWORD',
+      'ADMIN_C2A_EXPIRATION_WORKER_DATABASE_USER',
+      'ADMIN_C2A_EXPIRATION_WORKER_DATABASE_PASSWORD',
+      'ADMIN_C2A_BOOTSTRAP_DATABASE_USER',
+      'ADMIN_C2A_BOOTSTRAP_DATABASE_PASSWORD',
+    ]) {
+      if (environment[field] !== undefined) {
+        invalid.push(field);
+      }
+    }
+  }
+
   for (const optional of [sentryDsn, sentryEnvironment, sentryRelease]) {
     const supplied = environment[optional.field];
     if (optional.value === undefined && supplied !== undefined && supplied.length > 0) {
@@ -302,6 +487,28 @@ export function loadRuntimeConfig(environment: Record<string, string | undefined
     tls: redisTls.value as boolean,
     ...(redisPassword.value === undefined ? {} : { password: redisPassword.value }),
   };
+
+  const c2Pool = (user: string, password: string): RuntimePostgresqlConfig => ({
+    host: adminC2aHost.value as string,
+    port: adminC2aPort.value as number,
+    database: adminC2aDatabase.value as string,
+    user,
+    password,
+    ssl: adminC2aSsl.value as boolean,
+  });
+  const adminC2a: AdminC2aRuntimeConfig =
+    adminC2aEnabled.value === true
+      ? {
+          enabled: true,
+          profile: adminC2aProfile.value as AdminC2aProcessProfile,
+          pool: c2Pool(
+            adminC2aCredentials[adminC2aProfile.value as AdminC2aProcessProfile].user
+              .value as string,
+            adminC2aCredentials[adminC2aProfile.value as AdminC2aProcessProfile].password
+              .value as string,
+          ),
+        }
+      : { enabled: false };
 
   return {
     adminAuth: {
@@ -322,6 +529,7 @@ export function loadRuntimeConfig(environment: Record<string, string | undefined
         ...(adminRedisPassword.value === undefined ? {} : { password: adminRedisPassword.value }),
       },
     },
+    adminC2a,
     environment: nodeEnvironment.value as NodeEnvironment,
     http: {
       host: apiHost.value as string,

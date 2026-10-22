@@ -35,7 +35,840 @@ if [ "$(tr -d '\r\n' </run/secrets/postgres_runtime_password)" = "$(tr -d '\r\n'
   exit 1
 fi
 
+c2a_enabled="${KORA_POSTGRES_C2A_ENABLED:-false}"
+case "$c2a_enabled" in
+  true | false) ;;
+  *)
+    echo 'PostgreSQL C2a enable flag must be true or false.' >&2
+    exit 1
+    ;;
+esac
+
+if [ "$c2a_enabled" = 'true' ]; then
+  c2a_writer_user="${KORA_POSTGRES_C2A_WRITER_USER:-}"
+  c2a_notification_user="${KORA_POSTGRES_C2A_NOTIFICATION_WORKER_USER:-}"
+  c2a_expiration_user="${KORA_POSTGRES_C2A_EXPIRATION_WORKER_USER:-}"
+  c2a_bootstrap_user="${KORA_POSTGRES_C2A_BOOTSTRAP_USER:-}"
+  c2a_secret_directory="${KORA_POSTGRES_C2A_SECRET_DIRECTORY:-}"
+
+  if [ "$c2a_writer_user" != 'kora_admin_c2a_writer' ] \
+    || [ "$c2a_notification_user" != 'kora_admin_c2a_notification_worker' ] \
+    || [ "$c2a_expiration_user" != 'kora_admin_c2a_expiration_worker' ] \
+    || [ "$c2a_bootstrap_user" != 'kora_admin_c2a_bootstrap' ]; then
+    echo 'PostgreSQL C2a role names do not match the authorized identities.' >&2
+    exit 1
+  fi
+  if [ "$c2a_writer_user" = "$POSTGRES_USER" ] \
+    || [ "$c2a_writer_user" = "$runtime_user" ] \
+    || [ "$c2a_writer_user" = "$admin_writer_user" ] \
+    || [ "$c2a_notification_user" = "$POSTGRES_USER" ] \
+    || [ "$c2a_notification_user" = "$runtime_user" ] \
+    || [ "$c2a_notification_user" = "$admin_writer_user" ] \
+    || [ "$c2a_expiration_user" = "$POSTGRES_USER" ] \
+    || [ "$c2a_expiration_user" = "$runtime_user" ] \
+    || [ "$c2a_expiration_user" = "$admin_writer_user" ] \
+    || [ "$c2a_bootstrap_user" = "$POSTGRES_USER" ] \
+    || [ "$c2a_bootstrap_user" = "$runtime_user" ] \
+    || [ "$c2a_bootstrap_user" = "$admin_writer_user" ]; then
+    echo 'PostgreSQL C2a roles must be distinct from owner and C1 identities.' >&2
+    exit 1
+  fi
+  case "$c2a_secret_directory" in
+    /*) ;;
+    *)
+      echo 'PostgreSQL C2a secret directory must be absolute.' >&2
+      exit 1
+      ;;
+  esac
+
+  c2a_secret_files='postgres_admin_c2a_writer_password
+postgres_admin_c2a_notification_worker_password
+postgres_admin_c2a_expiration_worker_password
+postgres_admin_c2a_bootstrap_password'
+  for c2a_secret_file in $c2a_secret_files; do
+    c2a_secret_path="$c2a_secret_directory/$c2a_secret_file"
+    if [ ! -f "$c2a_secret_path" ] \
+      || [ "$(tr -d '\r\n' <"$c2a_secret_path" | wc -c | tr -d ' ')" -ne 43 ]; then
+      echo 'A PostgreSQL C2a secret has an invalid format.' >&2
+      exit 1
+    fi
+  done
+
+  c2a_writer_password="$(tr -d '\r\n' <"$c2a_secret_directory/postgres_admin_c2a_writer_password")"
+  c2a_notification_password="$(tr -d '\r\n' <"$c2a_secret_directory/postgres_admin_c2a_notification_worker_password")"
+  c2a_expiration_password="$(tr -d '\r\n' <"$c2a_secret_directory/postgres_admin_c2a_expiration_worker_password")"
+  c2a_bootstrap_password="$(tr -d '\r\n' <"$c2a_secret_directory/postgres_admin_c2a_bootstrap_password")"
+  runtime_password="$(tr -d '\r\n' </run/secrets/postgres_runtime_password)"
+  admin_writer_password="$(tr -d '\r\n' </run/secrets/postgres_admin_writer_password)"
+  owner_password="$(tr -d '\r\n' </run/secrets/postgres_password)"
+
+  if [ "$c2a_writer_password" = "$c2a_notification_password" ] \
+    || [ "$c2a_writer_password" = "$c2a_expiration_password" ] \
+    || [ "$c2a_writer_password" = "$c2a_bootstrap_password" ] \
+    || [ "$c2a_notification_password" = "$c2a_expiration_password" ] \
+    || [ "$c2a_notification_password" = "$c2a_bootstrap_password" ] \
+    || [ "$c2a_expiration_password" = "$c2a_bootstrap_password" ] \
+    || [ "$c2a_writer_password" = "$runtime_password" ] \
+    || [ "$c2a_writer_password" = "$admin_writer_password" ] \
+    || [ "$c2a_writer_password" = "$owner_password" ] \
+    || [ "$c2a_notification_password" = "$runtime_password" ] \
+    || [ "$c2a_notification_password" = "$admin_writer_password" ] \
+    || [ "$c2a_notification_password" = "$owner_password" ] \
+    || [ "$c2a_expiration_password" = "$runtime_password" ] \
+    || [ "$c2a_expiration_password" = "$admin_writer_password" ] \
+    || [ "$c2a_expiration_password" = "$owner_password" ] \
+    || [ "$c2a_bootstrap_password" = "$runtime_password" ] \
+    || [ "$c2a_bootstrap_password" = "$admin_writer_password" ] \
+    || [ "$c2a_bootstrap_password" = "$owner_password" ]; then
+    echo 'PostgreSQL C2a secrets must be pairwise distinct from every runtime secret.' >&2
+    exit 1
+  fi
+  unset c2a_writer_password c2a_notification_password c2a_expiration_password
+  unset c2a_bootstrap_password runtime_password admin_writer_password owner_password
+  export KORA_POSTGRES_C2A_SECRET_DIRECTORY="$c2a_secret_directory"
+fi
+
 export PGPASSWORD="$(tr -d '\r\n' </run/secrets/postgres_password)"
+
+# C2a is inspected in a separate transaction that is always rolled back before
+# any C1 password, ACL or role mutation. Its temporary expected-ACL tables are
+# transaction-local and leave no persistent catalog state. The later
+# in-transaction preflight repeats the same exact matrix immediately before
+# C2a provisioning (TOCTOU defense).
+if [ "$c2a_enabled" = 'true' ]; then
+  psql \
+    --host=127.0.0.1 \
+    --port=5432 \
+    --username="$POSTGRES_USER" \
+    --dbname="$POSTGRES_DB" \
+    --no-psqlrc \
+    --quiet \
+    --set=ON_ERROR_STOP=1 \
+    --set=c2a_writer_user="$c2a_writer_user" \
+    --set=c2a_notification_user="$c2a_notification_user" \
+    --set=c2a_expiration_user="$c2a_expiration_user" \
+    --set=c2a_bootstrap_user="$c2a_bootstrap_user" <<'SQL'
+BEGIN;
+
+SELECT pg_catalog.set_config('kora.c2a_writer_user', :'c2a_writer_user', true);
+SELECT pg_catalog.set_config(
+  'kora.c2a_notification_user',
+  :'c2a_notification_user',
+  true
+);
+SELECT pg_catalog.set_config(
+  'kora.c2a_expiration_user',
+  :'c2a_expiration_user',
+  true
+);
+SELECT pg_catalog.set_config('kora.c2a_bootstrap_user', :'c2a_bootstrap_user', true);
+
+CREATE TEMPORARY TABLE expected_c2a_column_acl (
+  role_name TEXT NOT NULL,
+  relation_name TEXT NOT NULL,
+  column_name TEXT NOT NULL,
+  privilege_type TEXT NOT NULL,
+  PRIMARY KEY (role_name, relation_name, column_name, privilege_type)
+) ON COMMIT DROP;
+
+CREATE TEMPORARY TABLE expected_c2a_relation_acl (
+  role_name TEXT NOT NULL,
+  relation_name TEXT NOT NULL,
+  privilege_type TEXT NOT NULL,
+  PRIMARY KEY (role_name, relation_name, privilege_type)
+) ON COMMIT DROP;
+
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminUser', column_name, 'SELECT'
+FROM unnest(ARRAY[
+  'id', 'email', 'role', 'status', 'authorizationVersion',
+  'totpEnabledAt', 'createdAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminUser', column_name, 'UPDATE'
+FROM unnest(ARRAY[
+  'passwordHash', 'role', 'status', 'authorizationVersion',
+  'totpSecretEncrypted', 'totpEnabledAt', 'lastAcceptedTotpCounter'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminUser', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'email', 'passwordHash', 'role', 'status', 'authorizationVersion',
+  'totpSecretEncrypted', 'totpEnabledAt', 'lastAcceptedTotpCounter'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminPreAuthContext', column_name, 'SELECT'
+FROM unnest(ARRAY[
+  'id', 'adminUserId', 'purpose', 'authorizationVersion', 'expiresAt',
+  'consumedAt', 'revokedAt', 'createdAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminPreAuthContext', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'adminUserId', 'tokenHash', 'purpose', 'authorizationVersion', 'expiresAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminSession', column_name, 'SELECT'
+FROM unnest(ARRAY[
+  'id', 'adminUserId', 'accessTokenJti', 'authorizationVersion', 'expiresAt',
+  'absoluteExpiresAt', 'stepUpPurpose', 'stepUpExpiresAt', 'revokedAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+VALUES (:'c2a_writer_user', 'AdminSession', 'revokedAt', 'UPDATE');
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminTotpEnrollment', column_name, 'SELECT'
+FROM unnest(ARRAY['id', 'adminUserId', 'confirmedAt', 'revokedAt']) AS column_name;
+INSERT INTO expected_c2a_column_acl
+VALUES (:'c2a_writer_user', 'AdminTotpEnrollment', 'revokedAt', 'UPDATE');
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminRecoveryCodeBatch', column_name, 'SELECT'
+FROM unnest(ARRAY['id', 'adminUserId', 'revokedAt']) AS column_name;
+INSERT INTO expected_c2a_column_acl
+VALUES (:'c2a_writer_user', 'AdminRecoveryCodeBatch', 'revokedAt', 'UPDATE');
+
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminPasswordResetRequest', column_name, 'SELECT'
+FROM unnest(ARRAY[
+  'id', 'adminUserId', 'securityEventId', 'replacedRequestId',
+  'expiresAt', 'revokedAt', 'createdAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminPasswordResetRequest', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'adminUserId', 'securityEventId', 'replacedRequestId', 'expiresAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+VALUES (:'c2a_writer_user', 'AdminPasswordResetRequest', 'revokedAt', 'UPDATE');
+
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminPasswordResetContext', column_name, 'SELECT'
+FROM unnest(ARRAY[
+  'id', 'passwordResetRequestId', 'adminUserId', 'tokenHash',
+  'authorizationVersion', 'expiresAt', 'consumedAt', 'revokedAt', 'createdAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminPasswordResetContext', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'passwordResetRequestId', 'adminUserId', 'tokenHash',
+  'authorizationVersion', 'expiresAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminPasswordResetContext', column_name, 'UPDATE'
+FROM unnest(ARRAY['consumedAt', 'revokedAt']) AS column_name;
+
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminRecoveryCase', column_name, 'SELECT'
+FROM unnest(ARRAY[
+  'id', 'subjectAdminUserId', 'creatorAdminUserId', 'approverAdminUserId',
+  'state', 'stateGeneration', 'expiresAt', 'approvedAt', 'cancelledAt',
+  'expiredAt', 'createdAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminRecoveryCase', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'subjectAdminUserId', 'creatorAdminUserId', 'state',
+  'stateGeneration', 'expiresAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminRecoveryCase', column_name, 'UPDATE'
+FROM unnest(ARRAY[
+  'approverAdminUserId', 'state', 'stateGeneration', 'approvedAt', 'cancelledAt'
+]) AS column_name;
+
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminInvitation', column_name, 'SELECT'
+FROM unnest(ARRAY[
+  'id', 'emailCanonical', 'deliveryEmailEncrypted', 'codeHash', 'proposedRole',
+  'creatorAdminUserId', 'createdByAuditLogId', 'acceptedAdminUserId',
+  'replacedInvitationId', 'state', 'stateGeneration', 'expiresAt',
+  'acceptedAt', 'revokedAt', 'expiredAt', 'createdAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminInvitation', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'emailCanonical', 'deliveryEmailEncrypted', 'codeHash', 'proposedRole',
+  'creatorAdminUserId', 'createdByAuditLogId', 'replacedInvitationId',
+  'state', 'stateGeneration', 'expiresAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminInvitation', column_name, 'UPDATE'
+FROM unnest(ARRAY[
+  'acceptedAdminUserId', 'state', 'stateGeneration', 'acceptedAt', 'revokedAt'
+]) AS column_name;
+
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminNotificationOutbox', column_name, 'SELECT'
+FROM unnest(ARRAY[
+  'id', 'purpose', 'state', 'generation', 'encryptedPayload', 'encryptionKeyId',
+  'encryptionNonce', 'encryptionTag', 'aadHash', 'sourceSecurityEventId',
+  'sourceAuditLogId', 'passwordResetRequestId', 'adminInvitationId',
+  'replacedOutboxId', 'attemptCount', 'nextAttemptAt', 'createdAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminNotificationOutbox', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'purpose', 'state', 'generation', 'encryptedPayload', 'encryptionKeyId',
+  'encryptionNonce', 'encryptionTag', 'aadHash', 'sourceSecurityEventId',
+  'sourceAuditLogId', 'passwordResetRequestId', 'adminInvitationId',
+  'replacedOutboxId', 'attemptCount', 'nextAttemptAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminNotificationOutbox', column_name, 'UPDATE'
+FROM unnest(ARRAY['state', 'generation', 'cancelledAt']) AS column_name;
+
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminPaginationSnapshot', column_name, 'SELECT'
+FROM unnest(ARRAY[
+  'id', 'principalAdminUserId', 'operation', 'filtersDigest',
+  'projectionVersion', 'entryCount', 'utf8Bytes', 'createdAt', 'expiresAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminPaginationSnapshot', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'principalAdminUserId', 'operation', 'filtersDigest',
+  'projectionVersion', 'entryCount', 'utf8Bytes', 'expiresAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminPaginationSnapshotItem', column_name, 'SELECT'
+FROM unnest(ARRAY[
+  'snapshotId', 'ordinal', 'resourceId', 'sourceCreatedAt',
+  'projectionJson', 'utf8Bytes'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminPaginationSnapshotItem', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'snapshotId', 'ordinal', 'resourceId', 'sourceCreatedAt',
+  'projectionJson', 'utf8Bytes'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminC2IdempotencyRecord', column_name, 'SELECT'
+FROM unnest(ARRAY[
+  'id', 'adminUserId', 'operation', 'idempotencyKey', 'requestDigest',
+  'responseCode', 'resourceType', 'resourceId', 'expiresAt', 'createdAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminC2IdempotencyRecord', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'adminUserId', 'operation', 'idempotencyKey', 'requestDigest',
+  'responseCode', 'resourceType', 'resourceId'
+]) AS column_name;
+
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminSecurityEvent', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'adminUserId', 'eventClass', 'action', 'outcome', 'failureCode',
+  'requestId', 'subjectRefHash', 'entityType', 'entityId', 'adminInvitationId'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AuditLog', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'version', 'adminUserId', 'subjectAdminUserId',
+  'delegatedByAdminUserId', 'adminSessionId', 'adminRecoveryContextId',
+  'adminPasswordResetContextId', 'eventClass', 'context', 'outcome',
+  'failureCode', 'action', 'entityType', 'entityId', 'maskedBefore',
+  'maskedAfter', 'reason', 'reasonCode', 'operatorReason', 'requestId',
+  'causationEventId', 'causationSecurityEventId', 'adminRecoveryCaseId',
+  'adminInvitationId', 'systemExecutionRefHash'
+]) AS column_name;
+
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_notification_user', 'AdminNotificationOutbox', column_name, 'SELECT'
+FROM unnest(ARRAY[
+  'id', 'purpose', 'state', 'generation', 'encryptedPayload', 'encryptionKeyId',
+  'encryptionNonce', 'encryptionTag', 'aadHash', 'sourceSecurityEventId',
+  'sourceAuditLogId', 'passwordResetRequestId', 'adminInvitationId',
+  'replacedOutboxId', 'claimOwnerHash', 'leaseExpiresAt', 'attemptCount',
+  'nextAttemptAt', 'providerAcknowledgementHash', 'deliveredAt', 'failedAt',
+  'uncertainAt', 'cancelledAt', 'createdAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_notification_user', 'AdminNotificationOutbox', column_name, 'UPDATE'
+FROM unnest(ARRAY[
+  'state', 'generation', 'claimOwnerHash', 'leaseExpiresAt', 'attemptCount',
+  'nextAttemptAt', 'providerAcknowledgementHash', 'deliveredAt', 'failedAt',
+  'uncertainAt', 'cancelledAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_notification_user', 'AuditLog', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'version', 'systemExecutionRefHash', 'eventClass', 'context', 'outcome',
+  'failureCode', 'action', 'entityType', 'entityId', 'maskedBefore',
+  'maskedAfter', 'reason', 'reasonCode', 'operatorReason', 'requestId',
+  'causationEventId', 'causationSecurityEventId', 'delegatedByAdminUserId', 'adminInvitationId',
+  'notificationOutboxId'
+]) AS column_name;
+INSERT INTO expected_c2a_relation_acl VALUES
+  (:'c2a_notification_user', 'AdminC2NotificationSecurityEventSource', 'SELECT'),
+  (:'c2a_notification_user', 'AdminC2NotificationAuditSource', 'SELECT');
+
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_expiration_user', 'AdminRecoveryCase', column_name, 'SELECT'
+FROM unnest(ARRAY['id', 'state', 'stateGeneration', 'expiresAt']) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_expiration_user', 'AdminRecoveryCase', column_name, 'UPDATE'
+FROM unnest(ARRAY['state', 'stateGeneration', 'expiredAt']) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_expiration_user', 'AuditLog', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'version', 'systemExecutionRefHash', 'eventClass', 'context', 'outcome',
+  'failureCode', 'action', 'entityType', 'entityId', 'maskedBefore',
+  'maskedAfter', 'reason', 'reasonCode', 'operatorReason', 'requestId',
+  'adminRecoveryCaseId'
+]) AS column_name;
+
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_bootstrap_user', 'AdminUser', column_name, 'SELECT'
+FROM unnest(ARRAY['id', 'email', 'status']) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_bootstrap_user', 'AdminUser', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'email', 'passwordHash', 'role', 'status', 'authorizationVersion',
+  'totpSecretEncrypted', 'totpEnabledAt', 'lastAcceptedTotpCounter'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_bootstrap_user', 'AdminBootstrapGuard', column_name, 'SELECT'
+FROM unnest(ARRAY[
+  'singletonKey', 'adminUserId', 'bootstrapAuditLogId', 'createdAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_bootstrap_user', 'AdminBootstrapGuard', column_name, 'INSERT'
+FROM unnest(ARRAY['singletonKey', 'adminUserId', 'bootstrapAuditLogId']) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_bootstrap_user', 'AuditLog', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'version', 'systemExecutionRefHash', 'eventClass', 'context', 'outcome',
+  'failureCode', 'action', 'entityType', 'entityId', 'maskedBefore',
+  'maskedAfter', 'reason', 'reasonCode', 'operatorReason', 'requestId',
+  'bootstrapGuardId'
+]) AS column_name;
+
+DO $c2a_preflight$
+DECLARE
+  existing_role_count INTEGER;
+  expected_role_count CONSTANT INTEGER := 4;
+  mismatch_count INTEGER;
+BEGIN
+  SELECT count(*) INTO existing_role_count
+  FROM pg_catalog.pg_roles
+  WHERE rolname IN (
+    pg_catalog.current_setting('kora.c2a_writer_user'),
+    pg_catalog.current_setting('kora.c2a_notification_user'),
+    pg_catalog.current_setting('kora.c2a_expiration_user'),
+    pg_catalog.current_setting('kora.c2a_bootstrap_user')
+  );
+
+  IF existing_role_count NOT IN (0, expected_role_count) THEN
+    RAISE EXCEPTION 'C2a provisioning refused a partial identity set';
+  END IF;
+  IF existing_role_count = 0 THEN
+    RETURN;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM pg_catalog.pg_roles
+    WHERE rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+      AND (
+        NOT rolcanlogin OR rolsuper OR rolcreatedb OR rolcreaterole
+        OR rolinherit OR rolreplication OR rolbypassrls
+        OR rolconnlimit <> -1 OR rolvaliduntil IS NOT NULL OR rolconfig IS NOT NULL
+      )
+  ) THEN
+    RAISE EXCEPTION 'C2a provisioning refused contaminated role attributes';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_auth_members AS membership
+    JOIN pg_catalog.pg_roles AS member_role ON member_role.oid = membership.member
+    JOIN pg_catalog.pg_roles AS granted_role ON granted_role.oid = membership.roleid
+    WHERE member_role.rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+       OR granted_role.rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+  ) THEN
+    RAISE EXCEPTION 'C2a provisioning refused contaminated role membership';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_shdepend AS dependency
+    JOIN pg_catalog.pg_roles AS target_role
+      ON target_role.oid = dependency.refobjid
+    WHERE dependency.refclassid = 'pg_catalog.pg_authid'::regclass
+      AND dependency.deptype = 'o'
+      AND target_role.rolname IN (
+        pg_catalog.current_setting('kora.c2a_writer_user'),
+        pg_catalog.current_setting('kora.c2a_notification_user'),
+        pg_catalog.current_setting('kora.c2a_expiration_user'),
+        pg_catalog.current_setting('kora.c2a_bootstrap_user')
+      )
+  ) THEN
+    RAISE EXCEPTION 'C2a provisioning refused identity-owned objects';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_db_role_setting AS role_setting
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = role_setting.setrole
+    WHERE target_role.rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_proc AS routine_entry
+    CROSS JOIN LATERAL pg_catalog.aclexplode(routine_entry.proacl) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE target_role.rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_type AS type_entry
+    CROSS JOIN LATERAL pg_catalog.aclexplode(type_entry.typacl) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE target_role.rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_largeobject_metadata AS large_object
+    CROSS JOIN LATERAL pg_catalog.aclexplode(large_object.lomacl) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE target_role.rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_parameter_acl AS parameter_acl
+    CROSS JOIN LATERAL pg_catalog.aclexplode(parameter_acl.paracl) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE target_role.rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+  ) THEN
+    RAISE EXCEPTION 'C2a provisioning refused routine, type, large-object, parameter or role-setting contamination';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_attribute AS attribute_entry
+    JOIN pg_catalog.pg_class AS class_entry
+      ON class_entry.oid = attribute_entry.attrelid
+    JOIN pg_catalog.pg_namespace AS namespace_entry
+      ON namespace_entry.oid = class_entry.relnamespace
+    CROSS JOIN LATERAL pg_catalog.aclexplode(attribute_entry.attacl) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE (
+        namespace_entry.nspname <> 'public'
+        OR privilege.grantor <> class_entry.relowner
+      )
+      AND attribute_entry.attnum > 0
+      AND NOT attribute_entry.attisdropped
+      AND target_role.rolname IN (
+        pg_catalog.current_setting('kora.c2a_writer_user'),
+        pg_catalog.current_setting('kora.c2a_notification_user'),
+        pg_catalog.current_setting('kora.c2a_expiration_user'),
+        pg_catalog.current_setting('kora.c2a_bootstrap_user')
+      )
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_class AS class_entry
+    JOIN pg_catalog.pg_namespace AS namespace_entry
+      ON namespace_entry.oid = class_entry.relnamespace
+    CROSS JOIN LATERAL pg_catalog.aclexplode(class_entry.relacl) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE (
+        namespace_entry.nspname <> 'public'
+        OR privilege.grantor <> class_entry.relowner
+      )
+      AND class_entry.relkind IN ('r', 'p', 'v', 'm', 'f', 'S')
+      AND target_role.rolname IN (
+        pg_catalog.current_setting('kora.c2a_writer_user'),
+        pg_catalog.current_setting('kora.c2a_notification_user'),
+        pg_catalog.current_setting('kora.c2a_expiration_user'),
+        pg_catalog.current_setting('kora.c2a_bootstrap_user')
+      )
+  ) THEN
+    RAISE EXCEPTION 'C2a provisioning refused off-public or non-owner-granted column or relation ACLs';
+  END IF;
+
+  WITH target_roles AS (
+    SELECT oid, rolname::TEXT AS role_name FROM pg_catalog.pg_roles
+    WHERE rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+  ), actual_column_acl AS (
+    SELECT target_role.role_name,
+           class_entry.relname::TEXT AS relation_name,
+           attribute_entry.attname::TEXT AS column_name,
+           privilege.privilege_type::TEXT
+    FROM pg_catalog.pg_attribute AS attribute_entry
+    JOIN pg_catalog.pg_class AS class_entry
+      ON class_entry.oid = attribute_entry.attrelid
+    JOIN pg_catalog.pg_namespace AS namespace_entry
+      ON namespace_entry.oid = class_entry.relnamespace
+    CROSS JOIN LATERAL pg_catalog.aclexplode(attribute_entry.attacl) AS privilege
+    JOIN target_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE namespace_entry.nspname = 'public'
+      AND attribute_entry.attnum > 0
+      AND NOT attribute_entry.attisdropped
+      AND NOT privilege.is_grantable
+  ), symmetric_difference AS (
+    (SELECT * FROM actual_column_acl
+     EXCEPT ALL
+     SELECT * FROM expected_c2a_column_acl)
+    UNION ALL
+    (SELECT * FROM expected_c2a_column_acl
+     EXCEPT ALL
+     SELECT * FROM actual_column_acl)
+  )
+  SELECT count(*) INTO mismatch_count FROM symmetric_difference;
+  IF mismatch_count <> 0 THEN
+    RAISE EXCEPTION 'C2a provisioning refused contaminated column ACLs';
+  END IF;
+
+  WITH target_roles AS (
+    SELECT oid, rolname::TEXT AS role_name FROM pg_catalog.pg_roles
+    WHERE rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+  ), actual_relation_acl AS (
+    SELECT target_role.role_name,
+           class_entry.relname::TEXT AS relation_name,
+           privilege.privilege_type::TEXT
+    FROM pg_catalog.pg_class AS class_entry
+    JOIN pg_catalog.pg_namespace AS namespace_entry
+      ON namespace_entry.oid = class_entry.relnamespace
+    CROSS JOIN LATERAL pg_catalog.aclexplode(class_entry.relacl) AS privilege
+    JOIN target_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE namespace_entry.nspname = 'public'
+      AND class_entry.relkind IN ('r', 'p', 'v', 'm', 'f', 'S')
+      AND NOT privilege.is_grantable
+  ), symmetric_difference AS (
+    (SELECT * FROM actual_relation_acl
+     EXCEPT ALL
+     SELECT * FROM expected_c2a_relation_acl)
+    UNION ALL
+    (SELECT * FROM expected_c2a_relation_acl
+     EXCEPT ALL
+     SELECT * FROM actual_relation_acl)
+  )
+  SELECT count(*) INTO mismatch_count FROM symmetric_difference;
+  IF mismatch_count <> 0 THEN
+    RAISE EXCEPTION 'C2a provisioning refused contaminated relation ACLs';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_database AS database_entry
+    CROSS JOIN LATERAL pg_catalog.aclexplode(
+      COALESCE(database_entry.datacl, pg_catalog.acldefault('d', database_entry.datdba))
+    ) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE database_entry.datname = current_database()
+      AND target_role.rolname IN (
+        pg_catalog.current_setting('kora.c2a_writer_user'),
+        pg_catalog.current_setting('kora.c2a_notification_user'),
+        pg_catalog.current_setting('kora.c2a_expiration_user'),
+        pg_catalog.current_setting('kora.c2a_bootstrap_user')
+      )
+      AND (
+        privilege.privilege_type <> 'CONNECT'
+        OR privilege.is_grantable
+        OR privilege.grantor <> database_entry.datdba
+      )
+  ) OR (
+    SELECT count(*)
+    FROM pg_catalog.pg_database AS database_entry
+    CROSS JOIN LATERAL pg_catalog.aclexplode(
+      COALESCE(database_entry.datacl, pg_catalog.acldefault('d', database_entry.datdba))
+    ) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE database_entry.datname = current_database()
+      AND target_role.rolname IN (
+        pg_catalog.current_setting('kora.c2a_writer_user'),
+        pg_catalog.current_setting('kora.c2a_notification_user'),
+        pg_catalog.current_setting('kora.c2a_expiration_user'),
+        pg_catalog.current_setting('kora.c2a_bootstrap_user')
+      )
+  ) <> 4 THEN
+    RAISE EXCEPTION 'C2a provisioning refused contaminated database ACLs';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_namespace AS namespace_entry
+    CROSS JOIN LATERAL pg_catalog.aclexplode(
+      COALESCE(namespace_entry.nspacl, pg_catalog.acldefault('n', namespace_entry.nspowner))
+    ) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE target_role.rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+      AND (
+        namespace_entry.nspname <> 'public'
+        OR privilege.privilege_type <> 'USAGE'
+        OR privilege.is_grantable
+        OR privilege.grantor <> namespace_entry.nspowner
+      )
+  ) OR (
+    SELECT count(*)
+    FROM pg_catalog.pg_namespace AS namespace_entry
+    CROSS JOIN LATERAL pg_catalog.aclexplode(
+      COALESCE(namespace_entry.nspacl, pg_catalog.acldefault('n', namespace_entry.nspowner))
+    ) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE namespace_entry.nspname = 'public'
+      AND target_role.rolname IN (
+        pg_catalog.current_setting('kora.c2a_writer_user'),
+        pg_catalog.current_setting('kora.c2a_notification_user'),
+        pg_catalog.current_setting('kora.c2a_expiration_user'),
+        pg_catalog.current_setting('kora.c2a_bootstrap_user')
+      )
+  ) <> 4 THEN
+    RAISE EXCEPTION 'C2a provisioning refused contaminated schema ACLs';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM pg_catalog.pg_default_acl AS default_acl
+    CROSS JOIN LATERAL pg_catalog.aclexplode(default_acl.defaclacl) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE target_role.rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+  ) THEN
+    RAISE EXCEPTION 'C2a provisioning refused contaminated default ACLs';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_database AS database_entry
+    CROSS JOIN LATERAL pg_catalog.aclexplode(
+      COALESCE(database_entry.datacl, pg_catalog.acldefault('d', database_entry.datdba))
+    ) AS privilege
+    WHERE database_entry.datname = current_database()
+      AND privilege.grantee = 0
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_namespace AS namespace_entry
+    CROSS JOIN LATERAL pg_catalog.aclexplode(
+      COALESCE(namespace_entry.nspacl, pg_catalog.acldefault('n', namespace_entry.nspowner))
+    ) AS privilege
+    WHERE namespace_entry.nspname <> 'information_schema'
+      AND namespace_entry.nspname !~ '^pg_'
+      AND privilege.grantee = 0
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_class AS class_entry
+    JOIN pg_catalog.pg_namespace AS namespace_entry
+      ON namespace_entry.oid = class_entry.relnamespace
+    CROSS JOIN LATERAL pg_catalog.aclexplode(class_entry.relacl) AS privilege
+    WHERE namespace_entry.nspname <> 'information_schema'
+      AND namespace_entry.nspname !~ '^pg_'
+      AND privilege.grantee = 0
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_attribute AS attribute_entry
+    JOIN pg_catalog.pg_class AS class_entry ON class_entry.oid = attribute_entry.attrelid
+    JOIN pg_catalog.pg_namespace AS namespace_entry
+      ON namespace_entry.oid = class_entry.relnamespace
+    CROSS JOIN LATERAL pg_catalog.aclexplode(attribute_entry.attacl) AS privilege
+    WHERE namespace_entry.nspname <> 'information_schema'
+      AND namespace_entry.nspname !~ '^pg_'
+      AND privilege.grantee = 0
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_proc AS routine_entry
+    JOIN pg_catalog.pg_namespace AS namespace_entry
+      ON namespace_entry.oid = routine_entry.pronamespace
+    CROSS JOIN LATERAL pg_catalog.aclexplode(
+      COALESCE(routine_entry.proacl, pg_catalog.acldefault('f', routine_entry.proowner))
+    ) AS privilege
+    WHERE namespace_entry.nspname <> 'information_schema'
+      AND namespace_entry.nspname !~ '^pg_'
+      AND privilege.grantee = 0
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_type AS type_entry
+    JOIN pg_catalog.pg_namespace AS namespace_entry
+      ON namespace_entry.oid = type_entry.typnamespace
+    LEFT JOIN pg_catalog.pg_class AS composite_entry
+      ON composite_entry.oid = type_entry.typrelid
+    CROSS JOIN LATERAL pg_catalog.aclexplode(
+      COALESCE(type_entry.typacl, pg_catalog.acldefault('T', type_entry.typowner))
+    ) AS privilege
+    WHERE namespace_entry.nspname <> 'information_schema'
+      AND namespace_entry.nspname !~ '^pg_'
+      AND type_entry.typisdefined
+      AND type_entry.typelem = 0
+      AND (type_entry.typrelid = 0 OR composite_entry.relkind = 'c')
+      AND privilege.grantee = 0
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_largeobject_metadata AS large_object
+    CROSS JOIN LATERAL pg_catalog.aclexplode(
+      COALESCE(large_object.lomacl, pg_catalog.acldefault('L', large_object.lomowner))
+    ) AS privilege
+    WHERE privilege.grantee = 0
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_parameter_acl AS parameter_acl
+    CROSS JOIN LATERAL pg_catalog.aclexplode(parameter_acl.paracl) AS privilege
+    WHERE privilege.grantee = 0
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_default_acl AS default_acl
+    CROSS JOIN LATERAL pg_catalog.aclexplode(default_acl.defaclacl) AS privilege
+    WHERE privilege.grantee = 0
+  ) THEN
+    RAISE EXCEPTION 'C2a provisioning refused dangerous PUBLIC or default privileges';
+  END IF;
+END;
+$c2a_preflight$;
+
+ROLLBACK;
+SQL
+fi
 
 psql \
   --host=127.0.0.1 \
@@ -1279,4 +2112,1169 @@ if [ "$admin_writer_result" != 't' ]; then
   exit 1
 fi
 
-echo 'PostgreSQL reader and admin writer boundaries provisioned and verified.'
+if [ "$c2a_enabled" = 'true' ]; then
+  export PGPASSWORD="$(tr -d '\r\n' </run/secrets/postgres_password)"
+  psql \
+    --host=127.0.0.1 \
+    --port=5432 \
+    --username="$POSTGRES_USER" \
+    --dbname="$POSTGRES_DB" \
+    --no-psqlrc \
+    --quiet \
+    --set=ON_ERROR_STOP=1 \
+    --set=c2a_writer_user="$c2a_writer_user" \
+    --set=c2a_notification_user="$c2a_notification_user" \
+    --set=c2a_expiration_user="$c2a_expiration_user" \
+    --set=c2a_bootstrap_user="$c2a_bootstrap_user" <<'SQL'
+\set c2a_writer_password `tr -d '\r\n' <"$KORA_POSTGRES_C2A_SECRET_DIRECTORY/postgres_admin_c2a_writer_password"`
+\set c2a_notification_password `tr -d '\r\n' <"$KORA_POSTGRES_C2A_SECRET_DIRECTORY/postgres_admin_c2a_notification_worker_password"`
+\set c2a_expiration_password `tr -d '\r\n' <"$KORA_POSTGRES_C2A_SECRET_DIRECTORY/postgres_admin_c2a_expiration_worker_password"`
+\set c2a_bootstrap_password `tr -d '\r\n' <"$KORA_POSTGRES_C2A_SECRET_DIRECTORY/postgres_admin_c2a_bootstrap_password"`
+
+BEGIN;
+
+SELECT pg_catalog.set_config('kora.c2a_writer_user', :'c2a_writer_user', true);
+SELECT pg_catalog.set_config(
+  'kora.c2a_notification_user',
+  :'c2a_notification_user',
+  true
+);
+SELECT pg_catalog.set_config(
+  'kora.c2a_expiration_user',
+  :'c2a_expiration_user',
+  true
+);
+SELECT pg_catalog.set_config('kora.c2a_bootstrap_user', :'c2a_bootstrap_user', true);
+
+CREATE TEMPORARY TABLE expected_c2a_column_acl (
+  role_name TEXT NOT NULL,
+  relation_name TEXT NOT NULL,
+  column_name TEXT NOT NULL,
+  privilege_type TEXT NOT NULL,
+  PRIMARY KEY (role_name, relation_name, column_name, privilege_type)
+) ON COMMIT DROP;
+
+CREATE TEMPORARY TABLE expected_c2a_relation_acl (
+  role_name TEXT NOT NULL,
+  relation_name TEXT NOT NULL,
+  privilege_type TEXT NOT NULL,
+  PRIMARY KEY (role_name, relation_name, privilege_type)
+) ON COMMIT DROP;
+
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminUser', column_name, 'SELECT'
+FROM unnest(ARRAY[
+  'id', 'email', 'role', 'status', 'authorizationVersion',
+  'totpEnabledAt', 'createdAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminUser', column_name, 'UPDATE'
+FROM unnest(ARRAY[
+  'passwordHash', 'role', 'status', 'authorizationVersion',
+  'totpSecretEncrypted', 'totpEnabledAt', 'lastAcceptedTotpCounter'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminUser', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'email', 'passwordHash', 'role', 'status', 'authorizationVersion',
+  'totpSecretEncrypted', 'totpEnabledAt', 'lastAcceptedTotpCounter'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminPreAuthContext', column_name, 'SELECT'
+FROM unnest(ARRAY[
+  'id', 'adminUserId', 'purpose', 'authorizationVersion', 'expiresAt',
+  'consumedAt', 'revokedAt', 'createdAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminPreAuthContext', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'adminUserId', 'tokenHash', 'purpose', 'authorizationVersion', 'expiresAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminSession', column_name, 'SELECT'
+FROM unnest(ARRAY[
+  'id', 'adminUserId', 'accessTokenJti', 'authorizationVersion', 'expiresAt',
+  'absoluteExpiresAt', 'stepUpPurpose', 'stepUpExpiresAt', 'revokedAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+VALUES (:'c2a_writer_user', 'AdminSession', 'revokedAt', 'UPDATE');
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminTotpEnrollment', column_name, 'SELECT'
+FROM unnest(ARRAY['id', 'adminUserId', 'confirmedAt', 'revokedAt']) AS column_name;
+INSERT INTO expected_c2a_column_acl
+VALUES (:'c2a_writer_user', 'AdminTotpEnrollment', 'revokedAt', 'UPDATE');
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminRecoveryCodeBatch', column_name, 'SELECT'
+FROM unnest(ARRAY['id', 'adminUserId', 'revokedAt']) AS column_name;
+INSERT INTO expected_c2a_column_acl
+VALUES (:'c2a_writer_user', 'AdminRecoveryCodeBatch', 'revokedAt', 'UPDATE');
+
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminPasswordResetRequest', column_name, 'SELECT'
+FROM unnest(ARRAY[
+  'id', 'adminUserId', 'securityEventId', 'replacedRequestId',
+  'expiresAt', 'revokedAt', 'createdAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminPasswordResetRequest', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'adminUserId', 'securityEventId', 'replacedRequestId', 'expiresAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+VALUES (:'c2a_writer_user', 'AdminPasswordResetRequest', 'revokedAt', 'UPDATE');
+
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminPasswordResetContext', column_name, 'SELECT'
+FROM unnest(ARRAY[
+  'id', 'passwordResetRequestId', 'adminUserId', 'tokenHash',
+  'authorizationVersion', 'expiresAt', 'consumedAt', 'revokedAt', 'createdAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminPasswordResetContext', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'passwordResetRequestId', 'adminUserId', 'tokenHash',
+  'authorizationVersion', 'expiresAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminPasswordResetContext', column_name, 'UPDATE'
+FROM unnest(ARRAY['consumedAt', 'revokedAt']) AS column_name;
+
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminRecoveryCase', column_name, 'SELECT'
+FROM unnest(ARRAY[
+  'id', 'subjectAdminUserId', 'creatorAdminUserId', 'approverAdminUserId',
+  'state', 'stateGeneration', 'expiresAt', 'approvedAt', 'cancelledAt',
+  'expiredAt', 'createdAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminRecoveryCase', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'subjectAdminUserId', 'creatorAdminUserId', 'state',
+  'stateGeneration', 'expiresAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminRecoveryCase', column_name, 'UPDATE'
+FROM unnest(ARRAY[
+  'approverAdminUserId', 'state', 'stateGeneration', 'approvedAt', 'cancelledAt'
+]) AS column_name;
+
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminInvitation', column_name, 'SELECT'
+FROM unnest(ARRAY[
+  'id', 'emailCanonical', 'deliveryEmailEncrypted', 'codeHash', 'proposedRole',
+  'creatorAdminUserId', 'createdByAuditLogId', 'acceptedAdminUserId',
+  'replacedInvitationId', 'state', 'stateGeneration', 'expiresAt',
+  'acceptedAt', 'revokedAt', 'expiredAt', 'createdAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminInvitation', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'emailCanonical', 'deliveryEmailEncrypted', 'codeHash', 'proposedRole',
+  'creatorAdminUserId', 'createdByAuditLogId', 'replacedInvitationId',
+  'state', 'stateGeneration', 'expiresAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminInvitation', column_name, 'UPDATE'
+FROM unnest(ARRAY[
+  'acceptedAdminUserId', 'state', 'stateGeneration', 'acceptedAt', 'revokedAt'
+]) AS column_name;
+
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminNotificationOutbox', column_name, 'SELECT'
+FROM unnest(ARRAY[
+  'id', 'purpose', 'state', 'generation', 'encryptedPayload', 'encryptionKeyId',
+  'encryptionNonce', 'encryptionTag', 'aadHash', 'sourceSecurityEventId',
+  'sourceAuditLogId', 'passwordResetRequestId', 'adminInvitationId',
+  'replacedOutboxId', 'attemptCount', 'nextAttemptAt', 'createdAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminNotificationOutbox', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'purpose', 'state', 'generation', 'encryptedPayload', 'encryptionKeyId',
+  'encryptionNonce', 'encryptionTag', 'aadHash', 'sourceSecurityEventId',
+  'sourceAuditLogId', 'passwordResetRequestId', 'adminInvitationId',
+  'replacedOutboxId', 'attemptCount', 'nextAttemptAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminNotificationOutbox', column_name, 'UPDATE'
+FROM unnest(ARRAY['state', 'generation', 'cancelledAt']) AS column_name;
+
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminPaginationSnapshot', column_name, 'SELECT'
+FROM unnest(ARRAY[
+  'id', 'principalAdminUserId', 'operation', 'filtersDigest',
+  'projectionVersion', 'entryCount', 'utf8Bytes', 'createdAt', 'expiresAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminPaginationSnapshot', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'principalAdminUserId', 'operation', 'filtersDigest',
+  'projectionVersion', 'entryCount', 'utf8Bytes', 'expiresAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminPaginationSnapshotItem', column_name, 'SELECT'
+FROM unnest(ARRAY[
+  'snapshotId', 'ordinal', 'resourceId', 'sourceCreatedAt',
+  'projectionJson', 'utf8Bytes'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminPaginationSnapshotItem', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'snapshotId', 'ordinal', 'resourceId', 'sourceCreatedAt',
+  'projectionJson', 'utf8Bytes'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminC2IdempotencyRecord', column_name, 'SELECT'
+FROM unnest(ARRAY[
+  'id', 'adminUserId', 'operation', 'idempotencyKey', 'requestDigest',
+  'responseCode', 'resourceType', 'resourceId', 'expiresAt', 'createdAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminC2IdempotencyRecord', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'adminUserId', 'operation', 'idempotencyKey', 'requestDigest',
+  'responseCode', 'resourceType', 'resourceId'
+]) AS column_name;
+
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AdminSecurityEvent', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'adminUserId', 'eventClass', 'action', 'outcome', 'failureCode',
+  'requestId', 'subjectRefHash', 'entityType', 'entityId', 'adminInvitationId'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_writer_user', 'AuditLog', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'version', 'adminUserId', 'subjectAdminUserId',
+  'delegatedByAdminUserId', 'adminSessionId', 'adminRecoveryContextId',
+  'adminPasswordResetContextId', 'eventClass', 'context', 'outcome',
+  'failureCode', 'action', 'entityType', 'entityId', 'maskedBefore',
+  'maskedAfter', 'reason', 'reasonCode', 'operatorReason', 'requestId',
+  'causationEventId', 'causationSecurityEventId', 'adminRecoveryCaseId',
+  'adminInvitationId', 'systemExecutionRefHash'
+]) AS column_name;
+
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_notification_user', 'AdminNotificationOutbox', column_name, 'SELECT'
+FROM unnest(ARRAY[
+  'id', 'purpose', 'state', 'generation', 'encryptedPayload', 'encryptionKeyId',
+  'encryptionNonce', 'encryptionTag', 'aadHash', 'sourceSecurityEventId',
+  'sourceAuditLogId', 'passwordResetRequestId', 'adminInvitationId',
+  'replacedOutboxId', 'claimOwnerHash', 'leaseExpiresAt', 'attemptCount',
+  'nextAttemptAt', 'providerAcknowledgementHash', 'deliveredAt', 'failedAt',
+  'uncertainAt', 'cancelledAt', 'createdAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_notification_user', 'AdminNotificationOutbox', column_name, 'UPDATE'
+FROM unnest(ARRAY[
+  'state', 'generation', 'claimOwnerHash', 'leaseExpiresAt', 'attemptCount',
+  'nextAttemptAt', 'providerAcknowledgementHash', 'deliveredAt', 'failedAt',
+  'uncertainAt', 'cancelledAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_notification_user', 'AuditLog', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'version', 'systemExecutionRefHash', 'eventClass', 'context', 'outcome',
+  'failureCode', 'action', 'entityType', 'entityId', 'maskedBefore',
+  'maskedAfter', 'reason', 'reasonCode', 'operatorReason', 'requestId',
+  'causationEventId', 'causationSecurityEventId', 'delegatedByAdminUserId', 'adminInvitationId',
+  'notificationOutboxId'
+]) AS column_name;
+INSERT INTO expected_c2a_relation_acl VALUES
+  (:'c2a_notification_user', 'AdminC2NotificationSecurityEventSource', 'SELECT'),
+  (:'c2a_notification_user', 'AdminC2NotificationAuditSource', 'SELECT');
+
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_expiration_user', 'AdminRecoveryCase', column_name, 'SELECT'
+FROM unnest(ARRAY['id', 'state', 'stateGeneration', 'expiresAt']) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_expiration_user', 'AdminRecoveryCase', column_name, 'UPDATE'
+FROM unnest(ARRAY['state', 'stateGeneration', 'expiredAt']) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_expiration_user', 'AuditLog', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'version', 'systemExecutionRefHash', 'eventClass', 'context', 'outcome',
+  'failureCode', 'action', 'entityType', 'entityId', 'maskedBefore',
+  'maskedAfter', 'reason', 'reasonCode', 'operatorReason', 'requestId',
+  'adminRecoveryCaseId'
+]) AS column_name;
+
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_bootstrap_user', 'AdminUser', column_name, 'SELECT'
+FROM unnest(ARRAY['id', 'email', 'status']) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_bootstrap_user', 'AdminUser', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'email', 'passwordHash', 'role', 'status', 'authorizationVersion',
+  'totpSecretEncrypted', 'totpEnabledAt', 'lastAcceptedTotpCounter'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_bootstrap_user', 'AdminBootstrapGuard', column_name, 'SELECT'
+FROM unnest(ARRAY[
+  'singletonKey', 'adminUserId', 'bootstrapAuditLogId', 'createdAt'
+]) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_bootstrap_user', 'AdminBootstrapGuard', column_name, 'INSERT'
+FROM unnest(ARRAY['singletonKey', 'adminUserId', 'bootstrapAuditLogId']) AS column_name;
+INSERT INTO expected_c2a_column_acl
+SELECT :'c2a_bootstrap_user', 'AuditLog', column_name, 'INSERT'
+FROM unnest(ARRAY[
+  'id', 'version', 'systemExecutionRefHash', 'eventClass', 'context', 'outcome',
+  'failureCode', 'action', 'entityType', 'entityId', 'maskedBefore',
+  'maskedAfter', 'reason', 'reasonCode', 'operatorReason', 'requestId',
+  'bootstrapGuardId'
+]) AS column_name;
+
+DO $c2a_preflight$
+DECLARE
+  existing_role_count INTEGER;
+  expected_role_count CONSTANT INTEGER := 4;
+  mismatch_count INTEGER;
+BEGIN
+  SELECT count(*) INTO existing_role_count
+  FROM pg_catalog.pg_roles
+  WHERE rolname IN (
+    pg_catalog.current_setting('kora.c2a_writer_user'),
+    pg_catalog.current_setting('kora.c2a_notification_user'),
+    pg_catalog.current_setting('kora.c2a_expiration_user'),
+    pg_catalog.current_setting('kora.c2a_bootstrap_user')
+  );
+
+  IF existing_role_count NOT IN (0, expected_role_count) THEN
+    RAISE EXCEPTION 'C2a provisioning refused a partial identity set';
+  END IF;
+  IF existing_role_count = 0 THEN
+    RETURN;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM pg_catalog.pg_roles
+    WHERE rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+      AND (
+        NOT rolcanlogin OR rolsuper OR rolcreatedb OR rolcreaterole
+        OR rolinherit OR rolreplication OR rolbypassrls
+        OR rolconnlimit <> -1 OR rolvaliduntil IS NOT NULL OR rolconfig IS NOT NULL
+      )
+  ) THEN
+    RAISE EXCEPTION 'C2a provisioning refused contaminated role attributes';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_auth_members AS membership
+    JOIN pg_catalog.pg_roles AS member_role ON member_role.oid = membership.member
+    JOIN pg_catalog.pg_roles AS granted_role ON granted_role.oid = membership.roleid
+    WHERE member_role.rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+       OR granted_role.rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+  ) THEN
+    RAISE EXCEPTION 'C2a provisioning refused contaminated role membership';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_shdepend AS dependency
+    JOIN pg_catalog.pg_roles AS target_role
+      ON target_role.oid = dependency.refobjid
+    WHERE dependency.refclassid = 'pg_catalog.pg_authid'::regclass
+      AND dependency.deptype = 'o'
+      AND target_role.rolname IN (
+        pg_catalog.current_setting('kora.c2a_writer_user'),
+        pg_catalog.current_setting('kora.c2a_notification_user'),
+        pg_catalog.current_setting('kora.c2a_expiration_user'),
+        pg_catalog.current_setting('kora.c2a_bootstrap_user')
+      )
+  ) THEN
+    RAISE EXCEPTION 'C2a provisioning refused identity-owned objects';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_db_role_setting AS role_setting
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = role_setting.setrole
+    WHERE target_role.rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_proc AS routine_entry
+    CROSS JOIN LATERAL pg_catalog.aclexplode(routine_entry.proacl) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE target_role.rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_type AS type_entry
+    CROSS JOIN LATERAL pg_catalog.aclexplode(type_entry.typacl) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE target_role.rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_largeobject_metadata AS large_object
+    CROSS JOIN LATERAL pg_catalog.aclexplode(large_object.lomacl) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE target_role.rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_parameter_acl AS parameter_acl
+    CROSS JOIN LATERAL pg_catalog.aclexplode(parameter_acl.paracl) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE target_role.rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+  ) THEN
+    RAISE EXCEPTION 'C2a provisioning refused routine, type, large-object, parameter or role-setting contamination';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_attribute AS attribute_entry
+    JOIN pg_catalog.pg_class AS class_entry
+      ON class_entry.oid = attribute_entry.attrelid
+    JOIN pg_catalog.pg_namespace AS namespace_entry
+      ON namespace_entry.oid = class_entry.relnamespace
+    CROSS JOIN LATERAL pg_catalog.aclexplode(attribute_entry.attacl) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE (
+        namespace_entry.nspname <> 'public'
+        OR privilege.grantor <> class_entry.relowner
+      )
+      AND attribute_entry.attnum > 0
+      AND NOT attribute_entry.attisdropped
+      AND target_role.rolname IN (
+        pg_catalog.current_setting('kora.c2a_writer_user'),
+        pg_catalog.current_setting('kora.c2a_notification_user'),
+        pg_catalog.current_setting('kora.c2a_expiration_user'),
+        pg_catalog.current_setting('kora.c2a_bootstrap_user')
+      )
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_class AS class_entry
+    JOIN pg_catalog.pg_namespace AS namespace_entry
+      ON namespace_entry.oid = class_entry.relnamespace
+    CROSS JOIN LATERAL pg_catalog.aclexplode(class_entry.relacl) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE (
+        namespace_entry.nspname <> 'public'
+        OR privilege.grantor <> class_entry.relowner
+      )
+      AND class_entry.relkind IN ('r', 'p', 'v', 'm', 'f', 'S')
+      AND target_role.rolname IN (
+        pg_catalog.current_setting('kora.c2a_writer_user'),
+        pg_catalog.current_setting('kora.c2a_notification_user'),
+        pg_catalog.current_setting('kora.c2a_expiration_user'),
+        pg_catalog.current_setting('kora.c2a_bootstrap_user')
+      )
+  ) THEN
+    RAISE EXCEPTION 'C2a provisioning refused off-public or non-owner-granted column or relation ACLs';
+  END IF;
+
+  WITH target_roles AS (
+    SELECT oid, rolname::TEXT AS role_name FROM pg_catalog.pg_roles
+    WHERE rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+  ), actual_column_acl AS (
+    SELECT target_role.role_name,
+           class_entry.relname::TEXT AS relation_name,
+           attribute_entry.attname::TEXT AS column_name,
+           privilege.privilege_type::TEXT
+    FROM pg_catalog.pg_attribute AS attribute_entry
+    JOIN pg_catalog.pg_class AS class_entry
+      ON class_entry.oid = attribute_entry.attrelid
+    JOIN pg_catalog.pg_namespace AS namespace_entry
+      ON namespace_entry.oid = class_entry.relnamespace
+    CROSS JOIN LATERAL pg_catalog.aclexplode(attribute_entry.attacl) AS privilege
+    JOIN target_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE namespace_entry.nspname = 'public'
+      AND attribute_entry.attnum > 0
+      AND NOT attribute_entry.attisdropped
+      AND NOT privilege.is_grantable
+  ), symmetric_difference AS (
+    (SELECT * FROM actual_column_acl
+     EXCEPT ALL
+     SELECT * FROM expected_c2a_column_acl)
+    UNION ALL
+    (SELECT * FROM expected_c2a_column_acl
+     EXCEPT ALL
+     SELECT * FROM actual_column_acl)
+  )
+  SELECT count(*) INTO mismatch_count FROM symmetric_difference;
+  IF mismatch_count <> 0 THEN
+    RAISE EXCEPTION 'C2a provisioning refused contaminated column ACLs';
+  END IF;
+
+  WITH target_roles AS (
+    SELECT oid, rolname::TEXT AS role_name FROM pg_catalog.pg_roles
+    WHERE rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+  ), actual_relation_acl AS (
+    SELECT target_role.role_name,
+           class_entry.relname::TEXT AS relation_name,
+           privilege.privilege_type::TEXT
+    FROM pg_catalog.pg_class AS class_entry
+    JOIN pg_catalog.pg_namespace AS namespace_entry
+      ON namespace_entry.oid = class_entry.relnamespace
+    CROSS JOIN LATERAL pg_catalog.aclexplode(class_entry.relacl) AS privilege
+    JOIN target_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE namespace_entry.nspname = 'public'
+      AND class_entry.relkind IN ('r', 'p', 'v', 'm', 'f', 'S')
+      AND NOT privilege.is_grantable
+  ), symmetric_difference AS (
+    (SELECT * FROM actual_relation_acl
+     EXCEPT ALL
+     SELECT * FROM expected_c2a_relation_acl)
+    UNION ALL
+    (SELECT * FROM expected_c2a_relation_acl
+     EXCEPT ALL
+     SELECT * FROM actual_relation_acl)
+  )
+  SELECT count(*) INTO mismatch_count FROM symmetric_difference;
+  IF mismatch_count <> 0 THEN
+    RAISE EXCEPTION 'C2a provisioning refused contaminated relation ACLs';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_database AS database_entry
+    CROSS JOIN LATERAL pg_catalog.aclexplode(
+      COALESCE(database_entry.datacl, pg_catalog.acldefault('d', database_entry.datdba))
+    ) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE database_entry.datname = current_database()
+      AND target_role.rolname IN (
+        pg_catalog.current_setting('kora.c2a_writer_user'),
+        pg_catalog.current_setting('kora.c2a_notification_user'),
+        pg_catalog.current_setting('kora.c2a_expiration_user'),
+        pg_catalog.current_setting('kora.c2a_bootstrap_user')
+      )
+      AND (
+        privilege.privilege_type <> 'CONNECT'
+        OR privilege.is_grantable
+        OR privilege.grantor <> database_entry.datdba
+      )
+  ) OR (
+    SELECT count(*)
+    FROM pg_catalog.pg_database AS database_entry
+    CROSS JOIN LATERAL pg_catalog.aclexplode(
+      COALESCE(database_entry.datacl, pg_catalog.acldefault('d', database_entry.datdba))
+    ) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE database_entry.datname = current_database()
+      AND target_role.rolname IN (
+        pg_catalog.current_setting('kora.c2a_writer_user'),
+        pg_catalog.current_setting('kora.c2a_notification_user'),
+        pg_catalog.current_setting('kora.c2a_expiration_user'),
+        pg_catalog.current_setting('kora.c2a_bootstrap_user')
+      )
+  ) <> 4 THEN
+    RAISE EXCEPTION 'C2a provisioning refused contaminated database ACLs';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_namespace AS namespace_entry
+    CROSS JOIN LATERAL pg_catalog.aclexplode(
+      COALESCE(namespace_entry.nspacl, pg_catalog.acldefault('n', namespace_entry.nspowner))
+    ) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE target_role.rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+      AND (
+        namespace_entry.nspname <> 'public'
+        OR privilege.privilege_type <> 'USAGE'
+        OR privilege.is_grantable
+        OR privilege.grantor <> namespace_entry.nspowner
+      )
+  ) OR (
+    SELECT count(*)
+    FROM pg_catalog.pg_namespace AS namespace_entry
+    CROSS JOIN LATERAL pg_catalog.aclexplode(
+      COALESCE(namespace_entry.nspacl, pg_catalog.acldefault('n', namespace_entry.nspowner))
+    ) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE namespace_entry.nspname = 'public'
+      AND target_role.rolname IN (
+        pg_catalog.current_setting('kora.c2a_writer_user'),
+        pg_catalog.current_setting('kora.c2a_notification_user'),
+        pg_catalog.current_setting('kora.c2a_expiration_user'),
+        pg_catalog.current_setting('kora.c2a_bootstrap_user')
+      )
+  ) <> 4 THEN
+    RAISE EXCEPTION 'C2a provisioning refused contaminated schema ACLs';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM pg_catalog.pg_default_acl AS default_acl
+    CROSS JOIN LATERAL pg_catalog.aclexplode(default_acl.defaclacl) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE target_role.rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+  ) THEN
+    RAISE EXCEPTION 'C2a provisioning refused contaminated default ACLs';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_database AS database_entry
+    CROSS JOIN LATERAL pg_catalog.aclexplode(
+      COALESCE(database_entry.datacl, pg_catalog.acldefault('d', database_entry.datdba))
+    ) AS privilege
+    WHERE database_entry.datname = current_database()
+      AND privilege.grantee = 0
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_namespace AS namespace_entry
+    CROSS JOIN LATERAL pg_catalog.aclexplode(
+      COALESCE(namespace_entry.nspacl, pg_catalog.acldefault('n', namespace_entry.nspowner))
+    ) AS privilege
+    WHERE namespace_entry.nspname <> 'information_schema'
+      AND namespace_entry.nspname !~ '^pg_'
+      AND privilege.grantee = 0
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_class AS class_entry
+    JOIN pg_catalog.pg_namespace AS namespace_entry
+      ON namespace_entry.oid = class_entry.relnamespace
+    CROSS JOIN LATERAL pg_catalog.aclexplode(class_entry.relacl) AS privilege
+    WHERE namespace_entry.nspname <> 'information_schema'
+      AND namespace_entry.nspname !~ '^pg_'
+      AND privilege.grantee = 0
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_attribute AS attribute_entry
+    JOIN pg_catalog.pg_class AS class_entry ON class_entry.oid = attribute_entry.attrelid
+    JOIN pg_catalog.pg_namespace AS namespace_entry
+      ON namespace_entry.oid = class_entry.relnamespace
+    CROSS JOIN LATERAL pg_catalog.aclexplode(attribute_entry.attacl) AS privilege
+    WHERE namespace_entry.nspname <> 'information_schema'
+      AND namespace_entry.nspname !~ '^pg_'
+      AND privilege.grantee = 0
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_proc AS routine_entry
+    JOIN pg_catalog.pg_namespace AS namespace_entry
+      ON namespace_entry.oid = routine_entry.pronamespace
+    CROSS JOIN LATERAL pg_catalog.aclexplode(
+      COALESCE(routine_entry.proacl, pg_catalog.acldefault('f', routine_entry.proowner))
+    ) AS privilege
+    WHERE namespace_entry.nspname <> 'information_schema'
+      AND namespace_entry.nspname !~ '^pg_'
+      AND privilege.grantee = 0
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_type AS type_entry
+    JOIN pg_catalog.pg_namespace AS namespace_entry
+      ON namespace_entry.oid = type_entry.typnamespace
+    LEFT JOIN pg_catalog.pg_class AS composite_entry
+      ON composite_entry.oid = type_entry.typrelid
+    CROSS JOIN LATERAL pg_catalog.aclexplode(
+      COALESCE(type_entry.typacl, pg_catalog.acldefault('T', type_entry.typowner))
+    ) AS privilege
+    WHERE namespace_entry.nspname <> 'information_schema'
+      AND namespace_entry.nspname !~ '^pg_'
+      AND type_entry.typisdefined
+      AND type_entry.typelem = 0
+      AND (type_entry.typrelid = 0 OR composite_entry.relkind = 'c')
+      AND privilege.grantee = 0
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_largeobject_metadata AS large_object
+    CROSS JOIN LATERAL pg_catalog.aclexplode(
+      COALESCE(large_object.lomacl, pg_catalog.acldefault('L', large_object.lomowner))
+    ) AS privilege
+    WHERE privilege.grantee = 0
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_parameter_acl AS parameter_acl
+    CROSS JOIN LATERAL pg_catalog.aclexplode(parameter_acl.paracl) AS privilege
+    WHERE privilege.grantee = 0
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_default_acl AS default_acl
+    CROSS JOIN LATERAL pg_catalog.aclexplode(default_acl.defaclacl) AS privilege
+    WHERE privilege.grantee = 0
+  ) THEN
+    RAISE EXCEPTION 'C2a provisioning refused dangerous PUBLIC or default privileges';
+  END IF;
+END;
+$c2a_preflight$;
+
+SELECT format('CREATE ROLE %I', :'c2a_writer_user')
+WHERE NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = :'c2a_writer_user')
+\gexec
+SELECT format('CREATE ROLE %I', :'c2a_notification_user')
+WHERE NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = :'c2a_notification_user')
+\gexec
+SELECT format('CREATE ROLE %I', :'c2a_expiration_user')
+WHERE NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = :'c2a_expiration_user')
+\gexec
+SELECT format('CREATE ROLE %I', :'c2a_bootstrap_user')
+WHERE NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = :'c2a_bootstrap_user')
+\gexec
+
+SELECT format(
+  'ALTER ROLE %I WITH LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS',
+  :'c2a_writer_user', :'c2a_writer_password'
+) \gexec
+SELECT format(
+  'ALTER ROLE %I WITH LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS',
+  :'c2a_notification_user', :'c2a_notification_password'
+) \gexec
+SELECT format(
+  'ALTER ROLE %I WITH LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS',
+  :'c2a_expiration_user', :'c2a_expiration_password'
+) \gexec
+SELECT format(
+  'ALTER ROLE %I WITH LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS',
+  :'c2a_bootstrap_user', :'c2a_bootstrap_password'
+) \gexec
+
+SELECT format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), role_name)
+FROM (VALUES
+  (:'c2a_writer_user'),
+  (:'c2a_notification_user'),
+  (:'c2a_expiration_user'),
+  (:'c2a_bootstrap_user')
+) AS target(role_name)
+\gexec
+SELECT format('GRANT USAGE ON SCHEMA public TO %I', role_name)
+FROM (VALUES
+  (:'c2a_writer_user'),
+  (:'c2a_notification_user'),
+  (:'c2a_expiration_user'),
+  (:'c2a_bootstrap_user')
+) AS target(role_name)
+\gexec
+
+SELECT format(
+  'GRANT %s (%s) ON TABLE public.%I TO %I',
+  privilege_type,
+  string_agg(format('%I', column_name), ', ' ORDER BY column_name),
+  relation_name,
+  role_name
+)
+FROM expected_c2a_column_acl
+GROUP BY role_name, relation_name, privilege_type
+ORDER BY role_name, relation_name, privilege_type
+\gexec
+
+SELECT format(
+  'GRANT %s ON TABLE public.%I TO %I',
+  privilege_type,
+  relation_name,
+  role_name
+)
+FROM expected_c2a_relation_acl
+ORDER BY role_name, relation_name, privilege_type
+\gexec
+
+DO $c2a_postcondition$
+DECLARE
+  mismatch_count INTEGER;
+BEGIN
+  IF (
+    SELECT count(*) FROM pg_catalog.pg_roles
+    WHERE rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+      AND rolcanlogin
+      AND NOT rolsuper
+      AND NOT rolcreatedb
+      AND NOT rolcreaterole
+      AND NOT rolinherit
+      AND NOT rolreplication
+      AND NOT rolbypassrls
+      AND rolconnlimit = -1
+      AND rolvaliduntil IS NULL
+      AND rolconfig IS NULL
+  ) <> 4 THEN
+    RAISE EXCEPTION 'C2a role postcondition failed';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_attribute AS attribute_entry
+    JOIN pg_catalog.pg_class AS class_entry
+      ON class_entry.oid = attribute_entry.attrelid
+    JOIN pg_catalog.pg_namespace AS namespace_entry
+      ON namespace_entry.oid = class_entry.relnamespace
+    CROSS JOIN LATERAL pg_catalog.aclexplode(attribute_entry.attacl) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE (
+        namespace_entry.nspname <> 'public'
+        OR privilege.grantor <> class_entry.relowner
+      )
+      AND attribute_entry.attnum > 0
+      AND NOT attribute_entry.attisdropped
+      AND target_role.rolname IN (
+        pg_catalog.current_setting('kora.c2a_writer_user'),
+        pg_catalog.current_setting('kora.c2a_notification_user'),
+        pg_catalog.current_setting('kora.c2a_expiration_user'),
+        pg_catalog.current_setting('kora.c2a_bootstrap_user')
+      )
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_class AS class_entry
+    JOIN pg_catalog.pg_namespace AS namespace_entry
+      ON namespace_entry.oid = class_entry.relnamespace
+    CROSS JOIN LATERAL pg_catalog.aclexplode(class_entry.relacl) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE (
+        namespace_entry.nspname <> 'public'
+        OR privilege.grantor <> class_entry.relowner
+      )
+      AND class_entry.relkind IN ('r', 'p', 'v', 'm', 'f', 'S')
+      AND target_role.rolname IN (
+        pg_catalog.current_setting('kora.c2a_writer_user'),
+        pg_catalog.current_setting('kora.c2a_notification_user'),
+        pg_catalog.current_setting('kora.c2a_expiration_user'),
+        pg_catalog.current_setting('kora.c2a_bootstrap_user')
+      )
+  ) THEN
+    RAISE EXCEPTION 'C2a off-public or non-owner-granted column or relation ACL postcondition failed';
+  END IF;
+
+  WITH target_roles AS (
+    SELECT oid, rolname::TEXT AS role_name FROM pg_catalog.pg_roles
+    WHERE rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+  ), actual_column_acl AS (
+    SELECT target_role.role_name,
+           class_entry.relname::TEXT AS relation_name,
+           attribute_entry.attname::TEXT AS column_name,
+           privilege.privilege_type::TEXT
+    FROM pg_catalog.pg_attribute AS attribute_entry
+    JOIN pg_catalog.pg_class AS class_entry
+      ON class_entry.oid = attribute_entry.attrelid
+    JOIN pg_catalog.pg_namespace AS namespace_entry
+      ON namespace_entry.oid = class_entry.relnamespace
+    CROSS JOIN LATERAL pg_catalog.aclexplode(attribute_entry.attacl) AS privilege
+    JOIN target_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE namespace_entry.nspname = 'public'
+      AND attribute_entry.attnum > 0
+      AND NOT attribute_entry.attisdropped
+      AND NOT privilege.is_grantable
+  ), symmetric_difference AS (
+    (SELECT * FROM actual_column_acl
+     EXCEPT ALL
+     SELECT * FROM expected_c2a_column_acl)
+    UNION ALL
+    (SELECT * FROM expected_c2a_column_acl
+     EXCEPT ALL
+     SELECT * FROM actual_column_acl)
+  )
+  SELECT count(*) INTO mismatch_count FROM symmetric_difference;
+  IF mismatch_count <> 0 THEN
+    RAISE EXCEPTION 'C2a column ACL postcondition failed';
+  END IF;
+
+  WITH target_roles AS (
+    SELECT oid, rolname::TEXT AS role_name FROM pg_catalog.pg_roles
+    WHERE rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+  ), actual_relation_acl AS (
+    SELECT target_role.role_name,
+           class_entry.relname::TEXT AS relation_name,
+           privilege.privilege_type::TEXT
+    FROM pg_catalog.pg_class AS class_entry
+    JOIN pg_catalog.pg_namespace AS namespace_entry
+      ON namespace_entry.oid = class_entry.relnamespace
+    CROSS JOIN LATERAL pg_catalog.aclexplode(class_entry.relacl) AS privilege
+    JOIN target_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE namespace_entry.nspname = 'public'
+      AND class_entry.relkind IN ('r', 'p', 'v', 'm', 'f', 'S')
+      AND NOT privilege.is_grantable
+  ), symmetric_difference AS (
+    (SELECT * FROM actual_relation_acl
+     EXCEPT ALL
+     SELECT * FROM expected_c2a_relation_acl)
+    UNION ALL
+    (SELECT * FROM expected_c2a_relation_acl
+     EXCEPT ALL
+     SELECT * FROM actual_relation_acl)
+  )
+  SELECT count(*) INTO mismatch_count FROM symmetric_difference;
+  IF mismatch_count <> 0 THEN
+    RAISE EXCEPTION 'C2a relation ACL postcondition failed';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_auth_members AS membership
+    JOIN pg_catalog.pg_roles AS member_role ON member_role.oid = membership.member
+    JOIN pg_catalog.pg_roles AS granted_role ON granted_role.oid = membership.roleid
+    WHERE member_role.rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+       OR granted_role.rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+  ) THEN
+    RAISE EXCEPTION 'C2a membership postcondition failed';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_shdepend AS dependency
+    JOIN pg_catalog.pg_roles AS target_role
+      ON target_role.oid = dependency.refobjid
+    WHERE dependency.refclassid = 'pg_catalog.pg_authid'::regclass
+      AND dependency.deptype = 'o'
+      AND target_role.rolname IN (
+        pg_catalog.current_setting('kora.c2a_writer_user'),
+        pg_catalog.current_setting('kora.c2a_notification_user'),
+        pg_catalog.current_setting('kora.c2a_expiration_user'),
+        pg_catalog.current_setting('kora.c2a_bootstrap_user')
+      )
+  ) THEN
+    RAISE EXCEPTION 'C2a ownership postcondition failed';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_db_role_setting AS role_setting
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = role_setting.setrole
+    WHERE target_role.rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_proc AS routine_entry
+    CROSS JOIN LATERAL pg_catalog.aclexplode(routine_entry.proacl) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE target_role.rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_type AS type_entry
+    CROSS JOIN LATERAL pg_catalog.aclexplode(type_entry.typacl) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE target_role.rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_largeobject_metadata AS large_object
+    CROSS JOIN LATERAL pg_catalog.aclexplode(large_object.lomacl) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE target_role.rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_parameter_acl AS parameter_acl
+    CROSS JOIN LATERAL pg_catalog.aclexplode(parameter_acl.paracl) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE target_role.rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+  ) THEN
+    RAISE EXCEPTION 'C2a routine, type, large-object, parameter or role-setting postcondition failed';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_attribute AS attribute_entry
+    CROSS JOIN LATERAL pg_catalog.aclexplode(attribute_entry.attacl) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE target_role.rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+      AND privilege.is_grantable
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_class AS class_entry
+    CROSS JOIN LATERAL pg_catalog.aclexplode(class_entry.relacl) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE target_role.rolname IN (
+      pg_catalog.current_setting('kora.c2a_writer_user'),
+      pg_catalog.current_setting('kora.c2a_notification_user'),
+      pg_catalog.current_setting('kora.c2a_expiration_user'),
+      pg_catalog.current_setting('kora.c2a_bootstrap_user')
+    )
+      AND privilege.is_grantable
+  ) THEN
+    RAISE EXCEPTION 'C2a grant-option postcondition failed';
+  END IF;
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_database AS database_entry
+    CROSS JOIN LATERAL pg_catalog.aclexplode(
+      COALESCE(database_entry.datacl, pg_catalog.acldefault('d', database_entry.datdba))
+    ) AS privilege
+    WHERE database_entry.datname = current_database()
+      AND privilege.grantee = 0
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_namespace AS namespace_entry
+    CROSS JOIN LATERAL pg_catalog.aclexplode(
+      COALESCE(namespace_entry.nspacl, pg_catalog.acldefault('n', namespace_entry.nspowner))
+    ) AS privilege
+    WHERE namespace_entry.nspname <> 'information_schema'
+      AND namespace_entry.nspname !~ '^pg_'
+      AND privilege.grantee = 0
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_class AS class_entry
+    JOIN pg_catalog.pg_namespace AS namespace_entry
+      ON namespace_entry.oid = class_entry.relnamespace
+    CROSS JOIN LATERAL pg_catalog.aclexplode(class_entry.relacl) AS privilege
+    WHERE namespace_entry.nspname <> 'information_schema'
+      AND namespace_entry.nspname !~ '^pg_'
+      AND privilege.grantee = 0
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_attribute AS attribute_entry
+    JOIN pg_catalog.pg_class AS class_entry ON class_entry.oid = attribute_entry.attrelid
+    JOIN pg_catalog.pg_namespace AS namespace_entry
+      ON namespace_entry.oid = class_entry.relnamespace
+    CROSS JOIN LATERAL pg_catalog.aclexplode(attribute_entry.attacl) AS privilege
+    WHERE namespace_entry.nspname <> 'information_schema'
+      AND namespace_entry.nspname !~ '^pg_'
+      AND privilege.grantee = 0
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_proc AS routine_entry
+    JOIN pg_catalog.pg_namespace AS namespace_entry
+      ON namespace_entry.oid = routine_entry.pronamespace
+    CROSS JOIN LATERAL pg_catalog.aclexplode(
+      COALESCE(routine_entry.proacl, pg_catalog.acldefault('f', routine_entry.proowner))
+    ) AS privilege
+    WHERE namespace_entry.nspname <> 'information_schema'
+      AND namespace_entry.nspname !~ '^pg_'
+      AND privilege.grantee = 0
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_type AS type_entry
+    JOIN pg_catalog.pg_namespace AS namespace_entry
+      ON namespace_entry.oid = type_entry.typnamespace
+    LEFT JOIN pg_catalog.pg_class AS composite_entry
+      ON composite_entry.oid = type_entry.typrelid
+    CROSS JOIN LATERAL pg_catalog.aclexplode(
+      COALESCE(type_entry.typacl, pg_catalog.acldefault('T', type_entry.typowner))
+    ) AS privilege
+    WHERE namespace_entry.nspname <> 'information_schema'
+      AND namespace_entry.nspname !~ '^pg_'
+      AND type_entry.typisdefined
+      AND type_entry.typelem = 0
+      AND (type_entry.typrelid = 0 OR composite_entry.relkind = 'c')
+      AND privilege.grantee = 0
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_largeobject_metadata AS large_object
+    CROSS JOIN LATERAL pg_catalog.aclexplode(
+      COALESCE(large_object.lomacl, pg_catalog.acldefault('L', large_object.lomowner))
+    ) AS privilege
+    WHERE privilege.grantee = 0
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_parameter_acl AS parameter_acl
+    CROSS JOIN LATERAL pg_catalog.aclexplode(parameter_acl.paracl) AS privilege
+    WHERE privilege.grantee = 0
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_default_acl AS default_acl
+    CROSS JOIN LATERAL pg_catalog.aclexplode(default_acl.defaclacl) AS privilege
+    WHERE privilege.grantee = 0
+  ) THEN
+    RAISE EXCEPTION 'C2a dangerous PUBLIC or default privilege postcondition failed';
+  END IF;
+END;
+$c2a_postcondition$;
+
+COMMIT;
+SQL
+  unset PGPASSWORD
+fi
+
+if [ "$c2a_enabled" = 'true' ]; then
+  echo 'PostgreSQL reader, C1 writer and four C2a boundaries provisioned and verified.'
+else
+  echo 'PostgreSQL reader and admin writer boundaries provisioned and verified; C2a remains disabled.'
+fi

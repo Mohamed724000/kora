@@ -4,13 +4,15 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { deepmerge } from "deepmerge-ts";
 
@@ -23,6 +25,7 @@ import {
   scanTrackedFiles,
   snapshotRepositoryFiles,
   validateAdminAuthSupplyChain,
+  validateAdminC2aExecutionSurfaces,
   validateBraceExpansionOverride,
   validateDependabotPolicy,
   validateManifestLockConsistency,
@@ -43,6 +46,19 @@ import {
   verifyRepositoryFileSnapshot,
 } from "./scan-repository.mjs";
 
+const repositoryRoot = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+);
+const adminC2aExecutionSurfacePaths = [
+  "apps/api/src/admin-security/admin-bootstrap.main.ts",
+  "apps/api/prisma/validate-admin-security-c2a-business.mjs",
+  "apps/api/prisma/run-admin-security-c2a-business-validation.ps1",
+  "apps/api/src/admin-security/admin-recovery-expiration.main.ts",
+  "apps/api/src/admin-security/admin-notification.main.ts",
+];
+
 const requiredRepositoryFiles = [
   ".github/dependabot.yml",
   "apps/admin/package.json",
@@ -56,6 +72,15 @@ const requiredRepositoryFiles = [
   "packages/contracts/package.json",
   "packages/ui/package.json",
 ];
+
+function currentAdminC2aExecutionSurfaces() {
+  return Object.fromEntries(
+    adminC2aExecutionSurfacePaths.map((path) => [
+      path,
+      readFileSync(resolve(repositoryRoot, path), "utf8"),
+    ]),
+  );
+}
 
 function withTemporaryDirectory(prefix, operation) {
   const directory = mkdtempSync(join(tmpdir(), prefix));
@@ -143,6 +168,76 @@ function frozenGitOperations(snapshot) {
     statSync,
   };
 }
+
+test("C2a runners and local validators retain their qualified security boundaries", () => {
+  assert.deepEqual(
+    validateAdminC2aExecutionSurfaces(currentAdminC2aExecutionSurfaces()),
+    [],
+  );
+});
+
+test("C2a execution-surface validation rejects adversarial boundary removal and substitution", () => {
+  const baseline = currentAdminC2aExecutionSurfaces();
+  const cases = [
+    {
+      expected: /notification runner must retain config\.profile/u,
+      path: "apps/api/src/admin-security/admin-notification.main.ts",
+      replacement: "config.profile !== 'HTTP'",
+      target: "config.profile !== 'NOTIFICATION'",
+    },
+    {
+      expected: /expiration runner must retain now\(\) - runnerStartedAt >=/u,
+      path: "apps/api/src/admin-security/admin-recovery-expiration.main.ts",
+      replacement: "now() - runnerStartedAt >",
+      target: "now() - runnerStartedAt >=",
+    },
+    {
+      expected: /bootstrap runner must retain process\.argv\.length !== 2/u,
+      path: "apps/api/src/admin-security/admin-bootstrap.main.ts",
+      replacement: "process.argv.length < 2",
+      target: "process.argv.length !== 2",
+    },
+    {
+      expected: /validator must not enable shell execution/u,
+      path: "apps/api/prisma/validate-admin-security-c2a-business.mjs",
+      replacement: "shell: true",
+      target: "shell: false",
+    },
+    {
+      expected: /business validator must retain DROP DATABASE/u,
+      path: "apps/api/prisma/validate-admin-security-c2a-business.mjs",
+      replacement: "DROP DATABASE ${createdDatabase}",
+      target: "DROP DATABASE ${quoteIdentifier(createdDatabase)}",
+    },
+    {
+      expected: /business wrapper must retain sha256:9a8afc/u,
+      path: "apps/api/prisma/run-admin-security-c2a-business-validation.ps1",
+      replacement: "sha256:" + "0".repeat(64),
+      target:
+        "sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15",
+    },
+  ];
+  for (const adversarial of cases) {
+    const sources = { ...baseline };
+    sources[adversarial.path] = sources[adversarial.path].replace(
+      adversarial.target,
+      adversarial.replacement,
+    );
+    assert.match(
+      validateAdminC2aExecutionSurfaces(sources).join("\n"),
+      adversarial.expected,
+    );
+  }
+
+  const globalCleanup = { ...baseline };
+  const wrapperPath =
+    "apps/api/prisma/run-admin-security-c2a-business-validation.ps1";
+  globalCleanup[wrapperPath] += "\ndocker system prune --force\n";
+  assert.match(
+    validateAdminC2aExecutionSurfaces(globalCleanup).join("\n"),
+    /forbidden Docker control or global cleanup/u,
+  );
+});
 
 test("Git path parsing preserves NUL-delimited names exactly", () => {
   assert.deepEqual(
@@ -1719,7 +1814,7 @@ test("rejects minimatch override and parent graph drift", () => {
 const validR2Manifests = {
   "": {
     overrides: {
-      "@next/eslint-plugin-next@16.3.8": {
+      "@next/eslint-plugin-next@16.4.1": {
         "fast-glob": "npm:tinyglobby@0.2.17",
       },
       "@nestjs/platform-express@11.1.28": { multer: "2.4.0" },
@@ -1732,30 +1827,30 @@ const validR2Manifests = {
     },
   },
   "apps/admin": {
-    dependencies: { next: "16.3.8" },
+    dependencies: { next: "16.4.1" },
     devDependencies: {
-      "eslint-config-next": "16.3.8",
-      vitest: "4.1.11",
+      "eslint-config-next": "16.4.1",
+      vitest: "4.1.12",
     },
   },
   "apps/api": {
     dependencies: { "@nestjs/platform-express": "11.1.28" },
     devDependencies: {
-      "@vitest/coverage-v8": "4.1.11",
-      vitest: "4.1.11",
+      "@vitest/coverage-v8": "4.1.12",
+      vitest: "4.1.12",
     },
   },
   "apps/web": {
-    dependencies: { next: "16.3.8" },
+    dependencies: { next: "16.4.1" },
     devDependencies: {
-      "eslint-config-next": "16.3.8",
-      vitest: "4.1.11",
+      "eslint-config-next": "16.4.1",
+      vitest: "4.1.12",
     },
   },
   "packages/ui": {
     devDependencies: {
-      "eslint-config-next": "16.3.8",
-      vitest: "4.1.11",
+      "eslint-config-next": "16.4.1",
+      vitest: "4.1.12",
     },
   },
 };
@@ -1770,23 +1865,36 @@ const validR2Lock = {
       dependencies: { multer: "2.2.0" },
       version: "11.1.28",
     },
-    "node_modules/@next/env": { version: "16.3.8" },
+    "node_modules/@next/env": { version: "16.4.1" },
     "node_modules/@next/eslint-plugin-next": {
       dependencies: { "fast-glob": "3.3.1" },
-      version: "16.3.8",
+      version: "16.4.1",
     },
-    "node_modules/@next/swc-darwin-arm64": { version: "16.3.8" },
-    "node_modules/@next/swc-darwin-x64": { version: "16.3.8" },
-    "node_modules/@next/swc-linux-arm64-gnu": { version: "16.3.8" },
-    "node_modules/@next/swc-linux-arm64-musl": { version: "16.3.8" },
-    "node_modules/@next/swc-linux-x64-gnu": { version: "16.3.8" },
-    "node_modules/@next/swc-linux-x64-musl": { version: "16.3.8" },
-    "node_modules/@next/swc-win32-arm64-msvc": { version: "16.3.8" },
-    "node_modules/@next/swc-win32-x64-msvc": { version: "16.3.8" },
-    "node_modules/@vitest/mocker": { version: "4.1.11" },
+    "node_modules/@next/swc-darwin-arm64": { version: "16.4.1" },
+    "node_modules/@next/swc-darwin-x64": { version: "16.4.1" },
+    "node_modules/@next/swc-linux-arm64-gnu": { version: "16.4.1" },
+    "node_modules/@next/swc-linux-arm64-musl": { version: "16.4.1" },
+    "node_modules/@next/swc-linux-x64-gnu": { version: "16.4.1" },
+    "node_modules/@next/swc-linux-x64-musl": { version: "16.4.1" },
+    "node_modules/@next/swc-win32-arm64-msvc": { version: "16.4.1" },
+    "node_modules/@next/swc-win32-x64-msvc": { version: "16.4.1" },
+    "node_modules/@vitest/mocker": {
+      dependencies: { "@vitest/spy": "4.1.12" },
+      integrity:
+        "sha512-fKShNpKZzupWZuY0z7egydvL0sqW4INEZBEExMBMAa6izlENEVHwoXgdaTCaBZ5fwlr4xf2o1wXC83n9RpO+NA==",
+      license: "MIT",
+      resolved: "https://registry.npmjs.org/@vitest/mocker/-/mocker-4.1.12.tgz",
+      version: "4.1.12",
+    },
     "node_modules/@vitest/coverage-v8": {
-      peerDependencies: { vitest: "4.1.11" },
-      version: "4.1.11",
+      dependencies: { "@vitest/utils": "4.1.12" },
+      integrity:
+        "sha512-6S7/iVknKglLAxMFxQGNppBI0iqJS2NgM6FBxavitj7KaDq/vywOWGf6dGu7F2L1Qy0G6S3uTp7aGshHrzK8JA==",
+      license: "MIT",
+      peerDependencies: { vitest: "4.1.12" },
+      resolved:
+        "https://registry.npmjs.org/@vitest/coverage-v8/-/coverage-v8-4.1.12.tgz",
+      version: "4.1.12",
     },
     "node_modules/body-parser": {
       dependencies: { qs: "^6.15.2" },
@@ -1801,10 +1909,10 @@ const validR2Lock = {
       version: "3.2.1",
     },
     "node_modules/eslint-config-next": {
-      dependencies: { "@next/eslint-plugin-next": "16.3.8" },
-      version: "16.3.8",
+      dependencies: { "@next/eslint-plugin-next": "16.4.1" },
+      version: "16.4.1",
     },
-    "node_modules/@next/eslint-plugin-next/node_modules/fast-glob": {
+    "node_modules/fast-glob": {
       dependencies: { fdir: "^6.5.0", picomatch: "^4.0.4" },
       engines: { node: ">=12.0.0" },
       integrity:
@@ -1821,19 +1929,19 @@ const validR2Lock = {
     },
     "node_modules/multer": { version: "2.4.0" },
     "node_modules/next": {
-      dependencies: { "@next/env": "16.3.8" },
+      dependencies: { "@next/env": "16.4.1" },
       optionalDependencies: {
-        "@next/swc-darwin-arm64": "16.3.8",
-        "@next/swc-darwin-x64": "16.3.8",
-        "@next/swc-linux-arm64-gnu": "16.3.8",
-        "@next/swc-linux-arm64-musl": "16.3.8",
-        "@next/swc-linux-x64-gnu": "16.3.8",
-        "@next/swc-linux-x64-musl": "16.3.8",
-        "@next/swc-win32-arm64-msvc": "16.3.8",
-        "@next/swc-win32-x64-msvc": "16.3.8",
-        sharp: "^0.35.4",
+        "@next/swc-darwin-arm64": "16.4.1",
+        "@next/swc-darwin-x64": "16.4.1",
+        "@next/swc-linux-arm64-gnu": "16.4.1",
+        "@next/swc-linux-arm64-musl": "16.4.1",
+        "@next/swc-linux-x64-gnu": "16.4.1",
+        "@next/swc-linux-x64-musl": "16.4.1",
+        "@next/swc-win32-arm64-msvc": "16.4.1",
+        "@next/swc-win32-x64-msvc": "16.4.1",
+        sharp: "^0.35.5",
       },
-      version: "16.3.8",
+      version: "16.4.1",
     },
     "node_modules/express": {
       dependencies: { "proxy-addr": "^2.0.7", qs: "^6.14.0" },
@@ -1881,9 +1989,13 @@ const validR2Lock = {
       version: "10.3.0",
     },
     "node_modules/vitest": {
-      dependencies: { "@vitest/mocker": "4.1.11" },
-      peerDependencies: { "@vitest/coverage-v8": "4.1.11" },
-      version: "4.1.11",
+      dependencies: { "@vitest/mocker": "4.1.12" },
+      integrity:
+        "sha512-5eWdz2yb3ajxWF3C8C4TjkXl7FGm3n2E/VlazALrQHzK7nYMSGFnCZto0bbPNl77AwkOZVLk0YnBAejUu0NiWA==",
+      license: "MIT",
+      peerDependencies: { "@vitest/coverage-v8": "4.1.12" },
+      resolved: "https://registry.npmjs.org/vitest/-/vitest-4.1.12.tgz",
+      version: "4.1.12",
     },
   },
 };
@@ -1905,7 +2017,7 @@ validR2Lock.packages["node_modules/@img/sharp-wasm32"] = {
   version: "0.35.5",
 };
 
-test("accepts the exact R9 supply-chain graph", () => {
+test("accepts the exact R11 Next.js graph while preserving R9 guards", () => {
   assert.deepEqual(validateNextToolchain(validR2Manifests, validR2Lock), []);
   assert.deepEqual(
     validateNextLintGlobOverride(validR2Manifests, validR2Lock),
@@ -1925,6 +2037,50 @@ test("accepts the exact R9 supply-chain graph", () => {
   assert.deepEqual(
     validateNestMulterOverride(validR2Manifests, validR2Lock),
     [],
+  );
+});
+
+test("rejects the affected Next.js 16.3.8 direct pin", () => {
+  const manifests = structuredClone(validR2Manifests);
+  manifests["apps/web"].dependencies.next = "16.3.8";
+
+  assert.ok(
+    validateNextToolchain(manifests, validR2Lock).includes(
+      "apps/web must pin next to exact 16.4.1 in dependencies",
+    ),
+  );
+});
+
+test("rejects a Next.js 16.4.1 support graph misaligned to 16.3.8", () => {
+  const lockfile = structuredClone(validR2Lock);
+  lockfile.packages["node_modules/next"].dependencies["@next/env"] = "16.3.8";
+  lockfile.packages["node_modules/@next/env"].version = "16.3.8";
+
+  const errors = validateNextToolchain(validR2Manifests, lockfile);
+  assert.ok(
+    errors.includes(
+      "next@16.4.1 lock metadata must depend on @next/env 16.4.1",
+    ),
+  );
+  assert.ok(
+    errors.some((error) =>
+      error.startsWith(
+        "@next/env must have one physical installation at node_modules/@next/env@16.4.1",
+      ),
+    ),
+  );
+});
+
+test("rejects an affected nested Next.js 16.3.8 copy", () => {
+  const lockfile = structuredClone(validR2Lock);
+  lockfile.packages["apps/web/node_modules/next"] = { version: "16.3.8" };
+
+  assert.ok(
+    validateNextToolchain(validR2Manifests, lockfile).some((error) =>
+      error.startsWith(
+        "next must have one physical installation at node_modules/next@16.4.1",
+      ),
+    ),
   );
 });
 
@@ -2041,13 +2197,13 @@ test("rejects every Next lint glob override scope and alias identity drift", () 
       manifests[""].overrides["fast-glob"] = "npm:tinyglobby@0.2.17";
     },
     (manifests) => {
-      delete manifests[""].overrides["@next/eslint-plugin-next@16.3.8"];
-      manifests[""].overrides["@next/eslint-plugin-next@16.3.7"] = {
+      delete manifests[""].overrides["@next/eslint-plugin-next@16.4.1"];
+      manifests[""].overrides["@next/eslint-plugin-next@16.4.0"] = {
         "fast-glob": "npm:tinyglobby@0.2.17",
       };
     },
     (manifests) => {
-      manifests[""].overrides["@next/eslint-plugin-next@16.3.8"]["fast-glob"] =
+      manifests[""].overrides["@next/eslint-plugin-next@16.4.1"]["fast-glob"] =
         "npm:tinyglobby@0.2.16";
     },
     (manifests) => {
@@ -2064,19 +2220,13 @@ test("rejects every Next lint glob override scope and alias identity drift", () 
 
   for (const mutate of [
     (lockfile) => {
-      lockfile.packages[
-        "node_modules/@next/eslint-plugin-next/node_modules/fast-glob"
-      ].name = "fast-glob";
+      lockfile.packages["node_modules/fast-glob"].name = "fast-glob";
     },
     (lockfile) => {
-      lockfile.packages[
-        "node_modules/@next/eslint-plugin-next/node_modules/fast-glob"
-      ].version = "0.2.16";
+      lockfile.packages["node_modules/fast-glob"].version = "0.2.16";
     },
     (lockfile) => {
-      lockfile.packages[
-        "node_modules/@next/eslint-plugin-next/node_modules/fast-glob"
-      ].integrity = "unexpected";
+      lockfile.packages["node_modules/fast-glob"].integrity = "unexpected";
     },
     (lockfile) => {
       lockfile.packages["node_modules/@next/eslint-plugin-next"].dependencies[
@@ -2100,24 +2250,24 @@ test("rejects every Next lint glob override scope and alias identity drift", () 
 
 test("rejects Next and ESLint Config Next pin, placement and override drift", () => {
   const manifests = structuredClone(validR2Manifests);
-  manifests["apps/web"].dependencies.next = "16.3.4";
-  manifests["apps/admin"].devDependencies["eslint-config-next"] = "16.3.4";
-  manifests["apps/api"].devDependencies = { next: "16.3.4" };
-  manifests[""].overrides.next = "16.3.4";
+  manifests["apps/web"].dependencies.next = "16.3.8";
+  manifests["apps/admin"].devDependencies["eslint-config-next"] = "16.3.8";
+  manifests["apps/api"].devDependencies = { next: "16.3.8" };
+  manifests[""].overrides.next = "16.3.8";
   const lockfile = structuredClone(validR2Lock);
   lockfile.packages["apps/web/node_modules/next"] = { version: "16.3.8" };
   lockfile.packages["node_modules/example"] = {
-    dependencies: { next: "16.3.4" },
-    devDependencies: { "eslint-config-next": "16.3.4" },
+    dependencies: { next: "16.3.8" },
+    devDependencies: { "eslint-config-next": "16.3.8" },
   };
 
   const errors = validateNextToolchain(manifests, lockfile);
   assert.ok(
-    errors.includes("apps/web must pin next to exact 16.3.8 in dependencies"),
+    errors.includes("apps/web must pin next to exact 16.4.1 in dependencies"),
   );
   assert.ok(
     errors.includes(
-      "apps/admin must pin eslint-config-next to exact 16.3.8 in devDependencies",
+      "apps/admin must pin eslint-config-next to exact 16.4.1 in devDependencies",
     ),
   );
   assert.ok(
@@ -2137,7 +2287,7 @@ test("rejects Next and ESLint Config Next pin, placement and override drift", ()
   assert.ok(
     errors.some((error) =>
       error.startsWith(
-        "next must have one physical installation at node_modules/next@16.3.8",
+        "next must have one physical installation at node_modules/next@16.4.1",
       ),
     ),
   );
@@ -2145,52 +2295,52 @@ test("rejects Next and ESLint Config Next pin, placement and override drift", ()
 
 test("rejects Next environment, ESLint plugin and SWC graph drift", () => {
   const lockfile = structuredClone(validR2Lock);
-  lockfile.packages["node_modules/next"].dependencies["@next/env"] = "16.3.4";
-  lockfile.packages["node_modules/@next/env"].version = "16.3.4";
+  lockfile.packages["node_modules/next"].dependencies["@next/env"] = "16.3.8";
+  lockfile.packages["node_modules/@next/env"].version = "16.3.8";
   lockfile.packages["node_modules/eslint-config-next"].dependencies[
     "@next/eslint-plugin-next"
-  ] = "16.3.4";
-  lockfile.packages["node_modules/@next/eslint-plugin-next"].version = "16.3.4";
+  ] = "16.3.8";
+  lockfile.packages["node_modules/@next/eslint-plugin-next"].version = "16.3.8";
   lockfile.packages["node_modules/next"].optionalDependencies[
     "@next/swc-win32-x64-msvc"
-  ] = "16.3.4";
-  lockfile.packages["node_modules/@next/swc-win32-x64-msvc"].version = "16.3.4";
+  ] = "16.3.8";
+  lockfile.packages["node_modules/@next/swc-win32-x64-msvc"].version = "16.3.8";
 
   const errors = validateNextToolchain(validR2Manifests, lockfile);
   assert.ok(
     errors.some((error) =>
       error.startsWith(
-        "@next/env must have one physical installation at node_modules/@next/env@16.3.8",
+        "@next/env must have one physical installation at node_modules/@next/env@16.4.1",
       ),
     ),
   );
   assert.ok(
     errors.some((error) =>
       error.startsWith(
-        "@next/eslint-plugin-next must have one physical installation at node_modules/@next/eslint-plugin-next@16.3.8",
+        "@next/eslint-plugin-next must have one physical installation at node_modules/@next/eslint-plugin-next@16.4.1",
       ),
     ),
   );
   assert.ok(
     errors.some((error) =>
       error.startsWith(
-        "@next/swc-win32-x64-msvc must have one physical installation at node_modules/@next/swc-win32-x64-msvc@16.3.8",
+        "@next/swc-win32-x64-msvc must have one physical installation at node_modules/@next/swc-win32-x64-msvc@16.4.1",
       ),
     ),
   );
   assert.ok(
     errors.includes(
-      "next@16.3.8 lock metadata must depend on @next/env 16.3.8",
+      "next@16.4.1 lock metadata must depend on @next/env 16.4.1",
     ),
   );
   assert.ok(
     errors.includes(
-      "eslint-config-next@16.3.8 lock metadata must depend on @next/eslint-plugin-next 16.3.8",
+      "eslint-config-next@16.4.1 lock metadata must depend on @next/eslint-plugin-next 16.4.1",
     ),
   );
   assert.ok(
     errors.includes(
-      "next@16.3.8 lock metadata must retain optional @next/swc-win32-x64-msvc 16.3.8",
+      "next@16.4.1 lock metadata must retain optional @next/swc-win32-x64-msvc 16.4.1",
     ),
   );
 });
@@ -2199,9 +2349,9 @@ test("rejects duplicate and unapproved Next support package parents", () => {
   const lockfile = structuredClone(validR2Lock);
   lockfile.packages["node_modules/example"] = {
     dependencies: {
-      "@next/env": "16.3.8",
-      "@next/eslint-plugin-next": "16.3.8",
-      "@next/swc-linux-x64-gnu": "16.3.8",
+      "@next/env": "16.4.1",
+      "@next/eslint-plugin-next": "16.4.1",
+      "@next/swc-linux-x64-gnu": "16.4.1",
     },
     version: "1.0.0",
   };
@@ -2211,7 +2361,7 @@ test("rejects duplicate and unapproved Next support package parents", () => {
     "@next/swc-linux-x64-gnu",
   ]) {
     lockfile.packages[`node_modules/example/node_modules/${packageName}`] = {
-      version: "16.3.8",
+      version: "16.4.1",
     };
   }
 
@@ -2224,7 +2374,7 @@ test("rejects duplicate and unapproved Next support package parents", () => {
     assert.ok(
       errors.some((error) =>
         error.startsWith(
-          `${packageName} must have one physical installation at node_modules/${packageName}@16.3.8`,
+          `${packageName} must have one physical installation at node_modules/${packageName}@16.4.1`,
         ),
       ),
       packageName,
@@ -2240,11 +2390,11 @@ test("rejects duplicate and unapproved Next support package parents", () => {
 
 test("rejects every Vitest or @vitest/mocker bypass", () => {
   const manifests = structuredClone(validR2Manifests);
-  manifests["apps/admin"].devDependencies.vitest = "4.1.10";
+  manifests["apps/admin"].devDependencies.vitest = "4.1.11";
   manifests[""].overrides["@vitest/mocker"] = "4.1.11";
   const lockfile = structuredClone(validR2Lock);
   lockfile.packages["node_modules/vitest"].dependencies["@vitest/mocker"] =
-    "4.1.10";
+    "4.1.11";
   lockfile.packages["node_modules/example"] = {
     optionalDependencies: {
       "@vitest/mocker": "4.1.11",
@@ -2252,13 +2402,13 @@ test("rejects every Vitest or @vitest/mocker bypass", () => {
     },
   };
   lockfile.packages["node_modules/example/node_modules/@vitest/mocker"] = {
-    version: "4.1.10",
+    version: "4.1.11",
   };
 
   const errors = validateVitestSupplyChain(manifests, lockfile);
   assert.ok(
     errors.includes(
-      "apps/admin must pin vitest to exact 4.1.11 in devDependencies",
+      "apps/admin must pin vitest to exact 4.1.12 in devDependencies",
     ),
   );
   assert.ok(
@@ -2267,7 +2417,7 @@ test("rejects every Vitest or @vitest/mocker bypass", () => {
     ),
   );
   assert.ok(
-    errors.includes("vitest@4.1.11 must depend on @vitest/mocker 4.1.11"),
+    errors.includes("vitest@4.1.12 must depend on @vitest/mocker 4.1.12"),
   );
   assert.ok(
     errors.includes(
@@ -2282,7 +2432,7 @@ test("rejects every Vitest or @vitest/mocker bypass", () => {
   assert.ok(
     errors.some((error) =>
       error.startsWith(
-        "@vitest/mocker must have one physical installation at node_modules/@vitest/mocker@4.1.11",
+        "@vitest/mocker must have one physical installation at node_modules/@vitest/mocker@4.1.12",
       ),
     ),
   );
@@ -2411,7 +2561,7 @@ test("rejects proxy-addr and source-map-js remediation drift", () => {
 test("rejects Sharp override, parent and physical installation drift", () => {
   const manifests = structuredClone(validR2Manifests);
   manifests[""].overrides.sharp = "^0.35.5";
-  manifests[""].overrides["next@16.3.8"] = { sharp: "0.35.5" };
+  manifests[""].overrides["next@16.4.1"] = { sharp: "0.35.5" };
   const lockfile = structuredClone(validR2Lock);
   lockfile.packages["node_modules/next"].optionalDependencies.sharp = "^0.35.3";
   lockfile.packages["node_modules/example/node_modules/sharp"] = {
@@ -2423,12 +2573,12 @@ test("rejects Sharp override, parent and physical installation drift", () => {
   );
   assert.ok(
     errors.includes(
-      "sharp security override is forbidden at path: next@16.3.8 > sharp",
+      "sharp security override is forbidden at path: next@16.4.1 > sharp",
     ),
   );
   assert.ok(
     errors.includes(
-      "next@16.3.8 lock metadata must retain its audited sharp ^0.35.4 optional dependency",
+      "next@16.4.1 lock metadata must retain its audited sharp ^0.35.5 optional dependency",
     ),
   );
   assert.ok(

@@ -94,6 +94,9 @@ realRedis('Admin C1 real Redis durability', { timeout: 30_000 }, () => {
       keyProvider,
       redis: {
         host: '127.0.0.1',
+        ...(process.env.S1203C1_REDIS_PASSWORD === undefined
+          ? {}
+          : { password: process.env.S1203C1_REDIS_PASSWORD }),
         port,
         tls: false,
         waitAofTimeoutMs: 5_000,
@@ -1258,6 +1261,9 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', { timeout: 300_000 }, (
       ADMIN_DATABASE_USER: process.env.S1203C1_E2E_WRITER_USER,
       ADMIN_ORIGIN: origin,
       ADMIN_REDIS_HOST: '127.0.0.1',
+      ...(process.env.S1203C1_E2E_REDIS_PASSWORD === undefined
+        ? {}
+        : { ADMIN_REDIS_PASSWORD: process.env.S1203C1_E2E_REDIS_PASSWORD }),
       ADMIN_REDIS_PORT: process.env.S1203C1_E2E_REDIS_PORT,
       ADMIN_REDIS_TLS: 'false',
       ADMIN_REDIS_WAIT_AOF_TIMEOUT_MS: '5000',
@@ -1273,6 +1279,9 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', { timeout: 300_000 }, (
       NODE_ENV: 'test',
       READINESS_TIMEOUT_MS: '5000',
       REDIS_HOST: '127.0.0.1',
+      ...(process.env.S1203C1_E2E_REDIS_PASSWORD === undefined
+        ? {}
+        : { REDIS_PASSWORD: process.env.S1203C1_E2E_REDIS_PASSWORD }),
       REDIS_PORT: process.env.S1203C1_E2E_REDIS_PORT,
       REDIS_TLS: 'false',
     };
@@ -1289,6 +1298,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', { timeout: 300_000 }, (
       host: '127.0.0.1',
       lazyConnect: true,
       maxRetriesPerRequest: 0,
+      password: process.env.S1203C1_E2E_REDIS_PASSWORD,
       port: Number(process.env.S1203C1_E2E_REDIS_PORT),
       retryStrategy: () => null,
     });
@@ -5403,6 +5413,7 @@ realHttp('Admin C1 real HTTP/PostgreSQL/Redis journeys', { timeout: 300_000 }, (
       host: '127.0.0.1',
       lazyConnect: true,
       maxRetriesPerRequest: 0,
+      password: process.env.S1203C1_E2E_REDIS_PASSWORD,
       port: Number(process.env.S1203C1_E2E_REDIS_PORT),
       retryStrategy: () => null,
     });

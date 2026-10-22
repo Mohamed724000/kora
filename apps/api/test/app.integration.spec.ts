@@ -243,4 +243,14 @@ describe('API foundation', () => {
     await request(application.getHttpServer()).get('/api/v1/health/live').expect(404);
     await request(application.getHttpServer()).get('/api/v1/health/ready').expect(404);
   });
+
+  it('laisse les routes C2a non montées dans le profil C1 par défaut', async () => {
+    await start([successfulCheck('postgresql'), successfulCheck('redis')]);
+
+    await request(application.getHttpServer()).get('/api/v1/admin/users').expect(404);
+    await request(application.getHttpServer())
+      .post('/api/v1/admin/auth/password/reset-requests')
+      .send({ email: 'admin@example.invalid' })
+      .expect(404);
+  });
 });

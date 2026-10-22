@@ -72,14 +72,14 @@ const MINIMATCH_ROOT_PATH = `node_modules/${MINIMATCH_PACKAGE}`;
 const MINIMATCH_SAFE_VERSION = "10.2.6";
 const MINIMATCH_BRACE_EXPANSION_RANGE = "^5.0.8";
 const NEXT_PACKAGE = "next";
-const NEXT_SAFE_VERSION = "16.3.8";
+const NEXT_SAFE_VERSION = "16.4.1";
 const NEXT_WORKSPACES = ["apps/admin", "apps/web"];
 const NEXT_ENV_PACKAGE = "@next/env";
 const NEXT_ESLINT_PLUGIN_PACKAGE = "@next/eslint-plugin-next";
 const NEXT_ESLINT_PLUGIN_PATH = `node_modules/${NEXT_ESLINT_PLUGIN_PACKAGE}`;
 const NEXT_ESLINT_PLUGIN_SELECTOR = `${NEXT_ESLINT_PLUGIN_PACKAGE}@${NEXT_SAFE_VERSION}`;
 const NEXT_FAST_GLOB_PACKAGE = "fast-glob";
-const NEXT_FAST_GLOB_ALIAS_PATH = `${NEXT_ESLINT_PLUGIN_PATH}/node_modules/${NEXT_FAST_GLOB_PACKAGE}`;
+const NEXT_FAST_GLOB_ALIAS_PATH = `node_modules/${NEXT_FAST_GLOB_PACKAGE}`;
 const NEXT_FAST_GLOB_DECLARED_VERSION = "3.3.1";
 const NEXT_FAST_GLOB_ALIAS_SPEC = "npm:tinyglobby@0.2.17";
 const NEXT_FAST_GLOB_ALIAS_PACKAGE = "tinyglobby";
@@ -99,15 +99,28 @@ const NEXT_SWC_PACKAGES = [
   "@next/swc-win32-x64-msvc",
 ];
 const ESLINT_CONFIG_NEXT_PACKAGE = "eslint-config-next";
-const ESLINT_CONFIG_NEXT_SAFE_VERSION = "16.3.8";
+const ESLINT_CONFIG_NEXT_SAFE_VERSION = "16.4.1";
 const ESLINT_CONFIG_NEXT_WORKSPACES = ["apps/admin", "apps/web", "packages/ui"];
 const VITEST_PACKAGE = "vitest";
-const VITEST_SAFE_VERSION = "4.1.11";
+const VITEST_SAFE_VERSION = "4.1.12";
+const VITEST_PATH = `node_modules/${VITEST_PACKAGE}`;
+const VITEST_INTEGRITY =
+  "sha512-5eWdz2yb3ajxWF3C8C4TjkXl7FGm3n2E/VlazALrQHzK7nYMSGFnCZto0bbPNl77AwkOZVLk0YnBAejUu0NiWA==";
+const VITEST_RESOLVED = "https://registry.npmjs.org/vitest/-/vitest-4.1.12.tgz";
 const VITEST_WORKSPACES = ["apps/admin", "apps/api", "apps/web", "packages/ui"];
 const VITEST_MOCKER_PACKAGE = "@vitest/mocker";
-const VITEST_MOCKER_SAFE_VERSION = "4.1.11";
+const VITEST_MOCKER_SAFE_VERSION = "4.1.12";
+const VITEST_MOCKER_PATH = `node_modules/${VITEST_MOCKER_PACKAGE}`;
+const VITEST_MOCKER_INTEGRITY =
+  "sha512-fKShNpKZzupWZuY0z7egydvL0sqW4INEZBEExMBMAa6izlENEVHwoXgdaTCaBZ5fwlr4xf2o1wXC83n9RpO+NA==";
+const VITEST_MOCKER_RESOLVED =
+  "https://registry.npmjs.org/@vitest/mocker/-/mocker-4.1.12.tgz";
 const VITEST_COVERAGE_PACKAGE = "@vitest/coverage-v8";
 const VITEST_COVERAGE_PATH = `node_modules/${VITEST_COVERAGE_PACKAGE}`;
+const VITEST_COVERAGE_INTEGRITY =
+  "sha512-6S7/iVknKglLAxMFxQGNppBI0iqJS2NgM6FBxavitj7KaDq/vywOWGf6dGu7F2L1Qy0G6S3uTp7aGshHrzK8JA==";
+const VITEST_COVERAGE_RESOLVED =
+  "https://registry.npmjs.org/@vitest/coverage-v8/-/coverage-v8-4.1.12.tgz";
 const JS_YAML_PACKAGE = "js-yaml";
 const JS_YAML_OVERRIDES = new Map([["js-yaml@4.3.0", "4.3.2"]]);
 const JS_YAML_PARENTS = [
@@ -127,7 +140,7 @@ const SHARP_PACKAGE = "sharp";
 const SHARP_ROOT_PATH = `node_modules/${SHARP_PACKAGE}`;
 const SHARP_SAFE_VERSION = "0.35.5";
 const SHARP_PARENT_PATH = "node_modules/next";
-const SHARP_DECLARED_VERSION = "^0.35.4";
+const SHARP_DECLARED_VERSION = "^0.35.5";
 const PROXY_ADDR_PACKAGE = "proxy-addr";
 const PROXY_ADDR_SAFE_VERSION = "2.0.8";
 const PROXY_ADDR_PARENT_PATH = "node_modules/express";
@@ -207,6 +220,14 @@ const REQUIRED_REPOSITORY_FILES = new Set([
   "packages/contracts/package.json",
   "packages/ui/package.json",
 ]);
+const ADMIN_C2A_EXECUTION_SURFACE_PATHS = Object.freeze({
+  bootstrap: "apps/api/src/admin-security/admin-bootstrap.main.ts",
+  businessValidator: "apps/api/prisma/validate-admin-security-c2a-business.mjs",
+  businessWrapper:
+    "apps/api/prisma/run-admin-security-c2a-business-validation.ps1",
+  expiration: "apps/api/src/admin-security/admin-recovery-expiration.main.ts",
+  notification: "apps/api/src/admin-security/admin-notification.main.ts",
+});
 const SECRET_PATTERNS = [
   ["private-key", /-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/u],
   ["github-token", /\bgh[pousr]_[A-Za-z0-9]{36,}\b/u],
@@ -237,6 +258,188 @@ export function findSecretTypes(content) {
   return SECRET_PATTERNS.filter(([, pattern]) => pattern.test(content)).map(
     ([name]) => name,
   );
+}
+
+function requireSurfaceText(errors, source, label, required) {
+  if (!source.includes(required)) {
+    errors.push(`${label} must retain ${required}`);
+  }
+}
+
+export function validateAdminC2aExecutionSurfaces(sources) {
+  const errors = [];
+  for (const path of Object.values(ADMIN_C2A_EXECUTION_SURFACE_PATHS)) {
+    if (typeof sources[path] !== "string") {
+      errors.push(`missing C2a execution surface: ${path}`);
+    }
+  }
+  if (errors.length > 0) return errors;
+
+  const notification = sources[ADMIN_C2A_EXECUTION_SURFACE_PATHS.notification];
+  requireSurfaceText(
+    errors,
+    notification,
+    "C2a notification runner",
+    "config.profile !== 'NOTIFICATION'",
+  );
+  requireSurfaceText(
+    errors,
+    notification,
+    "C2a notification runner",
+    ".assertIdentity()",
+  );
+  requireSurfaceText(
+    errors,
+    notification,
+    "C2a notification runner",
+    "await qualifiedWorker.assertReady()",
+  );
+  if (
+    notification.indexOf("await qualifiedWorker.assertReady()") === -1 ||
+    notification.indexOf("qualifiedActivation.activate()") <
+      notification.indexOf("await qualifiedWorker.assertReady()")
+  ) {
+    errors.push(
+      "C2a notification activation must follow readiness qualification",
+    );
+  }
+
+  const expiration = sources[ADMIN_C2A_EXECUTION_SURFACE_PATHS.expiration];
+  requireSurfaceText(
+    errors,
+    expiration,
+    "C2a expiration runner",
+    "config.profile !== 'EXPIRATION'",
+  );
+  requireSurfaceText(
+    errors,
+    expiration,
+    "C2a expiration runner",
+    ".assertIdentity()",
+  );
+  requireSurfaceText(
+    errors,
+    expiration,
+    "C2a expiration runner",
+    "now() - runnerStartedAt >= ADMIN_RECOVERY_EXPIRATION_POLICY.readinessStaleMs",
+  );
+  requireSurfaceText(
+    errors,
+    expiration,
+    "C2a expiration runner",
+    "await worker.awaitQuiescence",
+  );
+
+  const bootstrap = sources[ADMIN_C2A_EXECUTION_SURFACE_PATHS.bootstrap];
+  requireSurfaceText(
+    errors,
+    bootstrap,
+    "C2a bootstrap runner",
+    "process.argv.length !== 2",
+  );
+  requireSurfaceText(
+    errors,
+    bootstrap,
+    "C2a bootstrap runner",
+    "readAdminBootstrapStdin(process.stdin)",
+  );
+  requireSurfaceText(
+    errors,
+    bootstrap,
+    "C2a bootstrap runner",
+    "config.profile !== 'BOOTSTRAP'",
+  );
+  requireSurfaceText(
+    errors,
+    bootstrap,
+    "C2a bootstrap runner",
+    ".assertIdentity()",
+  );
+  requireSurfaceText(
+    errors,
+    bootstrap,
+    "C2a bootstrap runner",
+    "logger: false",
+  );
+
+  const validator =
+    sources[ADMIN_C2A_EXECUTION_SURFACE_PATHS.businessValidator];
+  requireSurfaceText(
+    errors,
+    validator,
+    "C2a business validator",
+    "test/admin-security-c2a.integration.spec.ts",
+  );
+  requireSurfaceText(
+    errors,
+    validator,
+    "C2a business validator",
+    "S1203C2A_BUSINESS_E2E: '1'",
+  );
+  requireSurfaceText(
+    errors,
+    validator,
+    "C2a business validator",
+    "<redacted:${name}>",
+  );
+  requireSurfaceText(
+    errors,
+    validator,
+    "C2a business validator",
+    "quoteIdentifier(candidate)",
+  );
+  requireSurfaceText(
+    errors,
+    validator,
+    "C2a business validator",
+    "for (const createdDatabase of [...createdDatabases].reverse())",
+  );
+  requireSurfaceText(
+    errors,
+    validator,
+    "C2a business validator",
+    "DROP DATABASE ${quoteIdentifier(createdDatabase)}",
+  );
+  if ((validator.match(/shell: false/gu) ?? []).length < 3) {
+    errors.push(
+      "C2a business validator must disable shell execution for every child process",
+    );
+  }
+  if (/shell\s*:\s*true/gu.test(validator)) {
+    errors.push("C2a business validator must not enable shell execution");
+  }
+
+  const wrapper = sources[ADMIN_C2A_EXECUTION_SURFACE_PATHS.businessWrapper];
+  for (const required of [
+    "postgres:18.4-alpine3.24",
+    "sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15",
+    "redis:7.2.15-alpine3.21",
+    "sha256:05a97a479bc73de66f087dc05b569010772880f778cc8671fa6b8aadee32e5c6",
+    "--label kora.slice=s1.2-03c2a-business",
+    "--publish 127.0.0.1::5432",
+    "--publish 127.0.0.1::6379",
+    "--tmpfs /var/lib/postgresql:rw,nosuid,nodev",
+    "--tmpfs /data:rw,nosuid,nodev",
+    "Assert-SameInventory -Before $initialInventory -After $finalInventory",
+    "Targeted cleanup refused unowned container",
+    "Targeted cleanup refused unexpected container identity",
+    "Targeted cleanup refused an unowned C2a business network",
+    "Targeted C2a business secret cleanup refused a reparse point",
+  ]) {
+    requireSurfaceText(errors, wrapper, "C2a business wrapper", required);
+  }
+  if (
+    /docker\s+(?:system|container|image|network|volume)\s+prune/iu.test(
+      wrapper,
+    ) ||
+    /dockerInference/iu.test(wrapper) ||
+    /(?:Start|Stop|Restart)-Service/iu.test(wrapper)
+  ) {
+    errors.push(
+      "C2a business wrapper contains a forbidden Docker control or global cleanup",
+    );
+  }
+  return errors;
 }
 
 const DEFAULT_REPOSITORY_OPERATIONS = Object.freeze({
@@ -1735,19 +1938,84 @@ export function validateVitestSupplyChain(manifests, lockfile) {
     }
   }
 
+  for (const { integrity, packageName, packagePath, resolved, version } of [
+    {
+      integrity: VITEST_INTEGRITY,
+      packageName: VITEST_PACKAGE,
+      packagePath: VITEST_PATH,
+      resolved: VITEST_RESOLVED,
+      version: VITEST_SAFE_VERSION,
+    },
+    {
+      integrity: VITEST_MOCKER_INTEGRITY,
+      packageName: VITEST_MOCKER_PACKAGE,
+      packagePath: VITEST_MOCKER_PATH,
+      resolved: VITEST_MOCKER_RESOLVED,
+      version: VITEST_MOCKER_SAFE_VERSION,
+    },
+    {
+      integrity: VITEST_COVERAGE_INTEGRITY,
+      packageName: VITEST_COVERAGE_PACKAGE,
+      packagePath: VITEST_COVERAGE_PATH,
+      resolved: VITEST_COVERAGE_RESOLVED,
+      version: VITEST_SAFE_VERSION,
+    },
+  ]) {
+    const metadata = lockfile.packages?.[packagePath];
+    if (
+      metadata?.version !== version ||
+      metadata?.integrity !== integrity ||
+      metadata?.resolved !== resolved ||
+      metadata?.license !== "MIT"
+    ) {
+      errors.push(
+        `${packageName}@${version} lock metadata must retain its qualified resolved URL, integrity and MIT license`,
+      );
+    }
+  }
+
   if (
-    lockfile.packages?.[`node_modules/${VITEST_PACKAGE}`]?.dependencies?.[
-      VITEST_MOCKER_PACKAGE
-    ] !== VITEST_MOCKER_SAFE_VERSION
+    lockfile.packages?.[VITEST_PATH]?.dependencies?.[VITEST_MOCKER_PACKAGE] !==
+    VITEST_MOCKER_SAFE_VERSION
   ) {
-    errors.push("vitest@4.1.11 must depend on @vitest/mocker 4.1.11");
+    errors.push(
+      `vitest@${VITEST_SAFE_VERSION} must depend on @vitest/mocker ${VITEST_MOCKER_SAFE_VERSION}`,
+    );
+  }
+  if (
+    lockfile.packages?.[VITEST_PATH]?.peerDependencies?.[
+      VITEST_COVERAGE_PACKAGE
+    ] !== VITEST_SAFE_VERSION
+  ) {
+    errors.push(
+      `vitest@${VITEST_SAFE_VERSION} must peer-depend on ${VITEST_COVERAGE_PACKAGE} ${VITEST_SAFE_VERSION}`,
+    );
+  }
+  if (
+    lockfile.packages?.[VITEST_MOCKER_PATH]?.dependencies?.["@vitest/spy"] !==
+    VITEST_SAFE_VERSION
+  ) {
+    errors.push(
+      `@vitest/mocker@${VITEST_MOCKER_SAFE_VERSION} must depend on @vitest/spy ${VITEST_SAFE_VERSION}`,
+    );
   }
   if (
     lockfile.packages?.[VITEST_COVERAGE_PATH]?.peerDependencies?.[
       VITEST_PACKAGE
     ] !== VITEST_SAFE_VERSION
   ) {
-    errors.push("@vitest/coverage-v8@4.1.11 must peer-depend on vitest 4.1.11");
+    errors.push(
+      `@vitest/coverage-v8@${VITEST_SAFE_VERSION} must peer-depend on vitest ${VITEST_SAFE_VERSION}`,
+    );
+  }
+  if (
+    lockfile.packages?.[VITEST_COVERAGE_PATH]?.dependencies?.[
+      "@vitest/utils"
+    ] !== VITEST_SAFE_VERSION
+  ) {
+    errors.push(
+      `@vitest/coverage-v8@${VITEST_SAFE_VERSION} must depend on @vitest/utils ${VITEST_SAFE_VERSION}`,
+    );
   }
   for (const parentPath of unexpectedDependencyParentPaths(
     lockfile,
@@ -2411,6 +2679,16 @@ export function scanRepository(repositoryRoot = process.cwd(), options = {}) {
   errors.push(...validateSharpOverride(manifests, lockfile));
   errors.push(...validateNestMulterOverride(manifests, lockfile));
   errors.push(...validatePackageLock(lockfile));
+  errors.push(
+    ...validateAdminC2aExecutionSurfaces(
+      Object.fromEntries(
+        Object.values(ADMIN_C2A_EXECUTION_SURFACE_PATHS).map((path) => [
+          path,
+          readFileSync(resolve(repositoryRoot, path), "utf8"),
+        ]),
+      ),
+    ),
+  );
   errors.push(
     ...validateDependabotPolicy(
       readFileSync(

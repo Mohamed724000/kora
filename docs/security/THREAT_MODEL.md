@@ -2,12 +2,10 @@
 
 Périmètre durable couvert : **BASELINE À S1.2-03B FUSIONNÉES + S1.2-03C1
 FUSIONNÉ DANS MAIN AU MERGE
-dc97eeef72c4e299988ed19d66460011a8551cf3, NON DÉPLOYÉ + S1.2-03C2-P0/R1–R5
-PUBLIÉS DANS LA DRAFT PR #51 AU HEAD
-7d0e0e01f2618dab59d2e21d0091892f98c7b6ae + R6 QUALIFIÉ LOCALEMENT ET
-AUTORISÉ POUR PUBLICATION SOUS GATES, CI R6 NON ACQUISE AU 2026-10-13,
-RUNTIME NON IMPLÉMENTÉ — FOURNISSEURS DE PRODUCTION NON QUALIFIÉS — C3 NOT
-STARTED**.
+dc97eeef72c4e299988ed19d66460011a8551cf3, NON DÉPLOYÉ + C2a R9 PUBLIÉ DANS
+LA DRAFT PR #52 AU HEAD `fd0f084fc6316c379454ef701307e79471ed92e2`,
+R10+R11 QUALIFIÉS LOCALEMENT, PUBLICATION/CI R11 NON ACQUISES — FOURNISSEURS
+DE PRODUCTION NON QUALIFIÉS — C2b/C3 NOT STARTED**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
 commit, push ou changement GitHub S1.1 n’avait encore été effectué : il s’agit
@@ -1251,3 +1249,229 @@ réduire ces limites résiduelles. La dérogation **ACCEPTED WITH CTO WAIVER —
 UNPUBLISHED DRAFT ONLY** couvre uniquement un premier brouillon de corps PR
 jamais publié ; elle ne couvre aucun octet technique final, candidat final ou
 résultat de validation. Aucune CI R6 n'est acquise au présent gel.
+
+## S1.2-03C2a — fondations locales de sécurité admin
+
+| Menace C2a                                            | Contrôle local                                                                                                                                                                                                                     | Preuve attendue                                                                                                               | Limite résiduelle                                    |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| Faux commit durable ou résultat transactionnel ambigu | validation des commandes BEGIN/ROLLBACK/COMMIT, bornes monotones, `ReadyForQuery=I` causal, branche exclusive `COMMIT_UNKNOWN`, destruction exactement une fois                                                                    | tests unitaires adversariaux et test PostgreSQL réel                                                                          | panne réseau distribuée NON EXÉCUTÉE                 |
+| Requêtes concurrentes échangeant leurs RFQ            | sérialisation stricte des requêtes du callback et écoute causale armée avant chaque commande                                                                                                                                       | scénario unitaire concurrent et scénarios du validateur                                                                       | charge de production NON EXÉCUTÉE                    |
+| Contrôle transactionnel injecté dans le callback      | scanner lexical refusant les commandes transactionnelles brutes, dont PREPARE/SET TRANSACTION, hors chaînes, commentaires et corps dollar-quoted                                                                                   | tests d'acceptation/refus ciblés                                                                                              | SQL dynamique métier NON IMPLÉMENTÉ                  |
+| Écriture partielle ou causalité arbitraire            | contraintes différées bidirectionnelles sur audit, état et outbox ; événement d'acceptation BUSINESS ; provenance `xid8` posée uniquement à l'INSERT et immuable sous UPDATE ; sujets, temporalité et remplacements cohérents      | scénarios partiels, événement seul, expirés, compte préexistant avec no-op UPDATE, swaps et remplacements incohérents refusés | migration de production NON EXÉCUTÉE                 |
+| Collation produisant deux identités email             | pliage ASCII déterministe par `translate`, comparaison et index sur la même expression                                                                                                                                             | migration A/B et collisions contrôlées                                                                                        | Unicode internationalisé hors contrat                |
+| ACL correcte en cardinalité mais fausse en contenu    | comparaison ordonnée de la signature canonique avec namespace, multiplicité et grantor propriétaire ; `EXCEPT ALL` ; fixtures homonyme hors `public` et grantor alternatif ; refus de toute surface `PUBLIC` ou directe inattendue | boundary service, contamination et test PostgreSQL réel                                                                       | isolation des valeurs C2b exigée avant C2b           |
+| Confusion entre rôles C2a                             | quatre rôles dédiés, secrets distincts, `NOINHERIT`, matrices relation/colonne séparées et contrôles de contamination                                                                                                              | provisioner et matrice A/B                                                                                                    | rotation et coffre de production hors lot            |
+| Fuite de secrets dans les preuves                     | sept valeurs sensibles pairwise distinctes, redaction appliquée aux stdout, stderr et erreurs des processus enfants                                                                                                                | canaris du validateur et inspection des preuves                                                                               | observabilité de production hors lot                 |
+| Résidu Docker après échec                             | noms et labels uniques, tentative enregistrée avant création, nettoyage ciblé en `finally`, inventaire conteneurs/volumes/réseaux/images comparé avant et après                                                                    | campagne réelle, quiescence, nettoyage exact et comparateur sémantique v2                                                     | inventaire des périodes daemon arrêté NON CONCLUSIVE |
+
+La campagne PostgreSQL 18.4 réelle conclut sur migrations fraîche/upgrade,
+préservation, contraintes, ACL, contaminations, transactions R6 et nettoyage.
+Elle ne qualifie pas une panne réseau distribuée ni la production. Le warning
+`pg@8.22.0` sur trois requêtes soumises au même client reste une réserve de
+compatibilité pg 9 sans impact démontré sur le résultat verrouillé.
+
+Le premier gate OpenAPI, bloqué par sa liste historique de 39 modèles au lieu
+des 48 modèles incluant C2a, reste un NON-PASS historique. L'avenant ciblé
+qualifie une référence explicite de 39 modèles historiques et neuf C2a ; les
+régressions refusent manque, renommage, ajout — y compris un modèle indenté —
+et substitution à cardinalité constante. Le candidat antérieur qui acceptait
+l'ajout indenté reste NON-PASS de contre-revue. Les onze opérations HTTP, leurs workers et les fournisseurs restent
+non implémentés ; aucune menace associée à leur exploitation n'est requalifiée
+par ce lot de fondations.
+
+## S1.2-03C2a métier P0 — isolation des capacités
+
+| Menace P0                                   | Contrôle qualifié                                                                                                        | Preuve locale                                                    | Limite résiduelle                                    |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- | ---------------------------------------------------- |
+| Writer lisant un secret de session inutile  | projection limitée à JTI, purpose et expiry ; cinq colonnes voisines, `SELECT *` et mutations step-up refusés            | ACL comportementales réelles, SQLSTATE 42501                     | opérations HTTP P1–P9 non implémentées               |
+| API détenant les capacités worker/bootstrap | profil fermé ; un credential et un pool C2a ; variables étrangères refusées ; aucune façade publique choisissant le rôle | tests des quatre profils et attestation `current_user` réelle    | déploiement multi-processus non qualifié             |
+| Repli silencieux ou secret C1 réutilisé     | identité exacte, secret actif distinct de reader/writer C1, configuration C2a dormante refusée                           | tests config adversariaux                                        | coffre et rotation production non qualifiés          |
+| Driver perturbé par requêtes concurrentes   | trois lectures notification du validateur séquentielles ; R6 conserve sa sérialisation stricte                           | campagne réelle stderr vide, transaction/boundary 33/33          | `pg@8.22.0` non qualifié globalement                 |
+| Résidu de campagne touchant le socle Docker | noms/labels uniques, réseau isolé, `tmpfs`, secrets éphémères et nettoyage limité aux identités créées                   | conteneur/réseau/secrets supprimés, inventaire étranger préservé | disponibilité Docker historique NON CONCLUSIVE       |
+| Proposition métier activée sans décision    | annexe versionnée hors dépôt explicitement non activée ; aucun provider, worker, endpoint ou bootstrap CLI               | allowlist et diff P0                                             | huit arbitrages requis avant sous-lots consommateurs |
+
+La campagne qualifie aussi l’absence de contamination des quatre rôles,
+l’idempotence du provisionneur et la frontière C1 partagée. Elle ne qualifie ni
+fournisseur de notification, HIBP ou keyring de production, ni charge ou panne
+réseau distribuée. P1–P9, C2b et C3 restent non commencés.
+
+## S1.2-03C2a métier P1–P9 — contrôles locaux — 2026-10-16
+
+Cette section supplante l'état d'avancement P1–P9, mais pas les limites de
+production des sections historiques.
+
+| Menace P1–P9                                      | Contrôle local qualifié                                                                                                                              | Preuve locale                                   | Limite résiduelle                          |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------ |
+| Route C2a partielle ou C2b exposé                 | montage atomique des onze opérations par le seul profil HTTP; C1 seul quand C2a est désactivé; C2b absent                                            | tests module/factory + campagne HTTP réelle     | déploiement NON EXÉCUTÉ                    |
+| Preuve, rôle ou step-up périmé                    | revalidation serveur finale sous verrou, rôles/opération exacts, step-up lié au purpose et à l'expiry                                                | unitaires adversariaux + PostgreSQL réel        | charge distribuée NON EXÉCUTÉE             |
+| Replay, snapshot incohérent ou no-op masqué       | cinq idempotences à fenêtre exacte DB, deux snapshots stables, replay autorisé avant no-op nouveau après nouvelle autorisation                       | campagne réelle 11/5/2                          | reprise inter-région NON EXÉCUTÉE          |
+| Double envoi après résultat fournisseur incertain | référence stable, lease/fencing, budget et backoffs bornés; tout doute après début d'appel devient `DELIVERY_UNCERTAIN` sans retry automatique       | fake déterministe et tests de crash/concurrence | fournisseur réel NON QUALIFIÉ              |
+| Secret outbox ou HIBP divulgué                    | ciphertext authentifié/AAD/keyring versionné; aucun secret ou fragment HIBP dans logs/audits; HIBP/Argon2id hors transaction                         | unitaires redaction et fail-closed              | keyring/HIBP production NON QUALIFIÉS      |
+| Expiration concurrente ou worker non prêt         | CAS sous verrou, génération, lot 100, scan 60 s, readiness invalide après `>=180 s`, shutdown 30 s sans prolonger R6                                 | unitaires frontière + réel                      | ordonnanceur de production NON QUALIFIÉ    |
+| Secret bootstrap dans argv ou faux succès         | entrée JSON bornée sur stdin, aucune donnée supplémentaire, codes distincts, garde/audit atomiques, `COMMIT_UNKNOWN` sans retry ni succès            | unitaires + PostgreSQL réel                     | coffre de production NON QUALIFIÉ          |
+| ACL d'audit contournée                            | INSERT générique limité aux colonnes autorisées, sans `bootstrapGuardId`; quatre identités séparées et attestation active                            | SQLSTATE/ACL et campagne réelle                 | rotation de secrets production hors lot    |
+| Erreur métier reclassée en 503 générique          | déballage borné de l'erreur de domaine enveloppée par R6, neutralité conservée pour `COMMIT_UNKNOWN`                                                 | régression service + concurrence réelle         | panne réseau distribuée NON EXÉCUTÉE       |
+| Faux envoi local présenté comme réel              | adaptateurs marqués test uniquement et événement `PROVIDER_ACCEPTED_FOR_TEST`; absence de capacité de production = fail-closed avant mutation/outbox | tests config/adapters et campagne locale        | tous fournisseurs production NON QUALIFIÉS |
+
+La campagne isolée compte 8 contrôles réussis : 1 contrôle statique et 7
+scénarios réels PostgreSQL/Redis/HTTP. Elle confirme onze opérations, cinq
+idempotences, deux snapshots, huit POST JSON mal formés, notification,
+expiration, bootstrap, sinks, concurrence et C1. Les ressources créées sont
+supprimées ciblément et l'inventaire étranger observé est préservé.
+Le succès avec `pg@8.22.0` ne qualifie que ce parcours. C2b/C3, fournisseurs,
+politique OSS, publication et déploiement restent hors périmètre.
+
+La contre-revue finale a identifié un rollback silencieux des audits de refus
+post-preuve : l'exception HTTP était levée dans le callback R6 après l'INSERT.
+Le runtime retourne désormais une rejection typée afin de confirmer d'abord le
+COMMIT, puis de lever l'erreur `ALREADY_DURABLE`. Les preuves PostgreSQL réelles
+vérifient un sink unique et durable pour les refus rôle, step-up, idempotence,
+ressource absente ou expirée et concurrence du dernier SUPER_ADMIN. Lorsque la
+revalidation concurrente invalide l'acteur, le sink reste
+`AdminSecurityEvent`; lorsque la preuve reste valide et le conflit est métier,
+le sink est `AuditLog`. Aucun second sink n'est permis après `COMMIT_UNKNOWN`.
+
+## C2a R1 — idempotence C-05 — 2026-10-18
+
+| Menace C-05                                      | Contrôle qualifié                                                                                                                  | Preuve locale                         | Limite résiduelle                                  |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | -------------------------------------------------- |
+| Horloge processus avançant ou retardant l'expiry | timestamp et décision active/expirée calculés par PostgreSQL; borne demi-ouverte exacte à 24 heures                                | réel, multi-timezone et borne exacte  | dérive d'horloge PostgreSQL hors preuve            |
+| Clé expirée réservée définitivement              | nouvelle génération atomique, historique append-only et absence de suppression globale                                             | fresh/upgrade et réutilisation réelle | rétention opérationnelle future hors lot           |
+| Double mutation concurrente                      | verrou advisory sur la clé avant lookup/allocation; unicité clé/génération                                                         | concurrence même clé                  | charge distribuée de production NON EXÉCUTÉE       |
+| Résultat ancien écrasant le nouveau              | chaque résultat est lié à sa génération; l'invocation ancienne ne peut finaliser la génération suivante                            | oracle génération et course           | panne réseau distribuée NON EXÉCUTÉE               |
+| Mutation sans audit ou résultat                  | mutation, audit et idempotence dans la même transaction R6; rollback et `COMMIT_UNKNOWN` fermés                                    | PostgreSQL réel                       | qualification globale du driver NON ACQUISE        |
+| Lecture ou écriture par une identité étrangère   | ACL de colonne/relation et provisioning restreints; aucune nouvelle capacité accordée aux identités non autorisées                 | matrice ACL réelle                    | rotation des secrets production hors lot           |
+| Faux arrêt gracieux sous Windows                 | canal de preuve qualifie la quiescence; la terminaison OS Windows est rapportée séparément, sans être assimilée à un handler POSIX | processus réels                       | handler gracieux par signal OS Windows NON OBSERVÉ |
+
+Les campagnes sélectionnées passent Foundations 34/34. La campagne métier
+compte 12 contrôles réussis : 1 contrôle statique et 11 scénarios réels
+PostgreSQL/Redis/HTTP. C1 passe 47/47. Les anciens NON-PASS et la réserve
+globale `pg@8.22.0` restent visibles. Fournisseurs de production NON QUALIFIÉS;
+C2b/C3, OSS et publication hors périmètre.
+
+## C2a — raccordement CI prépublication — 2026-10-18
+
+| Menace de publication                       | Contrôle raccordé                                                                                                                | État avant publication             | Limite résiduelle                                |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------ |
+| Gate C2a absent du pipeline                 | génération Prisma puis deux steps Infrastructure distincts pour Foundations et métier ; C1/Compose/lifecycle/santé API préservés | vérification statique ; CI pending | succès Linux non encore démontré                 |
+| Échec masqué ou ressource étrangère touchée | wrappers non optionnels, sortie non neutralisée, noms/ports/secrets éphémères et nettoyage ciblé                                 | contrats locaux qualifiés          | inventaire du runner seulement observable en CI  |
+| Compteurs locaux présentés comme CI         | historique 1 statique + 7 réels, final local 1 statique + 11 réels, 61 skips séparés en 11 C2a / 46 C1 / 4 Foundations-P0        | réconciliation documentaire        | les futurs logs CI font foi pour leur propre run |
+| Limite de plateforme ou fournisseur effacée | signal OS Windows/POSIX NON DEMONSTRATED ; providers NON QUALIFIÉS ; `pg@8.22.0` borné aux chemins exercés                       | limite conservée                   | qualification production hors lot                |
+
+C2b/C3 restent non commencés et la politique OSS reste différée.
+
+## C2a R2 — référence historique C1 autonome — 2026-10-18
+
+| Menace R2                                      | Contrôle qualifié                                                                                                                                                                            | Preuve locale                                      | Limite résiduelle                                |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------ |
+| Drift masqué entre schéma C1 et schéma courant | artefact C1 exact de `d514b87…`, taille/OID/SHA-256 et liste ordonnée des 39 modèles figés ; aucune suppression regex de modèles C2a                                                         | tests absent, altéré, OID faux et identité exacte  | évolution C1 future exige une nouvelle référence |
+| Checkout CI peu profond                        | aucune lecture Git historique, fetch ou réseau à l'exécution ; fixture qualifiée sans `.git`                                                                                                 | tooling 536/536                                    | succès Linux/CI R2 non encore démontré           |
+| Migration C2a appliquée au gate C1             | workspace limité à la configuration, au schéma, aux trois migrations et au lock C1 ; C2a explicitement désactivé dans le provisionneur                                                       | bases A/B 39 modèles, 40 tables, 3 migrations PASS | run CI `39135914973` reste FAILURE historique    |
+| Substitution ou nettoyage d'un objet étranger  | identité filesystem root/dossiers/fichiers revérifiée avant usage et suppression ; substitution byte-identique refusée sans suppression ; base retirée seulement si créée, identique et vide | adversarial PASS ; `tmp` absent après C1           | base préexistante volontairement préservée       |
+| Corruption des sources ou du client courant    | aucune génération historique ; signatures avant/après du schéma, des migrations, de la configuration et du client généré ; nettoyage ciblé strict                                            | invariance PASS ; C1 courant 47/47                 | fichiers inattendus font échouer le nettoyage    |
+| Régression C2a après le gate historique        | wrappers séparés après C1 : Foundations 34/34 puis métier 1 statique + 11 scénarios réels et C1 47/47                                                                                        | PostgreSQL/Redis/HTTP réel PASS                    | fournisseurs et panne distribuée non qualifiés   |
+
+Le résultat R2 est local et ne requalifie ni Linux, ni le run Infrastructure
+échoué, ni ses steps skipped. L'arrêt gracieux par signal OS Windows/POSIX
+reste NON DEMONSTRATED, les fournisseurs de production restent NON QUALIFIÉS,
+`pg@8.22.0` reste borné aux chemins exercés, C2b/C3 ne sont pas commencés et la
+politique OSS reste différée.
+
+## C2a R3 — identité Docker et nettoyage conditionnel
+
+| Menace R3                                     | Contrôle local                                                                                                                                                                                     | Preuve sélectionnée                                              | Limite résiduelle                         |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------- |
+| Confusion digest de manifeste / ID local      | inspect exact `tag@digest`, RepoDigest obligatoire, ID local utilisé seulement comme jointure d'inventaire ; plusieurs lignes permises                                                             | fixtures sur les deux wrappers + Docker réel                     | cause CI historique NON CONCLUSIVE        |
+| Faux absent sur erreur d'accès ou daemon      | `No such image` exact, info daemon, sondes tag et repo-digest, inventaire non contradictoire ; sorties vides, multiples, invalides ou autres erreurs refusées                                      | adversarial PASS                                                 | messages Docker dépendent du contrat CLI  |
+| Suppression d'une image étrangère ou partagée | snapshot après tentative d'acquisition ; ID absent des IDs initiaux ; RepoTags/RepoDigests/inventaire inchangés ; tous conteneurs actifs et arrêtés contrôlés                                      | fixtures acquisition/concurrence/référence                       | ambiguïté conservée comme résidu en échec |
+| Suppression trop large                        | retrait de la seule référence exacte ; jamais ID, `--force`, prune ou cleanup global ; postcondition absence de référence et d'ID acquis                                                           | tests post-rm et wrappers réels                                  | acquisition nouvelle non exercée en réel  |
+| `down` sur un projet non préparé ou étranger  | instance CI unique, préimage absente, états atomiques ; `down` seulement pour prepared/up_started/running                                                                                          | workflow exécuté sur cinq états                                  | succès Linux CI R3 non démontré           |
+| Fichiers partiels substitués                  | manifeste lié à l'état ; ensemble complet exact de cinq fichiers et deux répertoires ; identité no-follow `type/dev/ino/mode/birthtimeNs` ; toute substitution, même byte-identique, est préservée | fixtures substitution, manifeste réduit et préparation partielle | runner réel GitHub non rejoué             |
+
+Le finding `S-R3-01` est fermé par les régressions R3 finales 5/5. Le tooling
+sélectionné passe 541/541 et inclut les 39 contrôles du fichier concerné. Le run
+direct final 37/39 reste NON-PASS sur deux tests historiques de deadline/socket,
+alors que la première reprise tooling, initialement observée incomplète, a
+finalement terminé 541/541 au code 0 en chevauchant la reprise causale également
+réussie 541/541 ; elle n'est plus NON CONCLUSIVE. Les wrappers réels passent
+Foundations 34/34, métier 1 statique + 11 scénarios et C1 47/47, avec inventaire
+Docker étranger restauré. Le tooling sandboxé 538/541 reste aussi NON-PASS
+(`EACCES`). Le signal gracieux Windows/POSIX reste NON DEMONSTRATED ; Linux/CI
+R3 et fournisseurs de production restent NON QUALIFIÉS.
+
+## C2a R4 — arrêt borné des runners et preuve POSIX locale
+
+| Menace R4                                       | Contrôle qualifié                                                                                                                                       | Preuve locale                                         | Limite résiduelle                            |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- | -------------------------------------------- |
+| Processus maintenu par un handle de preuve      | listener stdin explicitement possédé et retiré sur message ou terminaison ; pause seulement si flux initialement non actif et sans listener tiers       | Linux pré/post avec stdin parent ouvert               | harnais de preuve uniquement                 |
+| Cleanup métier confondu avec la cause           | outcome sain observé après fermeture Nest/PostgreSQL/Redis-BullMQ avant le hang ; modules et frontières DB inchangés                                    | processus compilés et services réels                  | panne distribuée de production NON EXÉCUTÉE  |
+| Second signal interrompant une fermeture active | handlers SIGINT/SIGTERM persistants jusqu'à la fin du cleanup, stop idempotent, retrait ciblé ensuite                                                   | deux vrais SIGTERM par runner, second pendant cleanup | rafale supérieure à deux signaux hors preuve |
+| Faux succès forcé                               | aucun `process.exit(0)`, hausse de deadline, faux signal stdin, fermeture stdin préalable ou masquage d'échec ; SIGKILL réservé au garde-fou du harnais | code 0 spontané, signal terminal null                 | terminaison OS Windows reste non gracieuse   |
+| Régression transactionnelle ou C1               | campagne réelle 1 statique + 11 scénarios PostgreSQL/Redis/HTTP, processus BullMQ réels et C1 47/47                                                     | wrapper isolé avec cleanup ciblé PASS                 | `pg@8.22.0` borné aux seuls chemins exercés  |
+
+Les deux exécutables Linux Node 22.18.0 sortent désormais spontanément après
+un vrai SIGTERM alors que stdin parent reste ouvert, sans SIGKILL et avec
+outcomes `failed:false`/`forceExit:false`. Les tests ciblés passent 34/34 et le
+tooling 541/541. Le run R3 10/12 reste NON-PASS historique ; aucune
+qualification CI R4, Windows gracieux, Linux de production ou fournisseur
+n'est revendiquée. Fournisseurs NON QUALIFIÉS, C2b/C3 non commencés et
+politique OSS différée.
+
+Le premier gel candidat R4 reste BLOCK historique : sa contre-revue a démontré
+que les handlers étaient retirés avant quiescence et fermeture. Le correctif
+terminal les maintient jusqu'après le cleanup. La campagne combinée finale
+passe 12/12 contrôles métier mais reste NON-PASS sur watchdog C1 avec
+`code=null`; le validateur C1 dédié passe ensuite 47/47 sur les mêmes octets,
+sans effacer le NON-PASS combiné.
+
+## C2a R5 — fermeture de l'advisory Vite
+
+| Menace R5                                  | Contrôle qualifié                                                                                                                               | Preuve locale                              | Limite résiduelle                   |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | ----------------------------------- |
+| Copie Vite vulnérable ou parallèle         | pins directs racine/API/Admin `8.1.6` ; singleton lock et physique ; refus explicite de toute version `8.0.0–8.1.5`                             | installation vierge + inventaire no-follow | fournisseurs NON QUALIFIÉS          |
+| Peer Vitest/mocker invalide                | racine, API, Admin, Vitest et mocker résolvent le même Vite ; arbres npm code 0                                                                 | `npm ls vite --all` et `npm ls --all`      | comportement fournisseur hors scope |
+| Override masquant une dérive               | retrait du seul override Vitest candidat ; autres overrides préservés ; scanner officiel code 0                                                 | scanner officiel                           | nouvelle montée à requalifier       |
+| Dérive silencieuse du graphe après retrait | lockfile inchangé ; snapshots avant/après byte-identiques pour versions, emplacements, intégrités et relations ; audits complet/production PASS | comparaison indépendante et audits frais   | registre futur non préqualifié      |
+
+Le graphe installé est identique au candidat déjà soumis aux gates API, Admin,
+builds, tooling et R4 hôte/Linux ; ces preuves restent applicables sans replay
+Docker. Les candidats antérieurs et leurs erreurs restent NON-PASS/BLOCK
+historiques. R5 reste local et non publié ; PR #52 reste Draft, fournisseurs
+NON QUALIFIÉS, C2b/C3 non commencés et politique OSS différée.
+
+## C2a R6–R9 — protections courantes et publication Draft
+
+| Menace courante                                                        | Contrôle et preuve                                                                                                                        | Limite conservée                                       |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| Mise à jour indépendante du lock confondue avec une dérive de sécurité | R6/R7 protègent séparément les projections Prisma `7.9.1`, `pg@8.22.0` et Vitest, ainsi que la non-mutation du lock pendant les campagnes | `pg@8.22.0` qualifié seulement sur les chemins exercés |
+| Graphe Vitest/Vite vulnérable ou incohérent                            | R8 protège Vite `8.1.6`, Vitest `4.1.12`, mocker/coverage, intégrités, parents et installation ; audits complet/production à zéro         | registre futur et Linux de production non qualifiés    |
+| Reset lifecycle dirigé vers une autre instance                         | R9 résout `PROJECT_NAME`, refuse une confirmation croisée avant Docker et qualifie une instance éphémère dédiée                           | incident local antérieur conservé                      |
+| Surinterprétation des campagnes                                        | C1 47/47, Foundations 34/34 et métier 1 contrôle statique + 11 scénarios réels sont distincts ; 61 SKIP restent SKIP                      | campagnes et plateformes non exercées non supposées    |
+
+Le head `fd0f084fc6316c379454ef701307e79471ed92e2` est publié dans la Draft
+PR #52. Les quatre workflows R9 Infrastructure `39818813532`, Launcher
+Windows `39818813686`, Security `39818813647` et Quality Linux `39818813472`
+sont verts sur le head source exact et le merge synthétique
+`8cc7c81b40c8d7e197a6920b08a734d9dc23ea5e`. L'arrêt gracieux POSIX des deux
+runners est démontré ; le signal Windows reste **NON DEMONSTRATED**.
+
+La restauration ciblée suivant l'incident R9 ne démontre pas l'intégrité
+byte-à-byte des volumes ni l'état logique exhaustif préincident. Les
+fournisseurs de production et Linux de production restent non qualifiés ;
+C2b/C3 ne sont pas commencés et la politique OSS reste différée.
+
+## C2a R10–R11 — clôture locale et remédiation Next.js
+
+| Menace ou dérive                                    | Contrôle R10/R11                                                                                                                                                               | Preuve locale                                                                | Limite conservée                                                |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Migration modifiée au-delà du format                | postimage égale à la préimage privée d'un LF ; SHA-256 `eba1a1e4…5c8a` ; exactement un LF final                                                                                | Foundations 34/34 fresh/upgrade/projections/historique/ACL/transactions/C-05 | installation persistante externe non observable non attestée    |
+| RCE/DoS Next.js 16.3.8                              | Admin/Web sur Next.js `16.4.1` ; env/SWC cohérents ; sharp `0.35.5` ; aucune copie 16.3.8/16.4.2                                                                               | installation propre, arbres npm et audits complet/production à zéro          | futurs advisories et exploitation production non préqualifiés   |
+| Dérive du plugin ESLint ou contournement fast-glob  | plugin/config `16.4.1` ; alias unique tinyglobby 0.2.17 résolu depuis le contexte du plugin ; intégrité, parents et emplacement exact protégés                                 | test dédié 7/7, scanner adversarial 112/112, tooling 554/554                 | toute future topologie npm doit être requalifiée                |
+| Régression applicative ou image                     | lint/typecheck/tests/builds Admin/Web/UI ; smokes production loopback ; optimisation PNG bénigne vers WebP avec Next.js `16.4.1`/sharp `0.35.5` ; source HTTP invalide rejetée | Admin 13/13, Web 10/10, UI 11/11 et smokes code 0                            | aucun exploit réel, fournisseur ou Linux de production qualifié |
+| Historique favorable substitué à la preuve courante | audits, scanner, tooling et smokes R11 sélectionnés séparément ; tooling 552/554, candidats npm et premier smoke conservés                                                     | preuves horodatées avec stdout/stderr/code distincts                         | quatre workflows R9 ne valent pas CI R11                        |
+
+R10+R11 restent locaux au présent instantané. Le head GitHub demeure R9 et
+aucune publication ou CI R11 n'est affirmée. L'incident R9 et les limites sur
+les volumes, le signal Windows NON DEMONSTRATED, les 61 SKIP, Linux et les
+fournisseurs de production non qualifiés, C2b/C3 non commencés et la politique
+OSS différée restent inchangés.

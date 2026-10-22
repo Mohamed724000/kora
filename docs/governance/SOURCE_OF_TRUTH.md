@@ -1,14 +1,13 @@
 # KORA+ Final — Source de vérité
 
 Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-03C1 FUSIONNÉ DANS MAIN AU
-MERGE dc97eeef72c4e299988ed19d66460011a8551cf3, NON DÉPLOYÉ — PR #50
-FERMÉE/FUSIONNÉE — S1.2-03C2-P0/R1–R5 PUBLIÉS DANS LA DRAFT PR #51 AU HEAD
-7d0e0e01f2618dab59d2e21d0091892f98c7b6ae — R6 QUALIFIÉ LOCALEMENT ET
-AUTORISÉ POUR PUBLICATION SOUS GATES, CI R6 NON ACQUISE — RUNTIME NON
-IMPLÉMENTÉ — FOURNISSEURS DE PRODUCTION NON QUALIFIÉS — C3 NOT STARTED**
+MERGE dc97eeef72c4e299988ed19d66460011a8551cf3, NON DÉPLOYÉ — C2a R9 PUBLIÉ
+DANS LA DRAFT PR #52 AU HEAD `fd0f084fc6316c379454ef701307e79471ed92e2`,
+R10+R11 QUALIFIÉS LOCALEMENT, PUBLICATION/CI R11 NON ACQUISES — FOURNISSEURS
+DE PRODUCTION NON QUALIFIÉS — C2b/C3 NOT STARTED**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-10-13
+Dernière réconciliation documentaire : 2026-10-22
 
 ## Hiérarchie normative
 
@@ -1100,3 +1099,394 @@ UNPUBLISHED DRAFT ONLY** ; les constats historiques BLOCK restent inchangés et
 la dérogation ne couvre ni les octets techniques finaux, ni le candidat final,
 ni une preuve de validation. Au présent gel documentaire, aucune CI R6 n'est
 encore acquise et le corps live de la PR #51 reste inchangé.
+
+## S1.2-03C2a — fondations locales de sécurité admin
+
+Le lot C2a part du commit exact
+`d514b87cbef21dfae4585f4d143889aca2d8b229` sur la branche
+`feat/s1-2-03c2a-admin-security-runtime`. Il implémente uniquement les
+fondations locales autorisées : modèle Prisma et migration PostgreSQL,
+contrats d'atomicité et de causalité, exécuteur transactionnel conforme à R6,
+quatre identités PostgreSQL à privilèges minimaux, frontières d'ACL exactes,
+configuration désactivée par défaut et validateur éphémère isolé.
+
+Le modèle conserve les versions historiques représentables et ajoute les
+écritures atomiques nécessaires aux demandes de reset, invitations,
+expirations, acceptations, annulations et remplacements. Les relations entre
+audit, état métier et outbox sont validées par contraintes différées. Le
+succès d'acceptation est un événement BUSINESS et la création du compte dans la
+transaction est attestée par un marqueur `xid8` posé exclusivement à l'INSERT,
+que les UPDATE ultérieurs ne peuvent ni créer ni rafraîchir. Le
+pliage des adresses email est ASCII et déterministe ; il ne repose pas sur une
+collation implicite. L'exécuteur sérialise les requêtes d'un callback,
+interdit les commandes transactionnelles brutes, attend le
+`ReadyForQuery=I` causal et distingue explicitement le rejet de commit de
+`COMMIT_UNKNOWN`.
+
+Les services C2a sont désactivés par défaut. Les rôles writer, notification,
+expiration et bootstrap utilisent quatre secrets distincts et un inventaire
+d'ACL exact incluant namespace, multiplicité et grantor propriétaire ; les
+surfaces `PUBLIC`, héritages, grantors alternatifs, homonymes hors `public` et
+privilèges directs non prévus sont refusés. Les quatre fichiers secrets C2a
+sont montés séparément sans altérer l'invariant historique des trois secrets
+Compose lorsque C2a est désactivé. Le
+validateur ne peut fonctionner que dans un PostgreSQL
+éphémère dédié et doit prouver la suppression de ses ressources ainsi que le
+retour à l'inventaire Docker initial.
+
+Les tables partagées de snapshot et d'idempotence portent des valeurs d'enum
+réservées à C2b. Aucune donnée ni identité C2b n'existe dans C2a ; une isolation
+par ligne ou une séparation physique doit être conçue, migrée et qualifiée
+avant tout démarrage de C2b. Ce point est un gate explicite, pas une permission
+transverse accordée au futur runtime.
+
+Docker/Linux Engine est désormais disponible depuis Codex. La campagne
+PostgreSQL 18.4 isolée passe migration fraîche et upgrade, préservation,
+contraintes, provisioning des quatre identités, ACL positives et négatives,
+contaminations, exécuteur R6 réel, non-régression C1, quiescence et nettoyage.
+L'inventaire étranger observé avant création est préservé après nettoyage.
+
+Les gates format, lint, typecheck, tests API qualifiés, build, génération,
+scanner, workflows, licences et audits npm passent. Le premier
+`openapi:validate`, bloqué par l'ancienne référence exacte de 39 modèles, et le
+premier `test:tooling` à 451/522 restent des **NON-PASS historiques**. L'avenant
+ciblé autorise ensuite uniquement le validateur et son test : la reprise passe
+avec 60 chemins, 67 opérations, 141 schémas OpenAPI, exactement 48 modèles
+Prisma — 39 historiques et neuf C2a. Le premier candidat aligné, pourtant vert
+à 378/378 et 527/527, reste **NON-PASS de contre-revue** : un modèle
+supplémentaire indenté échappait à l'extracteur. La correction causale reconnaît
+les déclarations indentées ; la reprise finale passe 379/379 tests adversariaux
+et 528/528 tests tooling. La génération officielle `--check` et le scanner passent aussi,
+sans modification du schéma, de la migration, du runtime, des dépendances, du
+lockfile, des workflows, de l'OpenAPI ou du contrat généré.
+Les onze opérations HTTP, les workers et le bootstrap métier sont
+**NON IMPLÉMENTÉS**. C2b et C3 sont **NON COMMENCÉS**. Fournisseurs
+**NON QUALIFIÉS** et politique OSS différée. Aucun `git add`, commit,
+push, changement GitHub, Ready, approval, merge, tag, release ou déploiement
+n'est autorisé par cette qualification locale.
+
+## 2026-10-15 — C2a métier P0 qualifié localement
+
+Le mandat P0 autorise uniquement les preuves transactionnelles et l’isolation
+des capacités préalables au runtime métier. Le writer C2a gagne la projection
+colonne minimale `accessTokenJti`, `stepUpPurpose`, `stepUpExpiresAt` ; les
+colonnes voisines sensibles, `SELECT *` et toute mutation step-up restent
+refusés. Les quatre profils `HTTP`, `NOTIFICATION`, `EXPIRATION`, `BOOTSTRAP`
+sont exclusifs : un seul credential et un seul pool C2a par processus, aucun
+choix public de rôle et aucun pool C2a lorsque la fonction est désactivée.
+
+La campagne réelle PostgreSQL 18.4 passe fresh/upgrade, préservation,
+provisioning idempotent, identités, ACL, refus de contamination, frontière C1
+et transaction R6. Les deux suites réelles passent 33/33, le nettoyage ciblé
+est confirmé et l’inventaire Docker étranger est préservé. Les trois lectures
+notification du validateur sont sérialisées ; stderr est vide et le warning
+`pg@8.22.0` n’est pas reproduit sur ce seul parcours. Aucune qualification
+générale du driver n’en découle.
+
+Les gates proportionnés passent : format, lint, typecheck, tests config/
+boundaries, intégration partagée, build API, scanner officiel et tooling
+528/528. Les NON-PASS d’environnement et d’archivage restent historiques. Les
+huit arbitrages du chapitre 10 sont consignés hors dépôt comme propositions à
+arbitrer, sans activation implicite. Aucun endpoint, worker, bootstrap CLI,
+provider ou SDK n’est créé ; P1–P9, C2b et C3 ne sont pas commencés.
+
+## 2026-10-16 — C2a métier P1–P9 qualifié localement
+
+Le mandat CTO P1–P9 autorise et fixe les arbitrages A1–A8. L'état courant
+implémente localement les onze opérations C2a, les workers notification et
+expiration ainsi que le bootstrap stdin. Le profil `HTTP` monte C2a ensemble,
+les trois autres capacités restent isolées, C1 fonctionne sans configuration
+C2a et C2b n'est pas monté.
+
+Les invariants intégrés restent l'autorité : preuve serveur finale sous verrou,
+step-up, rôles et statuts bornés, cinq idempotences, deux listes à snapshots,
+huit erreurs JSON avant contrôleur, sinks par stade de preuve, atomicité métier,
+outbox PostgreSQL, sérialisation R6, deadlines, discard unique et neutralité de
+`COMMIT_UNKNOWN`. Les adaptateurs déterministes sont de test uniquement et
+annoncent `PROVIDER_ACCEPTED_FOR_TEST`; ils ne constituent ni un envoi réel ni
+une qualification de fournisseur.
+
+La campagne isolée compte 8 contrôles réussis : 1 contrôle statique et 7
+scénarios réels PostgreSQL/Redis/HTTP. Elle confirme onze opérations, cinq
+idempotences, deux snapshots, huit erreurs JSON, notification, expiration,
+bootstrap, concurrence, sinks et non-régression C1.
+Elle ferme quatre findings causaux : ACL de l'INSERT AuditLog, échéance
+d'idempotence fondée sur l'horloge murale PostgreSQL `clock_timestamp()`
+capturée dans la transaction après le verrou et conservation
+des erreurs HTTP de domaine enveloppées, puis durabilité des audits de refus
+post-preuve par retour typé avant COMMIT et erreur HTTP après COMMIT confirmé.
+La branche `COMMIT_UNKNOWN` reste sans replay ni second sink. Les conteneurs,
+le réseau et les secrets créés ont été supprimés ciblément; l'inventaire
+étranger est préservé.
+
+Les gates locaux passent : format ciblé, lint, typecheck, tests API (186 pass,
+56 skips conditionnels), build, OpenAPI 60 chemins/67 opérations/141 schémas,
+379/379 régressions adversariales, génération `--check`, scanner historique,
+tooling 530/530, licences et audits npm complet/production à zéro
+vulnérabilité. Les NON-PASS précédents restent des preuves historiques.
+
+Le succès de `pg@8.22.0` qualifie uniquement les chemins exécutés; il ne
+qualifie ni le driver globalement, ni la charge ou la panne réseau distribuée.
+Fournisseurs notification/HIBP/keyring de production NON QUALIFIÉS, politique
+OSS différée, C2b/C3 non commencés et aucune publication autorisée.
+
+## C2a R1 — clôture locale C-05 — 2026-10-18
+
+L'avenant C-05 autorise et qualifie une fenêtre d'idempotence exactement égale
+à 24 heures selon l'horloge murale PostgreSQL `clock_timestamp()`, capturée une
+fois dans une CTE matérialisée après le verrou. La borne est demi-ouverte; une clé
+expirée reçoit atomiquement une nouvelle génération, sans suppression de son
+historique. La concurrence, les payloads identiques ou différents et
+l'impossibilité pour une invocation ancienne d'écraser le nouveau résultat
+sont verrouillés par PostgreSQL.
+
+La migration C2a locale a pu être amendée parce qu'elle n'était ni intégrée à
+`main`, ni appliquée à une base persistante à préserver. Aucune migration C1
+ou C2-P0 intégrée n'a changé. Fresh/upgrade, contraintes, ACL, rollback,
+`COMMIT_UNKNOWN`, métier C2a et non-régression C1 ont été rejoués réellement.
+
+Résultats sélectionnés : Foundations 34/34. La campagne métier compte
+12 contrôles réussis : 1 contrôle statique et 11 scénarios réels
+PostgreSQL/Redis/HTTP. C1 passe 47/47, les tests API comptent 211 pass avec 61
+skips conditionnels, le tooling passe 530/530 et tous les gates affectés sont
+concluants. Les NON-PASS antérieurs restent historiques. Sur Windows, la
+quiescence est prouvée par le canal de contrôle, pas par l'observation d'un
+handler gracieux après signal OS. Les fournisseurs restent NON QUALIFIÉS,
+`pg@8.22.0` conserve sa réserve globale, C2b/C3 ne sont pas commencés et la
+publication reste interdite.
+
+## 2026-10-18 — C2a candidat de publication raccordé à Infrastructure
+
+Un mandat distinct autorise désormais la préparation de publication. Le
+workflow Infrastructure génère Prisma, conserve le gate C1 et exécute les deux
+wrappers C2a qualifiés avant les contrôles Compose, lifecycle et santé API.
+Cet instantané ne revendique encore aucun succès Linux ou CI : ces résultats
+restent **EN ATTENTE** sur le futur SHA publié.
+
+Les preuves locales ne changent pas de sens. L'historique P1–P9 compte
+8 contrôles réussis : 1 contrôle statique et 7 scénarios réels
+PostgreSQL/Redis/HTTP ; le gel final compte 12 contrôles réussis : 1 contrôle
+statique et 11 scénarios réels. Les 61 skips conditionnels restent répartis en
+11 C2a, 46 C1 et 4 Foundations-P0. L'arrêt gracieux par signal OS
+Windows/POSIX reste **NON DEMONSTRATED**, les fournisseurs de production
+restent **NON QUALIFIÉS**, et `pg@8.22.0` reste qualifié uniquement sur les
+chemins exercés. C2b/C3 ne sont pas commencés ; politique OSS différée.
+
+## 2026-10-18 — R2, gate historique C1 autonome qualifié localement
+
+Le run Infrastructure `39135914973` reste FAILURE et ses steps C2a restent
+skipped. Sa cause est bornée : trois migrations C1 et une projection attendue à
+39 modèles étaient comparées au schéma courant C2a à 48 modèles ; le parcours
+vide n'était pas isolé de la quatrième migration.
+
+Le validateur R2 utilise directement une copie byte-exacte du schéma C1 de
+`d514b87cbef21dfae4585f4d143889aca2d8b229` : 36 144 octets, blob
+`e02e0cd7ee86a7c08738b2965adb19d56cd3e776`, SHA-256
+`812fe0b405009e153fbc5221aae66f3527ea2e9e2e6f818f173a0bf61601827f`.
+Il vérifie ces identités et les 39 noms de modèles avant toute utilisation. Le
+workspace temporaire ne contient que la configuration, ce schéma, les trois
+migrations et le lock C1 figés ; il ne dépend ni de Git à l'exécution, ni du
+réseau, ni d'un checkout profond, n'exécute aucune génération historique et
+désactive C2a pour le provisionneur. Il capture l'identité filesystem de chaque
+objet créé et la revérifie avant emploi ou suppression ; une substitution à
+octets identiques est refusée sans suppression. La base `tmp` est supprimée
+uniquement si cette invocation l'a créée, qu'elle est identique et vide ; une
+base préexistante reste intacte.
+
+Les bases historiques A/B passent à 39 modèles, 40 tables et trois migrations,
+avec projection identique, ACL et refus attendus. La suite C1 courante passe
+47/47 et l'état Prisma courant reste inchangé. Les deux wrappers C2a passent
+ensuite séparément : Foundations 34/34, puis 12 contrôles réussis — 1 contrôle
+statique et 11 scénarios réels PostgreSQL/Redis/HTTP — avec C1 47/47. Le
+tooling passe 536/536 et `tmp` est absent après campagne. Il s'agit d'un GO local borné, sans requalification de
+la CI ou de Linux. Signal gracieux Windows/POSIX NON DEMONSTRATED, fournisseurs
+de production NON QUALIFIÉS, C2b/C3 non commencés et politique OSS différée.
+
+## C2a R3 — état local après échec Infrastructure R2
+
+Le head publié R2 reste `5ca12f03…` et le run Infrastructure `39168610286`
+reste FAILURE sans rerun. Son log démontre une hypothèse rigide sur la ligne
+d'inventaire Docker, sans conserver les valeurs comparées ; l'origine précise
+reste **NON CONCLUSIVE**.
+
+Le candidat local R3 contrôle séparément le digest de manifeste, le RepoDigest
+et l'ID local, accepte plusieurs représentations du même ID et refuse de classer
+une erreur Docker indéterminée comme absence. Le cleanup ne peut retirer que la
+référence exacte d'une acquisition attestée, jamais une image préexistante ou
+partagée. Le workflow initialise un état explicite sur une instance Compose
+unique et rend `infra:down` conditionnel à une préparation démontrée. Le
+cleanup lie à cet état l'identité no-follow du manifeste, des cinq fichiers et
+des deux répertoires attendus ; il exige l'ensemble complet après préparation
+et préserve toute substitution, y compris byte-identique.
+
+Les preuves locales sélectionnées sur les octets finaux sont : syntaxe et
+workflow PASS, régressions R3 5/5, tooling 541/541 — incluant les 39 contrôles
+du fichier ciblé —, Foundations 34/34, métier 1 contrôle statique + 11 scénarios
+réels, C1 47/47 et inventaire Docker étranger restauré. Le direct 37/39 après
+le finding Security reste NON-PASS sur deux tests historiques de deadline et
+socket. La première reprise tooling, d'abord observée sans métadonnées finales,
+a finalement terminé 541/541 au code 0 ; elle a chevauché la reprise causale
+également réussie 541/541 et n'est plus classée NON CONCLUSIVE. Les autres
+NON-PASS, dont 538/541 sandboxé, sont conservés. Linux/CI R3 reste NON QUALIFIÉ,
+de même que les fournisseurs ; signal gracieux Windows/POSIX toujours NON
+DEMONSTRATED.
+
+## Instantané local C2a R4 — arrêt des runners — 2026-10-20
+
+La publication R3 reste la baseline Git ; R4 est un correctif local non indexé
+et non publié. Le run R3 métier 10/12 reste NON-PASS : les runners notification
+et expiration avaient dépassé 45 secondes après SIGTERM avant SIGKILL, tandis
+que C1 47/47 et Foundations 34/34 restaient réussis.
+
+R4 reproduit ce défaut sous Linux avec les exécutables compilés, un parent
+conservant stdin ouvert et un vrai SIGTERM. Les deux runners ferment leurs
+ressources et émettent un outcome sain, mais ne sortent qu'après fermeture
+diagnostique post-constat de stdin. La cause démontrée est le listener stdin du
+mode preuve resté actif. Le correctif retire seulement ce listener, restaure
+l'état non actif du flux sans le fermer et conserve des handlers OS idempotents
+jusqu'à la fin du cleanup.
+
+Une première contre-revue a détecté que le candidat retirait encore ces
+handlers avant la quiescence et la fermeture Nest. Le correctif terminal les
+conserve donc dans un `finally` jusqu'après le cleanup. Sous Linux, chacun des
+deux runners reçoit ensuite deux vrais `SIGTERM`, le second seulement après le
+marqueur de cleanup actif : fermeture unique, code 0, signal terminal null et
+aucun SIGKILL.
+
+Sur les octets R4, les deux runners Linux sortent à code 0 avec stdin parent
+ouvert, sans SIGKILL. Les tests ciblés passent 34/34, la campagne métier compte
+12 contrôles réussis — 1 contrôle statique et 11 scénarios réels
+PostgreSQL/Redis/HTTP — et C1 passe 47/47. Format, lint, typecheck, build API,
+scanner et tooling 541/541 passent. Les NON-PASS intermédiaires et R3 restent
+historiques. La terminaison OS Windows demeure non gracieuse ; CI R4,
+fournisseurs de production et Linux de production restent NON QUALIFIÉS.
+C2b/C3 ne sont pas commencés et la politique OSS reste différée.
+
+La tentative combinée terminale passe son étage métier 12/12, mais reste
+NON-PASS parce que le sous-processus C1 atteint son watchdog avec `code=null`.
+La reprise C1 dédiée, sur les mêmes octets et des ressources neuves, passe
+47/47 avec cleanup complet. Les deux résultats sont conservés séparément.
+
+## Instantané local C2a R5 — résolution Vite — 2026-10-21
+
+R5 conserve les pins directs exacts Vite `8.1.6` à la racine, dans API et dans
+Admin. Le pin racine permet le hoisting unique attendu pour Vitest 4.1.11 et
+`@vitest/mocker` 4.1.11. L'override Vitest du candidat BLOCK est retiré par
+avenant terminal, sans modification des autres overrides ; npm régénère un
+lockfile byte-identique.
+
+L'installation propre, `npm ls vite --all` et l'arbre complet passent. Une
+seule copie Vite `8.1.6` existe dans le lock et sur disque, aucune version
+`8.0.0–8.1.5` ne subsiste et les peers sont satisfaits. Les snapshots résolus
+avant/après sont byte-identiques pour version, emplacement, intégrité et
+relations. Le scanner officiel et les audits npm complet/production passent.
+Le graphe installé étant inchangé, API 217 PASS/61 SKIP, Admin 13/13, builds,
+tooling 541/541 et R4 hôte/Linux 34/34 restent applicables sans nouveau replay
+Docker.
+
+Tous les candidats NON-PASS/BLOCK et leurs erreurs restent archivés. R5 est
+local, non indexé et non publié ; PR #52 OPEN/Draft inchangée. Fournisseurs de
+production NON QUALIFIÉS, C2b/C3 non commencés et politique OSS différée.
+
+## Instantané local C2a R8 — verrou Foundations R7 et Vitest 4.1.12 — 2026-10-21
+
+R7 remplace le hash global historique du lock Foundations par les entrées
+réellement protégées : projection Prisma `7.9.1` à 131 paquets, fermeture
+`pg@8.22.0` à 14 paquets, entrée Vitest qualifiée, trois migrations
+historiques et non-mutation byte-à-byte du lock pendant la campagne. Son
+parcours local C1 47/47, Foundations 34/34 et métier 1 contrôle statique +
+11 scénarios réels avec C1 47/47 était techniquement vert, mais l'audit complet
+R7 restait BLOCK sur les avis Vitest.
+
+R8 porte les quatre déclarations directes Vitest et la couverture API à
+`4.1.12` exacte. Le scanner vérifie versions, URL, intégrités, licence,
+parents, installation physique et cohérence Vitest/mocker/coverage, et refuse
+explicitement `4.1.11`. Vite reste `8.1.6`; les projections Prisma et pg
+restent byte-identiques à R7 et le graphe de production ne dérive pas.
+
+La résolution du lock conserve npm `10.9.3` comme outil du projet. L'erreur
+Arborist `edgesOut`, déclenchée par le peer optionnel
+`@vitest/browser-webdriverio` non publié en `4.1.12`, est contournée
+uniquement dans une fixture hors dépôt par npm `11.6.0`. Après retrait des
+déclarations temporaires, npm `10.9.3` finalise le lock et réussit
+`npm ci`, `npm ls --all` et l'arbre Vitest/Vite sans peer invalide.
+
+Sur le candidat local final, les tests passent pour API 217 avec 61 skips
+conditionnels, Admin 13/13, Web 10/10 et UI 11/11 ; tooling passe 549/549,
+le scanner adversarial 109/109, lint, typecheck et builds passent. Les audits
+npm complet et production trouvent zéro vulnérabilité, 931 paquets ont une
+signature de registre vérifiée, 192 une attestation, et l'inventaire de
+933 paquets ne contient aucune licence non déclarée ou non approuvée.
+
+La preuve R4 fraîche passe 34/34 sur l'hôte et sous Linux ; notification et
+expiration reçoivent chacune deux vrais SIGTERM pendant le cleanup et sortent
+code 0, signal null, sans SIGKILL. La chaîne réelle séquentielle passe C1
+47/47, Foundations 34/34, puis métier 1 contrôle statique + 11 scénarios réels
+et sa non-régression C1 47/47. Les ressources de campagne sont nettoyées et
+l'inventaire étranger est préservé.
+
+Les NON-PASS historiques et de reprise restent archivés. Le warning source map
+AdminLTE et le warning OpenSSL de l'image Node slim sont conservés sans échec
+du test, de la génération ou du build. L'arrêt gracieux Windows par signal OS
+reste non démontré ; la preuve POSIX est locale et ne qualifie pas Linux de
+production. Fournisseurs de production NON QUALIFIÉS, C2b/C3 non commencés et
+politique OSS différée. La publication et la CI restent soumises aux conditions
+terminales distinctes du mandat R8.
+
+## État courant C2a publié dans la Draft PR #52 — 2026-10-22
+
+L'état courant n'est plus l'instantané local R5. Les étapes R6 et R7 ont
+remplacé les verrouillages globaux du lockfile par les projections protégées
+C1/Foundations ; R8 a qualifié Vite `8.1.6` avec Vitest `4.1.12`; R9 a corrigé
+le reset lifecycle afin qu'il utilise l'identité `PROJECT_NAME` résolue.
+
+Le head source publié est
+`fd0f084fc6316c379454ef701307e79471ed92e2`, arbre
+`761251da5c6f624bdcaf40186ccb6a542fa35217`, sur la base
+`d514b87cbef21dfae4585f4d143889aca2d8b229`. La PR #52 reste `OPEN/Draft`,
+non fusionnée et non déployée. Les quatre workflows R9 sont verts :
+Infrastructure `39818813532`, Launcher Windows `39818813686`, Security
+`39818813647` et Quality Linux `39818813472`. Ils ont exécuté le head source
+via le merge synthétique `8cc7c81b40c8d7e197a6920b08a734d9dc23ea5e`.
+
+La preuve Infrastructure distingue C1 47/47, Foundations 34/34 et métier
+**1 contrôle statique + 11 scénarios réels**. Lifecycle, API health, arrêt
+gracieux POSIX des runners et cleanup sont qualifiés. Les 61 SKIP de la suite
+API générale restent 46 C1, 11 C2a et 4 Foundations-P0 ; les campagnes réelles
+séparées démontrent leur portée conditionnelle sans les transformer en PASS.
+
+L'incident local R9 et sa restauration restent des faits historiques. La
+configuration des services étrangers a été rétablie et leur état observable
+préservé après la reprise isolée, mais l'intégrité byte-à-byte des volumes et
+l'état logique exhaustif préincident restent **NON DEMONSTRATED**. Le signal
+gracieux Windows reste **NON DEMONSTRATED**. Linux de production et les
+fournisseurs de production restent non qualifiés ; C2b/C3 ne sont pas
+commencés et la politique OSS reste différée.
+
+## Candidat local C2a R10+R11 — clôture et Next.js 16.4.1 — 2026-10-22
+
+R10 ferme les deux findings de la revue cumulative : la migration C2a ne perd
+que son LF terminal surnuméraire et passe Foundations 34/34 sur fresh/upgrade,
+projections, données historiques, ACL, transactions et C-05 ; les sept
+documents vivants distinguent état courant et historique. Aucun checksum de
+base persistante n'est réconcilié ou réécrit. La limite d'une installation
+externe non observable reste explicite.
+
+Les audits R10 ont découvert séparément deux advisories critiques sur Next.js
+`16.3.8`. R11 porte Admin/Web à Next.js `16.4.1`, aligne
+`eslint-config-next`/plugin pour Admin/Web/UI, verrouille Next/env/SWC 16.4.1
+et sharp `0.35.5`, et conserve Vite `8.1.6`, Vitest `4.1.12`, Prisma et pg.
+Le lock généré par le bridge isolé est finalement accepté par npm `10.9.3`,
+sans dépendance temporaire ni intégrité éditée à la main.
+
+Installation propre, arbre npm, audits à zéro, signatures, licences, scanner,
+régressions, tooling 554/554, lint, typecheck, tests, builds et smokes
+Admin/Web/UI passent. Une image PNG bénigne est optimisée en WebP via
+Next.js 16.4.1/sharp 0.35.5. Le NON-PASS tooling 552/554 et les candidats npm
+ou smoke rejetés restent archivés sans être requalifiés.
+
+R10+R11 restent locaux au présent instantané. Le head publié et les quatre
+workflows verts restent ceux de R9 ; aucune publication ni CI R11 n'est encore
+affirmée. L'incident R9 et ses limites, le signal Windows NON DEMONSTRATED,
+les 61 SKIP, Linux et fournisseurs de production non qualifiés, C2b/C3 non
+commencés et la politique OSS différée restent inchangés.

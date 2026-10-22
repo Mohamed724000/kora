@@ -1,7 +1,18 @@
 import { spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { dirname, resolve, sep } from 'node:path';
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmdirSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 
@@ -13,6 +24,8 @@ const apiDirectory = resolve(prismaDirectory, '..');
 const repositoryRoot = resolve(apiDirectory, '..', '..');
 const prismaEntry = resolve(repositoryRoot, 'node_modules', 'prisma', 'build', 'index.js');
 const migrationsDirectory = resolve(prismaDirectory, 'migrations');
+const HISTORICAL_REFERENCE = 'd514b87cbef21dfae4585f4d143889aca2d8b229';
+const HISTORICAL_REFERENCE_TREE = '2429871f3b440934cfbd02ceaaf0c74f3f8f3ac4';
 const HISTORICAL_MIGRATIONS = [
   {
     name: '20260914000000_canonical_postgresql_baseline',
@@ -25,8 +38,112 @@ const HISTORICAL_MIGRATIONS = [
 ];
 const C1_MIGRATION = '20261002170022_admin_auth_session_runtime';
 const LOCK_SHA256 = '99836963713b4f5b269ad49af0ed3d7b0b2e336115c2f92dc9ac683d139d0900';
+const EXPECTED_PRISMA_VERSION = '7.9.1';
+const EXPECTED_PRISMA_TOOLCHAIN_PACKAGES = 131;
+const EXPECTED_PRISMA_TOOLCHAIN_SHA256 =
+  '4ee0f8df901d14c7d6eec658575eba6ddaa45860f21d0aa15cf4b0c9a14d5bcb';
 const EXPECTED_MODELS = 39;
 const EXPECTED_TABLES_WITH_MIGRATION_HISTORY = 40;
+const EXPECTED_HISTORICAL_MODELS = [
+  'Customer',
+  'CustomerDevice',
+  'CustomerSession',
+  'OtpChallenge',
+  'AdminUser',
+  'AdminSession',
+  'AdminRecoveryCode',
+  'AdminPreAuthContext',
+  'AdminTotpEnrollment',
+  'AdminRecoveryContext',
+  'AdminRefreshToken',
+  'AdminRecoveryCodeBatch',
+  'AdminSecurityEvent',
+  'Artist',
+  'AudioContent',
+  'MediaAsset',
+  'MediaWebhookInbox',
+  'ContentPublication',
+  'PublicationMediaAsset',
+  'Order',
+  'OrderItem',
+  'OrderStateEvent',
+  'PaymentAttempt',
+  'PaymentAttemptEvent',
+  'PaymentWebhookInbox',
+  'OutboxEvent',
+  'Settlement',
+  'ArtistSettlement',
+  'LedgerAccount',
+  'LedgerTransactionGroup',
+  'LedgerPosting',
+  'ArtistEarning',
+  'Entitlement',
+  'PreviewGrant',
+  'PreviewPlaybackDescriptor',
+  'PurchasedPlaybackDescriptor',
+  'IdempotencyRecord',
+  'AdminIdempotencyRecord',
+  'AuditLog',
+];
+const HISTORICAL_ARTIFACTS = [
+  {
+    bytes: 901,
+    gitOid: '1d5ed8b49be2519ba3ea67e11c23411945c98105',
+    sha256: 'a2b38fdd44a8828332992f366f7ace269c73b67e1b06c9b19f53c6b1d8bb4ee2',
+    sourcePath: 'apps/api/prisma.config.ts',
+    targetPath: 'apps/api/prisma.config.ts',
+  },
+  {
+    bytes: 36_144,
+    gitOid: 'e02e0cd7ee86a7c08738b2965adb19d56cd3e776',
+    sha256: '812fe0b405009e153fbc5221aae66f3527ea2e9e2e6f818f173a0bf61601827f',
+    sourcePath: 'apps/api/prisma/history/s1-2-03c1/schema.prisma',
+    targetPath: 'apps/api/prisma/schema.prisma',
+  },
+  {
+    bytes: 39_513,
+    gitOid: 'b1fed269d2582d50cafefb2695463a0fd2d54cc5',
+    sha256: '37e97b5bb370447fdfa6cc856c44d8d25dd518b43879ff8cd04c951ad062c6f6',
+    sourcePath:
+      'apps/api/prisma/migrations/20260914000000_canonical_postgresql_baseline/migration.sql',
+    targetPath:
+      'apps/api/prisma/migrations/20260914000000_canonical_postgresql_baseline/migration.sql',
+  },
+  {
+    bytes: 49_168,
+    gitOid: 'db4dcbf9ef66fa0aba04f3bd640d906568a5a0fe',
+    sha256: 'e316e5fcf0b452c003074ba7e6cf60a07384b68fb2d904cfd387cac54919ffb2',
+    sourcePath: 'apps/api/prisma/migrations/20260914000100_canonical_sql_constraints/migration.sql',
+    targetPath: 'apps/api/prisma/migrations/20260914000100_canonical_sql_constraints/migration.sql',
+  },
+  {
+    bytes: 32_092,
+    gitOid: '756163fd30efb69c1e643281919e6c760cb03df6',
+    sha256: 'e04f8f340cfb8ad00a059a9a6132104bad872cc3bb5bcafeaa02f13c00b18631',
+    sourcePath:
+      'apps/api/prisma/migrations/20261002170022_admin_auth_session_runtime/migration.sql',
+    targetPath:
+      'apps/api/prisma/migrations/20261002170022_admin_auth_session_runtime/migration.sql',
+  },
+  {
+    bytes: 128,
+    gitOid: '044d57cdb0d5b5bff3475112359a4ee70439bf78',
+    sha256: '99836963713b4f5b269ad49af0ed3d7b0b2e336115c2f92dc9ac683d139d0900',
+    sourcePath: 'apps/api/prisma/migrations/migration_lock.toml',
+    targetPath: 'apps/api/prisma/migrations/migration_lock.toml',
+  },
+];
+
+export function historicalArtifactManifest() {
+  return HISTORICAL_ARTIFACTS.map((artifact) => ({ ...artifact }));
+}
+
+export function historicalReferenceMetadata() {
+  return {
+    commit: HISTORICAL_REFERENCE,
+    tree: HISTORICAL_REFERENCE_TREE,
+  };
+}
 const POSTGRES_READINESS_ATTEMPT_TIMEOUT_MILLISECONDS = 2_000;
 const POSTGRES_READINESS_CLEANUP_TIMEOUT_MILLISECONDS = 500;
 const POSTGRES_READINESS_GRACEFUL_CLEANUP_TIMEOUT_MILLISECONDS = 350;
@@ -411,19 +528,580 @@ function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
 }
 
-function migrationPath(name) {
-  return resolve(migrationsDirectory, name, 'migration.sql');
+export function gitBlobOid(value) {
+  const bytes = Buffer.isBuffer(value) ? value : Buffer.from(value);
+  return createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
 }
 
-function verifyImmutableHistory() {
+function safeRelativePath(path, label) {
+  if (
+    typeof path !== 'string' ||
+    path.length === 0 ||
+    isAbsolute(path) ||
+    path.split(/[\\/]/u).some((part) => part === '' || part === '.' || part === '..')
+  ) {
+    fail(`${label} is not a safe relative path`);
+  }
+  return path;
+}
+
+function assertRegularFile(path, label) {
+  let stats;
+  try {
+    stats = lstatSync(path);
+  } catch (error) {
+    fail(`${label} is missing: ${error.code ?? error.name}`);
+  }
+  if (!stats.isFile() || stats.isSymbolicLink()) fail(`${label} is not a regular file`);
+  if (realpathSync(path) !== resolve(path))
+    fail(`${label} resolves through a link or reparse point`);
+  return stats;
+}
+
+function filesystemIdentity(path, expectedKind, label) {
+  let stats;
+  try {
+    stats = lstatSync(path, { bigint: true });
+  } catch (error) {
+    fail(`${label} identity is unavailable: ${error.code ?? error.name}`);
+  }
+  if (stats.isSymbolicLink()) fail(`${label} identity is a link or reparse point`);
+  const kind = stats.isFile() ? 'file' : stats.isDirectory() ? 'directory' : 'unsupported';
+  if (kind !== expectedKind) fail(`${label} identity changed type`);
+  if (stats.ino === 0n) fail(`${label} has no stable filesystem identity`);
+  return {
+    birthtimeNs: stats.birthtimeNs.toString(),
+    dev: stats.dev.toString(),
+    ino: stats.ino.toString(),
+    kind,
+    mode: stats.mode.toString(),
+  };
+}
+
+function rememberWorkspaceIdentity(workspace, path, kind, label) {
+  const identity = filesystemIdentity(path, kind, label);
+  workspace.identities.set(path, identity);
+}
+
+function assertWorkspaceObjectIdentity(workspace, path, kind, label) {
+  const expected = workspace.identities.get(path);
+  if (expected === undefined) fail(`${label} creation identity was not recorded`);
+  const actual = filesystemIdentity(path, kind, label);
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) fail(`${label} was substituted`);
+}
+
+function assertWorkspaceIdentities(workspace) {
+  assertWorkspaceObjectIdentity(
+    workspace,
+    workspace.root,
+    'directory',
+    'historical workspace root',
+  );
+  for (const directory of workspace.directories) {
+    assertWorkspaceObjectIdentity(
+      workspace,
+      directory,
+      'directory',
+      'historical workspace directory',
+    );
+  }
+  for (const path of workspace.files) {
+    assertWorkspaceObjectIdentity(workspace, path, 'file', 'historical workspace artifact');
+  }
+}
+
+function removeCreatedTempBase(workspace, label) {
+  if (!workspace.tempBaseCreated) return;
+  assertWorkspaceObjectIdentity(workspace, workspace.tempBase, 'directory', label);
+  if (readdirSync(workspace.tempBase).length !== 0) fail(`${label} is not empty`);
+  rmdirSync(workspace.tempBase);
+}
+
+export function validateHistoricalArtifactBuffer(artifact, contents) {
+  safeRelativePath(artifact.sourcePath, 'historical source path');
+  safeRelativePath(artifact.targetPath, 'historical target path');
+  if (!Buffer.isBuffer(contents)) fail(`historical artifact is not binary: ${artifact.sourcePath}`);
+  if (contents.length !== artifact.bytes)
+    fail(`historical artifact size changed: ${artifact.sourcePath}`);
+  if (sha256(contents) !== artifact.sha256)
+    fail(`historical artifact SHA-256 changed: ${artifact.sourcePath}`);
+  if (gitBlobOid(contents) !== artifact.gitOid)
+    fail(`historical artifact Git blob changed: ${artifact.sourcePath}`);
+}
+
+function historicalModelNames(schema) {
+  return [...schema.toString('utf8').matchAll(/^\s*model\s+([A-Za-z][A-Za-z0-9_]*)\s*\{/gmu)].map(
+    ([, name]) => name,
+  );
+}
+
+function verifyHistoricalSchema(schema) {
+  if (schema.includes(13)) fail('historical schema is not LF-only');
+  const models = historicalModelNames(schema);
+  if (JSON.stringify(models) !== JSON.stringify(EXPECTED_HISTORICAL_MODELS))
+    fail('historical schema model identity inventory changed');
+}
+
+function readHistoricalArtifacts(sourceRoot = repositoryRoot) {
+  const artifacts = new Map();
+  for (const artifact of HISTORICAL_ARTIFACTS) {
+    const path = resolve(
+      sourceRoot,
+      safeRelativePath(artifact.sourcePath, 'historical source path'),
+    );
+    const rootRelativePath = relative(resolve(sourceRoot), path);
+    if (rootRelativePath.startsWith(`..${sep}`) || rootRelativePath === '..')
+      fail('historical source escaped its root');
+    assertRegularFile(path, `historical artifact ${artifact.sourcePath}`);
+    const contents = readFileSync(path);
+    validateHistoricalArtifactBuffer(artifact, contents);
+    artifacts.set(artifact.targetPath, { artifact, contents });
+  }
+  verifyHistoricalSchema(artifacts.get('apps/api/prisma/schema.prisma').contents);
+  return artifacts;
+}
+
+function fileInventory(root) {
+  if (!existsSync(root)) return [];
+  const entries = [];
+  const visit = (directory) => {
+    const stats = lstatSync(directory);
+    if (!stats.isDirectory() || stats.isSymbolicLink())
+      fail('inventory encountered an unsafe directory');
+    if (realpathSync(directory) !== resolve(directory))
+      fail('inventory encountered a linked or reparsed directory');
+    for (const entry of readdirSync(directory, { withFileTypes: true }).sort((left, right) =>
+      left.name.localeCompare(right.name, 'en'),
+    )) {
+      const path = resolve(directory, entry.name);
+      if (entry.isSymbolicLink()) fail('inventory encountered a symbolic link');
+      if (entry.isDirectory()) {
+        visit(path);
+      } else if (entry.isFile()) {
+        const bytes = readFileSync(path);
+        entries.push({
+          bytes: bytes.length,
+          path: relative(root, path).split(sep).join('/'),
+          sha256: sha256(bytes),
+        });
+      } else {
+        fail('inventory encountered an unsupported filesystem entry');
+      }
+    }
+  };
+  visit(root);
+  return entries;
+}
+
+function currentPrismaStateSignature() {
+  const trackedFiles = [
+    resolve(apiDirectory, 'prisma.config.ts'),
+    resolve(prismaDirectory, 'schema.prisma'),
+  ].map((path) => {
+    assertRegularFile(path, 'current Prisma source');
+    const bytes = readFileSync(path);
+    return { bytes: bytes.length, path, sha256: sha256(bytes) };
+  });
+  const generatedClientDirectory = resolve(repositoryRoot, 'node_modules', '.prisma', 'client');
+  return sha256(
+    JSON.stringify({
+      generatedClient: fileInventory(generatedClientDirectory),
+      migrations: fileInventory(migrationsDirectory),
+      trackedFiles,
+    }),
+  );
+}
+
+function canonicalJsonValue(value) {
+  if (Array.isArray(value)) return value.map(canonicalJsonValue);
+  if (value !== null && typeof value === 'object')
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort((left, right) => left.localeCompare(right, 'en'))
+        .map((key) => [key, canonicalJsonValue(value[key])]),
+    );
+  return value;
+}
+
+function resolveLockedDependency(packages, fromPath, dependency) {
+  let cursor = fromPath;
+  for (;;) {
+    const candidate = cursor
+      ? `${cursor}/node_modules/${dependency}`
+      : `node_modules/${dependency}`;
+    if (Object.hasOwn(packages, candidate)) return candidate;
+    const nestedMarker = cursor.lastIndexOf('/node_modules/');
+    if (nestedMarker >= 0) {
+      cursor = cursor.slice(0, nestedMarker);
+      continue;
+    }
+    if (cursor.startsWith('node_modules/')) {
+      cursor = '';
+      continue;
+    }
+    return undefined;
+  }
+}
+
+export function qualifiedPrismaToolchainProjection(packageLock) {
+  let parsed;
+  try {
+    parsed = JSON.parse(Buffer.isBuffer(packageLock) ? packageLock.toString('utf8') : packageLock);
+  } catch {
+    fail('package-lock.json is not valid JSON');
+  }
+  if (
+    parsed.lockfileVersion !== 3 ||
+    parsed.packages === null ||
+    typeof parsed.packages !== 'object'
+  )
+    fail('package-lock.json is not a supported npm lockfile');
+  const apiWorkspace = parsed.packages['apps/api'];
+  if (apiWorkspace?.devDependencies?.prisma !== EXPECTED_PRISMA_VERSION)
+    fail(`API Prisma declaration ${EXPECTED_PRISMA_VERSION} is required`);
+
+  const pending = ['node_modules/prisma'];
+  const visited = new Set();
+  while (pending.length > 0) {
+    const packagePath = pending.pop();
+    if (visited.has(packagePath)) continue;
+    const entry = parsed.packages[packagePath];
+    if (entry === undefined) fail(`protected Prisma toolchain package is missing: ${packagePath}`);
+    visited.add(packagePath);
+    for (const collection of ['dependencies', 'optionalDependencies']) {
+      for (const dependency of Object.keys(entry[collection] ?? {}).sort()) {
+        const resolved = resolveLockedDependency(parsed.packages, packagePath, dependency);
+        if (resolved === undefined)
+          fail(
+            `protected Prisma toolchain dependency is unresolved: ${packagePath} -> ${dependency}`,
+          );
+        pending.push(resolved);
+      }
+    }
+  }
+
+  return canonicalJsonValue({
+    lockfileVersion: parsed.lockfileVersion,
+    packages: [...visited]
+      .sort((left, right) => left.localeCompare(right, 'en'))
+      .map((path) => ({ path, value: parsed.packages[path] })),
+    workspace: { prisma: apiWorkspace.devDependencies.prisma },
+  });
+}
+
+export function validateQualifiedPrismaToolchainLock(packageLock) {
+  const projection = qualifiedPrismaToolchainProjection(packageLock);
+  const projectionSha256 = sha256(JSON.stringify(projection));
+  if (
+    projection.packages.length !== EXPECTED_PRISMA_TOOLCHAIN_PACKAGES ||
+    projectionSha256 !== EXPECTED_PRISMA_TOOLCHAIN_SHA256
+  )
+    fail('protected Prisma toolchain projection changed');
+  const prisma = projection.packages.find(({ path }) => path === 'node_modules/prisma');
+  if (prisma?.value?.version !== EXPECTED_PRISMA_VERSION)
+    fail(`locked Prisma CLI ${EXPECTED_PRISMA_VERSION} is required`);
+  return {
+    packageCount: projection.packages.length,
+    prismaVersion: prisma.value.version,
+    projectionSha256,
+  };
+}
+
+export function captureQualifiedPrismaToolchainState({
+  emit = true,
+  packageLockPath = resolve(repositoryRoot, 'package-lock.json'),
+  prismaPackagePath = resolve(repositoryRoot, 'node_modules', 'prisma', 'package.json'),
+} = {}) {
+  const resolvedPackageLockPath = resolve(packageLockPath);
+  const resolvedPrismaPackagePath = resolve(prismaPackagePath);
+  assertRegularFile(resolvedPackageLockPath, 'package-lock.json');
+  assertRegularFile(resolvedPrismaPackagePath, 'installed Prisma package');
+  const packageLock = readFileSync(resolvedPackageLockPath);
+  const toolchain = validateQualifiedPrismaToolchainLock(packageLock);
+  const prismaPackageBytes = readFileSync(resolvedPrismaPackagePath);
+  const prismaPackage = JSON.parse(prismaPackageBytes.toString('utf8'));
+  if (prismaPackage.version !== EXPECTED_PRISMA_VERSION)
+    fail(`Prisma CLI ${EXPECTED_PRISMA_VERSION} is required`);
+  const state = {
+    packageLock: {
+      identity: filesystemIdentity(resolvedPackageLockPath, 'file', 'package-lock.json'),
+      path: resolvedPackageLockPath,
+      sha256: sha256(packageLock),
+    },
+    prismaPackage: {
+      identity: filesystemIdentity(resolvedPrismaPackagePath, 'file', 'installed Prisma package'),
+      path: resolvedPrismaPackagePath,
+      sha256: sha256(prismaPackageBytes),
+    },
+    toolchain,
+  };
+  if (emit)
+    process.stdout.write(
+      `C1_HISTORICAL_TOOLCHAIN_PASS prisma=${toolchain.prismaVersion} protected_packages=${toolchain.packageCount} projection_sha256=${toolchain.projectionSha256} package_lock_sha256=${state.packageLock.sha256}\n`,
+    );
+  return state;
+}
+
+export function assertQualifiedPrismaToolchainStateUnchanged(state) {
+  const current = captureQualifiedPrismaToolchainState({
+    emit: false,
+    packageLockPath: state.packageLock.path,
+    prismaPackagePath: state.prismaPackage.path,
+  });
+  if (
+    JSON.stringify(current.packageLock.identity) !== JSON.stringify(state.packageLock.identity) ||
+    current.packageLock.sha256 !== state.packageLock.sha256
+  )
+    fail('package-lock.json changed during validation');
+  if (
+    JSON.stringify(current.prismaPackage.identity) !==
+      JSON.stringify(state.prismaPackage.identity) ||
+    current.prismaPackage.sha256 !== state.prismaPackage.sha256
+  )
+    fail('installed Prisma package changed during validation');
+  process.stdout.write(
+    `C1_TOOLCHAIN_STATE_UNCHANGED_PASS package_lock_sha256=${state.packageLock.sha256} prisma_package_sha256=${state.prismaPackage.sha256}\n`,
+  );
+}
+
+function verifyWorkspaceInventory(workspace, artifacts = HISTORICAL_ARTIFACTS) {
+  assertWorkspaceIdentities(workspace);
+  const actual = fileInventory(workspace.root).map(({ bytes, path, sha256: hash }) => ({
+    bytes,
+    path,
+    sha256: hash,
+  }));
+  actual.sort((left, right) => left.path.localeCompare(right.path, 'en'));
+  const expected = artifacts
+    .map((artifact) => ({
+      bytes: artifact.bytes,
+      path: artifact.targetPath,
+      sha256: artifact.sha256,
+    }))
+    .sort((left, right) => left.path.localeCompare(right.path, 'en'));
+  if (JSON.stringify(actual) !== JSON.stringify(expected))
+    fail('historical workspace inventory changed or contains an unexpected artifact');
+}
+
+function workspaceDirectories(root, artifacts = HISTORICAL_ARTIFACTS) {
+  const directories = new Set();
+  for (const artifact of artifacts) {
+    let directory = dirname(resolve(root, artifact.targetPath));
+    while (directory !== root) {
+      directories.add(directory);
+      directory = dirname(directory);
+    }
+  }
+  return [...directories].sort((left, right) => left.split(sep).length - right.split(sep).length);
+}
+
+function assertWorkspaceRoot(workspace) {
+  const base = realpathSync(workspace.tempBase);
+  const root = realpathSync(workspace.root);
+  if (
+    !root.startsWith(`${base}${sep}`) ||
+    !/^kora-c1-history-[A-Za-z0-9_-]+$/u.test(basename(root))
+  )
+    fail('historical workspace escaped its guarded temporary root');
+  const stats = lstatSync(root);
+  if (!stats.isDirectory() || stats.isSymbolicLink())
+    fail('historical workspace root is not a safe directory');
+  assertWorkspaceObjectIdentity(
+    workspace,
+    workspace.root,
+    'directory',
+    'historical workspace root',
+  );
+}
+
+export function materializeHistoricalPrismaWorkspace({
+  sourceRoot = repositoryRoot,
+  tempBase = resolve(repositoryRoot, 'tmp'),
+} = {}) {
+  const source = resolve(sourceRoot);
+  const base = resolve(tempBase);
+  const baseRelativeToSource = relative(source, base);
+  if (baseRelativeToSource.startsWith(`..${sep}`) || baseRelativeToSource === '..')
+    fail('historical temporary root must stay under its source root');
+  const artifacts = readHistoricalArtifacts(source);
+  const createdBase = mkdirSync(base, { recursive: true });
+  const baseStats = lstatSync(base);
+  if (!baseStats.isDirectory() || baseStats.isSymbolicLink())
+    fail('historical temporary base is not a safe directory');
+  const tempBaseCreated = createdBase !== undefined;
+  const tempBaseIdentity = tempBaseCreated
+    ? filesystemIdentity(base, 'directory', 'created historical temporary base')
+    : undefined;
+  let root;
+  try {
+    root = mkdtempSync(resolve(base, 'kora-c1-history-'));
+  } catch (error) {
+    if (tempBaseCreated) {
+      const actual = filesystemIdentity(base, 'directory', 'failed workspace temporary base');
+      if (JSON.stringify(actual) !== JSON.stringify(tempBaseIdentity))
+        throw new AggregateError(
+          [error, new Error('failed workspace temporary base was substituted')],
+          'historical workspace root creation failed',
+          { cause: error },
+        );
+      if (readdirSync(base).length !== 0)
+        throw new AggregateError(
+          [error, new Error('failed workspace temporary base is not empty')],
+          'historical workspace root creation failed',
+          { cause: error },
+        );
+      rmdirSync(base);
+    }
+    throw error;
+  }
+  const workspace = {
+    apiDirectory: resolve(root, 'apps', 'api'),
+    configPath: resolve(root, 'apps', 'api', 'prisma.config.ts'),
+    directories: [],
+    files: [],
+    identities: new Map(),
+    migrationsDirectory: resolve(root, 'apps', 'api', 'prisma', 'migrations'),
+    root,
+    schemaPath: resolve(root, 'apps', 'api', 'prisma', 'schema.prisma'),
+    tempBase: base,
+    tempBaseCreated,
+  };
+  if (tempBaseCreated) workspace.identities.set(base, tempBaseIdentity);
+  try {
+    rememberWorkspaceIdentity(workspace, root, 'directory', 'created historical workspace root');
+    workspace.directories = workspaceDirectories(root);
+    for (const directory of workspace.directories) {
+      mkdirSync(directory);
+      rememberWorkspaceIdentity(
+        workspace,
+        directory,
+        'directory',
+        'created historical workspace directory',
+      );
+    }
+    for (const artifact of HISTORICAL_ARTIFACTS) {
+      const path = resolve(root, artifact.targetPath);
+      const { contents } = artifacts.get(artifact.targetPath);
+      writeFileSync(path, contents, { flag: 'wx', mode: 0o600 });
+      workspace.files.push(path);
+      rememberWorkspaceIdentity(workspace, path, 'file', `created artifact ${artifact.targetPath}`);
+      assertRegularFile(path, `materialized artifact ${artifact.targetPath}`);
+      validateHistoricalArtifactBuffer(artifact, readFileSync(path));
+    }
+    assertWorkspaceRoot(workspace);
+    verifyWorkspaceInventory(workspace);
+    return workspace;
+  } catch (error) {
+    const cleanupErrors = [];
+    for (const path of [...workspace.files].reverse()) {
+      try {
+        if (existsSync(path)) {
+          assertWorkspaceObjectIdentity(
+            workspace,
+            path,
+            'file',
+            'failed-creation cleanup artifact',
+          );
+          unlinkSync(path);
+        }
+      } catch (cleanupError) {
+        cleanupErrors.push(cleanupError);
+      }
+    }
+    for (const directory of [...workspace.directories].reverse()) {
+      try {
+        if (existsSync(directory)) {
+          assertWorkspaceObjectIdentity(
+            workspace,
+            directory,
+            'directory',
+            'failed-creation cleanup directory',
+          );
+          rmdirSync(directory);
+        }
+      } catch (cleanupError) {
+        cleanupErrors.push(cleanupError);
+      }
+    }
+    try {
+      if (existsSync(root)) {
+        assertWorkspaceObjectIdentity(workspace, root, 'directory', 'failed-creation cleanup root');
+        rmdirSync(root);
+      }
+    } catch (cleanupError) {
+      cleanupErrors.push(cleanupError);
+    }
+    try {
+      removeCreatedTempBase(workspace, 'failed-creation cleanup temporary base');
+    } catch (cleanupError) {
+      cleanupErrors.push(cleanupError);
+    }
+    if (cleanupErrors.length > 0)
+      throw new AggregateError([error, ...cleanupErrors], 'historical workspace creation failed', {
+        cause: error,
+      });
+    throw error;
+  }
+}
+
+export function cleanupHistoricalPrismaWorkspace(workspace) {
+  assertWorkspaceRoot(workspace);
+  verifyWorkspaceInventory(workspace);
+  for (const artifact of [...HISTORICAL_ARTIFACTS].reverse()) {
+    const path = resolve(workspace.root, artifact.targetPath);
+    assertWorkspaceObjectIdentity(
+      workspace,
+      path,
+      'file',
+      `historical cleanup artifact ${artifact.targetPath}`,
+    );
+    assertRegularFile(path, `historical cleanup artifact ${artifact.targetPath}`);
+    validateHistoricalArtifactBuffer(artifact, readFileSync(path));
+    unlinkSync(path);
+  }
+  for (const directory of [...workspace.directories].reverse()) {
+    assertWorkspaceObjectIdentity(
+      workspace,
+      directory,
+      'directory',
+      'historical cleanup directory',
+    );
+    rmdirSync(directory);
+  }
+  assertWorkspaceObjectIdentity(workspace, workspace.root, 'directory', 'historical cleanup root');
+  rmdirSync(workspace.root);
+  removeCreatedTempBase(workspace, 'historical cleanup temporary base');
+}
+
+function verifyHistoricalWorkspace(workspace) {
+  assertWorkspaceRoot(workspace);
+  verifyWorkspaceInventory(workspace);
+  for (const artifact of HISTORICAL_ARTIFACTS) {
+    const path = resolve(workspace.root, artifact.targetPath);
+    assertRegularFile(path, `historical workspace artifact ${artifact.targetPath}`);
+    validateHistoricalArtifactBuffer(artifact, readFileSync(path));
+  }
+  process.stdout.write(
+    `C1_HISTORICAL_REFERENCE_PASS ref=${HISTORICAL_REFERENCE} tree=${HISTORICAL_REFERENCE_TREE} artifacts=${HISTORICAL_ARTIFACTS.length} models=${EXPECTED_MODELS} migrations=3\n`,
+  );
+}
+
+function migrationPath(name, directory = migrationsDirectory) {
+  return resolve(directory, name, 'migration.sql');
+}
+
+function verifyImmutableHistory(workspace) {
+  verifyHistoricalWorkspace(workspace);
   for (const migration of HISTORICAL_MIGRATIONS) {
-    const contents = readFileSync(migrationPath(migration.name));
+    const contents = readFileSync(migrationPath(migration.name, workspace.migrationsDirectory));
     if (sha256(contents) !== migration.sha256)
       fail(`historical migration changed: ${migration.name}`);
   }
-  const lock = readFileSync(resolve(migrationsDirectory, 'migration_lock.toml'));
+  const lock = readFileSync(resolve(workspace.migrationsDirectory, 'migration_lock.toml'));
   if (sha256(lock) !== LOCK_SHA256) fail('migration_lock.toml changed');
-  process.stdout.write('HISTORICAL_MIGRATIONS_IMMUTABLE_PASS migrations=2 lock=unchanged\n');
+  process.stdout.write(
+    'HISTORICAL_MIGRATIONS_IMMUTABLE_PASS migrations=3 lock=unchanged c2a=excluded\n',
+  );
 }
 
 function databaseName(label) {
@@ -471,9 +1149,9 @@ function prismaEnvironment(database) {
   };
 }
 
-function runPrisma(argumentsList, database, allowedExitCodes = [0]) {
+function runPrisma(argumentsList, database, allowedExitCodes = [0], cwd = apiDirectory) {
   const result = spawnSync(process.execPath, [prismaEntry, ...argumentsList], {
-    cwd: apiDirectory,
+    cwd,
     encoding: 'utf8',
     env: prismaEnvironment(database),
     windowsHide: true,
@@ -499,8 +1177,8 @@ async function dropDatabase(admin, name) {
   process.stdout.write(`TARGETED_C1_DATABASE_REMOVED ${name}\n`);
 }
 
-async function applyMigrationSql(client, name) {
-  await client.query(readFileSync(migrationPath(name), 'utf8'));
+async function applyMigrationSql(client, name, directory = migrationsDirectory) {
+  await client.query(readFileSync(migrationPath(name, directory), 'utf8'));
 }
 
 function runDocker(argumentsList, allowedExitCodes = [0]) {
@@ -517,6 +1195,8 @@ function runDocker(argumentsList, allowedExitCodes = [0]) {
 function provisionerArguments(database) {
   return [
     'exec',
+    '--env',
+    'KORA_POSTGRES_C2A_ENABLED=false',
     '--env',
     `POSTGRES_DB=${database}`,
     '--env',
@@ -945,20 +1625,22 @@ async function assertCatalogInventory(client) {
   process.stdout.write('C1_CATALOG_INVENTORY_PASS models=39 tables=40 migrations=3\n');
 }
 
-function comparePrismaProjection(database) {
+function comparePrismaProjection(database, workspace) {
+  verifyHistoricalWorkspace(workspace);
   const result = runPrisma(
     [
       'migrate',
       'diff',
       '--config',
-      'prisma.config.ts',
+      workspace.configPath,
       '--from-schema',
-      'prisma/schema.prisma',
+      workspace.schemaPath,
       '--to-config-datasource',
       '--exit-code',
     ],
     database,
     [0, 2],
+    workspace.apiDirectory,
   );
   const forbidden =
     /Added tables|Removed tables|Added columns|Removed columns|Changed the .* column|Changed the .* enum/iu;
@@ -986,15 +1668,18 @@ async function expectFailure(client, label, callback, expectedCodes = ['23514'])
   }
 }
 
-async function installHistoricalChain(database) {
+async function installHistoricalChain(database, workspace) {
+  verifyHistoricalWorkspace(workspace);
   const client = new Client(adminConfiguration(database));
   await client.connect();
   try {
     for (const migration of HISTORICAL_MIGRATIONS) {
-      await applyMigrationSql(client, migration.name);
+      await applyMigrationSql(client, migration.name, workspace.migrationsDirectory);
       runPrisma(
-        ['migrate', 'resolve', '--applied', migration.name, '--config', 'prisma.config.ts'],
+        ['migrate', 'resolve', '--applied', migration.name, '--config', workspace.configPath],
         database,
+        [0],
+        workspace.apiDirectory,
       );
     }
   } finally {
@@ -1438,39 +2123,62 @@ async function verifyRuntimeAcl(database) {
   }
 }
 
-async function prepareUpgradeDatabase(database) {
-  await installHistoricalChain(database);
+async function prepareUpgradeDatabase(database, workspace) {
+  verifyHistoricalWorkspace(workspace);
+  await installHistoricalChain(database, workspace);
   const client = new Client(adminConfiguration(database));
   await client.connect();
   try {
     const legacy = await insertLegacyAuditFixture(client);
-    await applyMigrationSql(client, C1_MIGRATION);
+    await applyMigrationSql(client, C1_MIGRATION, workspace.migrationsDirectory);
     runPrisma(
-      ['migrate', 'resolve', '--applied', C1_MIGRATION, '--config', 'prisma.config.ts'],
+      ['migrate', 'resolve', '--applied', C1_MIGRATION, '--config', workspace.configPath],
       database,
+      [0],
+      workspace.apiDirectory,
     );
     await verifyLegacyAuditUpgrade(client, legacy);
     await assertCatalogInventory(client);
-    comparePrismaProjection(database);
+    comparePrismaProjection(database, workspace);
     await insertC1PositiveFixture(client);
     await runConstraintSuite(client);
-    return await catalogSignature(client);
+    const signature = await catalogSignature(client);
+    verifyHistoricalWorkspace(workspace);
+    return signature;
   } finally {
     await client.end();
   }
 }
 
-async function prepareEmptyDatabase(database) {
-  runPrisma(['migrate', 'deploy', '--config', 'prisma.config.ts'], database);
-  runPrisma(['migrate', 'status', '--config', 'prisma.config.ts'], database);
-  runPrisma(['migrate', 'deploy', '--config', 'prisma.config.ts'], database);
+async function prepareEmptyDatabase(database, workspace) {
+  verifyHistoricalWorkspace(workspace);
+  runPrisma(
+    ['migrate', 'deploy', '--config', workspace.configPath],
+    database,
+    [0],
+    workspace.apiDirectory,
+  );
+  runPrisma(
+    ['migrate', 'status', '--config', workspace.configPath],
+    database,
+    [0],
+    workspace.apiDirectory,
+  );
+  runPrisma(
+    ['migrate', 'deploy', '--config', workspace.configPath],
+    database,
+    [0],
+    workspace.apiDirectory,
+  );
   const client = new Client(adminConfiguration(database));
   await client.connect();
   try {
     await assertCatalogInventory(client);
-    comparePrismaProjection(database);
+    comparePrismaProjection(database, workspace);
     await insertC1PositiveFixture(client);
-    return await catalogSignature(client);
+    const signature = await catalogSignature(client);
+    verifyHistoricalWorkspace(workspace);
+    return signature;
   } finally {
     await client.end();
   }
@@ -1500,9 +2208,8 @@ function assertEnvironment() {
     fail('reader and writer secrets must differ');
 }
 
-async function main() {
-  assertEnvironment();
-  verifyImmutableHistory();
+async function runC1Validation(workspace) {
+  verifyImmutableHistory(workspace);
   const readiness = await waitForPostgresReadiness();
   const admin = readiness.client;
   const databases = [];
@@ -1523,10 +2230,10 @@ async function main() {
     const second = databaseName('b');
     await createDatabase(admin, first);
     databases.push(first);
-    const firstSignature = await prepareUpgradeDatabase(first);
+    const firstSignature = await prepareUpgradeDatabase(first, workspace);
     await createDatabase(admin, second);
     databases.push(second);
-    const secondSignature = await prepareEmptyDatabase(second);
+    const secondSignature = await prepareEmptyDatabase(second, workspace);
     if (firstSignature !== secondSignature)
       fail('upgrade and empty database catalog signatures differ');
     process.stdout.write(`C1_DATABASE_A_B_PROJECTION_PASS sha256=${firstSignature}\n`);
@@ -1579,6 +2286,57 @@ async function main() {
   }
   process.stdout.write(
     `S1.2-03C1_ADMIN_AUTH_POSTGRESQL_PASS databases=${databases.length} models=${EXPECTED_MODELS} tables=${EXPECTED_TABLES_WITH_MIGRATION_HISTORY} provisioner_successes=${provisionerSuccessCount} provisioner_refusals=${writerAclRefusalCount + membershipRefusalCount} writer_acl_refusals=${writerAclRefusalCount} membership_refusals=${membershipRefusalCount}\n`,
+  );
+}
+
+async function main() {
+  assertEnvironment();
+  const historicalToolchainState = captureQualifiedPrismaToolchainState();
+  const currentStateBefore = currentPrismaStateSignature();
+  let primaryError;
+  let workspace;
+  try {
+    workspace = materializeHistoricalPrismaWorkspace();
+    await runC1Validation(workspace);
+  } catch (error) {
+    primaryError = error;
+  }
+
+  const cleanupErrors = [];
+  if (workspace !== undefined) {
+    try {
+      cleanupHistoricalPrismaWorkspace(workspace);
+      process.stdout.write('TARGETED_C1_HISTORICAL_WORKSPACE_REMOVED\n');
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+  }
+  try {
+    const currentStateAfter = currentPrismaStateSignature();
+    if (currentStateAfter !== currentStateBefore)
+      fail('current Prisma sources, migrations, configuration, or generated client changed');
+  } catch (error) {
+    cleanupErrors.push(error);
+  }
+  try {
+    assertQualifiedPrismaToolchainStateUnchanged(historicalToolchainState);
+  } catch (error) {
+    cleanupErrors.push(error);
+  }
+
+  if (primaryError !== undefined) {
+    if (cleanupErrors.length > 0)
+      throw new AggregateError(
+        [primaryError, ...cleanupErrors],
+        'C1 validation failed and historical isolation cleanup was incomplete',
+        { cause: primaryError },
+      );
+    throw primaryError;
+  }
+  if (cleanupErrors.length > 0)
+    throw new AggregateError(cleanupErrors, 'C1 historical isolation cleanup failed');
+  process.stdout.write(
+    'C1_CURRENT_PRISMA_STATE_UNCHANGED_PASS schema=true migrations=true config=true generated_client=true\n',
   );
 }
 

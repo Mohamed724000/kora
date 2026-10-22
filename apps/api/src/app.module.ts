@@ -2,6 +2,10 @@ import { Module, type DynamicModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AdminAuthModule } from './admin-auth/admin-auth.module';
 import type { AdminKeyProvider } from './admin-auth/admin-key-provider';
+import {
+  AdminSecurityModule,
+  type AdminSecurityModuleOptions,
+} from './admin-security/admin-security.module';
 import { loadRuntimeConfig } from './config/runtime-config';
 import { DatabaseModule } from './database/database.module';
 import type { AdminWriterRuntimeBoundary } from './database/admin-writer.service';
@@ -12,6 +16,7 @@ import { QueueInfrastructureModule } from './infrastructure/queue-infrastructure
 
 export interface AppModuleOptions {
   adminKeyProvider?: AdminKeyProvider;
+  adminSecurity?: Omit<AdminSecurityModuleOptions, 'adminKeyProvider' | 'httpRoutesEnabled'>;
   adminWriterBoundary?: AdminWriterRuntimeBoundary;
   environment?: Record<string, string | undefined>;
   readinessChecks?: readonly ReadinessCheck[];
@@ -21,13 +26,27 @@ export interface AppModuleOptions {
 @Module({})
 export class AppModule {
   static register(options: AppModuleOptions = {}): DynamicModule {
+    const runtimeConfig = loadRuntimeConfig(options.environment ?? process.env);
+    const adminAuthModule = AdminAuthModule.register({
+      ...(options.adminKeyProvider === undefined ? {} : { keyProvider: options.adminKeyProvider }),
+    });
+    const adminHttpModule =
+      runtimeConfig.adminC2a.enabled && runtimeConfig.adminC2a.profile === 'HTTP'
+        ? AdminSecurityModule.register({
+            ...options.adminSecurity,
+            ...(options.adminKeyProvider === undefined
+              ? {}
+              : { adminKeyProvider: options.adminKeyProvider }),
+            httpRoutesEnabled: true,
+          })
+        : adminAuthModule;
     return {
       imports: [
         ConfigModule.forRoot({
           cache: true,
           ignoreEnvFile: options.environment !== undefined,
           isGlobal: true,
-          validate: (environment) => loadRuntimeConfig(options.environment ?? environment),
+          validate: () => runtimeConfig,
         }),
         DatabaseModule.register({
           ...(options.adminWriterBoundary === undefined
@@ -37,11 +56,7 @@ export class AppModule {
             ? {}
             : { runtimeBoundary: options.runtimeDatabaseBoundary }),
         }),
-        AdminAuthModule.register({
-          ...(options.adminKeyProvider === undefined
-            ? {}
-            : { keyProvider: options.adminKeyProvider }),
-        }),
+        adminHttpModule,
         QueueInfrastructureModule,
         HealthModule.register({
           ...(options.readinessChecks === undefined

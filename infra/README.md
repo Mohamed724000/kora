@@ -120,6 +120,61 @@ global sûr puis retirer la portée masquante.
 Ces identifiants sont exclusivement locaux. Ils ne doivent jamais être copiés
 dans un fichier versionné ou un environnement partagé.
 
+## Fondations PostgreSQL C2a
+
+C2a reste désactivé par défaut avec `KORA_POSTGRES_C2A_ENABLED=false`. Son
+activation locale exige quatre identités `NOINHERIT` distinctes, sans
+membership, ownership, attribut administratif, configuration de rôle ni grant
+option :
+
+- `kora_admin_c2a_writer` ;
+- `kora_admin_c2a_notification_worker` ;
+- `kora_admin_c2a_expiration_worker` ;
+- `kora_admin_c2a_bootstrap`.
+
+Quand C2a est désactivé, les quatre montages fichiers en lecture seule
+réutilisent uniquement le fichier owner existant afin de préserver le démarrage
+C1 et son invariant historique de trois secrets Compose sans nouveau fichier
+local. L'activation exige quatre fichiers explicites, distincts entre eux et
+des trois secrets C1. Ils sont fournis par
+`KORA_POSTGRES_C2A_WRITER_SECRET_FILE`,
+`KORA_POSTGRES_C2A_NOTIFICATION_WORKER_SECRET_FILE`,
+`KORA_POSTGRES_C2A_EXPIRATION_WORKER_SECRET_FILE` et
+`KORA_POSTGRES_C2A_BOOTSTRAP_SECRET_FILE`. Le provisionneur refuse avant toute
+mutation le fallback commun ou toute autre collision de secrets quand C2a est
+activé.
+
+Le provisionneur refuse toute identité C2a contaminée avant mutation. Sa
+matrice exacte préserve multiplicité, namespace et grantor propriétaire, puis
+borne les colonnes et les deux vues causales du worker de
+notification ; les sinks `AuditLog` et `AdminSecurityEvent` restent
+`INSERT`-only, sans `RETURNING`. Routines, types, large objects, paramètres,
+default ACL, grants hors `public` et droits `PUBLIC` restent interdits.
+L’application atteste la même matrice namespace-aware dans la transaction et
+avant toute commande métier.
+
+Les quatre capacités applicatives C2a sont exclusives par processus. Le profil
+`HTTP` reçoit seulement le credential `kora_admin_c2a_writer`,
+`NOTIFICATION` seulement `kora_admin_c2a_notification_worker`, `EXPIRATION`
+seulement `kora_admin_c2a_expiration_worker` et `BOOTSTRAP` seulement
+`kora_admin_c2a_bootstrap`. `ADMIN_C2A_PROFILE` sélectionne un unique profil ;
+la présence d’un user ou secret appartenant à un autre profil est refusée. Le
+service PostgreSQL Compose reste le provisionneur local et exige quatre fichiers
+distincts uniquement lorsque C2a est activé afin de créer et normaliser les
+quatre rôles. Les quatre montages de fallback conservés lorsque C2a est désactivé
+restent ceux décrits ci-dessus ; ces fichiers ne constituent pas l'environnement
+d'un processus applicatif. Quand C2a est désactivé, aucun profil ni credential
+C2a n'est exigé et le démarrage C1 reste inchangé.
+
+La validation isolée se lance avec
+`apps/api/prisma/run-admin-security-c2a-runtime-validation.ps1`. Elle crée des
+noms Docker uniques, un réseau bridge dédié, un stockage PostgreSQL `tmpfs`, un
+port loopback et sept secrets éphémères distincts. Le wrapper nettoie seulement
+les ressources portant son nom exact et son label, compare conteneurs, volumes,
+réseaux et images avant/après, puis restaure les variables de processus. Ce
+validator ne qualifie aucun fournisseur et n’implémente aucune opération HTTP,
+worker métier ou bootstrap CLI.
+
 ## Commandes
 
 Sous Windows, utiliser `npm.cmd` :

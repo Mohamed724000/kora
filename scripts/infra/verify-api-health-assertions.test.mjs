@@ -1,12 +1,48 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { delimiter, dirname, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import pg from "pg";
 
-import { waitForPostgresReadiness } from "../../apps/api/prisma/validate-admin-auth-runtime.mjs";
+import {
+  assertQualifiedPrismaToolchainStateUnchanged,
+  captureQualifiedPrismaToolchainState,
+  cleanupHistoricalPrismaWorkspace,
+  gitBlobOid,
+  historicalArtifactManifest,
+  historicalReferenceMetadata,
+  materializeHistoricalPrismaWorkspace,
+  validateQualifiedPrismaToolchainLock,
+  validateHistoricalArtifactBuffer,
+  waitForPostgresReadiness,
+} from "../../apps/api/prisma/validate-admin-auth-runtime.mjs";
+
+import {
+  assertQualifiedFoundationsToolchainStateUnchanged,
+  captureQualifiedFoundationsToolchainState,
+  runWithProtectedFoundationsInputs,
+  validateQualifiedFoundationsToolchainLock,
+} from "../../apps/api/prisma/validate-admin-security-c2a-runtime.mjs";
 
 import {
   assertNoSensitiveValue,
@@ -24,6 +60,878 @@ const requiredViolations = [
 ];
 
 const { Client } = pg;
+const repositoryRoot = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+);
+
+const pinnedImageFunctionNames = [
+  "ConvertTo-DockerImageInventoryEntries",
+  "Test-DockerNoSuchImageResult",
+  "Resolve-PinnedImageIdentity",
+  "Assert-PinnedImageCleanupSafe",
+  "Assert-PinnedImageRemovalPostcondition",
+];
+
+function runPowerShellImageFixture(wrapperPath, body) {
+  const fixtureRoot = mkdtempSync(
+    resolve(tmpdir(), "kora-image-identity-fixture-"),
+  );
+  try {
+    const fixturePath = resolve(fixtureRoot, "fixture.ps1");
+    const escapedWrapper = wrapperPath.replaceAll("'", "''");
+    const names = pinnedImageFunctionNames
+      .map((name) => `'${name}'`)
+      .join(", ");
+    writeFileSync(
+      fixturePath,
+      `$ErrorActionPreference = 'Stop'\n` +
+        `$wrapperPath = '${escapedWrapper}'\n` +
+        `$tokens = $null\n$parseErrors = $null\n` +
+        `$ast = [Management.Automation.Language.Parser]::ParseFile($wrapperPath, [ref]$tokens, [ref]$parseErrors)\n` +
+        `if ($parseErrors.Count -ne 0) { throw 'Wrapper parse failed.' }\n` +
+        `$functionNames = @(${names})\n` +
+        `foreach ($name in $functionNames) {\n` +
+        `  $definition = $ast.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name }, $true)\n` +
+        `  if ($null -eq $definition) { throw "Missing function $name." }\n` +
+        `  . ([scriptblock]::Create($definition.Extent.Text))\n` +
+        `}\n` +
+        body,
+      { encoding: "utf8", flag: "wx" },
+    );
+    return spawnSync(
+      process.platform === "win32" ? "pwsh.exe" : "pwsh",
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", fixturePath],
+      { encoding: "utf8", windowsHide: true },
+    );
+  } finally {
+    rmSync(fixtureRoot, { force: true, recursive: true });
+  }
+}
+
+function imageIdentityFixtureBody() {
+  return String.raw`
+function New-Result([int]$ExitCode, [string]$Stdout, [string]$Stderr, [bool]$TimedOut = $false) {
+  return [pscustomobject]@{ ExitCode = $ExitCode; Stdout = $Stdout; Stderr = $Stderr; TimedOut = $TimedOut }
+}
+function Assert-FixtureThrows([scriptblock]$Action) {
+  $threw = $false
+  try { & $Action } catch { $threw = $true }
+  if (-not $threw) { throw 'Expected fixture action to throw.' }
+}
+$manifestDigest = 'sha256:' + ('a' * 64)
+$imageId = 'sha256:' + ('b' * 64)
+$otherId = 'sha256:' + ('c' * 64)
+$image = "postgres:18.4-alpine3.24@$manifestDigest"
+$tag = 'postgres:18.4-alpine3.24'
+$repoDigest = "postgres@$manifestDigest"
+$identity = [pscustomobject]@{
+  Id = $imageId
+  RepoTags = @($tag, $repoDigest)
+  RepoDigests = @($repoDigest)
+}
+$inspectOk = New-Result 0 ($identity | ConvertTo-Json -Compress) ''
+$inventory = @(
+  "$tag|$manifestDigest|$imageId",
+  "mirror:copy|sha256:$('d' * 64)|$imageId"
+)
+$present = Resolve-PinnedImageIdentity -Image $image -ExpectedRepoDigest $repoDigest -InventoryImages $inventory -InspectResult $inspectOk
+if (-not $present.Present -or $present.Id -ne $imageId -or $imageId -eq $manifestDigest -or
+    $present.InventoryEntries.Count -ne 2) {
+  throw 'Valid distinct local image identity or multi-reference inventory was rejected.'
+}
+
+$wrongDigestIdentity = [pscustomobject]@{
+  Id = $imageId; RepoTags = @($tag); RepoDigests = @("postgres@sha256:$('e' * 64)")
+}
+Assert-FixtureThrows {
+  Resolve-PinnedImageIdentity -Image $image -ExpectedRepoDigest $repoDigest -InventoryImages $inventory -InspectResult (New-Result 0 ($wrongDigestIdentity | ConvertTo-Json -Compress) '')
+}
+Assert-FixtureThrows {
+  Resolve-PinnedImageIdentity -Image $image -ExpectedRepoDigest $repoDigest -InventoryImages $inventory -InspectResult (New-Result 0 '' '')
+}
+$multiple = @($identity, $identity) | ConvertTo-Json -Compress
+Assert-FixtureThrows {
+  Resolve-PinnedImageIdentity -Image $image -ExpectedRepoDigest $repoDigest -InventoryImages $inventory -InspectResult (New-Result 0 $multiple '')
+}
+Assert-FixtureThrows {
+  Resolve-PinnedImageIdentity -Image $image -ExpectedRepoDigest $repoDigest -InventoryImages $inventory -InspectResult (New-Result 0 '{invalid' '')
+}
+
+function New-NoSuch([string]$Reference) {
+  return New-Result 1 '' "Error response from daemon: No such image: $Reference"
+}
+$absent = Resolve-PinnedImageIdentity -Image $image -ExpectedRepoDigest $repoDigest -InventoryImages @() -InspectResult (New-NoSuch $image) -DaemonInfoResult (New-Result 0 '{}' '') -TagInspectResult (New-NoSuch $tag) -DigestInspectResult (New-NoSuch $repoDigest)
+if ($absent.Present -or $absent.Classification -ne 'no_such_image') {
+  throw 'Exact absent image fixture was not classified as absent.'
+}
+Assert-FixtureThrows {
+  Resolve-PinnedImageIdentity -Image $image -ExpectedRepoDigest $repoDigest -InventoryImages @() -InspectResult (New-NoSuch $image) -DaemonInfoResult (New-Result 1 '' 'daemon unavailable') -TagInspectResult (New-NoSuch $tag) -DigestInspectResult (New-NoSuch $repoDigest)
+}
+Assert-FixtureThrows {
+  Resolve-PinnedImageIdentity -Image $image -ExpectedRepoDigest $repoDigest -InventoryImages @() -InspectResult (New-Result 1 '' 'permission denied') -DaemonInfoResult (New-Result 0 '{}' '') -TagInspectResult (New-NoSuch $tag) -DigestInspectResult (New-NoSuch $repoDigest)
+}
+Assert-FixtureThrows {
+  Resolve-PinnedImageIdentity -Image $image -ExpectedRepoDigest $repoDigest -InventoryImages @("$tag|$manifestDigest|$imageId") -InspectResult (New-NoSuch $image) -DaemonInfoResult (New-Result 0 '{}' '') -TagInspectResult (New-NoSuch $tag) -DigestInspectResult (New-NoSuch $repoDigest)
+}
+Assert-FixtureThrows {
+  Resolve-PinnedImageIdentity -Image $image -ExpectedRepoDigest $repoDigest -InventoryImages @() -InspectResult (New-NoSuch $image) -DaemonInfoResult (New-Result 0 '{}' '') -TagInspectResult $inspectOk -DigestInspectResult (New-NoSuch $repoDigest)
+}
+
+$ownedInventory = @("$tag|$manifestDigest|$imageId")
+$acquired = [pscustomobject]@{
+  Present = $true; Id = $imageId; RepoTags = @($tag, $repoDigest); RepoDigests = @($repoDigest);
+  InventoryEntries = @($ownedInventory); Classification = 'present'; InspectExitCode = 0; DaemonInfoExitCode = $null
+}
+if (-not (Assert-PinnedImageCleanupSafe -Image $image -ExpectedRepoDigest $repoDigest -AcquisitionAttempted $true -AcquiredState $acquired -CurrentState $acquired -InitialImageIds @($otherId) -CurrentInventoryImages $ownedInventory -ContainerIdentities @())) {
+  throw 'Owned acquired image cleanup fixture was rejected.'
+}
+Assert-FixtureThrows {
+  Assert-PinnedImageCleanupSafe -Image $image -ExpectedRepoDigest $repoDigest -AcquisitionAttempted $false -AcquiredState $acquired -CurrentState $acquired -InitialImageIds @($otherId) -CurrentInventoryImages $ownedInventory -ContainerIdentities @()
+}
+Assert-FixtureThrows {
+  Assert-PinnedImageCleanupSafe -Image $image -ExpectedRepoDigest $repoDigest -AcquisitionAttempted $true -AcquiredState $acquired -CurrentState $acquired -InitialImageIds @($imageId) -CurrentInventoryImages $ownedInventory -ContainerIdentities @()
+}
+$shared = [pscustomobject]@{
+  Present = $true; Id = $imageId; RepoTags = @($tag, $repoDigest, 'foreign:shared');
+  RepoDigests = @($repoDigest); InventoryEntries = @($ownedInventory, "foreign:shared|<none>|$imageId");
+  Classification = 'present'; InspectExitCode = 0; DaemonInfoExitCode = $null
+}
+Assert-FixtureThrows {
+  Assert-PinnedImageCleanupSafe -Image $image -ExpectedRepoDigest $repoDigest -AcquisitionAttempted $true -AcquiredState $acquired -CurrentState $shared -InitialImageIds @($otherId) -CurrentInventoryImages @($ownedInventory + "foreign:shared|<none>|$imageId") -ContainerIdentities @()
+}
+Assert-FixtureThrows {
+  Assert-PinnedImageCleanupSafe -Image $image -ExpectedRepoDigest $repoDigest -AcquisitionAttempted $true -AcquiredState $acquired -CurrentState $acquired -InitialImageIds @($otherId) -CurrentInventoryImages $ownedInventory -ContainerIdentities @([pscustomobject]@{ Id = ('f' * 64); Image = $imageId })
+}
+$changed = [pscustomobject]@{
+  Present = $true; Id = $otherId; RepoTags = @($tag, $repoDigest); RepoDigests = @($repoDigest);
+  InventoryEntries = @("$tag|$manifestDigest|$otherId"); Classification = 'present'; InspectExitCode = 0;
+  DaemonInfoExitCode = $null
+}
+Assert-FixtureThrows {
+  Assert-PinnedImageCleanupSafe -Image $image -ExpectedRepoDigest $repoDigest -AcquisitionAttempted $true -AcquiredState $acquired -CurrentState $changed -InitialImageIds @() -CurrentInventoryImages @("$tag|$manifestDigest|$otherId") -ContainerIdentities @()
+}
+if (-not (Assert-PinnedImageRemovalPostcondition -Image $image -AcquiredImageId $imageId -PostRemovalState $absent -PostRemovalInventoryImages @())) {
+  throw 'Clean image removal postcondition was rejected.'
+}
+Assert-FixtureThrows {
+  Assert-PinnedImageRemovalPostcondition -Image $image -AcquiredImageId $imageId -PostRemovalState $absent -PostRemovalInventoryImages $ownedInventory
+}
+Assert-FixtureThrows {
+  Assert-PinnedImageRemovalPostcondition -Image $image -AcquiredImageId $imageId -PostRemovalState $acquired -PostRemovalInventoryImages $ownedInventory
+}
+`;
+}
+
+function workflowRunStep(stepName) {
+  const lines = readFileSync(
+    resolve(repositoryRoot, ".github", "workflows", "infrastructure.yml"),
+    "utf8",
+  ).split(/\r?\n/u);
+  const stepStart = lines.findIndex(
+    (line) => line === `      - name: ${stepName}`,
+  );
+  assert.notEqual(stepStart, -1, `missing workflow step ${stepName}`);
+  const runStart = lines.findIndex(
+    (line, index) => index > stepStart && line === "        run: |",
+  );
+  assert.notEqual(runStart, -1, `missing run block for ${stepName}`);
+  const body = [];
+  for (let index = runStart + 1; index < lines.length; index += 1) {
+    if (lines[index].startsWith("      - name: ")) break;
+    if (lines[index].startsWith("          "))
+      body.push(lines[index].slice(10));
+  }
+  return `${body.join("\n")}\n`;
+}
+
+function sha256Hex(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+function noFollowIdentity(path) {
+  const stats = lstatSync(path, { bigint: true });
+  return {
+    type: stats.isFile()
+      ? "file"
+      : stats.isDirectory()
+        ? "directory"
+        : stats.isSymbolicLink()
+          ? "symlink"
+          : "other",
+    dev: stats.dev.toString(),
+    ino: stats.ino.toString(),
+    mode: stats.mode.toString(),
+    birthtimeNs: stats.birthtimeNs.toString(),
+  };
+}
+
+function powerShellParseResult(script) {
+  const root = mkdtempSync(resolve(tmpdir(), "kora-pwsh-parse-fixture-"));
+  try {
+    const path = resolve(root, "script.ps1");
+    writeFileSync(path, script, { encoding: "utf8", flag: "wx" });
+    return spawnSync(
+      process.platform === "win32" ? "pwsh.exe" : "pwsh",
+      [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "$tokens=$null;$errors=$null;[Management.Automation.Language.Parser]::ParseFile($env:KORA_PWSH_PARSE_PATH,[ref]$tokens,[ref]$errors)|Out-Null;if($errors.Count){$errors|ForEach-Object{[Console]::Error.WriteLine($_.Message)};exit 1}",
+      ],
+      {
+        encoding: "utf8",
+        env: { ...process.env, KORA_PWSH_PARSE_PATH: path },
+        windowsHide: true,
+      },
+    );
+  } finally {
+    rmSync(root, { force: true, recursive: true });
+  }
+}
+
+function workflowCleanupFixture(
+  context,
+  { phase, mutation = null, npmExit = 0 },
+) {
+  const root = mkdtempSync(resolve(tmpdir(), "kora-workflow-cleanup-fixture-"));
+  context.after(() => {
+    if (existsSync(root)) rmSync(root, { force: true, recursive: true });
+  });
+  const runnerTemp = resolve(root, "runner-temp");
+  const workspace = resolve(root, "workspace");
+  const bin = resolve(root, "bin");
+  mkdirSync(runnerTemp, { recursive: true });
+  mkdirSync(workspace, { recursive: true });
+  mkdirSync(bin, { recursive: true });
+  const statePath = resolve(runnerTemp, "kora-infra-job-state");
+
+  const instance = "ci-123-1";
+  const instanceRoot = resolve(
+    workspace,
+    "infra",
+    ".local",
+    "instances",
+    instance,
+  );
+  const ownershipPath = resolve(runnerTemp, "kora-infra-job-owned-files.json");
+  if (phase !== null && phase !== "not_started") {
+    const relativePaths =
+      phase === "prepare_started"
+        ? ["compose.env", "secrets/postgres_password"]
+        : [
+            "compose.env",
+            "secrets/postgres_admin_writer_password",
+            "secrets/postgres_password",
+            "secrets/postgres_runtime_password",
+            "secrets/redis_password",
+          ];
+    let files = relativePaths.map((relativePath, index) => {
+      const path = resolve(instanceRoot, ...relativePath.split("/"));
+      mkdirSync(dirname(path), { recursive: true });
+      const bytes = Buffer.from(`fixture-${index}\n`, "utf8");
+      writeFileSync(path, bytes, { flag: "wx" });
+      return {
+        identity: noFollowIdentity(path),
+        length: bytes.length,
+        relativePath,
+        sha256: sha256Hex(bytes),
+      };
+    });
+    const directories = [
+      { identity: noFollowIdentity(instanceRoot), relativePath: "." },
+      {
+        identity: noFollowIdentity(resolve(instanceRoot, "secrets")),
+        relativePath: "secrets",
+      },
+    ];
+    if (mutation === "manifest-reduced") files = files.slice(0, -1);
+    writeFileSync(
+      ownershipPath,
+      JSON.stringify({ directories, files, instanceRoot }),
+      {
+        encoding: "utf8",
+        flag: "wx",
+      },
+    );
+    writeFileSync(
+      statePath,
+      JSON.stringify({
+        ownershipManifestIdentity: noFollowIdentity(ownershipPath),
+        phase,
+      }),
+      { flag: "wx" },
+    );
+    if (mutation === "content") {
+      writeFileSync(resolve(instanceRoot, "compose.env"), "substituted\n");
+    }
+    if (mutation === "same-bytes-replacement") {
+      const target = resolve(instanceRoot, "compose.env");
+      const bytes = readFileSync(target);
+      renameSync(target, resolve(root, "original-compose.env"));
+      writeFileSync(target, bytes, { flag: "wx" });
+    }
+    if (mutation === "manifest-same-bytes-replacement") {
+      const bytes = readFileSync(ownershipPath);
+      renameSync(ownershipPath, resolve(root, "original-ownership.json"));
+      writeFileSync(ownershipPath, bytes, { flag: "wx" });
+    }
+  } else if (phase !== null) {
+    writeFileSync(statePath, JSON.stringify({ phase }), { flag: "wx" });
+  }
+
+  const npmRecord = resolve(root, "npm-record.json");
+  const fakeNpmScript = resolve(bin, "fake-npm.mjs");
+  writeFileSync(
+    fakeNpmScript,
+    `import { writeFileSync } from 'node:fs';\n` +
+      `writeFileSync(process.env.KORA_FAKE_NPM_RECORD, JSON.stringify(process.argv.slice(2)));\n` +
+      `process.exit(Number(process.env.KORA_FAKE_NPM_EXIT || '0'));\n`,
+    { encoding: "utf8", flag: "wx" },
+  );
+  if (process.platform === "win32") {
+    writeFileSync(
+      resolve(bin, "npm.cmd"),
+      `@echo off\r\n"${process.execPath}" "${fakeNpmScript}" %*\r\n`,
+      { encoding: "utf8", flag: "wx" },
+    );
+  } else {
+    const npmPath = resolve(bin, "npm");
+    writeFileSync(
+      npmPath,
+      `#!/bin/sh\nexec "${process.execPath}" "${fakeNpmScript}" "$@"\n`,
+      { encoding: "utf8", flag: "wx" },
+    );
+    chmodSync(npmPath, 0o755);
+  }
+
+  const cleanupPath = resolve(root, "cleanup.ps1");
+  writeFileSync(cleanupPath, workflowRunStep("Stop local infrastructure"), {
+    encoding: "utf8",
+    flag: "wx",
+  });
+  const result = spawnSync(
+    process.platform === "win32" ? "pwsh.exe" : "pwsh",
+    ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", cleanupPath],
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        GITHUB_WORKSPACE: workspace,
+        KORA_FAKE_NPM_EXIT: String(npmExit),
+        KORA_FAKE_NPM_RECORD: npmRecord,
+        KORA_INFRA_EPHEMERAL_INSTANCE: instance,
+        PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
+        RUNNER_TEMP: runnerTemp,
+      },
+      windowsHide: true,
+    },
+  );
+  return { instanceRoot, npmRecord, ownershipPath, result };
+}
+
+function lifecycleProjectIdentityFixture(context) {
+  const root = mkdtempSync(
+    resolve(tmpdir(), "kora-lifecycle-project-fixture-"),
+  );
+  context.after(() => rmSync(root, { force: true, recursive: true }));
+
+  const lifecycleSource = readFileSync(
+    resolve(repositoryRoot, "scripts", "infra", "verify-lifecycle.mjs"),
+    "utf8",
+  );
+  const importMarker = 'from "./lib.mjs";';
+  assert.equal(lifecycleSource.split(importMarker).length - 1, 1);
+  writeFileSync(
+    resolve(root, "verify-lifecycle.mjs"),
+    lifecycleSource.replace(importMarker, 'from "./fixture-lib.mjs";'),
+    { encoding: "utf8", flag: "wx" },
+  );
+
+  writeFileSync(
+    resolve(root, "fixture-lib.mjs"),
+    `export const PROJECT_NAME = process.env.KORA_EXPECTED_PROJECT_NAME;\n` +
+      `function record(event, value = null) { console.log(JSON.stringify({ event, value })); }\n` +
+      `export function assertPersistenceMarkers() { record("assertPersistenceMarkers"); }\n` +
+      `export function assertPersistenceMarkersAbsent() { record("assertPersistenceMarkersAbsent"); }\n` +
+      `export function checkInfrastructure() { record("checkInfrastructure"); }\n` +
+      `export function createPersistenceMarkers(value) { record("createPersistenceMarkers", value); }\n` +
+      `export function downProject() { record("downProject"); }\n` +
+      `export function prepareLocalFiles() { record("prepareLocalFiles"); }\n` +
+      `export function resetProject(confirmation) {\n` +
+      `  if (confirmation !== PROJECT_NAME) { throw new Error("wrong reset confirmation: " + confirmation); }\n` +
+      `  record("resetProject", confirmation);\n` +
+      `}\n` +
+      `export function runCompose(args) { record("runCompose", args); }\n` +
+      `export function upProject() { record("upProject"); }\n` +
+      `export function validateCompose() { record("validateCompose"); }\n` +
+      `export function waitForServiceHealthy(service) { record("waitForServiceHealthy", service); }\n`,
+    { encoding: "utf8", flag: "wx" },
+  );
+
+  const expectedProjectName = "kora-plus-r9-lifecycle-fixture";
+  const result = spawnSync(
+    process.execPath,
+    [resolve(root, "verify-lifecycle.mjs")],
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        KORA_EXPECTED_PROJECT_NAME: expectedProjectName,
+        KORA_INFRA_ALLOW_LEGACY_LIFECYCLE_CONFIRMATION: "false",
+      },
+      windowsHide: true,
+    },
+  );
+  return { expectedProjectName, result };
+}
+
+function rejectedCrossInstanceResetFixture(context) {
+  const root = mkdtempSync(resolve(tmpdir(), "kora-reset-refusal-fixture-"));
+  context.after(() => rmSync(root, { force: true, recursive: true }));
+  const libUrl = pathToFileURL(
+    resolve(repositoryRoot, "scripts", "infra", "lib.mjs"),
+  ).href;
+  const probe =
+    `import { resetProject } from ${JSON.stringify(libUrl)};\n` +
+    `try {\n` +
+    `  resetProject("kora-plus-local");\n` +
+    `  console.error("cross-instance reset was accepted");\n` +
+    `  process.exitCode = 24;\n` +
+    `} catch (error) {\n` +
+    `  console.error(error instanceof Error ? error.message : String(error));\n` +
+    `  process.exitCode = 23;\n` +
+    `}\n`;
+  const environment = { ...process.env };
+  for (const key of Object.keys(environment)) {
+    if (key.toLowerCase() === "path") {
+      delete environment[key];
+    }
+  }
+  environment.PATH = root;
+  environment.KORA_INFRA_EPHEMERAL_INSTANCE = "r9-lifecycle-fixture";
+  delete environment.KORA_INFRA_ALLOW_LEGACY_LIFECYCLE_CONFIRMATION;
+
+  return spawnSync(process.execPath, ["--input-type=module", "--eval", probe], {
+    encoding: "utf8",
+    env: environment,
+    windowsHide: true,
+  });
+}
+
+function historicalFixture(context, { alterPath, omitPath } = {}) {
+  const sourceRoot = mkdtempSync(resolve(tmpdir(), "kora-c1-history-fixture-"));
+  context.after(() => {
+    if (existsSync(sourceRoot))
+      rmSync(sourceRoot, { force: true, recursive: true });
+  });
+  for (const artifact of historicalArtifactManifest()) {
+    if (artifact.sourcePath === omitPath) continue;
+    const source = resolve(repositoryRoot, artifact.sourcePath);
+    const destination = resolve(sourceRoot, artifact.sourcePath);
+    mkdirSync(dirname(destination), { recursive: true });
+    const bytes = readFileSync(source);
+    if (artifact.sourcePath === alterPath) bytes[0] ^= 1;
+    writeFileSync(destination, bytes, { flag: "wx" });
+  }
+  return sourceRoot;
+}
+
+test("fige l'identité du schema C1 autonome sans objet Git historique", (context) => {
+  const manifest = historicalArtifactManifest();
+  const schema = manifest.find(
+    ({ sourcePath }) =>
+      sourcePath === "apps/api/prisma/history/s1-2-03c1/schema.prisma",
+  );
+  assert(schema);
+  assert.deepEqual(historicalReferenceMetadata(), {
+    commit: "d514b87cbef21dfae4585f4d143889aca2d8b229",
+    tree: "2429871f3b440934cfbd02ceaaf0c74f3f8f3ac4",
+  });
+  const bytes = readFileSync(resolve(repositoryRoot, schema.sourcePath));
+  assert.equal(bytes.length, 36_144);
+  assert.equal(gitBlobOid(bytes), schema.gitOid);
+  assert.doesNotThrow(() => validateHistoricalArtifactBuffer(schema, bytes));
+
+  const sourceRoot = historicalFixture(context);
+  assert.equal(existsSync(resolve(sourceRoot, ".git")), false);
+  const workspace = materializeHistoricalPrismaWorkspace({
+    sourceRoot,
+    tempBase: resolve(sourceRoot, "tmp"),
+  });
+  assert.equal(
+    existsSync(
+      resolve(workspace.migrationsDirectory, "admin_security_c2a_runtime"),
+    ),
+    false,
+  );
+  cleanupHistoricalPrismaWorkspace(workspace);
+  assert.equal(existsSync(workspace.root), false);
+});
+
+test("refuse le schema C1 historique manquant ou altéré", (context) => {
+  const schemaPath = "apps/api/prisma/history/s1-2-03c1/schema.prisma";
+  const missingRoot = historicalFixture(context, { omitPath: schemaPath });
+  assert.throws(
+    () =>
+      materializeHistoricalPrismaWorkspace({
+        sourceRoot: missingRoot,
+        tempBase: resolve(missingRoot, "tmp"),
+      }),
+    /historical artifact .* is missing/u,
+  );
+
+  const alteredRoot = historicalFixture(context, { alterPath: schemaPath });
+  assert.throws(
+    () =>
+      materializeHistoricalPrismaWorkspace({
+        sourceRoot: alteredRoot,
+        tempBase: resolve(alteredRoot, "tmp"),
+      }),
+    /historical artifact (?:SHA-256|Git blob) changed/u,
+  );
+});
+
+test("refuse une migration C1 historique altérée", (context) => {
+  const migrationPath =
+    "apps/api/prisma/migrations/20261002170022_admin_auth_session_runtime/migration.sql";
+  const alteredRoot = historicalFixture(context, { alterPath: migrationPath });
+  assert.throws(
+    () =>
+      materializeHistoricalPrismaWorkspace({
+        sourceRoot: alteredRoot,
+        tempBase: resolve(alteredRoot, "tmp"),
+      }),
+    /historical artifact (?:SHA-256|Git blob) changed/u,
+  );
+});
+
+test("accepte Vite hors projection et refuse une dérive Prisma protégée", () => {
+  const packageLock = JSON.parse(
+    readFileSync(resolve(repositoryRoot, "package-lock.json"), "utf8"),
+  );
+  const qualified = validateQualifiedPrismaToolchainLock(
+    JSON.stringify(packageLock),
+  );
+  assert.deepEqual(qualified, {
+    packageCount: 131,
+    prismaVersion: "7.9.1",
+    projectionSha256:
+      "4ee0f8df901d14c7d6eec658575eba6ddaa45860f21d0aa15cf4b0c9a14d5bcb",
+  });
+
+  const viteOnly = structuredClone(packageLock);
+  viteOnly.packages[""].devDependencies.vite = "99.0.0-test";
+  viteOnly.packages["node_modules/vite"].version = "99.0.0-test";
+  assert.deepEqual(
+    validateQualifiedPrismaToolchainLock(JSON.stringify(viteOnly)),
+    qualified,
+  );
+
+  const prismaDrift = structuredClone(packageLock);
+  prismaDrift.packages["node_modules/prisma"].version = "7.9.2-test";
+  assert.throws(
+    () => validateQualifiedPrismaToolchainLock(JSON.stringify(prismaDrift)),
+    /protected Prisma toolchain projection changed/u,
+  );
+});
+
+test("refuse une mutation du lockfile pendant la validation", (context) => {
+  const root = mkdtempSync(resolve(tmpdir(), "kora-c1-toolchain-fixture-"));
+  context.after(() => rmSync(root, { force: true, recursive: true }));
+  const packageLockPath = resolve(root, "package-lock.json");
+  const prismaPackagePath = resolve(
+    root,
+    "node_modules",
+    "prisma",
+    "package.json",
+  );
+  mkdirSync(dirname(prismaPackagePath), { recursive: true });
+  writeFileSync(
+    packageLockPath,
+    readFileSync(resolve(repositoryRoot, "package-lock.json")),
+    { flag: "wx" },
+  );
+  writeFileSync(prismaPackagePath, '{"version":"7.9.1"}\n', {
+    encoding: "utf8",
+    flag: "wx",
+  });
+  const state = captureQualifiedPrismaToolchainState({
+    packageLockPath,
+    prismaPackagePath,
+  });
+  const changed = JSON.parse(readFileSync(packageLockPath, "utf8"));
+  changed.packages[""].devDependencies.vite = "99.0.0-during-validation";
+  writeFileSync(packageLockPath, `${JSON.stringify(changed, null, 2)}\n`, {
+    encoding: "utf8",
+  });
+  assert.throws(
+    () => assertQualifiedPrismaToolchainStateUnchanged(state),
+    /package-lock.json changed during validation/u,
+  );
+});
+
+const foundationsHistoricalMigrations = [
+  "20260914000000_canonical_postgresql_baseline",
+  "20260914000100_canonical_sql_constraints",
+  "20261002170022_admin_auth_session_runtime",
+];
+
+function foundationsToolchainFixture(context) {
+  const root = mkdtempSync(
+    resolve(tmpdir(), "kora-c2a-foundations-toolchain-fixture-"),
+  );
+  context.after(() => rmSync(root, { force: true, recursive: true }));
+  const packageLockPath = resolve(root, "package-lock.json");
+  const migrationsRoot = resolve(root, "migrations");
+  const manifestPaths = {
+    pgManifestPath: resolve(root, "node_modules", "pg", "package.json"),
+    prismaManifestPath: resolve(root, "node_modules", "prisma", "package.json"),
+    vitestManifestPath: resolve(root, "node_modules", "vitest", "package.json"),
+  };
+  writeFileSync(
+    packageLockPath,
+    readFileSync(resolve(repositoryRoot, "package-lock.json")),
+    { flag: "wx" },
+  );
+  for (const [name, path, version] of [
+    ["pg", manifestPaths.pgManifestPath, "8.22.0"],
+    ["prisma", manifestPaths.prismaManifestPath, "7.9.1"],
+    ["vitest", manifestPaths.vitestManifestPath, "4.1.12"],
+  ]) {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, `${JSON.stringify({ name, version })}\n`, {
+      encoding: "utf8",
+      flag: "wx",
+    });
+  }
+  for (const migration of foundationsHistoricalMigrations) {
+    const destination = resolve(migrationsRoot, migration, "migration.sql");
+    mkdirSync(dirname(destination), { recursive: true });
+    writeFileSync(
+      destination,
+      readFileSync(
+        resolve(
+          repositoryRoot,
+          "apps",
+          "api",
+          "prisma",
+          "migrations",
+          migration,
+          "migration.sql",
+        ),
+      ),
+      { flag: "wx" },
+    );
+  }
+  return { migrationsRoot, packageLockPath, ...manifestPaths };
+}
+
+test("qualifie Foundations avec Vite 8.1.6 sans protéger Vite globalement", () => {
+  const packageLock = JSON.parse(
+    readFileSync(resolve(repositoryRoot, "package-lock.json"), "utf8"),
+  );
+  const qualified = validateQualifiedFoundationsToolchainLock(
+    JSON.stringify(packageLock),
+  );
+  assert.equal(qualified.prisma.prismaVersion, "7.9.1");
+  assert.equal(qualified.prisma.packageCount, 131);
+  assert.equal(qualified.pg.version, "8.22.0");
+  assert.equal(qualified.pg.packageCount, 14);
+  assert.equal(
+    qualified.pg.projectionSha256,
+    "27d546111f7b0947315339dd6bc6f1d852398ed00d8ab0b2b5fa15166f1b7b26",
+  );
+  assert.equal(qualified.vitest.version, "4.1.12");
+  assert.equal(packageLock.packages["node_modules/vite"].version, "8.1.6");
+
+  const independentViteUpdate = structuredClone(packageLock);
+  independentViteUpdate.packages[""].devDependencies.vite = "8.1.7-test";
+  independentViteUpdate.packages["apps/api"].devDependencies.vite =
+    "8.1.7-test";
+  independentViteUpdate.packages["apps/admin"].devDependencies.vite =
+    "8.1.7-test";
+  independentViteUpdate.packages["node_modules/vite"].version = "8.1.7-test";
+  independentViteUpdate.packages["node_modules/vite"].integrity =
+    "sha512-independent-vite-fixture";
+  assert.deepEqual(
+    validateQualifiedFoundationsToolchainLock(
+      JSON.stringify(independentViteUpdate),
+    ),
+    qualified,
+  );
+});
+
+test("refuse une dérive Prisma protégée dans Foundations", () => {
+  const packageLock = JSON.parse(
+    readFileSync(resolve(repositoryRoot, "package-lock.json"), "utf8"),
+  );
+  packageLock.packages["node_modules/prisma"].version = "7.9.2-test";
+  assert.throws(
+    () =>
+      validateQualifiedFoundationsToolchainLock(JSON.stringify(packageLock)),
+    /protected Prisma toolchain rejected/u,
+  );
+});
+
+test("refuse une dérive pg protégée dans Foundations", () => {
+  const packageLock = JSON.parse(
+    readFileSync(resolve(repositoryRoot, "package-lock.json"), "utf8"),
+  );
+  packageLock.packages["node_modules/pg"].integrity = "sha512-pg-drift-fixture";
+  assert.throws(
+    () =>
+      validateQualifiedFoundationsToolchainLock(JSON.stringify(packageLock)),
+    /protected pg toolchain projection changed/u,
+  );
+});
+
+test("refuse une migration historique Foundations altérée", (context) => {
+  const fixture = foundationsToolchainFixture(context);
+  const state = captureQualifiedFoundationsToolchainState({
+    emit: false,
+    ...fixture,
+  });
+  const migrationPath = resolve(
+    fixture.migrationsRoot,
+    foundationsHistoricalMigrations[2],
+    "migration.sql",
+  );
+  const changed = readFileSync(migrationPath);
+  changed[0] ^= 1;
+  writeFileSync(migrationPath, changed);
+  assert.throws(
+    () => assertQualifiedFoundationsToolchainStateUnchanged(state),
+    /historical migration changed/u,
+  );
+});
+
+test("refuse une mutation du lock Foundations même après un échec de campagne", async (context) => {
+  const fixture = foundationsToolchainFixture(context);
+  const campaignError = new Error("expected campaign failure");
+  await assert.rejects(
+    runWithProtectedFoundationsInputs(
+      async () => {
+        const changed = JSON.parse(
+          readFileSync(fixture.packageLockPath, "utf8"),
+        );
+        changed.packages["node_modules/vite"].version =
+          "8.1.7-during-failed-campaign";
+        writeFileSync(
+          fixture.packageLockPath,
+          `${JSON.stringify(changed, null, 2)}\n`,
+          { encoding: "utf8" },
+        );
+        throw campaignError;
+      },
+      { emit: false, ...fixture },
+    ),
+    (error) => {
+      assert(error instanceof AggregateError);
+      assert.equal(error.cause, campaignError);
+      assert.equal(error.errors[0], campaignError);
+      assert.match(
+        error.errors[1].message,
+        /package-lock.json changed during validation/u,
+      );
+      return true;
+    },
+  );
+});
+
+test("refuse traversal, mauvais OID et inventaire historique supplémentaire", (context) => {
+  const schema = historicalArtifactManifest().find(
+    ({ sourcePath }) =>
+      sourcePath === "apps/api/prisma/history/s1-2-03c1/schema.prisma",
+  );
+  assert(schema);
+  const bytes = readFileSync(resolve(repositoryRoot, schema.sourcePath));
+  assert.throws(
+    () =>
+      validateHistoricalArtifactBuffer(
+        { ...schema, targetPath: "../schema.prisma" },
+        bytes,
+      ),
+    /not a safe relative path/u,
+  );
+  assert.throws(
+    () =>
+      validateHistoricalArtifactBuffer(
+        { ...schema, gitOid: "0".repeat(40) },
+        bytes,
+      ),
+    /Git blob changed/u,
+  );
+
+  const sourceRoot = historicalFixture(context);
+  const workspace = materializeHistoricalPrismaWorkspace({
+    sourceRoot,
+    tempBase: resolve(sourceRoot, "tmp"),
+  });
+  const injectedMigration = resolve(
+    workspace.migrationsDirectory,
+    "admin_security_c2a_runtime",
+    "migration.sql",
+  );
+  mkdirSync(dirname(injectedMigration));
+  writeFileSync(injectedMigration, "-- forbidden C2a migration\n", {
+    flag: "wx",
+  });
+  assert.throws(
+    () => cleanupHistoricalPrismaWorkspace(workspace),
+    /inventory changed or contains an unexpected artifact/u,
+  );
+});
+
+test("materialise puis nettoie sans modifier les sources Prisma courantes", () => {
+  const before = historicalArtifactManifest().map(({ sourcePath }) => ({
+    bytes: readFileSync(resolve(repositoryRoot, sourcePath)),
+    sourcePath,
+  }));
+  const workspace = materializeHistoricalPrismaWorkspace();
+  assert.equal(workspace.tempBaseCreated, true);
+  cleanupHistoricalPrismaWorkspace(workspace);
+  assert.equal(existsSync(workspace.tempBase), false);
+  for (const entry of before) {
+    assert.deepEqual(
+      readFileSync(resolve(repositoryRoot, entry.sourcePath)),
+      entry.bytes,
+    );
+  }
+});
+
+test("préserve une base temporaire préexistante et vide", (context) => {
+  const sourceRoot = historicalFixture(context);
+  const tempBase = resolve(sourceRoot, "tmp");
+  mkdirSync(tempBase);
+  const workspace = materializeHistoricalPrismaWorkspace({
+    sourceRoot,
+    tempBase,
+  });
+  assert.equal(workspace.tempBaseCreated, false);
+  cleanupHistoricalPrismaWorkspace(workspace);
+  assert.equal(existsSync(tempBase), true);
+  assert.deepEqual(readdirSync(tempBase), []);
+});
+
+test("refuse sans supprimer un artefact historique substitué à octets identiques", (context) => {
+  const sourceRoot = historicalFixture(context);
+  const workspace = materializeHistoricalPrismaWorkspace({
+    sourceRoot,
+    tempBase: resolve(sourceRoot, "tmp"),
+  });
+  const bytes = readFileSync(workspace.schemaPath);
+  unlinkSync(workspace.schemaPath);
+  writeFileSync(workspace.schemaPath, bytes, { flag: "wx" });
+  assert.throws(
+    () => cleanupHistoricalPrismaWorkspace(workspace),
+    /historical workspace artifact was substituted/u,
+  );
+  assert.equal(existsSync(workspace.schemaPath), true);
+  assert.deepEqual(readFileSync(workspace.schemaPath), bytes);
+});
 
 function shortReadinessOptions(overrides = {}) {
   return {
@@ -986,4 +1894,149 @@ test("conserve le resultat non nul explicitement allowFailure", () => {
       stdout: "",
     },
   );
+});
+
+for (const wrapper of [
+  "apps/api/prisma/run-admin-security-c2a-runtime-validation.ps1",
+  "apps/api/prisma/run-admin-security-c2a-business-validation.ps1",
+]) {
+  test(`qualifie l'identité Docker et le cleanup sémantiques de ${wrapper}`, () => {
+    const result = runPowerShellImageFixture(
+      resolve(repositoryRoot, ...wrapper.split("/")),
+      imageIdentityFixtureBody(),
+    );
+    assert.equal(
+      result.status,
+      0,
+      `PowerShell fixture failed for ${wrapper}:\n${result.stdout}\n${result.stderr}`,
+    );
+  });
+}
+
+test("exécute le cleanup workflow avant, pendant et après préparation", (context) => {
+  const notStarted = workflowCleanupFixture(context, {
+    phase: "not_started",
+  });
+  assert.equal(
+    notStarted.result.status,
+    0,
+    `${notStarted.result.stdout}\n${notStarted.result.stderr}`,
+  );
+  assert.equal(existsSync(notStarted.npmRecord), false);
+
+  const partial = workflowCleanupFixture(context, {
+    phase: "prepare_started",
+  });
+  assert.equal(
+    partial.result.status,
+    0,
+    `${partial.result.stdout}\n${partial.result.stderr}`,
+  );
+  assert.equal(existsSync(partial.instanceRoot), false);
+  assert.equal(existsSync(partial.npmRecord), false);
+
+  for (const phase of ["prepared", "up_started", "running"]) {
+    const normal = workflowCleanupFixture(context, { phase });
+    assert.equal(
+      normal.result.status,
+      0,
+      `${phase}:\n${normal.result.stdout}\n${normal.result.stderr}`,
+    );
+    assert.deepEqual(JSON.parse(readFileSync(normal.npmRecord, "utf8")), [
+      "run",
+      "infra:down",
+    ]);
+    assert.equal(existsSync(normal.instanceRoot), false);
+  }
+});
+
+test("valide la syntaxe des quatre scripts PowerShell du workflow", () => {
+  for (const stepName of [
+    "Initialize infrastructure cleanup state",
+    "Prepare and validate Compose",
+    "Start and verify lifecycle",
+    "Stop local infrastructure",
+  ]) {
+    const result = powerShellParseResult(workflowRunStep(stepName));
+    assert.equal(
+      result.status,
+      0,
+      `${stepName}:\n${result.stdout}\n${result.stderr}`,
+    );
+  }
+});
+
+test("raccorde le lifecycle a l'identite de projet ephemere resolue", (context) => {
+  const { expectedProjectName, result } =
+    lifecycleProjectIdentityFixture(context);
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  const events = result.stdout
+    .split(/\r?\n/u)
+    .filter((line) => line.startsWith("{"))
+    .map((line) => JSON.parse(line));
+  const resets = events.filter(({ event }) => event === "resetProject");
+  assert.deepEqual(resets, [
+    { event: "resetProject", value: expectedProjectName },
+  ]);
+});
+
+test("refuse une confirmation d'une autre instance avant Docker", (context) => {
+  const result = rejectedCrossInstanceResetFixture(context);
+  assert.equal(result.status, 23, `${result.stdout}\n${result.stderr}`);
+  assert.equal(result.stdout, "");
+  assert.match(
+    result.stderr,
+    /Reset refused\. Use --confirm=kora-plus-r9-lifecycle-fixture\./u,
+  );
+  assert.doesNotMatch(result.stderr, /Docker command failed|ENOENT|spawn/u);
+});
+
+test("échoue fermé sur état, substitution ou down non concluant", (context) => {
+  const missingState = workflowCleanupFixture(context, { phase: null });
+  assert.notEqual(missingState.result.status, 0);
+
+  const substituted = workflowCleanupFixture(context, {
+    mutation: "content",
+    phase: "prepare_started",
+  });
+  assert.notEqual(substituted.result.status, 0);
+  assert.equal(
+    existsSync(resolve(substituted.instanceRoot, "compose.env")),
+    true,
+  );
+
+  const byteIdenticalSubstitution = workflowCleanupFixture(context, {
+    mutation: "same-bytes-replacement",
+    phase: "prepare_started",
+  });
+  assert.notEqual(byteIdenticalSubstitution.result.status, 0);
+  assert.equal(
+    existsSync(resolve(byteIdenticalSubstitution.instanceRoot, "compose.env")),
+    true,
+  );
+
+  const replacedManifest = workflowCleanupFixture(context, {
+    mutation: "manifest-same-bytes-replacement",
+    phase: "prepare_started",
+  });
+  assert.notEqual(replacedManifest.result.status, 0);
+  assert.equal(existsSync(replacedManifest.ownershipPath), true);
+
+  const reducedManifest = workflowCleanupFixture(context, {
+    mutation: "manifest-reduced",
+    phase: "prepared",
+  });
+  assert.notEqual(reducedManifest.result.status, 0);
+  assert.equal(existsSync(reducedManifest.instanceRoot), true);
+
+  const failedDown = workflowCleanupFixture(context, {
+    npmExit: 23,
+    phase: "running",
+  });
+  assert.notEqual(failedDown.result.status, 0);
+  assert.deepEqual(JSON.parse(readFileSync(failedDown.npmRecord, "utf8")), [
+    "run",
+    "infra:down",
+  ]);
+  assert.equal(existsSync(failedDown.instanceRoot), false);
 });

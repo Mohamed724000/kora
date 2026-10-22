@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { test } from "node:test";
@@ -9,10 +9,11 @@ import { ESLint } from "eslint";
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, "..", "..");
 const NEXT_PLUGIN = "@next/eslint-plugin-next";
-const NEXT_PLUGIN_VERSION = "16.3.8";
+const NEXT_PLUGIN_VERSION = "16.4.1";
 const NEXT_PLUGIN_SELECTOR = `${NEXT_PLUGIN}@${NEXT_PLUGIN_VERSION}`;
 const ALIAS_SPEC = "npm:tinyglobby@0.2.17";
 const ALIAS_VERSION = "0.2.17";
+const ALIAS_LOCK_PATH = "node_modules/fast-glob";
 const ALIAS_INTEGRITY =
   "sha512-wXR/dYpcqKmfWpEdZjiKJOwCNFndD0DMnrW/cYjVGttEkBfVgcLFHoNrlj47mjOVic9yyNu65alsgF4NQyTa2g==";
 const COMMON_NEXT_RULE = "@next/next/no-sync-scripts";
@@ -82,10 +83,11 @@ export function assertScopedAlias(rootManifest, lockfile) {
   const pluginLock = lockfile.packages?.[`node_modules/${NEXT_PLUGIN}`] ?? {};
   assert.equal(pluginLock.version, NEXT_PLUGIN_VERSION);
   assert.equal(pluginLock.dependencies?.["fast-glob"], "3.3.1");
-  const aliasLock =
-    lockfile.packages?.[
-      "node_modules/@next/eslint-plugin-next/node_modules/fast-glob"
-    ] ?? {};
+  const physicalAliasPaths = Object.keys(lockfile.packages ?? {}).filter(
+    (path) => path.endsWith("node_modules/fast-glob"),
+  );
+  assert.deepEqual(physicalAliasPaths, [ALIAS_LOCK_PATH]);
+  const aliasLock = lockfile.packages?.[ALIAS_LOCK_PATH] ?? {};
   assert.equal(aliasLock.name, "tinyglobby");
   assert.equal(aliasLock.version, ALIAS_VERSION);
   assert.equal(aliasLock.integrity, ALIAS_INTEGRITY);
@@ -109,6 +111,10 @@ test("the plugin physically resolves fast-glob to the qualified tinyglobby alias
 
   const pluginRequire = createRequire(pluginManifestPath);
   const aliasManifestPath = pluginRequire.resolve("fast-glob/package.json");
+  assert.equal(
+    realpathSync(aliasManifestPath),
+    realpathSync(resolve(REPOSITORY_ROOT, ALIAS_LOCK_PATH, "package.json")),
+  );
   const aliasManifest = readJson(aliasManifestPath);
   assert.equal(aliasManifest.name, "tinyglobby");
   assert.equal(aliasManifest.version, ALIAS_VERSION);
@@ -122,7 +128,7 @@ test("the plugin physically resolves fast-glob to the qualified tinyglobby alias
   assert.equal(aliasManifest.exports?.["."]?.import, "./dist/index.mjs");
   assert.match(
     aliasManifestPath.split(sep).join("/"),
-    /\/node_modules\/@next\/eslint-plugin-next\/node_modules\/fast-glob\/package\.json$/u,
+    /\/node_modules\/fast-glob\/package\.json$/u,
   );
   assert.equal(typeof pluginRequire("fast-glob").globSync, "function");
 });
@@ -153,15 +159,24 @@ test("the manifest and lock retain only the exact scoped alias", () => {
   }
 
   const wrongAlias = structuredClone(lockfile);
-  wrongAlias.packages[
-    "node_modules/@next/eslint-plugin-next/node_modules/fast-glob"
-  ].name = "fast-glob";
+  wrongAlias.packages[ALIAS_LOCK_PATH].name = "fast-glob";
   assert.throws(() => assertScopedAlias(rootManifest, wrongAlias));
   const wrongVersion = structuredClone(lockfile);
-  wrongVersion.packages[
-    "node_modules/@next/eslint-plugin-next/node_modules/fast-glob"
-  ].version = "0.2.16";
+  wrongVersion.packages[ALIAS_LOCK_PATH].version = "0.2.16";
   assert.throws(() => assertScopedAlias(rootManifest, wrongVersion));
+
+  const wrongLocation = structuredClone(lockfile);
+  wrongLocation.packages[
+    "node_modules/@next/eslint-plugin-next/node_modules/fast-glob"
+  ] = wrongLocation.packages[ALIAS_LOCK_PATH];
+  delete wrongLocation.packages[ALIAS_LOCK_PATH];
+  assert.throws(() => assertScopedAlias(rootManifest, wrongLocation));
+
+  const duplicateLocation = structuredClone(lockfile);
+  duplicateLocation.packages[
+    "node_modules/@next/eslint-plugin-next/node_modules/fast-glob"
+  ] = duplicateLocation.packages[ALIAS_LOCK_PATH];
+  assert.throws(() => assertScopedAlias(rootManifest, duplicateLocation));
 });
 
 test("the qualification boundary rejects every settings.next.rootDir form", () => {
