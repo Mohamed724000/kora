@@ -30,7 +30,9 @@ const MYSQL_DECLARED_VERSION = "3.15.3";
 const MYSQL_SAFE_VERSION = "3.23.1";
 const FAST_URI_PACKAGE = "fast-uri";
 const FAST_URI_ROOT_PATH = `node_modules/${FAST_URI_PACKAGE}`;
-const FAST_URI_SAFE_VERSION = "3.1.8";
+const FAST_URI_SAFE_VERSION = "3.1.9";
+const FAST_URI_INTEGRITY =
+  "sha512-hS/0Wt3Ya043oKXs0sIxrMpKQITXhMLIrVAKKXi4gozGC9v7YRWVnXIZzjNPTO02M9BdxLCWqK1yRXgNziVyJQ==";
 const FAST_URI_PARENT = {
   declaredVersion: "^3.0.1",
   packageName: "ajv",
@@ -43,11 +45,11 @@ const QS_ROOT_PATH = `node_modules/${QS_PACKAGE}`;
 const QS_SAFE_VERSION = "6.16.0";
 const QS_PARENTS = [
   {
-    declaredVersion: "^6.15.2",
+    declaredVersion: "^6.16.1",
     packageName: "body-parser",
     packagePath: "node_modules/body-parser",
-    selector: "body-parser@2.3.0",
-    version: "2.3.0",
+    selector: "body-parser@2.4.0",
+    version: "2.4.0",
   },
   {
     declaredVersion: "^6.14.0",
@@ -171,11 +173,26 @@ const REMOVED_VULNERABLE_CHAIN_PACKAGES = [
 ];
 const MULTER_PACKAGE = "multer";
 const MULTER_ROOT_PATH = `node_modules/${MULTER_PACKAGE}`;
-const MULTER_SAFE_VERSION = "2.4.0";
+const MULTER_SAFE_VERSION = "2.5.0";
+const MULTER_INTEGRITY =
+  "sha512-BsqOzYGVq49JcW2IzoSAxeKYRevb+dGGPPWleOR8Lrlk4igwxu1/9pwSXlByhCb7MVZDrNJFC0IBP5/O5nLYRw==";
 const NEST_PLATFORM_EXPRESS_VERSION = "11.1.28";
 const NEST_PLATFORM_EXPRESS_PATH = "node_modules/@nestjs/platform-express";
 const NEST_PLATFORM_EXPRESS_OVERRIDE = `@nestjs/platform-express@${NEST_PLATFORM_EXPRESS_VERSION}`;
 const MULTER_DECLARED_VERSION = "2.2.0";
+const BODY_PARSER_PACKAGE = "body-parser";
+const BODY_PARSER_SAFE_VERSION = "2.4.0";
+const BODY_PARSER_INTEGRITY =
+  "sha512-Ifk1KcLrxaGt1occQagQNFNNOqRt1LFuehEnHHzB8Z6cRgIxRU1TBaiIsUiCdA+gy5PL7Y1IX31DNKkRmxtXjQ==";
+const EXPRESS_BODY_PARSER_DECLARED_VERSION = "^2.2.1";
+const ZOD_PACKAGE = "zod";
+const ZOD_SAFE_VERSION = "4.6.6";
+const ZOD_INTEGRITY =
+  "sha512-4UmzQUF5fxvfcYHlbjBmejU+w+hbDnWFx4aS8kBx7nPBHcO2SqPbpAG8snbdg+Xse4pRefR98hgjFgIMCI/UhA==";
+const REACT_HOOKS_SELECTOR = "eslint-plugin-react-hooks@7.1.1";
+const REACT_HOOKS_PATH = "node_modules/eslint-plugin-react-hooks";
+const ZOD_VALIDATION_ERROR_PATH = "node_modules/zod-validation-error";
+const ZOD_DECLARED_VERSION = "^3.25.0 || ^4.0.0";
 const ADMIN_AUTH_API_PATH = "apps/api";
 const ADMIN_AUTH_PACKAGES = new Map([
   ["argon2", { section: "dependencies", version: "0.45.1" }],
@@ -1019,7 +1036,7 @@ function forbiddenTargetedOverridePaths(
 
 function forbiddenMultiParentOverridePaths(
   overrides,
-  { childPackage, approvedParents },
+  { childPackage, approvedNestedScalars = [], approvedParents },
 ) {
   if (!isObjectRecord(overrides)) {
     return [];
@@ -1030,6 +1047,12 @@ function forbiddenMultiParentOverridePaths(
   );
   const parentPackages = new Set(
     approvedParents.map(({ packageName }) => packageName),
+  );
+  const exactNestedScalars = new Map(
+    approvedNestedScalars.map(({ parentSelector, selector, value }) => [
+      `${parentSelector}\u0000${selector}`,
+      value,
+    ]),
   );
   const forbiddenPaths = [];
   const pending = [{ entries: overrides, parent: null }];
@@ -1048,9 +1071,13 @@ function forbiddenMultiParentOverridePaths(
       const targetsParent = [...parentPackages].some((packageName) =>
         targetsOverridePackage(selector, packageName),
       );
+      const isApprovedNestedScalar =
+        parent?.parent === null &&
+        !isObjectRecord(value) &&
+        exactNestedScalars.get(`${parent.selector}\u0000${selector}`) === value;
 
       if (
-        (targetsParent && !isApprovedParent) ||
+        (targetsParent && !isApprovedParent && !isApprovedNestedScalar) ||
         (targetsOverridePackage(selector, childPackage) && !isApprovedChild)
       ) {
         forbiddenPaths.push(formatOverridePath(node));
@@ -1384,29 +1411,23 @@ function isVulnerableFastUriVersion(version) {
   const major = Number(match[1]);
   const minor = Number(match[2]);
   const patch = Number(match[3]);
-  return major === 3 && (minor < 1 || (minor === 1 && patch < 8));
+  return major === 3 && (minor < 1 || (minor === 1 && patch < 9));
 }
 
 export function validateAjvFastUriOverride(manifests, lockfile) {
   const errors = [];
   const overrides = manifests[""]?.overrides ?? {};
-  const targetedOverride = overrides[FAST_URI_PARENT.selector];
+  const overridePaths = overridePathsTargetingPackage(
+    overrides,
+    FAST_URI_PACKAGE,
+  );
 
-  for (const overridePath of forbiddenMultiParentOverridePaths(overrides, {
-    childPackage: FAST_URI_PACKAGE,
-    approvedParents: [FAST_URI_PARENT],
-  })) {
-    errors.push(
-      `fast-uri security override is forbidden at path: ${overridePath}`,
-    );
-  }
   if (
-    !isObjectRecord(targetedOverride) ||
-    targetedOverride[FAST_URI_PACKAGE] !== FAST_URI_SAFE_VERSION ||
-    Object.keys(targetedOverride).length !== 1
+    overrides[FAST_URI_PACKAGE] !== FAST_URI_SAFE_VERSION ||
+    JSON.stringify(overridePaths) !== JSON.stringify([FAST_URI_PACKAGE])
   ) {
     errors.push(
-      `${FAST_URI_PARENT.selector} must override ${FAST_URI_PACKAGE} to exact version ${FAST_URI_SAFE_VERSION}`,
+      `${FAST_URI_PACKAGE} must have exactly one root override to exact version ${FAST_URI_SAFE_VERSION}`,
     );
   }
 
@@ -1443,10 +1464,11 @@ export function validateAjvFastUriOverride(manifests, lockfile) {
   if (
     installations.length !== 1 ||
     installations[0]?.[0] !== FAST_URI_ROOT_PATH ||
-    installations[0]?.[1]?.version !== FAST_URI_SAFE_VERSION
+    installations[0]?.[1]?.version !== FAST_URI_SAFE_VERSION ||
+    installations[0]?.[1]?.integrity !== FAST_URI_INTEGRITY
   ) {
     errors.push(
-      `fast-uri must have one physical installation at ${FAST_URI_ROOT_PATH}@${FAST_URI_SAFE_VERSION}; found ${
+      `fast-uri must have one integrity-qualified physical installation at ${FAST_URI_ROOT_PATH}@${FAST_URI_SAFE_VERSION}; found ${
         installations
           .map(
             ([packagePath, metadata]) =>
@@ -1457,6 +1479,140 @@ export function validateAjvFastUriOverride(manifests, lockfile) {
     );
   }
 
+  return errors;
+}
+
+export function validateExpressBodyParserOverride(manifests, lockfile) {
+  const errors = [];
+  const overrides = manifests[""]?.overrides ?? {};
+  const expressOverride = overrides[PROXY_ADDR_PARENT_SELECTOR];
+  const expectedPaths = [
+    `body-parser@${BODY_PARSER_SAFE_VERSION}`,
+    `${PROXY_ADDR_PARENT_SELECTOR} > ${BODY_PARSER_PACKAGE}`,
+  ];
+  if (
+    expressOverride?.[BODY_PARSER_PACKAGE] !== BODY_PARSER_SAFE_VERSION ||
+    JSON.stringify(
+      overridePathsTargetingPackage(overrides, BODY_PARSER_PACKAGE),
+    ) !== JSON.stringify(expectedPaths)
+  ) {
+    errors.push(
+      `${PROXY_ADDR_PARENT_SELECTOR} must override ${BODY_PARSER_PACKAGE} to exact version ${BODY_PARSER_SAFE_VERSION} while retaining its exact qs child override`,
+    );
+  }
+
+  const parent = lockfile.packages?.[PROXY_ADDR_PARENT_PATH];
+  if (
+    parent?.version !== "5.2.1" ||
+    parent?.dependencies?.[BODY_PARSER_PACKAGE] !==
+      EXPRESS_BODY_PARSER_DECLARED_VERSION
+  ) {
+    errors.push(
+      `${PROXY_ADDR_PARENT_SELECTOR} lock metadata must retain its audited ${BODY_PARSER_PACKAGE} ${EXPRESS_BODY_PARSER_DECLARED_VERSION} dependency`,
+    );
+  }
+  for (const parentPath of unexpectedDependencyParentPaths(
+    lockfile,
+    BODY_PARSER_PACKAGE,
+    [PROXY_ADDR_PARENT_PATH],
+  )) {
+    errors.push(`${BODY_PARSER_PACKAGE} has an unapproved lock parent: ${parentPath}`);
+  }
+
+  const installations = packageInstallations(lockfile, BODY_PARSER_PACKAGE);
+  const vulnerable = installations.filter(([, metadata]) => {
+    const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+][A-Za-z0-9.-]+)?$/u.exec(
+      metadata.version ?? "",
+    );
+    if (match === null) return false;
+    const major = Number(match[1]);
+    const minor = Number(match[2]);
+    return major < 2 || (major === 2 && minor < 4);
+  });
+  if (vulnerable.length > 0) {
+    errors.push(
+      `vulnerable body-parser installation(s): ${installationSummary(vulnerable)}`,
+    );
+  }
+  if (
+    installations.length !== 1 ||
+    installations[0]?.[0] !== `node_modules/${BODY_PARSER_PACKAGE}` ||
+    installations[0]?.[1]?.version !== BODY_PARSER_SAFE_VERSION ||
+    installations[0]?.[1]?.integrity !== BODY_PARSER_INTEGRITY
+  ) {
+    errors.push(
+      `${BODY_PARSER_PACKAGE} must have one integrity-qualified physical installation at node_modules/${BODY_PARSER_PACKAGE}@${BODY_PARSER_SAFE_VERSION}; found ${installationSummary(installations)}`,
+    );
+  }
+  return errors;
+}
+
+export function validateReactHooksZodOverride(manifests, lockfile) {
+  const errors = [];
+  const overrides = manifests[""]?.overrides ?? {};
+  const targeted = overrides[REACT_HOOKS_SELECTOR];
+  const expectedOverridePath = `${REACT_HOOKS_SELECTOR} > ${ZOD_PACKAGE}`;
+  if (
+    !isObjectRecord(targeted) ||
+    targeted[ZOD_PACKAGE] !== ZOD_SAFE_VERSION ||
+    Object.keys(targeted).length !== 1 ||
+    JSON.stringify(overridePathsTargetingPackage(overrides, ZOD_PACKAGE)) !==
+      JSON.stringify([expectedOverridePath])
+  ) {
+    errors.push(
+      `${REACT_HOOKS_SELECTOR} must be the only override parent for ${ZOD_PACKAGE} and pin exact ${ZOD_SAFE_VERSION}`,
+    );
+  }
+  const hooks = lockfile.packages?.[REACT_HOOKS_PATH];
+  const validationError = lockfile.packages?.[ZOD_VALIDATION_ERROR_PATH];
+  if (
+    hooks?.version !== "7.1.1" ||
+    hooks?.dependencies?.[ZOD_PACKAGE] !== ZOD_DECLARED_VERSION
+  ) {
+    errors.push(
+      `${REACT_HOOKS_SELECTOR} lock metadata must retain its audited ${ZOD_PACKAGE} ${ZOD_DECLARED_VERSION} dependency`,
+    );
+  }
+  if (validationError?.peerDependencies?.[ZOD_PACKAGE] !== ZOD_DECLARED_VERSION) {
+    errors.push(
+      `${ZOD_VALIDATION_ERROR_PATH} lock metadata must retain its audited ${ZOD_PACKAGE} ${ZOD_DECLARED_VERSION} peer dependency`,
+    );
+  }
+  for (const parentPath of unexpectedDependencyParentPaths(
+    lockfile,
+    ZOD_PACKAGE,
+    [REACT_HOOKS_PATH, ZOD_VALIDATION_ERROR_PATH],
+  )) {
+    errors.push(`${ZOD_PACKAGE} has an unapproved lock parent: ${parentPath}`);
+  }
+  const installations = packageInstallations(lockfile, ZOD_PACKAGE);
+  const vulnerable = installations.filter(([, metadata]) => {
+    const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+][A-Za-z0-9.-]+)?$/u.exec(
+      metadata.version ?? "",
+    );
+    if (match === null) return false;
+    const major = Number(match[1]);
+    const minor = Number(match[2]);
+    const patch = Number(match[3]);
+    return (
+      major < 4 ||
+      (major === 4 && (minor < 6 || (minor === 6 && patch < 6)))
+    );
+  });
+  if (vulnerable.length > 0) {
+    errors.push(`vulnerable zod installation(s): ${installationSummary(vulnerable)}`);
+  }
+  if (
+    installations.length !== 1 ||
+    installations[0]?.[0] !== `node_modules/${ZOD_PACKAGE}` ||
+    installations[0]?.[1]?.version !== ZOD_SAFE_VERSION ||
+    installations[0]?.[1]?.integrity !== ZOD_INTEGRITY ||
+    installations[0]?.[1]?.dev !== true
+  ) {
+    errors.push(
+      `${ZOD_PACKAGE} must have one dev-only integrity-qualified physical installation at node_modules/${ZOD_PACKAGE}@${ZOD_SAFE_VERSION}; found ${installationSummary(installations)}`,
+    );
+  }
   return errors;
 }
 
@@ -1490,6 +1646,13 @@ export function validateQsOverrides(manifests, lockfile) {
 
   for (const overridePath of forbiddenMultiParentOverridePaths(overrides, {
     childPackage: QS_PACKAGE,
+    approvedNestedScalars: [
+      {
+        parentSelector: PROXY_ADDR_PARENT_SELECTOR,
+        selector: BODY_PARSER_PACKAGE,
+        value: BODY_PARSER_SAFE_VERSION,
+      },
+    ],
     approvedParents: QS_PARENTS,
   })) {
     errors.push(`qs security override is forbidden at path: ${overridePath}`);
@@ -1498,7 +1661,7 @@ export function validateQsOverrides(manifests, lockfile) {
     const targetedOverride = overrides[parent.selector];
     const approvedKeys =
       parent.selector === PROXY_ADDR_PARENT_SELECTOR
-        ? new Set([QS_PACKAGE, PROXY_ADDR_PACKAGE])
+        ? new Set([BODY_PARSER_PACKAGE, QS_PACKAGE, PROXY_ADDR_PACKAGE])
         : new Set([QS_PACKAGE]);
     if (
       !isObjectRecord(targetedOverride) ||
@@ -2388,7 +2551,7 @@ export function validateNestMulterOverride(manifests, lockfile) {
       }
       const major = Number(match[1]);
       const minor = Number(match[2]);
-      return major === 2 && minor >= 2 && minor < 4;
+      return major === 2 && minor < 5;
     },
   );
   if (vulnerableMulterInstallations.length > 0) {
@@ -2406,6 +2569,9 @@ export function validateNestMulterOverride(manifests, lockfile) {
       NEST_PLATFORM_EXPRESS_VERSION,
     ),
   );
+  if (lockfile.packages?.[MULTER_ROOT_PATH]?.integrity !== MULTER_INTEGRITY) {
+    errors.push(`multer@${MULTER_SAFE_VERSION} must retain its qualified integrity`);
+  }
   return errors;
 }
 
@@ -2670,6 +2836,8 @@ export function scanRepository(repositoryRoot = process.cwd(), options = {}) {
   errors.push(...validatePrismaDeepmergeOverride(manifests, lockfile));
   errors.push(...validatePrismaMysqlOverride(manifests, lockfile));
   errors.push(...validateAjvFastUriOverride(manifests, lockfile));
+  errors.push(...validateExpressBodyParserOverride(manifests, lockfile));
+  errors.push(...validateReactHooksZodOverride(manifests, lockfile));
   errors.push(...validateQsOverrides(manifests, lockfile));
   errors.push(...validateBraceExpansionOverride(manifests, lockfile));
   errors.push(...validateNextToolchain(manifests, lockfile));

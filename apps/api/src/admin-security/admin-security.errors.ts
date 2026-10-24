@@ -11,7 +11,11 @@ export type AdminC2OperationId =
   | 'acceptAdminInvitation'
   | 'listAdminUsers'
   | 'changeAdminUserRole'
-  | 'changeAdminUserStatus';
+  | 'changeAdminUserStatus'
+  | 'listAdminAuditLogs'
+  | 'createAdminAuditLogExport'
+  | 'getAdminAuditLogExport'
+  | 'downloadAdminAuditLogExport';
 
 export type AdminC2ErrorCode =
   | 'VALIDATION_ERROR'
@@ -26,7 +30,10 @@ export type AdminC2ErrorCode =
   | 'RECOVERY_CASE_NOT_FOUND'
   | 'RECOVERY_CASE_CONFLICT'
   | 'RECOVERY_CASE_EXPIRED'
-  | 'LAST_SUPER_ADMIN_PROTECTED';
+  | 'LAST_SUPER_ADMIN_PROTECTED'
+  | 'AUDIT_EXPORT_NOT_FOUND'
+  | 'AUDIT_EXPORT_NOT_READY'
+  | 'AUDIT_EXPORT_EXPIRED';
 
 export type AdminC2FailureDisposition =
   | 'RECORD_SECURITY_EVENT'
@@ -48,6 +55,9 @@ export interface AdminC2FailureAuditContext {
 }
 
 const STATUS: Readonly<Record<AdminC2ErrorCode, number>> = Object.freeze({
+  AUDIT_EXPORT_EXPIRED: HttpStatus.GONE,
+  AUDIT_EXPORT_NOT_FOUND: HttpStatus.NOT_FOUND,
+  AUDIT_EXPORT_NOT_READY: HttpStatus.CONFLICT,
   ADMIN_INVITATION_INVALID: HttpStatus.BAD_REQUEST,
   ADMIN_RECOVERY_INVALID: HttpStatus.BAD_REQUEST,
   ADMIN_USER_NOT_FOUND: HttpStatus.NOT_FOUND,
@@ -64,6 +74,9 @@ const STATUS: Readonly<Record<AdminC2ErrorCode, number>> = Object.freeze({
 });
 
 const MESSAGE: Readonly<Record<AdminC2ErrorCode, string>> = Object.freeze({
+  AUDIT_EXPORT_EXPIRED: "L'export d'audit a expiré.",
+  AUDIT_EXPORT_NOT_FOUND: "Export d'audit introuvable.",
+  AUDIT_EXPORT_NOT_READY: "L'export d'audit n'est pas prêt.",
   ADMIN_INVITATION_INVALID: 'Invitation administrateur invalide.',
   ADMIN_RECOVERY_INVALID: 'Récupération administrateur invalide.',
   ADMIN_USER_NOT_FOUND: 'Administrateur introuvable.',

@@ -14,6 +14,8 @@ import { AdminWriterService } from './database/admin-writer.service';
 import { AdminAuthRepository } from './admin-auth/admin-auth.repository';
 import type { AdminC2OperationId } from './admin-security/admin-security.errors';
 import { AdminSecurityService } from './admin-security/admin-security.service';
+import { AdminAuditFailureService } from './admin-security/admin-audit.failure.service';
+import { AdminC2bBoundariesService } from './database/admin-c2b-boundaries.service';
 import { RuntimeDatabaseBoundary } from './database/runtime-database-boundary';
 import { createHttpLogger } from './observability/http-logger';
 import { captureSentryException, initializeSentry } from './observability/sentry';
@@ -42,6 +44,10 @@ const ADMIN_C2A_JSON_BODY_PATHS: ReadonlyArray<
   ['/api/v1/admin/users/:adminUserId/status-changes', 'changeAdminUserStatus'],
 ];
 
+const ADMIN_C2B_JSON_BODY_PATHS: ReadonlyArray<
+  readonly [path: string, operationId: AdminC2OperationId]
+> = [['/api/v1/admin/audit-log-exports', 'createAdminAuditLogExport']];
+
 export async function createApplication(options: AppModuleOptions = {}): Promise<INestApplication> {
   const application = await NestFactory.create<NestExpressApplication>(
     AppModule.register(options),
@@ -52,7 +58,9 @@ export async function createApplication(options: AppModuleOptions = {}): Promise
   );
   const config = application.get(ConfigService<RuntimeConfig, true>);
   const adminC2a = config.get('adminC2a', { infer: true });
+  const adminC2b = config.get('adminC2b', { infer: true });
   const adminC2aHttpEnabled = adminC2a.enabled && adminC2a.profile === 'HTTP';
+  const adminC2bHttpEnabled = adminC2b.enabled && adminC2b.profile === 'HTTP';
   const logging = config.get('logging', { infer: true });
   const observability = config.get('observability', { infer: true });
   const logger = createStructuredLogger(logging.level);
@@ -70,9 +78,17 @@ export async function createApplication(options: AppModuleOptions = {}): Promise
       application.use(path, adminC2MalformedJsonNormalizer(operationId));
     }
   }
+  if (adminC2bHttpEnabled) {
+    for (const [path, operationId] of ADMIN_C2B_JSON_BODY_PATHS) {
+      application.use(path, adminC2MalformedJsonNormalizer(operationId));
+    }
+  }
   const adminAuthRepository = application.get(AdminAuthRepository);
   const adminSecurityService = adminC2aHttpEnabled
     ? application.get(AdminSecurityService)
+    : undefined;
+  const adminAuditFailureService = adminC2bHttpEnabled
+    ? application.get(AdminAuditFailureService)
     : undefined;
   application.useGlobalFilters(
     new GlobalExceptionFilter(
@@ -92,6 +108,9 @@ export async function createApplication(options: AppModuleOptions = {}): Promise
       adminSecurityService === undefined
         ? undefined
         : (exception, requestId) => adminSecurityService.recordFailure(exception, requestId),
+      adminAuditFailureService === undefined
+        ? undefined
+        : (exception, requestId) => adminAuditFailureService.recordFailure(exception, requestId),
     ),
   );
   application.setGlobalPrefix('api/v1', {
@@ -106,6 +125,12 @@ export async function createApplication(options: AppModuleOptions = {}): Promise
         throw new Error('The HTTP API requires the C2a HTTP profile.');
       }
       await application.get(AdminC2aBoundariesService).assertIdentity();
+    }
+    if (adminC2b.enabled) {
+      if (adminC2b.profile !== 'HTTP') {
+        throw new Error('The HTTP API requires the C2b HTTP profile.');
+      }
+      await application.get(AdminC2bBoundariesService).assertIdentity();
     }
     const runtimeDatabaseBoundary = application.get(RuntimeDatabaseBoundary);
     const adminWriter = application.get(AdminWriterService);

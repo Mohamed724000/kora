@@ -8,6 +8,11 @@ import {
   AdminC2aBoundariesService,
   createAdminC2aPgPool,
 } from './admin-c2a-boundaries.service';
+import {
+  ADMIN_C2B_POOL_FACTORY,
+  AdminC2bBoundariesService,
+  createAdminC2bPgPool,
+} from './admin-c2b-boundaries.service';
 
 export interface DatabaseModuleOptions {
   adminWriterBoundary?: AdminWriterRuntimeBoundary;
@@ -30,6 +35,7 @@ export class DatabaseModule {
     return {
       exports: [
         AdminC2aBoundariesService,
+        AdminC2bBoundariesService,
         AdminWriterService,
         PrismaService,
         RuntimeDatabaseBoundary,
@@ -38,7 +44,9 @@ export class DatabaseModule {
       module: DatabaseModule,
       providers: [
         { provide: ADMIN_C2A_POOL_FACTORY, useValue: createAdminC2aPgPool },
+        { provide: ADMIN_C2B_POOL_FACTORY, useValue: createAdminC2bPgPool },
         AdminC2aBoundariesService,
+        AdminC2bBoundariesService,
         adminWriterProvider,
         PrismaService,
         PostgresqlRuntimeBoundary,

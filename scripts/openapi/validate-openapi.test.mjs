@@ -329,7 +329,7 @@ function predecessorFrom(result, consumedByArtistSettlementId = null) {
   };
 }
 
-test("the S1.2-03C2-P0 OpenAPI and exact 39 historical plus 9 C2a Prisma targets are semantically valid", () => {
+test("the S1.2-03C2-P0 OpenAPI and exact 39 historical plus 9 C2a plus 5 C2b Prisma targets are semantically valid", () => {
   const result = readAndValidateOpenApi();
 
   assert.equal(result.openapi.paths, 60);
@@ -337,9 +337,10 @@ test("the S1.2-03C2-P0 OpenAPI and exact 39 historical plus 9 C2a Prisma targets
   assert.equal(result.openapi.invariants, 18);
   assert.equal(result.openapi.references, "resolved");
   assert.equal(result.openapi.schemas, 141);
-  assert.equal(result.prisma.models, 48);
+  assert.equal(result.prisma.models, 53);
   assert.equal(result.prisma.historicalModels, 39);
   assert.equal(result.prisma.c2aModels, 9);
+  assert.equal(result.prisma.c2bModels, 5);
   assert.ok(result.prisma.integerFinancialFields >= 10);
   assert.equal(EXPECTED_PATHS.length, 60);
 });
@@ -352,7 +353,7 @@ test("proves the detached audit-manifest JWS signing input independently", () =>
     "utf8",
   );
   const payload = Buffer.from(
-    '{"createdAt":"2026-10-01T00:00:00Z","entries":[],"exportId":"export-1"}',
+    '{"createdAt":"2026-10-01T00:00:00.000Z","entries":[],"expirationRule":"READY_PLUS_24_HOURS","exportId":"export-1","version":2}',
     "utf8",
   );
   const protectedSegment = base64UrlNoPadding(protectedHeader);
@@ -456,7 +457,7 @@ test("rejects an unapproved Prisma target model", () => {
 
   assert.throws(
     () => validatePrismaTargetSchema(invalid),
-    /Prisma target models must be exactly the 39 historical and 9 C2a approved models \(48 total\)/,
+    /Prisma target models must be exactly the 39 historical, 9 C2a and 5 C2b approved models \(53 total\)/,
   );
 });
 
@@ -465,7 +466,7 @@ test("rejects an indented unapproved Prisma target model", () => {
 
   assert.throws(
     () => validatePrismaTargetSchema(invalid),
-    /Prisma target models must be exactly the 39 historical and 9 C2a approved models \(48 total\)/,
+    /Prisma target models must be exactly the 39 historical, 9 C2a and 5 C2b approved models \(53 total\)/,
   );
 });
 
@@ -474,7 +475,7 @@ test("rejects deletion of a historical Prisma target model", () => {
 
   assert.throws(
     () => validatePrismaTargetSchema(invalid),
-    /Prisma target models must be exactly the 39 historical and 9 C2a approved models \(48 total\)/,
+    /Prisma target models must be exactly the 39 historical, 9 C2a and 5 C2b approved models \(53 total\)/,
   );
 });
 
@@ -483,7 +484,7 @@ test("rejects renaming of a historical Prisma target model", () => {
 
   assert.throws(
     () => validatePrismaTargetSchema(invalid),
-    /Prisma target models must be exactly the 39 historical and 9 C2a approved models \(48 total\)/,
+    /Prisma target models must be exactly the 39 historical, 9 C2a and 5 C2b approved models \(53 total\)/,
   );
 });
 
@@ -492,7 +493,7 @@ test("rejects deletion of a C2a Prisma target model", () => {
 
   assert.throws(
     () => validatePrismaTargetSchema(invalid),
-    /Prisma target models must be exactly the 39 historical and 9 C2a approved models \(48 total\)/,
+    /Prisma target models must be exactly the 39 historical, 9 C2a and 5 C2b approved models \(53 total\)/,
   );
 });
 
@@ -505,7 +506,29 @@ test("rejects renaming of a C2a Prisma target model", () => {
 
   assert.throws(
     () => validatePrismaTargetSchema(invalid),
-    /Prisma target models must be exactly the 39 historical and 9 C2a approved models \(48 total\)/,
+    /Prisma target models must be exactly the 39 historical, 9 C2a and 5 C2b approved models \(53 total\)/,
+  );
+});
+
+test("rejects deletion of a C2b Prisma target model", () => {
+  const invalid = removePrismaModel(prismaSource, "AdminAuditExport");
+
+  assert.throws(
+    () => validatePrismaTargetSchema(invalid),
+    /Prisma target models must be exactly the 39 historical, 9 C2a and 5 C2b approved models \(53 total\)/,
+  );
+});
+
+test("rejects renaming of a C2b Prisma target model", () => {
+  const invalid = renamePrismaModel(
+    prismaSource,
+    "AdminAuditExportReadLease",
+    "AdminAuditExportDownloadLease",
+  );
+
+  assert.throws(
+    () => validatePrismaTargetSchema(invalid),
+    /Prisma target models must be exactly the 39 historical, 9 C2a and 5 C2b approved models \(53 total\)/,
   );
 });
 
@@ -519,11 +542,11 @@ test("rejects a same-count substitution in the Prisma target inventory", () => {
   assert.equal(
     [...invalid.matchAll(/^[ \t]*model\s+([A-Za-z][A-Za-z0-9_]*)\s*\{/gm)]
       .length,
-    48,
+    53,
   );
   assert.throws(
     () => validatePrismaTargetSchema(invalid),
-    /Prisma target models must be exactly the 39 historical and 9 C2a approved models \(48 total\)/,
+    /Prisma target models must be exactly the 39 historical, 9 C2a and 5 C2b approved models \(53 total\)/,
   );
 });
 
@@ -4455,8 +4478,9 @@ test("hashes the exact immutable final ZIP across simulated encrypted storage", 
           size: payload.length,
         },
       ],
-      expiresAt: "2026-10-12T00:00:00.000Z",
+      expirationRule: "READY_PLUS_24_HOURS",
       exportId: "00000000-0000-4000-8000-000000000099",
+      version: 2,
     }),
     "utf8",
   );
@@ -4471,7 +4495,7 @@ test("hashes the exact immutable final ZIP across simulated encrypted storage", 
   assert.equal(zip.subarray(0, 4).toString("hex"), "504b0304");
   assert.equal(
     exactZipSha256,
-    "0d4f081ba9b3118e0533435becc7f1310266eb12bae03599eac3f38e5d44d79f",
+    "03b86b6a12fad957fec0ec4def5b918b3018e8a38195efefdb9c210b63947b37",
   );
   assert.equal(manifest.includes(Buffer.from("contentSha256")), false);
   assert.notEqual(
@@ -4998,6 +5022,53 @@ const adminSecurityMutations = [
       adminSecurityOperation(document, "downloadAdminAuditLogExport")[
         "x-kora-signed-manifest"
       ].signatureAlgorithm = "none";
+    },
+  ],
+  [
+    "audit export manifest profile downgraded to v1",
+    (document) => {
+      document["x-kora-admin-security-policy"].auditExportManifest.profile =
+        "KORA_ADMIN_AUDIT_EXPORT_MANIFEST_V1";
+      document["x-kora-admin-security-policy"].auditExportManifest.manifestVersion = 1;
+    },
+  ],
+  [
+    "audit export manifest operation rule altered",
+    (document) => {
+      adminSecurityOperation(document, "downloadAdminAuditLogExport")[
+        "x-kora-signed-manifest"
+      ].expirationRule = "CREATED_PLUS_24_HOURS";
+    },
+  ],
+  [
+    "audit export manifest absolute expiry substituted into the signed fields",
+    (document) => {
+      document[
+        "x-kora-admin-security-policy"
+      ].auditExportManifest.manifestFields = [
+        "createdAt",
+        "entries",
+        "expiresAt",
+        "exportId",
+        "version",
+      ];
+    },
+  ],
+  [
+    "audit export manifest request creation semantics altered",
+    (document) => {
+      document[
+        "x-kora-admin-security-policy"
+      ].auditExportManifest.createdAtSemantics = "READY_AT";
+    },
+  ],
+  [
+    "audit export manifest falsely claims signed operational timestamps",
+    (document) => {
+      document[
+        "x-kora-admin-security-policy"
+      ].auditExportManifest.absoluteOperationalTimestamps =
+        "READY_AT_AND_EXPIRES_AT_SIGNED";
     },
   ],
   [

@@ -219,6 +219,30 @@ enum AdminC2IdempotencyOperation {
   CHANGE_ADMIN_USER_STATUS
 }
 
+enum AdminAuditSnapshotOperation {
+  LIST_ADMIN_AUDIT_LOGS
+  CREATE_ADMIN_AUDIT_LOG_EXPORT
+}
+
+enum AdminAuditExportIdempotencyOperation {
+  CREATE_ADMIN_AUDIT_LOG_EXPORT
+}
+
+enum AdminAuditExportState {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+  EXPIRED
+}
+
+enum AdminAuditExportFailureCode {
+  RETRY_BUDGET_EXHAUSTED
+  PROJECTION_BUDGET_EXCEEDED
+  INTEGRITY_FAILED
+  DEPENDENCY_UNAVAILABLE
+}
+
 model Customer {
   id                 String              @id @default(uuid())
   verifiedPhone      String              @unique
@@ -299,16 +323,16 @@ model OtpChallenge {
 }
 
 model AdminUser {
-  id                      String                      @id @default(uuid())
-  email                   String                      @unique
+  id                      String                              @id @default(uuid())
+  email                   String                              @unique
   passwordHash            String
   role                    AdminRole
-  status                  AdminStatus                 @default(DISABLED)
-  authorizationVersion    Int                         @default(1)
+  status                  AdminStatus                         @default(DISABLED)
+  authorizationVersion    Int                                 @default(1)
   totpSecretEncrypted     String?
   totpEnabledAt           DateTime?
   lastAcceptedTotpCounter BigInt?
-  createdAt               DateTime                    @default(now())
+  createdAt               DateTime                            @default(now())
   c2aInvitationCreatedXid BigInt?
   sessions                AdminSession[]
   recoveryCodes           AdminRecoveryCode[]
@@ -318,22 +342,26 @@ model AdminUser {
   refreshTokens           AdminRefreshToken[]
   recoveryCodeBatches     AdminRecoveryCodeBatch[]
   securityEvents          AdminSecurityEvent[]
-  createdArtists          Artist[]                    @relation("ArtistCreatedByAdmin")
-  createdAudioContents    AudioContent[]              @relation("AudioContentCreatedByAdmin")
+  createdArtists          Artist[]                            @relation("ArtistCreatedByAdmin")
+  createdAudioContents    AudioContent[]                      @relation("AudioContentCreatedByAdmin")
   publications            ContentPublication[]
-  actorAuditLogs          AuditLog[]                  @relation("AuditActor")
-  subjectAuditLogs        AuditLog[]                  @relation("AuditSubject")
-  delegatedAuditLogs      AuditLog[]                  @relation("AuditDelegatedBy")
+  actorAuditLogs          AuditLog[]                          @relation("AuditActor")
+  subjectAuditLogs        AuditLog[]                          @relation("AuditSubject")
+  delegatedAuditLogs      AuditLog[]                          @relation("AuditDelegatedBy")
   idempotencyRecords      AdminIdempotencyRecord[]
   passwordResetRequests   AdminPasswordResetRequest[]
   passwordResetContexts   AdminPasswordResetContext[]
-  recoveryCasesAsSubject  AdminRecoveryCase[]         @relation("RecoveryCaseSubject")
-  recoveryCasesAsCreator  AdminRecoveryCase[]         @relation("RecoveryCaseCreator")
-  recoveryCasesAsApprover AdminRecoveryCase[]         @relation("RecoveryCaseApprover")
-  createdInvitations      AdminInvitation[]           @relation("InvitationCreator")
-  acceptedInvitations     AdminInvitation[]           @relation("InvitationAcceptedAdmin")
+  recoveryCasesAsSubject  AdminRecoveryCase[]                 @relation("RecoveryCaseSubject")
+  recoveryCasesAsCreator  AdminRecoveryCase[]                 @relation("RecoveryCaseCreator")
+  recoveryCasesAsApprover AdminRecoveryCase[]                 @relation("RecoveryCaseApprover")
+  createdInvitations      AdminInvitation[]                   @relation("InvitationCreator")
+  acceptedInvitations     AdminInvitation[]                   @relation("InvitationAcceptedAdmin")
   c2Snapshots             AdminPaginationSnapshot[]
   c2IdempotencyRecords    AdminC2IdempotencyRecord[]
+  c2bAuditSnapshots       AdminAuditPaginationSnapshot[]
+  c2bAuditIdempotency     AdminAuditExportIdempotencyRecord[]
+  createdAuditExports     AdminAuditExport[]                  @relation("AuditExportCreator")
+  auditExportReadLeases   AdminAuditExportReadLease[]
   bootstrapGuard          AdminBootstrapGuard?
 }
 
@@ -655,6 +683,115 @@ model AdminPaginationSnapshotItem {
 
   @@id([snapshotId, ordinal])
   @@unique([snapshotId, resourceId])
+}
+
+model AdminAuditPaginationSnapshot {
+  id                   String                             @id @default(uuid())
+  principalAdminUserId String
+  principalAdminUser   AdminUser                          @relation(fields: [principalAdminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  operation            AdminAuditSnapshotOperation
+  filtersDigest        String
+  projectionVersion    Int
+  entryCount           Int
+  utf8Bytes            BigInt
+  createdAt            DateTime                           @default(now())
+  expiresAt            DateTime
+  items                AdminAuditPaginationSnapshotItem[]
+  auditExport          AdminAuditExport?
+
+  @@index([principalAdminUserId, operation, createdAt], map: "AdminAuditPaginationSnapshot_principal_operation_created_idx")
+  @@index([operation, expiresAt], map: "AdminAuditPaginationSnapshot_operation_expires_idx")
+}
+
+model AdminAuditPaginationSnapshotItem {
+  snapshotId      String
+  snapshot        AdminAuditPaginationSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  ordinal         Int
+  resourceId      String
+  sourceCreatedAt DateTime
+  projectionJson  String
+  utf8Bytes       Int
+
+  @@id([snapshotId, ordinal])
+  @@unique([snapshotId, resourceId], map: "AdminAuditPaginationSnapshotItem_snapshot_resource_key")
+}
+
+model AdminAuditExportIdempotencyRecord {
+  id             String                               @id @default(uuid())
+  adminUserId    String
+  adminUser      AdminUser                            @relation(fields: [adminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  operation      AdminAuditExportIdempotencyOperation
+  idempotencyKey String
+  requestDigest  String
+  responseCode   Int
+  exportId       String
+  auditExport    AdminAuditExport                     @relation(fields: [exportId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  generation     BigInt
+  expiresAt      DateTime
+  createdAt      DateTime
+
+  @@unique([adminUserId, operation, idempotencyKey, generation], map: "AdminAuditExportIdempotencyRecord_key_generation_key")
+  @@index([adminUserId, operation, idempotencyKey, expiresAt, generation], map: "AdminAuditExportIdempotencyRecord_active_lookup_idx")
+  @@index([expiresAt], map: "AdminAuditExportIdempotencyRecord_expires_idx")
+}
+
+model AdminAuditExport {
+  id                 String                              @id @default(uuid())
+  creatorAdminUserId String
+  creatorAdminUser   AdminUser                           @relation("AuditExportCreator", fields: [creatorAdminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  snapshotId         String                              @unique
+  snapshot           AdminAuditPaginationSnapshot        @relation(fields: [snapshotId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sourceAuditLogId   String                              @unique
+  sourceAuditLog     AuditLog                            @relation("AuditExportSourceAudit", fields: [sourceAuditLogId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  state              AdminAuditExportState               @default(PENDING)
+  generation         BigInt                              @default(1)
+  attemptNumber      Int                                 @default(0)
+  attemptId          String?
+  claimOwnerHash     String?
+  attemptStartedAt   DateTime?
+  attemptDeadline    DateTime?
+  leaseExpiresAt     DateTime?
+  nextAttemptAt      DateTime?                           @default(now())
+  stagingObjectKey   String?                             @unique
+  objectKey          String?                             @unique
+  contentSha256      String?
+  signatureKeyId     String?
+  storageKeyId       String?
+  plaintextBytes     BigInt?
+  encryptedBytes     BigInt?
+  failureCode        AdminAuditExportFailureCode?
+  createdAt          DateTime                            @default(now())
+  readyAt            DateTime?
+  failedAt           DateTime?
+  expiresAt          DateTime?
+  expiredAt          DateTime?
+  idempotencyRecords AdminAuditExportIdempotencyRecord[]
+  readLeases         AdminAuditExportReadLease[]
+  auditLogs          AuditLog[]                          @relation("AuditExportAudits")
+
+  @@index([state, nextAttemptAt, createdAt], map: "AdminAuditExport_claim_idx")
+  @@index([state, leaseExpiresAt, attemptDeadline], map: "AdminAuditExport_watchdog_idx")
+  @@index([creatorAdminUserId, createdAt], map: "AdminAuditExport_creator_created_idx")
+  @@index([state, expiresAt], map: "AdminAuditExport_expiry_idx")
+}
+
+model AdminAuditExportReadLease {
+  id                String           @id @default(uuid())
+  exportId          String
+  auditExport       AdminAuditExport @relation(fields: [exportId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  exportGeneration  BigInt
+  readerAdminUserId String
+  readerAdminUser   AdminUser        @relation(fields: [readerAdminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  ownerHash         String
+  expiresAt         DateTime
+  maximumExpiresAt  DateTime
+  lastHeartbeatAt   DateTime
+  releasedAt        DateTime?
+  createdAt         DateTime         @default(now())
+
+  @@unique([exportId, exportGeneration, ownerHash], map: "AdminAuditExportReadLease_owner_key")
+  @@index([exportId, releasedAt, expiresAt], map: "AdminAuditExportReadLease_export_active_idx")
+  @@index([expiresAt], map: "AdminAuditExportReadLease_expires_idx")
 }
 
 model AdminBootstrapGuard {
@@ -1193,6 +1330,9 @@ model AuditLog {
   notificationOutbox          AdminNotificationOutbox?   @relation("AuditNotificationOutbox", fields: [notificationOutboxId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   bootstrapGuardId            String?
   bootstrapGuard              AdminBootstrapGuard?       @relation("AuditBootstrapGuard", fields: [bootstrapGuardId], references: [singletonKey], onDelete: Restrict, onUpdate: Restrict)
+  adminAuditExportId          String?
+  adminAuditExport            AdminAuditExport?          @relation("AuditExportAudits", fields: [adminAuditExportId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sourceForAuditExport        AdminAuditExport?          @relation("AuditExportSourceAudit")
   createdInvitations          AdminInvitation[]          @relation("InvitationCreatedByAudit")
   notificationOutboxes        AdminNotificationOutbox[]  @relation("OutboxAuditSource")
   bootstrapGuards             AdminBootstrapGuard[]      @relation("BootstrapGuardAudit")
@@ -1203,4 +1343,5 @@ model AuditLog {
   @@index([actorAdminUserId, createdAt], map: "AuditLog_adminUserId_createdAt_idx")
   @@index([subjectAdminUserId, createdAt])
   @@index([context, createdAt])
+  @@index([adminAuditExportId, createdAt], map: "AuditLog_adminAuditExportId_createdAt_idx")
 }

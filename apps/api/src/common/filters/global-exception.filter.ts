@@ -45,6 +45,7 @@ type AdminC2FailureAuditRecorder = (
   exception: AdminC2HttpError,
   requestId: string,
 ) => Promise<void>;
+type AdminC2bFailureAuditRecorder = AdminC2FailureAuditRecorder;
 type ErrorMiddlewareNext = (exception: unknown) => void;
 
 interface BodyParserError extends SyntaxError {
@@ -168,6 +169,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     private readonly reportException: ExceptionReporter = () => undefined,
     private readonly recordAdminFailure?: AdminFailureAuditRecorder,
     private readonly recordAdminC2Failure?: AdminC2FailureAuditRecorder,
+    private readonly recordAdminC2bFailure?: AdminC2bFailureAuditRecorder,
   ) {}
 
   catch(exception: unknown, host: ArgumentsHost): void | Promise<void> {
@@ -182,7 +184,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       exception instanceof AdminC2HttpError &&
       exception.disposition === 'RECORD_SECURITY_EVENT' &&
       !exception.auditRecorded &&
-      this.recordAdminC2Failure !== undefined
+      (this.recordAdminC2Failure !== undefined || this.recordAdminC2bFailure !== undefined)
     ) {
       return this.auditC2ThenRespond(exception, host);
     }
@@ -194,7 +196,14 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     host: ArgumentsHost,
   ): Promise<void> {
     const request = host.switchToHttp().getRequest<RequestWithId>();
-    const recorder = this.recordAdminC2Failure;
+    const recorder = [
+      'listAdminAuditLogs',
+      'createAdminAuditLogExport',
+      'getAdminAuditLogExport',
+      'downloadAdminAuditLogExport',
+    ].includes(exception.operationId)
+      ? this.recordAdminC2bFailure
+      : this.recordAdminC2Failure;
     if (recorder === undefined) {
       this.respond(exception, host);
       return;

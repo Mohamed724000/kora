@@ -6,6 +6,10 @@ import {
   AdminSecurityModule,
   type AdminSecurityModuleOptions,
 } from './admin-security/admin-security.module';
+import {
+  AdminAuditModule,
+  type AdminAuditModuleOptions,
+} from './admin-security/admin-audit.module';
 import { loadRuntimeConfig } from './config/runtime-config';
 import { DatabaseModule } from './database/database.module';
 import type { AdminWriterRuntimeBoundary } from './database/admin-writer.service';
@@ -17,6 +21,7 @@ import { QueueInfrastructureModule } from './infrastructure/queue-infrastructure
 export interface AppModuleOptions {
   adminKeyProvider?: AdminKeyProvider;
   adminSecurity?: Omit<AdminSecurityModuleOptions, 'adminKeyProvider' | 'httpRoutesEnabled'>;
+  adminAudit?: Omit<AdminAuditModuleOptions, 'adminKeyProvider'>;
   adminWriterBoundary?: AdminWriterRuntimeBoundary;
   environment?: Record<string, string | undefined>;
   readinessChecks?: readonly ReadinessCheck[];
@@ -30,16 +35,34 @@ export class AppModule {
     const adminAuthModule = AdminAuthModule.register({
       ...(options.adminKeyProvider === undefined ? {} : { keyProvider: options.adminKeyProvider }),
     });
-    const adminHttpModule =
-      runtimeConfig.adminC2a.enabled && runtimeConfig.adminC2a.profile === 'HTTP'
-        ? AdminSecurityModule.register({
-            ...options.adminSecurity,
-            ...(options.adminKeyProvider === undefined
-              ? {}
-              : { adminKeyProvider: options.adminKeyProvider }),
-            httpRoutesEnabled: true,
-          })
-        : adminAuthModule;
+    const c2aHttpEnabled =
+      runtimeConfig.adminC2a.enabled && runtimeConfig.adminC2a.profile === 'HTTP';
+    const c2bHttpEnabled =
+      runtimeConfig.adminC2b.enabled && runtimeConfig.adminC2b.profile === 'HTTP';
+    const adminHttpModules = [
+      ...(c2aHttpEnabled
+        ? [
+            AdminSecurityModule.register({
+              ...options.adminSecurity,
+              ...(options.adminKeyProvider === undefined
+                ? {}
+                : { adminKeyProvider: options.adminKeyProvider }),
+              httpRoutesEnabled: true,
+            }),
+          ]
+        : []),
+      ...(c2bHttpEnabled
+        ? [
+            AdminAuditModule.register({
+              ...options.adminAudit,
+              ...(options.adminKeyProvider === undefined
+                ? {}
+                : { adminKeyProvider: options.adminKeyProvider }),
+            }),
+          ]
+        : []),
+      ...(!c2aHttpEnabled && !c2bHttpEnabled ? [adminAuthModule] : []),
+    ];
     return {
       imports: [
         ConfigModule.forRoot({
@@ -56,7 +79,7 @@ export class AppModule {
             ? {}
             : { runtimeBoundary: options.runtimeDatabaseBoundary }),
         }),
-        adminHttpModule,
+        ...adminHttpModules,
         QueueInfrastructureModule,
         HealthModule.register({
           ...(options.readinessChecks === undefined

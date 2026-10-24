@@ -128,6 +128,83 @@ postgres_admin_c2a_bootstrap_password'
   export KORA_POSTGRES_C2A_SECRET_DIRECTORY="$c2a_secret_directory"
 fi
 
+c2b_enabled="${KORA_POSTGRES_C2B_ENABLED:-false}"
+case "$c2b_enabled" in
+  true | false) ;;
+  *)
+    echo 'PostgreSQL C2b enable flag must be true or false.' >&2
+    exit 1
+    ;;
+esac
+
+if [ "$c2b_enabled" = 'true' ]; then
+  c2b_audit_api_user="${KORA_POSTGRES_C2B_AUDIT_API_USER:-}"
+  c2b_export_worker_user="${KORA_POSTGRES_C2B_EXPORT_WORKER_USER:-}"
+  c2b_secret_directory="${KORA_POSTGRES_C2B_SECRET_DIRECTORY:-}"
+  if [ "$c2b_audit_api_user" != 'kora_admin_c2b_audit_api' ] \
+    || [ "$c2b_export_worker_user" != 'kora_admin_c2b_export_worker' ]; then
+    echo 'PostgreSQL C2b role names do not match the authorized identities.' >&2
+    exit 1
+  fi
+  case "$c2b_secret_directory" in
+    /*) ;;
+    *)
+      echo 'PostgreSQL C2b secret directory must be absolute.' >&2
+      exit 1
+      ;;
+  esac
+  c2b_forbidden_users="$POSTGRES_USER $runtime_user $admin_writer_user \
+kora_admin_c2a_writer kora_admin_c2a_notification_worker \
+kora_admin_c2a_expiration_worker kora_admin_c2a_bootstrap"
+  for c2b_user in "$c2b_audit_api_user" "$c2b_export_worker_user"; do
+    for forbidden_user in $c2b_forbidden_users; do
+      if [ "$c2b_user" = "$forbidden_user" ]; then
+        echo 'PostgreSQL C2b roles must be distinct from owner, C1 and C2a identities.' >&2
+        exit 1
+      fi
+    done
+  done
+  c2b_secret_files='postgres_admin_c2b_audit_api_password
+postgres_admin_c2b_export_worker_password'
+  for c2b_secret_file in $c2b_secret_files; do
+    c2b_secret_path="$c2b_secret_directory/$c2b_secret_file"
+    if [ ! -f "$c2b_secret_path" ] \
+      || [ "$(tr -d '\r\n' <"$c2b_secret_path" | wc -c | tr -d ' ')" -ne 43 ]; then
+      echo 'A PostgreSQL C2b secret has an invalid format.' >&2
+      exit 1
+    fi
+  done
+  c2b_audit_api_password="$(tr -d '\r\n' <"$c2b_secret_directory/postgres_admin_c2b_audit_api_password")"
+  c2b_export_worker_password="$(tr -d '\r\n' <"$c2b_secret_directory/postgres_admin_c2b_export_worker_password")"
+  runtime_password="$(tr -d '\r\n' </run/secrets/postgres_runtime_password)"
+  admin_writer_password="$(tr -d '\r\n' </run/secrets/postgres_admin_writer_password)"
+  owner_password="$(tr -d '\r\n' </run/secrets/postgres_password)"
+  if [ "$c2b_audit_api_password" = "$c2b_export_worker_password" ] \
+    || [ "$c2b_audit_api_password" = "$runtime_password" ] \
+    || [ "$c2b_audit_api_password" = "$admin_writer_password" ] \
+    || [ "$c2b_audit_api_password" = "$owner_password" ] \
+    || [ "$c2b_export_worker_password" = "$runtime_password" ] \
+    || [ "$c2b_export_worker_password" = "$admin_writer_password" ] \
+    || [ "$c2b_export_worker_password" = "$owner_password" ]; then
+    echo 'PostgreSQL C2b secrets must be pairwise distinct from C1 and owner secrets.' >&2
+    exit 1
+  fi
+  if [ "$c2a_enabled" = 'true' ]; then
+    for c2a_secret_file in $c2a_secret_files; do
+      c2a_secret_value="$(tr -d '\r\n' <"$c2a_secret_directory/$c2a_secret_file")"
+      if [ "$c2b_audit_api_password" = "$c2a_secret_value" ] \
+        || [ "$c2b_export_worker_password" = "$c2a_secret_value" ]; then
+        echo 'PostgreSQL C2b secrets must be distinct from all C2a secrets.' >&2
+        exit 1
+      fi
+    done
+    unset c2a_secret_value
+  fi
+  unset c2b_audit_api_password c2b_export_worker_password
+  unset runtime_password admin_writer_password owner_password
+  export KORA_POSTGRES_C2B_SECRET_DIRECTORY="$c2b_secret_directory"
+fi
+
 export PGPASSWORD="$(tr -d '\r\n' </run/secrets/postgres_password)"
 
 # C2a is inspected in a separate transaction that is always rolled back before
@@ -3273,8 +3350,288 @@ SQL
   unset PGPASSWORD
 fi
 
-if [ "$c2a_enabled" = 'true' ]; then
-  echo 'PostgreSQL reader, C1 writer and four C2a boundaries provisioned and verified.'
+if [ "$c2b_enabled" = 'true' ]; then
+  export PGPASSWORD="$(tr -d '\r\n' </run/secrets/postgres_password)"
+  psql \
+    --host=127.0.0.1 \
+    --port=5432 \
+    --username="$POSTGRES_USER" \
+    --dbname="$POSTGRES_DB" \
+    --no-psqlrc \
+    --quiet \
+    --set=ON_ERROR_STOP=1 \
+    --set=c2b_audit_api_user="$c2b_audit_api_user" \
+    --set=c2b_export_worker_user="$c2b_export_worker_user" <<'SQL'
+\set c2b_audit_api_password `tr -d '\r\n' <"$KORA_POSTGRES_C2B_SECRET_DIRECTORY/postgres_admin_c2b_audit_api_password"`
+\set c2b_export_worker_password `tr -d '\r\n' <"$KORA_POSTGRES_C2B_SECRET_DIRECTORY/postgres_admin_c2b_export_worker_password"`
+BEGIN;
+
+SELECT pg_catalog.set_config('kora.c2b_audit_api_user', :'c2b_audit_api_user', true);
+SELECT pg_catalog.set_config('kora.c2b_export_worker_user', :'c2b_export_worker_user', true);
+
+DO $c2b_role_preflight$
+BEGIN
+  IF pg_catalog.current_setting('kora.c2b_audit_api_user') <> 'kora_admin_c2b_audit_api'
+     OR pg_catalog.current_setting('kora.c2b_export_worker_user') <> 'kora_admin_c2b_export_worker'
+     OR pg_catalog.current_setting('kora.c2b_audit_api_user') =
+        pg_catalog.current_setting('kora.c2b_export_worker_user') THEN
+    RAISE EXCEPTION 'C2b role identity preflight failed';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_catalog.pg_auth_members AS membership
+    JOIN pg_catalog.pg_roles AS member_role ON member_role.oid = membership.member
+    JOIN pg_catalog.pg_roles AS granted_role ON granted_role.oid = membership.roleid
+    WHERE member_role.rolname IN (
+      pg_catalog.current_setting('kora.c2b_audit_api_user'),
+      pg_catalog.current_setting('kora.c2b_export_worker_user')
+    ) OR granted_role.rolname IN (
+      pg_catalog.current_setting('kora.c2b_audit_api_user'),
+      pg_catalog.current_setting('kora.c2b_export_worker_user')
+    )
+  ) THEN
+    RAISE EXCEPTION 'C2b role membership preflight failed';
+  END IF;
+END;
+$c2b_role_preflight$;
+
+SELECT format(
+  'CREATE ROLE %I LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS',
+  :'c2b_audit_api_user', :'c2b_audit_api_password'
+)
+WHERE NOT EXISTS (
+  SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = :'c2b_audit_api_user'
+) \gexec
+SELECT format(
+  'CREATE ROLE %I LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS',
+  :'c2b_export_worker_user', :'c2b_export_worker_password'
+)
+WHERE NOT EXISTS (
+  SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = :'c2b_export_worker_user'
+) \gexec
+SELECT format(
+  'ALTER ROLE %I LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS',
+  :'c2b_audit_api_user', :'c2b_audit_api_password'
+) \gexec
+SELECT format(
+  'ALTER ROLE %I LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS',
+  :'c2b_export_worker_user', :'c2b_export_worker_password'
+) \gexec
+
+SELECT format('REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM %I', role_name)
+FROM (VALUES (:'c2b_audit_api_user'), (:'c2b_export_worker_user')) AS roles(role_name) \gexec
+SELECT format('REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM %I', role_name)
+FROM (VALUES (:'c2b_audit_api_user'), (:'c2b_export_worker_user')) AS roles(role_name) \gexec
+SELECT format('REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public FROM %I', role_name)
+FROM (VALUES (:'c2b_audit_api_user'), (:'c2b_export_worker_user')) AS roles(role_name) \gexec
+SELECT format('REVOKE CREATE ON SCHEMA public FROM %I', role_name)
+FROM (VALUES (:'c2b_audit_api_user'), (:'c2b_export_worker_user')) AS roles(role_name) \gexec
+SELECT format('GRANT USAGE ON SCHEMA public TO %I', role_name)
+FROM (VALUES (:'c2b_audit_api_user'), (:'c2b_export_worker_user')) AS roles(role_name) \gexec
+SELECT format('REVOKE CREATE, TEMP ON DATABASE %I FROM %I', current_database(), role_name)
+FROM (VALUES (:'c2b_audit_api_user'), (:'c2b_export_worker_user')) AS roles(role_name) \gexec
+SELECT format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), role_name)
+FROM (VALUES (:'c2b_audit_api_user'), (:'c2b_export_worker_user')) AS roles(role_name) \gexec
+
+SELECT format(
+  'GRANT EXECUTE ON FUNCTION public.kora_lock_admin_c2b_principal(TEXT, TEXT) TO %I',
+  :'c2b_audit_api_user'
+) \gexec
+
+SELECT format(
+  'GRANT EXECUTE ON FUNCTION public.kora_lock_admin_c2b_export_idempotency(TEXT, TEXT) TO %I',
+  :'c2b_audit_api_user'
+) \gexec
+
+SELECT format(
+  'GRANT EXECUTE ON FUNCTION public.kora_lock_admin_c2b_export_lifecycle(TEXT) TO %I',
+  role_name
+)
+FROM (VALUES (:'c2b_audit_api_user'), (:'c2b_export_worker_user')) AS roles(role_name) \gexec
+
+SELECT format(
+  'GRANT SELECT (%s) ON TABLE public.%I TO %I',
+  string_agg(format('%I', column_name), ', ' ORDER BY ordinal), relation_name, role_name
+)
+FROM (
+  SELECT :'c2b_audit_api_user'::text, 'AdminC2bAuditProjectionSource'::text,
+         ordinal, column_name
+  FROM unnest(ARRAY[
+    'version','eventId','action','eventClass','context','actorAdminUserId',
+    'subjectAdminUserId','delegatedByAdminUserId','adminSessionId',
+    'adminRecoveryContextId','systemExecutionRefHash','entityType','entityId',
+    'maskedBefore','maskedAfter','reasonCode','requestId','causationEventId',
+    'causationSecurityEventId','createdAt','outcome','failureCode',
+    'legacyReasonRedacted','operatorReason','operatorReasonRedacted','outcomeProvenance'
+  ]) WITH ORDINALITY AS columns(column_name, ordinal)
+) AS acl(role_name, relation_name, ordinal, column_name)
+GROUP BY role_name, relation_name \gexec
+
+CREATE TEMPORARY TABLE c2b_column_grants (
+  role_name TEXT NOT NULL,
+  relation_name TEXT NOT NULL,
+  privilege_type TEXT NOT NULL,
+  column_name TEXT NOT NULL,
+  ordinal INTEGER NOT NULL
+) ON COMMIT DROP;
+
+INSERT INTO c2b_column_grants
+SELECT :'c2b_audit_api_user', 'AdminAuditPaginationSnapshot', 'SELECT', column_name, ordinal
+FROM unnest(ARRAY['id','principalAdminUserId','operation','filtersDigest','projectionVersion','entryCount','utf8Bytes','createdAt','expiresAt']) WITH ORDINALITY AS c(column_name, ordinal);
+INSERT INTO c2b_column_grants
+SELECT :'c2b_audit_api_user', 'AdminAuditPaginationSnapshot', 'INSERT', column_name, ordinal
+FROM unnest(ARRAY['id','principalAdminUserId','operation','filtersDigest','projectionVersion','entryCount','utf8Bytes']) WITH ORDINALITY AS c(column_name, ordinal);
+INSERT INTO c2b_column_grants
+SELECT :'c2b_audit_api_user', 'AdminAuditPaginationSnapshotItem', privilege_type, column_name, ordinal
+FROM unnest(ARRAY['SELECT','INSERT']) AS p(privilege_type)
+CROSS JOIN unnest(ARRAY['snapshotId','ordinal','resourceId','sourceCreatedAt','projectionJson','utf8Bytes']) WITH ORDINALITY AS c(column_name, ordinal);
+INSERT INTO c2b_column_grants
+SELECT :'c2b_audit_api_user', 'AdminAuditExportIdempotencyRecord', 'SELECT', column_name, ordinal
+FROM unnest(ARRAY['id','adminUserId','operation','idempotencyKey','requestDigest','responseCode','exportId','generation','expiresAt','createdAt']) WITH ORDINALITY AS c(column_name, ordinal);
+INSERT INTO c2b_column_grants
+SELECT :'c2b_audit_api_user', 'AdminAuditExportIdempotencyRecord', 'INSERT', column_name, ordinal
+FROM unnest(ARRAY['id','adminUserId','operation','idempotencyKey','requestDigest','responseCode','exportId']) WITH ORDINALITY AS c(column_name, ordinal);
+INSERT INTO c2b_column_grants
+SELECT :'c2b_audit_api_user', 'AdminAuditExport', 'SELECT', column_name, ordinal
+FROM unnest(ARRAY['id','creatorAdminUserId','snapshotId','sourceAuditLogId','state','generation','objectKey','contentSha256','signatureKeyId','storageKeyId','plaintextBytes','failureCode','createdAt','readyAt','expiresAt']) WITH ORDINALITY AS c(column_name, ordinal);
+INSERT INTO c2b_column_grants
+SELECT :'c2b_audit_api_user', 'AdminAuditExport', 'INSERT', column_name, ordinal
+FROM unnest(ARRAY['id','creatorAdminUserId','snapshotId','sourceAuditLogId']) WITH ORDINALITY AS c(column_name, ordinal);
+INSERT INTO c2b_column_grants
+SELECT :'c2b_audit_api_user', 'AdminAuditExportReadLease', 'SELECT', column_name, ordinal
+FROM unnest(ARRAY['id','exportId','exportGeneration','readerAdminUserId','ownerHash','expiresAt','maximumExpiresAt','lastHeartbeatAt','releasedAt','createdAt']) WITH ORDINALITY AS c(column_name, ordinal);
+INSERT INTO c2b_column_grants
+SELECT :'c2b_audit_api_user', 'AdminAuditExportReadLease', 'INSERT', column_name, ordinal
+FROM unnest(ARRAY['id','exportId','readerAdminUserId','ownerHash']) WITH ORDINALITY AS c(column_name, ordinal);
+INSERT INTO c2b_column_grants
+SELECT :'c2b_audit_api_user', 'AdminAuditExportReadLease', 'UPDATE', column_name, ordinal
+FROM unnest(ARRAY['expiresAt','lastHeartbeatAt','releasedAt']) WITH ORDINALITY AS c(column_name, ordinal);
+INSERT INTO c2b_column_grants
+SELECT :'c2b_audit_api_user', 'AdminSecurityEvent', 'INSERT', column_name, ordinal
+FROM unnest(ARRAY['id','adminUserId','eventClass','action','outcome','failureCode','requestId','subjectRefHash','entityType','entityId']) WITH ORDINALITY AS c(column_name, ordinal);
+INSERT INTO c2b_column_grants
+SELECT :'c2b_audit_api_user', 'AuditLog', 'INSERT', column_name, ordinal
+FROM unnest(ARRAY['id','version','adminUserId','adminSessionId','eventClass','context','outcome','failureCode','action','entityType','entityId','reason','reasonCode','operatorReason','requestId','adminAuditExportId']) WITH ORDINALITY AS c(column_name, ordinal);
+
+INSERT INTO c2b_column_grants
+SELECT :'c2b_export_worker_user', 'AdminAuditPaginationSnapshot', 'SELECT', column_name, ordinal
+FROM unnest(ARRAY['id','principalAdminUserId','operation','filtersDigest','projectionVersion','entryCount','utf8Bytes','createdAt','expiresAt']) WITH ORDINALITY AS c(column_name, ordinal);
+INSERT INTO c2b_column_grants
+SELECT :'c2b_export_worker_user', 'AdminAuditPaginationSnapshotItem', 'SELECT', column_name, ordinal
+FROM unnest(ARRAY['snapshotId','ordinal','resourceId','sourceCreatedAt','projectionJson','utf8Bytes']) WITH ORDINALITY AS c(column_name, ordinal);
+INSERT INTO c2b_column_grants
+SELECT :'c2b_export_worker_user', 'AdminAuditExport', 'SELECT', column_name, ordinal
+FROM unnest(ARRAY['id','creatorAdminUserId','snapshotId','sourceAuditLogId','state','generation','attemptNumber','attemptId','claimOwnerHash','attemptStartedAt','attemptDeadline','leaseExpiresAt','nextAttemptAt','stagingObjectKey','objectKey','contentSha256','signatureKeyId','storageKeyId','plaintextBytes','encryptedBytes','failureCode','createdAt','readyAt','failedAt','expiresAt','expiredAt']) WITH ORDINALITY AS c(column_name, ordinal);
+INSERT INTO c2b_column_grants
+SELECT :'c2b_export_worker_user', 'AdminAuditExport', 'UPDATE', column_name, ordinal
+FROM unnest(ARRAY['state','generation','attemptNumber','attemptId','claimOwnerHash','attemptStartedAt','attemptDeadline','leaseExpiresAt','nextAttemptAt','stagingObjectKey','objectKey','contentSha256','signatureKeyId','storageKeyId','plaintextBytes','encryptedBytes','failureCode','readyAt','failedAt','expiresAt','expiredAt']) WITH ORDINALITY AS c(column_name, ordinal);
+INSERT INTO c2b_column_grants
+SELECT :'c2b_export_worker_user', 'AdminAuditExportReadLease', 'SELECT', column_name, ordinal
+FROM unnest(ARRAY['id','exportId','exportGeneration','readerAdminUserId','ownerHash','expiresAt','maximumExpiresAt','lastHeartbeatAt','releasedAt','createdAt']) WITH ORDINALITY AS c(column_name, ordinal);
+INSERT INTO c2b_column_grants
+SELECT :'c2b_export_worker_user', 'AuditLog', 'INSERT', column_name, ordinal
+FROM unnest(ARRAY['id','version','delegatedByAdminUserId','eventClass','context','outcome','failureCode','action','entityType','entityId','reason','reasonCode','requestId','causationEventId','systemExecutionRefHash','adminAuditExportId']) WITH ORDINALITY AS c(column_name, ordinal);
+
+SELECT format(
+  'GRANT %s (%s) ON TABLE public.%I TO %I',
+  privilege_type,
+  string_agg(format('%I', column_name), ', ' ORDER BY ordinal),
+  relation_name,
+  role_name
+)
+FROM c2b_column_grants
+GROUP BY role_name, relation_name, privilege_type
+ORDER BY role_name, relation_name, privilege_type \gexec
+
+SELECT format('GRANT DELETE ON TABLE public.%I TO %I', relation_name, :'c2b_export_worker_user')
+FROM (VALUES ('AdminAuditPaginationSnapshot'), ('AdminAuditExportReadLease')) AS relations(relation_name) \gexec
+
+DO $c2b_postcondition$
+BEGIN
+  IF (
+    SELECT count(*) FROM pg_catalog.pg_roles
+    WHERE rolname IN (
+      pg_catalog.current_setting('kora.c2b_audit_api_user'),
+      pg_catalog.current_setting('kora.c2b_export_worker_user')
+    )
+      AND rolcanlogin AND NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole
+      AND NOT rolinherit AND NOT rolreplication AND NOT rolbypassrls
+      AND rolconfig IS NULL
+  ) <> 2 THEN
+    RAISE EXCEPTION 'C2b role postcondition failed';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_catalog.pg_auth_members AS membership
+    JOIN pg_catalog.pg_roles AS member_role ON member_role.oid = membership.member
+    JOIN pg_catalog.pg_roles AS granted_role ON granted_role.oid = membership.roleid
+    WHERE member_role.rolname IN (
+      pg_catalog.current_setting('kora.c2b_audit_api_user'),
+      pg_catalog.current_setting('kora.c2b_export_worker_user')
+    ) OR granted_role.rolname IN (
+      pg_catalog.current_setting('kora.c2b_audit_api_user'),
+      pg_catalog.current_setting('kora.c2b_export_worker_user')
+    )
+  ) THEN
+    RAISE EXCEPTION 'C2b membership postcondition failed';
+  END IF;
+  IF pg_catalog.has_database_privilege(
+       pg_catalog.current_setting('kora.c2b_audit_api_user'), current_database(), 'CREATE')
+     OR pg_catalog.has_database_privilege(
+       pg_catalog.current_setting('kora.c2b_audit_api_user'), current_database(), 'TEMP')
+     OR pg_catalog.has_database_privilege(
+       pg_catalog.current_setting('kora.c2b_export_worker_user'), current_database(), 'CREATE')
+     OR pg_catalog.has_database_privilege(
+       pg_catalog.current_setting('kora.c2b_export_worker_user'), current_database(), 'TEMP')
+     OR pg_catalog.has_schema_privilege(
+       pg_catalog.current_setting('kora.c2b_audit_api_user'), 'public', 'CREATE')
+     OR pg_catalog.has_schema_privilege(
+       pg_catalog.current_setting('kora.c2b_export_worker_user'), 'public', 'CREATE') THEN
+    RAISE EXCEPTION 'C2b database or schema capability postcondition failed';
+  END IF;
+  IF pg_catalog.has_table_privilege(
+       pg_catalog.current_setting('kora.c2b_audit_api_user'), 'public."AuditLog"', 'SELECT')
+     OR pg_catalog.has_table_privilege(
+       pg_catalog.current_setting('kora.c2b_export_worker_user'), 'public."AuditLog"', 'SELECT')
+     OR pg_catalog.has_table_privilege(
+       pg_catalog.current_setting('kora.c2b_audit_api_user'), 'public."AdminPaginationSnapshot"', 'SELECT')
+     OR pg_catalog.has_table_privilege(
+       pg_catalog.current_setting('kora.c2b_export_worker_user'), 'public."AdminC2IdempotencyRecord"', 'SELECT') THEN
+    RAISE EXCEPTION 'C2b contamination or raw-audit postcondition failed';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_catalog.pg_attribute AS attribute_entry
+    CROSS JOIN LATERAL pg_catalog.aclexplode(attribute_entry.attacl) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE target_role.rolname IN (
+      pg_catalog.current_setting('kora.c2b_audit_api_user'),
+      pg_catalog.current_setting('kora.c2b_export_worker_user')
+    )
+      AND privilege.is_grantable
+  ) OR EXISTS (
+    SELECT 1 FROM pg_catalog.pg_class AS class_entry
+    CROSS JOIN LATERAL pg_catalog.aclexplode(class_entry.relacl) AS privilege
+    JOIN pg_catalog.pg_roles AS target_role ON target_role.oid = privilege.grantee
+    WHERE target_role.rolname IN (
+      pg_catalog.current_setting('kora.c2b_audit_api_user'),
+      pg_catalog.current_setting('kora.c2b_export_worker_user')
+    )
+      AND privilege.is_grantable
+  ) THEN
+    RAISE EXCEPTION 'C2b grant-option postcondition failed';
+  END IF;
+END;
+$c2b_postcondition$;
+
+COMMIT;
+SQL
+  unset PGPASSWORD
+fi
+
+if [ "$c2a_enabled" = 'true' ] && [ "$c2b_enabled" = 'true' ]; then
+  echo 'PostgreSQL reader, C1 writer, four C2a and two C2b boundaries provisioned and verified.'
+elif [ "$c2a_enabled" = 'true' ]; then
+  echo 'PostgreSQL reader, C1 writer and four C2a boundaries provisioned and verified; C2b remains disabled.'
+elif [ "$c2b_enabled" = 'true' ]; then
+  echo 'PostgreSQL reader, C1 writer and two C2b boundaries provisioned and verified; C2a remains disabled.'
 else
-  echo 'PostgreSQL reader and admin writer boundaries provisioned and verified; C2a remains disabled.'
+  echo 'PostgreSQL reader and admin writer boundaries provisioned and verified; C2a/C2b remain disabled.'
 fi

@@ -1,7 +1,17 @@
 import { spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { lstatSync, readFileSync, realpathSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import {
+  copyFileSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import pg from 'pg';
@@ -48,6 +58,7 @@ const HISTORICAL_MIGRATIONS = Object.freeze([
   ],
 ]);
 const C2A_MIGRATION = 'admin_security_c2a_runtime';
+const C2A_MIGRATION_SHA256 = 'eba1a1e4729b57041d681ea7beafa8608d0e7731be94afa014f0e6171f415c8a';
 const ROLE_ENVIRONMENT = Object.freeze({
   bootstrap: ['S1203C2A_BOOTSTRAP_USER', 'S1203C2A_BOOTSTRAP_PASSWORD'],
   expiration: ['S1203C2A_EXPIRATION_USER', 'S1203C2A_EXPIRATION_PASSWORD'],
@@ -263,7 +274,20 @@ export function captureQualifiedFoundationsToolchainState({
       sha256: actualSha256,
     };
   });
+  const c2aMigrationPath = resolve(migrationsRoot, C2A_MIGRATION, 'migration.sql');
+  assertRegularFile(c2aMigrationPath, `historical C2a migration ${C2A_MIGRATION}`);
+  const c2aMigrationBytes = readFileSync(c2aMigrationPath);
+  const c2aMigrationSha256 = sha256(c2aMigrationBytes);
+  if (c2aMigrationSha256 !== C2A_MIGRATION_SHA256) {
+    fail(`historical C2a migration changed: ${C2A_MIGRATION}`);
+  }
   const state = {
+    c2aMigration: {
+      identity: filesystemIdentity(c2aMigrationPath, `historical C2a migration ${C2A_MIGRATION}`),
+      name: C2A_MIGRATION,
+      path: c2aMigrationPath,
+      sha256: c2aMigrationSha256,
+    },
     historicalMigrations,
     packageLock: {
       identity: filesystemIdentity(resolvedLockPath, 'package-lock.json'),
@@ -318,6 +342,9 @@ export function assertQualifiedFoundationsToolchainStateUnchanged(state) {
   }
   if (JSON.stringify(current.historicalMigrations) !== JSON.stringify(state.historicalMigrations))
     fail('historical migration state changed during validation');
+  if (JSON.stringify(current.c2aMigration) !== JSON.stringify(state.c2aMigration)) {
+    fail('historical C2a migration state changed during validation');
+  }
   process.stdout.write(
     `C2A_TOOLCHAIN_STATE_UNCHANGED_PASS package_lock_sha256=${state.packageLock.sha256} prisma_package_sha256=${state.packages.prisma.sha256} pg_package_sha256=${state.packages.pg.sha256} vitest_package_sha256=${state.packages.vitest.sha256}\n`,
   );
@@ -589,22 +616,71 @@ function prismaEnvironment(database) {
   };
 }
 
-function runPrisma(argumentsList, database, allowedExitCodes = [0]) {
-  const result = spawnSync(process.execPath, [prismaEntry, ...argumentsList], {
-    cwd: apiDirectory,
-    encoding: 'utf8',
-    env: prismaEnvironment(database),
-    shell: false,
-    windowsHide: true,
-  });
-  if (!allowedExitCodes.includes(result.status)) {
-    fail(
-      `Prisma ${argumentsList.join(' ')} exited ${result.status}.\n${normalized(
-        `${result.stdout ?? ''}${result.stderr ?? ''}`,
-      )}`,
-    );
+function historicalC2aMigrationNames() {
+  return [...HISTORICAL_MIGRATIONS.map(([name]) => name), C2A_MIGRATION];
+}
+
+function runHistoricalC2aMigrateDeploy(database) {
+  const temporaryRoot = mkdtempSync(join(tmpdir(), 'kora-c2a-historical-migrations-'));
+  const resolvedTemporaryRoot = resolve(temporaryRoot);
+  const resolvedTemporaryDirectory = resolve(tmpdir());
+  if (!resolvedTemporaryRoot.startsWith(`${resolvedTemporaryDirectory}${sep}`)) {
+    fail('historical C2a migration workspace escaped the operating-system temporary directory');
   }
-  return result;
+  try {
+    const temporaryPrismaDirectory = resolve(resolvedTemporaryRoot, 'prisma');
+    const temporaryMigrationsDirectory = resolve(temporaryPrismaDirectory, 'migrations');
+    mkdirSync(temporaryMigrationsDirectory, { recursive: true });
+    const schemaPath = resolve(temporaryPrismaDirectory, 'schema.prisma');
+    writeFileSync(schemaPath, 'datasource db {\n  provider = "postgresql"\n}\n', {
+      encoding: 'utf8',
+      flag: 'wx',
+    });
+    for (const name of historicalC2aMigrationNames()) {
+      const source = resolve(migrationsDirectory, name, 'migration.sql');
+      const destinationDirectory = resolve(temporaryMigrationsDirectory, name);
+      mkdirSync(destinationDirectory);
+      copyFileSync(source, resolve(destinationDirectory, 'migration.sql'));
+    }
+    const configPath = resolve(resolvedTemporaryRoot, 'prisma.config.mjs');
+    writeFileSync(
+      configPath,
+      [
+        'export default {',
+        '  datasource: { url: process.env.DATABASE_URL },',
+        `  migrations: { path: ${JSON.stringify(temporaryMigrationsDirectory)} },`,
+        `  schema: ${JSON.stringify(schemaPath)},`,
+        '};',
+        '',
+      ].join('\n'),
+      { encoding: 'utf8', flag: 'wx' },
+    );
+    const environment = prismaEnvironment(database);
+    environment.DATABASE_URL = `postgresql://${encodeURIComponent(environment.DATABASE_USER)}:${encodeURIComponent(environment.DATABASE_PASSWORD)}@${environment.DATABASE_HOST}:${environment.DATABASE_PORT}/${encodeURIComponent(environment.DATABASE_NAME)}`;
+    const result = spawnSync(
+      process.execPath,
+      [prismaEntry, 'migrate', 'deploy', '--config', configPath, '--schema', schemaPath],
+      {
+        cwd: apiDirectory,
+        encoding: 'utf8',
+        env: environment,
+        shell: false,
+        windowsHide: true,
+      },
+    );
+    if (result.status !== 0) {
+      fail(
+        `Prisma historical C2a migrate deploy exited ${result.status}.\n${normalized(
+          `${result.stdout ?? ''}${result.stderr ?? ''}`,
+        )}`,
+      );
+    }
+  } finally {
+    if (resolve(temporaryRoot) !== resolvedTemporaryRoot) {
+      fail('historical C2a migration workspace identity changed before cleanup');
+    }
+    rmSync(resolvedTemporaryRoot, { force: false, recursive: true });
+  }
 }
 
 function provisionerArguments(database) {
@@ -1121,7 +1197,7 @@ async function prepareUpgradeDatabase(database) {
 }
 
 async function prepareEmptyDatabase(database) {
-  runPrisma(['migrate', 'deploy', '--config', 'prisma.config.ts'], database);
+  runHistoricalC2aMigrateDeploy(database);
   const client = new Client(adminConfiguration(database));
   await client.connect();
   try {
@@ -1129,10 +1205,12 @@ async function prepareEmptyDatabase(database) {
       `SELECT migration_name, finished_at IS NOT NULL AS finished
        FROM "_prisma_migrations" ORDER BY started_at`,
     );
+    const expectedMigrations = historicalC2aMigrationNames();
     if (
-      migrations.rowCount !== 4 ||
+      migrations.rowCount !== expectedMigrations.length ||
       migrations.rows.some((row) => row.finished !== true) ||
-      migrations.rows.at(-1)?.migration_name !== C2A_MIGRATION
+      JSON.stringify(migrations.rows.map((row) => row.migration_name)) !==
+        JSON.stringify(expectedMigrations)
     ) {
       fail('Prisma did not deploy the four-migration chain in the expected order');
     }
