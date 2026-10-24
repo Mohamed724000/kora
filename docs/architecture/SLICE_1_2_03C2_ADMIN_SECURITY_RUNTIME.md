@@ -1,8 +1,8 @@
 # S1.2-03C2 — Admin Security Runtime Contract
 
 Statut : **C2a INTÉGRÉ DANS MAIN AU MERGE
-`029e30bbc795f3d9c153782bc04e45e9f5a03f8a`, NON DÉPLOYÉ — C2b EN
-IMPLÉMENTATION LOCALE, QUALIFICATION TERMINALE BLOQUÉE — C3 NON COMMENCÉ**
+`029e30bbc795f3d9c153782bc04e45e9f5a03f8a`, NON DÉPLOYÉ — C2b R1 DANS LA
+PR #53 DRAFT, R2 QUALIFIÉ LOCALEMENT — C3 NON COMMENCÉ**
 
 Date : 2026-10-24
 
@@ -896,3 +896,29 @@ Le cleanup et les échecs bloquants demeurent inchangés. Cet instantané reste
 prépublication. La régression de raccordement passe 53/53 et les deux wrappers
 C2b repassent sur des instances propres en préservant l'inventaire étranger ;
 aucun commit, push, PR ou résultat CI C2b n'est encore affirmé.
+
+## C2b R2 — invocation POSIX du provisionneur — 2026-10-24
+
+Le run Infrastructure R1 `40112550483`, tentative 1, demeure NON-PASS. Après
+C1, Foundations C2a, métier C2a et Compose concluants, le runtime C2b applique
+les cinq migrations mais Linux refuse l'exécution directe du provisionneur au
+mode Git `100644` monté readonly. Métier C2b, lifecycle et API health restent
+skipped dans ce run historique.
+
+R2 ne change ni le provisionneur ni son mode : chaque wrapper invoque désormais
+`docker exec <conteneur> sh
+/usr/local/bin/kora-provision-postgresql-runtime.sh` avec une liste d'arguments
+explicite. Le montage readonly, l'identité du conteneur, les variables, le
+cleanup et la propagation bloquante des codes sont inchangés. La régression
+exécute les deux invocations réelles, vérifie leurs quatre arguments et force
+un code 23. Une preuve Linux utilise un fichier réellement 0644 dans un volume
+readonly : `sh` le lit, l'exécution directe et l'écriture échouent.
+
+Sur le candidat R2 local, les deux wrappers officiels passent : runtime sur
+cinq migrations avec huit frontières, six actions, ACL et dispatch strict ;
+métier sur 11/11 scénarios PostgreSQL/Redis/HTTP avec build API, worker et
+BullMQ. Les inventaires restent identiques à 4 conteneurs, 8 volumes, 5
+réseaux et 4 images. Tooling passe 570/570, le scanner couvre 466 fichiers et
+les audits frais complet/production trouvent zéro vulnérabilité. Publication
+R2 et CI du futur head restent conditionnelles ; aucun résultat futur n'est
+annoncé.

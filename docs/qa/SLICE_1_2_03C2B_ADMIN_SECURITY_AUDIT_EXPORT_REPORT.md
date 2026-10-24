@@ -2,13 +2,15 @@
 
 ## Statut
 
-**CANDIDAT LOCAL NON INDEXÉ — R1 QUALIFIÉ — GO LOCAL, PUBLICATION NON
-AUTORISÉE.**
+**PR #53 OPEN/DRAFT — R1 PUBLIÉ — R2 QUALIFIÉ LOCALEMENT, NON INDEXÉ —
+PUBLICATION R2 CONDITIONNELLE EN ATTENTE.**
 
-Baseline : branche `codex/c2b-admin-audit-export-runtime`, HEAD
-`029e30bbc795f3d9c153782bc04e45e9f5a03f8a`, arbre
-`a32f8332e80c18c565521418fe197619f8fb56d9`. Ce rapport ne vaut ni commit,
-publication, fusion ni qualification de production.
+Baseline R2 : branche `codex/c2b-admin-audit-export-runtime`, HEAD publié
+`8fcefbdce37e463e4d70e47d20608f5c7528e416`, arbre
+`51d3bb3244ff4179b87a3660df59be357c01718e`, sur la base intégrée
+`029e30bbc795f3d9c153782bc04e45e9f5a03f8a`. Le candidat R2 reste local et
+non indexé. Ce rapport ne vaut ni publication R2, fusion ni qualification de
+production.
 
 ## Périmètre matérialisé
 
@@ -173,3 +175,42 @@ Les audits frais complet et production concluent au code 0 avec zéro
 vulnérabilité et stderr vide. Le candidat doit encore être publié par un
 commit/push unique et recevoir quatre workflows verts. Aucun de ces résultats
 futurs n'est affirmé ici.
+
+## R2 — portabilité POSIX du provisionnement
+
+Le run Infrastructure `40112550483`, tentative 1 sur le head R1
+`8fcefbdce37e463e4d70e47d20608f5c7528e416`, reste un **NON-PASS
+historique**. C1, Foundations C2a, métier C2a et la préparation Compose y ont
+réussi. Le runtime C2b a ensuite appliqué les cinq migrations, puis Docker a
+refusé l'exécution directe du provisionneur monté en lecture seule et conservé
+au mode Git `100644` : `exec: ... permission denied`. Le métier C2b,
+lifecycle et API health ont donc été `skipped` dans ce run ; ils ne sont pas
+reclassés PASS.
+
+R2 conserve le montage en lecture seule et invoque, dans chacun des deux
+wrappers, `docker exec <conteneur> sh
+/usr/local/bin/kora-provision-postgresql-runtime.sh` par quatre arguments
+distincts. Aucun `chmod`, `sh -c`, privilège, copie exécutable ou masquage
+d'échec n'est ajouté. Une régression comportementale exécute les invocations
+réelles extraites des wrappers avec un faux Docker : elle vérifie le conteneur,
+`sh`, le chemin exact, le montage `readonly` et la propagation bloquante d'un
+code 23.
+
+La preuve Linux utilise un fichier réellement `0644`, stocké dans un volume
+Docker et remonté en lecture seule : l'exécution directe est refusée, tandis
+que `sh /proof/provision.sh` réussit et toute écriture via le montage échoue.
+Sur deux instances neuves et explicitement non locales, le wrapper runtime
+passe les cinq migrations, le provisioning des huit frontières, les six
+actions, les ACL et refus durables ; le wrapper métier passe build API et
+11/11 scénarios PostgreSQL/Redis/HTTP avec processus worker et BullMQ. Les
+inventaires avant/après sont identiques : 4 conteneurs, 8 volumes, 5 réseaux
+et 4 images.
+
+La syntaxe PowerShell et la régression ciblée passent. Le tooling complet
+passe 570/570 et le scanner officiel 466 fichiers avec historique. Les audits
+npm frais complet et production terminent au code 0 avec zéro vulnérabilité et
+stderr vide. Le lancement direct initial de `npm.cmd` par le collecteur reste
+une erreur de lancement `spawn EINVAL`, distincte de la reprise qualifiée via
+`cmd.exe /d /s /c`. La publication R2, les quatre workflows du futur commit et
+la réconciliation finale du corps de PR restent à obtenir ; aucun succès CI
+R2 futur n'est affirmé dans cet état local.

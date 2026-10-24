@@ -2,7 +2,7 @@
 
 Statut : **DOCUMENT OPÉRATIONNEL VIVANT — C2a INTÉGRÉ DANS MAIN AU MERGE
 `029e30bbc795f3d9c153782bc04e45e9f5a03f8a`, NON DÉPLOYÉ — C2b R1
-QUALIFIÉ LOCALEMENT, NON PUBLIÉ — FOURNISSEURS DE
+PUBLIÉ DANS LA PR #53 DRAFT, CORRECTIF R2 QUALIFIÉ LOCALEMENT — FOURNISSEURS DE
 PRODUCTION NON QUALIFIÉS — C3 NON COMMENCÉ**
 
 Date d’effet : 2026-07-28
@@ -1546,3 +1546,30 @@ l'instant READY du serveur. La régression de raccordement passe 53/53 et les
 deux wrappers repassent sur des instances propres avec inventaire étranger
 préservé. À cet instantané, publication, Draft PR et CI C2b restent à venir et
 aucun résultat futur n'est annoncé.
+
+## Candidat local C2b R2 — portabilité POSIX — 2026-10-24
+
+La publication R1 porte le head
+`8fcefbdce37e463e4d70e47d20608f5c7528e416`, arbre
+`51d3bb3244ff4179b87a3660df59be357c01718e`, dans la PR #53 `OPEN/Draft`.
+Infrastructure `40112550483` reste un échec historique : après les succès C1,
+Foundations C2a, métier C2a et Compose, le runtime C2b applique cinq migrations
+puis l'exécution directe du provisionneur `100644` monté en lecture seule est
+refusée par Linux. Les étapes métier C2b, lifecycle et API health sont skipped
+dans ce run.
+
+Le correctif R2 minimal conserve le montage readonly et fait interpréter le
+script par `sh`, fourni comme argument distinct à `docker exec` dans les deux
+wrappers. La propagation des échecs reste bloquante. Une régression
+comportementale couvre conteneur, arguments, chemin, readonly et code non nul ;
+une preuve Linux sur un vrai fichier 0644 monté readonly démontre le succès via
+`sh`, le refus de l'exécution directe et l'impossibilité d'écrire.
+
+Les deux wrappers officiels passent ensuite sur des instances uniques et non
+locales. Le runtime couvre cinq migrations, identités, ACL et dispatch strict ;
+le métier couvre 11/11 scénarios réels, processus worker et BullMQ. Le socle
+Docker reste identique à 4 conteneurs, 8 volumes, 5 réseaux et 4 images. Le
+tooling passe 570/570, le scanner 466 fichiers avec historique et les audits
+frais complet/production trouvent zéro vulnérabilité. R2 reste local et non
+indexé jusqu'au commit/push conditionnel ; les quatre workflows du futur head
+et le corps PR réconcilié ne sont pas encore affirmés.

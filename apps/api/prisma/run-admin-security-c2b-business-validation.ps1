@@ -228,7 +228,7 @@ exec redis-cli --no-auth-warning -a "$(cat /run/secrets/redis_password)" ping
       [Environment]::SetEnvironmentVariable($name, $previousDatabase[$name])
     }
   }
-  Docker @('exec', $PostgresContainer, '/usr/local/bin/kora-provision-postgresql-runtime.sh') | ForEach-Object { [Console]::Out.WriteLine($_) }
+  Docker @('exec', $PostgresContainer, 'sh', '/usr/local/bin/kora-provision-postgresql-runtime.sh') | ForEach-Object { [Console]::Out.WriteLine($_) }
 
   & $NpmCommand run build --workspace '@kora-plus/api'
   if ($LASTEXITCODE -ne 0) { throw 'C2b business API build failed.' }

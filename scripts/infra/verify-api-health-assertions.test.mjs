@@ -316,6 +316,92 @@ function powerShellParseResult(script) {
   }
 }
 
+function c2bProvisionerInvocationFixture(
+  context,
+  { wrapper, containerVariable, expectedContainer },
+) {
+  const root = mkdtempSync(resolve(tmpdir(), "kora-c2b-provisioner-fixture-"));
+  context.after(() => rmSync(root, { force: true, recursive: true }));
+  const source = readFileSync(
+    resolve(repositoryRoot, ...wrapper.split("/")),
+    "utf8",
+  );
+  const dockerFunction = source.match(
+    /function Docker\(\[string\[\]\]\$Arguments\) \{[\s\S]*?^\}/mu,
+  )?.[0];
+  assert.ok(dockerFunction, `${wrapper}: Docker function missing`);
+  const provisionerPath = "/usr/local/bin/kora-provision-postgresql-runtime.sh";
+  const invocationPattern = new RegExp(
+    `^\\s*Docker @\\('exec', \\$${containerVariable}, 'sh', '${provisionerPath.replaceAll("/", "\\/")}'\\) \\| ForEach-Object \\{ \\[Console\\]::Out\\.WriteLine\\(\\$_\\) \\}\\s*$`,
+    "mu",
+  );
+  const invocation = source.match(invocationPattern)?.[0];
+  assert.ok(invocation, `${wrapper}: exact provisioner invocation missing`);
+  assert.match(
+    source,
+    /'--mount', "type=bind,src=\$Provision,dst=\/usr\/local\/bin\/kora-provision-postgresql-runtime\.sh,readonly"/u,
+  );
+
+  const recordPath = resolve(root, "docker-arguments.json");
+  const fakeDockerScript = resolve(root, "fake-docker.mjs");
+  writeFileSync(
+    fakeDockerScript,
+    `import { writeFileSync } from "node:fs";\n` +
+      `writeFileSync(process.env.KORA_FAKE_DOCKER_RECORD, JSON.stringify(process.argv.slice(2)) + "\\n");\n` +
+      `process.exit(Number(process.env.KORA_FAKE_DOCKER_EXIT));\n`,
+    { encoding: "utf8", flag: "wx" },
+  );
+  const fakeDocker = resolve(
+    root,
+    process.platform === "win32" ? "docker.cmd" : "docker",
+  );
+  if (process.platform === "win32") {
+    writeFileSync(
+      fakeDocker,
+      `@echo off\r\n"${process.execPath}" "${fakeDockerScript}" %*\r\n`,
+      { encoding: "utf8", flag: "wx" },
+    );
+  } else {
+    writeFileSync(
+      fakeDocker,
+      `#!/bin/sh\nexec "${process.execPath}" "${fakeDockerScript}" "$@"\n`,
+      { encoding: "utf8", flag: "wx" },
+    );
+    chmodSync(fakeDocker, 0o755);
+  }
+
+  const fixturePath = resolve(root, "fixture.ps1");
+  writeFileSync(
+    fixturePath,
+    `$ErrorActionPreference = 'Stop'\n` +
+      `$DockerCommand = $env:KORA_FAKE_DOCKER\n` +
+      `${dockerFunction}\n` +
+      `$${containerVariable} = $env:KORA_EXPECTED_CONTAINER\n` +
+      `${invocation}\n`,
+    { encoding: "utf8", flag: "wx" },
+  );
+  const run = (exitCode) =>
+    spawnSync(
+      process.platform === "win32" ? "pwsh.exe" : "pwsh",
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", fixturePath],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          KORA_EXPECTED_CONTAINER: expectedContainer,
+          KORA_FAKE_DOCKER: fakeDocker,
+          KORA_FAKE_DOCKER_EXIT: String(exitCode),
+          KORA_FAKE_DOCKER_RECORD: recordPath,
+        },
+        windowsHide: true,
+      },
+    );
+  const success = run(0);
+  const argumentsObserved = JSON.parse(readFileSync(recordPath, "utf8"));
+  const failure = run(23);
+  return { argumentsObserved, failure, success };
+}
+
 function workflowCleanupFixture(
   context,
   { phase, mutation = null, npmExit = 0 },
@@ -2152,6 +2238,43 @@ test("résout les exécutables C2b sans suffixe Windows imposé", () => {
     business,
     /Get-Command npm -CommandType Application -ErrorAction Stop/u,
   );
+});
+
+test("invoque le provisionneur C2b via sh et propage son échec", (context) => {
+  for (const specification of [
+    {
+      wrapper: "apps/api/prisma/run-admin-security-c2b-runtime-validation.ps1",
+      containerVariable: "Container",
+      expectedContainer: "kora-c2b-portability-runtime-postgres",
+    },
+    {
+      wrapper: "apps/api/prisma/run-admin-security-c2b-business-validation.ps1",
+      containerVariable: "PostgresContainer",
+      expectedContainer: "kora-c2b-portability-business-postgres",
+    },
+  ]) {
+    const { argumentsObserved, failure, success } =
+      c2bProvisionerInvocationFixture(context, specification);
+    assert.equal(
+      success.status,
+      0,
+      `${specification.wrapper}:\n${success.stdout}\n${success.stderr}`,
+    );
+    assert.deepEqual(argumentsObserved, [
+      "exec",
+      specification.expectedContainer,
+      "sh",
+      "/usr/local/bin/kora-provision-postgresql-runtime.sh",
+    ]);
+    assert.notEqual(failure.status, 0, specification.wrapper);
+    assert.match(
+      `${failure.stdout}\n${failure.stderr}`,
+      new RegExp(
+        `Docker command failed: exec ${specification.expectedContainer}`,
+        "u",
+      ),
+    );
+  }
 });
 
 test("raccorde le lifecycle a l'identite de projet ephemere resolue", (context) => {

@@ -172,7 +172,7 @@ try {
     }
   }
 
-  Docker @('exec', $Container, '/usr/local/bin/kora-provision-postgresql-runtime.sh') | ForEach-Object { [Console]::Out.WriteLine($_) }
+  Docker @('exec', $Container, 'sh', '/usr/local/bin/kora-provision-postgresql-runtime.sh') | ForEach-Object { [Console]::Out.WriteLine($_) }
 
   $previous = [ordered]@{}
   foreach ($name in @(
