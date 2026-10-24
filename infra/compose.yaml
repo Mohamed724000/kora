@@ -15,6 +15,10 @@ services:
       KORA_POSTGRES_C2A_EXPIRATION_WORKER_USER: ${KORA_POSTGRES_C2A_EXPIRATION_WORKER_USER:-kora_admin_c2a_expiration_worker}
       KORA_POSTGRES_C2A_BOOTSTRAP_USER: ${KORA_POSTGRES_C2A_BOOTSTRAP_USER:-kora_admin_c2a_bootstrap}
       KORA_POSTGRES_C2A_SECRET_DIRECTORY: /run/secrets
+      KORA_POSTGRES_C2B_ENABLED: ${KORA_POSTGRES_C2B_ENABLED:-false}
+      KORA_POSTGRES_C2B_AUDIT_API_USER: ${KORA_POSTGRES_C2B_AUDIT_API_USER:-kora_admin_c2b_audit_api}
+      KORA_POSTGRES_C2B_EXPORT_WORKER_USER: ${KORA_POSTGRES_C2B_EXPORT_WORKER_USER:-kora_admin_c2b_export_worker}
+      KORA_POSTGRES_C2B_SECRET_DIRECTORY: /run/secrets
     secrets:
       - postgres_password
       - postgres_runtime_password
@@ -39,6 +43,14 @@ services:
       - type: bind
         source: ${KORA_POSTGRES_C2A_BOOTSTRAP_SECRET_FILE:-${KORA_INFRA_LOCAL_DIRECTORY:-./.local}/secrets/postgres_password}
         target: /run/secrets/postgres_admin_c2a_bootstrap_password
+        read_only: true
+      - type: bind
+        source: ${KORA_POSTGRES_C2B_AUDIT_API_SECRET_FILE:-${KORA_INFRA_LOCAL_DIRECTORY:-./.local}/secrets/postgres_password}
+        target: /run/secrets/postgres_admin_c2b_audit_api_password
+        read_only: true
+      - type: bind
+        source: ${KORA_POSTGRES_C2B_EXPORT_WORKER_SECRET_FILE:-${KORA_INFRA_LOCAL_DIRECTORY:-./.local}/secrets/postgres_password}
+        target: /run/secrets/postgres_admin_c2b_export_worker_password
         read_only: true
     networks:
       - local

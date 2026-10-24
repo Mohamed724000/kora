@@ -221,11 +221,18 @@ Les filtres d’export sont combinés par AND. Le snapshot est immuable, borné 
 10 000 entrées et 25 MiB UTF-8 non compressés, sans troncature. Le stockage est
 privé, chiffré et référencé de façon opaque; aucune URL signée n’est rendue.
 L’artefact dérivé expire 24 heures après READY et seul cet artefact est
-supprimé.
+supprimé. PostgreSQL fixe une seule fois `readyAt` et `expiresAt` depuis le
+même instant de transition READY, avec `expiresAt = readyAt + interval '24
+hours'`; ces deux dates sont ensuite immuables.
 
 Le masking utilise une allowlist positive par action et exclut secret, e-mail
 brut, IP brute et justification libre. Les clés Ed25519, JWT et de chiffrement
-sont distinctes. Le profil JCS/JWS Ed25519 de R4 reste inchangé. PostgreSQL est
+sont distinctes. Le transport JCS/JWS Ed25519 de R4 reste inchangé. Son profil
+de manifeste v2 signe `version=2`, l'identité de l'export, le `createdAt`
+PostgreSQL de la demande, la règle exacte `READY_PLUS_24_HOURS` et l'inventaire
+des payloads. Il exclut explicitement `readyAt` et `expiresAt`; une vérification
+hors ligne ne prétend donc ni connaître l'instant READY ni prouver l'application
+serveur de l'expiration. PostgreSQL est
 la source de vérité; les claims/retries worker sont bornés et idempotents; un
 COMMIT inconnu se réconcilie sans retry aveugle.
 
@@ -329,8 +336,10 @@ après déchiffrement et former exactement le corps du téléchargement, sans
 recompression ni reconstruction. Le ciphertext, le manifeste seul, les seuls
 payloads, les en-têtes et le framing HTTP sont exclus. Le hash est conservé en
 état `EXPIRED` après suppression de l'artefact dérivé. Pour éviter toute
-autoréférence, `contentSha256` est absent du ZIP et de son manifeste ; le profil
-JCS/JWS Ed25519 R4 et les hashes par entrée restent inchangés.
+autoréférence, `contentSha256` est absent du ZIP et de son manifeste ; le
+transport JCS/JWS Ed25519 R4 et les hashes par entrée restent inchangés. Le
+profil signé v2 remplace avant première publication runtime l'ancienne forme
+locale v1 à échéance absolue par la règle relative `READY_PLUS_24_HOURS`.
 
 ## Amendement R4 — causalité d'exécution complète
 

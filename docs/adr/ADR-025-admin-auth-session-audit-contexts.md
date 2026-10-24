@@ -95,8 +95,13 @@ interdit. La sérialisation transmise dans `manifest.sig` est
 `protected..signature`, le payload détaché étant reconstruit depuis
 `manifest.json`.
 
-Le manifeste lie l'identifiant de l'export, ses dates et la liste triée exacte
-des entrées payload avec chemin relatif NFC sûr, taille et SHA-256.
+Le profil de manifeste v2 lie l'identifiant de l'export, le `createdAt`
+PostgreSQL de la demande, la règle littérale `READY_PLUS_24_HOURS` et la liste
+triée exacte des entrées payload avec chemin relatif NFC sûr, taille et
+SHA-256. Il ne contient ni ne signe de `readyAt` ou `expiresAt` absolu : ces
+dates opérationnelles sont établies lors de READY par PostgreSQL. La
+vérification hors ligne prouve l'intégrité du ZIP et cette règle relative, pas
+l'instant READY effectif ni l'application serveur de l'expiration.
 `manifest.json` et `manifest.sig` sont explicitement exclus de cette liste afin
 d'éviter toute circularité ; chemins absolus/traversants/backslash, doublons,
 entrées manquantes ou supplémentaires sont rejetés. `signatureKeyId` résout une

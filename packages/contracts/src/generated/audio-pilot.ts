@@ -4436,6 +4436,12 @@ export const adminSecurityOperations = [
       publicMessage: 'Service temporairement indisponible.',
     },
     signedManifest: {
+      profile: 'KORA_ADMIN_AUDIT_EXPORT_MANIFEST_V2',
+      manifestVersion: 2,
+      manifestFields: ['createdAt', 'entries', 'expirationRule', 'exportId', 'version'],
+      createdAtSemantics: 'EXPORT_REQUEST_CREATED_AT',
+      expirationRule: 'READY_PLUS_24_HOURS',
+      absoluteOperationalTimestamps: 'READY_AT_AND_EXPIRES_AT_NOT_INCLUDED_OR_SIGNED',
       manifestPath: 'manifest.json',
       signaturePath: 'manifest.sig',
       canonicalization: 'RFC8785_JCS_UTF8',
@@ -4455,7 +4461,7 @@ export const adminSecurityOperations = [
       payloadPathPolicy:
         'RELATIVE_FORWARD_SLASH_NFC_NO_DOT_SEGMENTS_NO_DOT_DOT_NO_ABSOLUTE_NO_BACKSLASH_UNIQUE_CASE_SENSITIVE',
       coverage:
-        'CANONICAL_MANIFEST_BINDS_EXPORT_ID_CREATED_AT_EXPIRES_AT_AND_SORTED_UNIQUE_PAYLOAD_PATH_SIZE_SHA256',
+        'CANONICAL_MANIFEST_V2_BINDS_EXPORT_ID_REQUEST_CREATED_AT_READY_PLUS_24_HOURS_RULE_AND_SORTED_UNIQUE_PAYLOAD_PATH_SIZE_SHA256',
       rejectUnlistedEntries: true,
       rejectMissingEntries: true,
       rejectDuplicateEntries: true,

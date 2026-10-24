@@ -28,6 +28,21 @@ const C2A_PROFILES = [
   },
 ] as const;
 
+const C2B_PROFILES = [
+  {
+    passwordField: 'ADMIN_C2B_AUDIT_API_DATABASE_PASSWORD',
+    profile: 'HTTP',
+    user: 'kora_admin_c2b_audit_api',
+    userField: 'ADMIN_C2B_AUDIT_API_DATABASE_USER',
+  },
+  {
+    passwordField: 'ADMIN_C2B_EXPORT_WORKER_DATABASE_PASSWORD',
+    profile: 'EXPORT_WORKER',
+    user: 'kora_admin_c2b_export_worker',
+    userField: 'ADMIN_C2B_EXPORT_WORKER_DATABASE_USER',
+  },
+] as const;
+
 function c2aEnvironment(profile: (typeof C2A_PROFILES)[number]): Record<string, string> {
   return {
     ...SAFE_TEST_ENVIRONMENT,
@@ -42,6 +57,20 @@ function c2aEnvironment(profile: (typeof C2A_PROFILES)[number]): Record<string, 
   };
 }
 
+function c2bEnvironment(profile: (typeof C2B_PROFILES)[number]): Record<string, string> {
+  return {
+    ...SAFE_TEST_ENVIRONMENT,
+    ADMIN_C2B_ENABLED: 'true',
+    ADMIN_C2B_PROFILE: profile.profile,
+    ADMIN_C2B_DATABASE_HOST: '127.0.0.1',
+    ADMIN_C2B_DATABASE_PORT: '5432',
+    ADMIN_C2B_DATABASE_NAME: 'kora_test',
+    ADMIN_C2B_DATABASE_SSL: 'false',
+    [profile.userField]: profile.user,
+    [profile.passwordField]: `c2b-${profile.profile.toLowerCase()}-password`,
+  };
+}
+
 describe('loadRuntimeConfig', () => {
   it('accepte une configuration de test locale stricte', () => {
     const config = loadRuntimeConfig(SAFE_TEST_ENVIRONMENT);
@@ -51,9 +80,73 @@ describe('loadRuntimeConfig', () => {
     expect(config.adminAuth.postgresql.user).toBe('kora_admin_writer_test');
     expect(config.adminAuth.redis.waitAofTimeoutMs).toBe(100);
     expect(config.adminC2a).toEqual({ enabled: false });
+    expect(config.adminC2b).toEqual({ enabled: false });
     expect(config.http).toEqual({ host: '127.0.0.1', port: 3001 });
     expect(config.observability).toEqual({ environment: 'test' });
     expect(config.redis.password).toBeUndefined();
+  });
+
+  it.each(C2B_PROFILES)('active uniquement le pool C2b du profil $profile', (profile) => {
+    const config = loadRuntimeConfig(c2bEnvironment(profile));
+
+    expect(config.adminC2b.enabled).toBe(true);
+    if (config.adminC2b.enabled) {
+      expect(config.adminC2b.profile).toBe(profile.profile);
+      expect(config.adminC2b.pool.user).toBe(profile.user);
+      expect(config.adminC2b.pool.password).toBe(`c2b-${profile.profile.toLowerCase()}-password`);
+      expect(config.adminC2b).not.toHaveProperty('pools');
+    }
+  });
+
+  it('autorise la coexistence des seuls profils HTTP C2a et C2b', () => {
+    const config = loadRuntimeConfig({
+      ...c2aEnvironment(C2A_PROFILES[0]),
+      ...c2bEnvironment(C2B_PROFILES[0]),
+      ADMIN_C2A_ENABLED: 'true',
+      ADMIN_C2A_PROFILE: 'HTTP',
+      ADMIN_C2A_DATABASE_HOST: '127.0.0.1',
+      ADMIN_C2A_DATABASE_PORT: '5432',
+      ADMIN_C2A_DATABASE_NAME: 'kora_test',
+      ADMIN_C2A_DATABASE_SSL: 'false',
+      ADMIN_C2A_WRITER_DATABASE_USER: 'kora_admin_c2a_writer',
+      ADMIN_C2A_WRITER_DATABASE_PASSWORD: 'c2a-http-password',
+    });
+
+    expect(config.adminC2a.enabled && config.adminC2a.profile).toBe('HTTP');
+    expect(config.adminC2b.enabled && config.adminC2b.profile).toBe('HTTP');
+  });
+
+  it('rejette une identité C2b renommée, un secret partagé et des credentials étrangers', () => {
+    const invalid = {
+      ...c2bEnvironment(C2B_PROFILES[0]),
+      ADMIN_C2B_AUDIT_API_DATABASE_USER: 'renamed-audit-api',
+      ADMIN_C2B_AUDIT_API_DATABASE_PASSWORD: SAFE_TEST_ENVIRONMENT.ADMIN_DATABASE_PASSWORD,
+      ADMIN_C2B_EXPORT_WORKER_DATABASE_USER: 'kora_admin_c2b_export_worker',
+      ADMIN_C2B_EXPORT_WORKER_DATABASE_PASSWORD: 'foreign-secret',
+    };
+
+    try {
+      loadRuntimeConfig(invalid);
+      throw new Error('La validation aurait dû échouer');
+    } catch (error: unknown) {
+      expect(error).toBeInstanceOf(ConfigValidationError);
+      const fields = (error as ConfigValidationError).invalidFields;
+      expect(fields).toContain('ADMIN_C2B_AUDIT_API_DATABASE_USER');
+      expect(fields).toContain('ADMIN_C2B_AUDIT_API_DATABASE_PASSWORD');
+      expect(fields).toContain('ADMIN_C2B_EXPORT_WORKER_DATABASE_USER');
+      expect(fields).toContain('ADMIN_C2B_EXPORT_WORKER_DATABASE_PASSWORD');
+      expect((error as Error).message).not.toContain('foreign-secret');
+    }
+  });
+
+  it('refuse des variables C2b dormantes lorsque le runtime est désactivé', () => {
+    expect(() =>
+      loadRuntimeConfig({
+        ...SAFE_TEST_ENVIRONMENT,
+        ADMIN_C2B_PROFILE: 'HTTP',
+        ADMIN_C2B_AUDIT_API_DATABASE_PASSWORD: 'orphan-secret',
+      }),
+    ).toThrow(ConfigValidationError);
   });
 
   it.each(C2A_PROFILES)('active uniquement le pool C2a du profil $profile', (profile) => {

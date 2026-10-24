@@ -180,6 +180,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run infra:pull
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Validate C2b PostgreSQL foundations
+        shell: pwsh
+        env:
+          KORA_C2B_INSTANCE: "c2b-ci-runtime-${{ github.run_id }}-${{ github.run_attempt }}"
+        run: ./apps/api/prisma/run-admin-security-c2b-runtime-validation.ps1
+      - name: Validate C2b business runtime
+        shell: pwsh
+        env:
+          KORA_C2B_INSTANCE: "c2b-ci-business-${{ github.run_id }}-${{ github.run_attempt }}"
+        run: ./apps/api/prisma/run-admin-security-c2b-business-validation.ps1
       - name: Start and verify lifecycle
         shell: pwsh
         run: |

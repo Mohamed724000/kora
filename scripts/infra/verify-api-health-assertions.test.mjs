@@ -44,6 +44,8 @@ import {
   validateQualifiedFoundationsToolchainLock,
 } from "../../apps/api/prisma/validate-admin-security-c2a-runtime.mjs";
 
+import { validateExactC2bMigrationNames } from "../../apps/api/prisma/validate-admin-security-c2b-runtime.mjs";
+
 import {
   assertNoSensitiveValue,
   assertOwnerRoleRejected,
@@ -244,6 +246,28 @@ function workflowRunStep(stepName) {
       body.push(lines[index].slice(10));
   }
   return `${body.join("\n")}\n`;
+}
+
+function workflowStepBlock(stepName) {
+  const lines = readFileSync(
+    resolve(repositoryRoot, ".github", "workflows", "infrastructure.yml"),
+    "utf8",
+  ).split(/\r?\n/u);
+  const stepStart = lines.findIndex(
+    (line) => line === `      - name: ${stepName}`,
+  );
+  assert.notEqual(stepStart, -1, `missing workflow step ${stepName}`);
+  let stepEnd = lines.length;
+  for (let index = stepStart + 1; index < lines.length; index += 1) {
+    if (lines[index].startsWith("      - name: ")) {
+      stepEnd = index;
+      break;
+    }
+  }
+  return {
+    index: stepStart,
+    text: `${lines.slice(stepStart, stepEnd).join("\n")}\n`,
+  };
 }
 
 function sha256Hex(bytes) {
@@ -608,7 +632,7 @@ test("refuse une migration C1 historique altérée", (context) => {
   );
 });
 
-test("accepte Vite hors projection et refuse une dérive Prisma protégée", () => {
+test("accepte Vite hors projection et protège Prisma avec fast-uri 3.1.9", () => {
   const packageLock = JSON.parse(
     readFileSync(resolve(repositoryRoot, "package-lock.json"), "utf8"),
   );
@@ -619,7 +643,25 @@ test("accepte Vite hors projection et refuse une dérive Prisma protégée", () 
     packageCount: 131,
     prismaVersion: "7.9.1",
     projectionSha256:
-      "4ee0f8df901d14c7d6eec658575eba6ddaa45860f21d0aa15cf4b0c9a14d5bcb",
+      "de77c4baf2d28b84ca0f76500c0afc3f1fbdfe7147f5a47aba9707815388a964",
+  });
+  assert.deepEqual(packageLock.packages["node_modules/fast-uri"], {
+    devOptional: true,
+    funding: [
+      {
+        type: "github",
+        url: "https://github.com/sponsors/fastify",
+      },
+      {
+        type: "opencollective",
+        url: "https://opencollective.com/fastify",
+      },
+    ],
+    integrity:
+      "sha512-hS/0Wt3Ya043oKXs0sIxrMpKQITXhMLIrVAKKXi4gozGC9v7YRWVnXIZzjNPTO02M9BdxLCWqK1yRXgNziVyJQ==",
+    license: "BSD-3-Clause",
+    resolved: "https://registry.npmjs.org/fast-uri/-/fast-uri-3.1.9.tgz",
+    version: "3.1.9",
   });
 
   const viteOnly = structuredClone(packageLock);
@@ -636,6 +678,18 @@ test("accepte Vite hors projection et refuse une dérive Prisma protégée", () 
     () => validateQualifiedPrismaToolchainLock(JSON.stringify(prismaDrift)),
     /protected Prisma toolchain projection changed/u,
   );
+
+  for (const [field, value] of [
+    ["version", "3.1.8"],
+    ["integrity", "sha512-unqualified-fast-uri-fixture"],
+  ]) {
+    const fastUriDrift = structuredClone(packageLock);
+    fastUriDrift.packages["node_modules/fast-uri"][field] = value;
+    assert.throws(
+      () => validateQualifiedPrismaToolchainLock(JSON.stringify(fastUriDrift)),
+      /protected Prisma toolchain projection changed/u,
+    );
+  }
 });
 
 test("refuse une mutation du lockfile pendant la validation", (context) => {
@@ -677,7 +731,40 @@ const foundationsHistoricalMigrations = [
   "20260914000000_canonical_postgresql_baseline",
   "20260914000100_canonical_sql_constraints",
   "20261002170022_admin_auth_session_runtime",
+  "admin_security_c2a_runtime",
 ];
+
+const exactC2bMigrations = [
+  "20260914000000_canonical_postgresql_baseline",
+  "20260914000100_canonical_sql_constraints",
+  "20261002170022_admin_auth_session_runtime",
+  "admin_security_c2a_runtime",
+  "admin_security_c2b_audit_export_runtime",
+];
+
+test("verrouille sans filtrage la chaîne courante C2b de cinq migrations", () => {
+  assert.deepEqual(
+    validateExactC2bMigrationNames(exactC2bMigrations),
+    exactC2bMigrations,
+  );
+  for (const candidate of [
+    exactC2bMigrations.slice(0, -1),
+    [...exactC2bMigrations, "unexpected_runtime"],
+    exactC2bMigrations.map((name, index) =>
+      index === 3 ? "substituted_c2a" : name,
+    ),
+    [
+      exactC2bMigrations[1],
+      exactC2bMigrations[0],
+      ...exactC2bMigrations.slice(2),
+    ],
+  ]) {
+    assert.throws(
+      () => validateExactC2bMigrationNames(candidate),
+      /current C2b migration chain differs/u,
+    );
+  }
+});
 
 function foundationsToolchainFixture(context) {
   const root = mkdtempSync(
@@ -805,6 +892,26 @@ test("refuse une migration historique Foundations altérée", (context) => {
   assert.throws(
     () => assertQualifiedFoundationsToolchainStateUnchanged(state),
     /historical migration changed/u,
+  );
+});
+
+test("refuse une mutation de la migration C2a historique autonome", (context) => {
+  const fixture = foundationsToolchainFixture(context);
+  const state = captureQualifiedFoundationsToolchainState({
+    emit: false,
+    ...fixture,
+  });
+  const migrationPath = resolve(
+    fixture.migrationsRoot,
+    "admin_security_c2a_runtime",
+    "migration.sql",
+  );
+  const changed = readFileSync(migrationPath);
+  changed[changed.length - 1] ^= 1;
+  writeFileSync(migrationPath, changed);
+  assert.throws(
+    () => assertQualifiedFoundationsToolchainStateUnchanged(state),
+    /historical C2a migration changed/u,
   );
 });
 
@@ -1964,6 +2071,87 @@ test("valide la syntaxe des quatre scripts PowerShell du workflow", () => {
       `${stepName}:\n${result.stdout}\n${result.stderr}`,
     );
   }
+});
+
+test("raccorde C1, C2a et C2b avant le lifecycle avec des instances dédiées", () => {
+  const orderedSteps = [
+    "Validate Admin Auth Session PostgreSQL runtime",
+    "Validate C2a PostgreSQL foundations",
+    "Validate C2a business runtime",
+    "Prepare and validate Compose",
+    "Validate C2b PostgreSQL foundations",
+    "Validate C2b business runtime",
+    "Start and verify lifecycle",
+    "Build and verify API health transitions",
+  ].map(workflowStepBlock);
+
+  for (let index = 1; index < orderedSteps.length; index += 1) {
+    assert.ok(
+      orderedSteps[index - 1].index < orderedSteps[index].index,
+      "the Infrastructure validation chain is out of order",
+    );
+  }
+
+  const runtime = orderedSteps[4].text;
+  const business = orderedSteps[5].text;
+  assert.match(
+    runtime,
+    /KORA_C2B_INSTANCE: "c2b-ci-runtime-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}"/u,
+  );
+  assert.match(
+    runtime,
+    /run: \.\/apps\/api\/prisma\/run-admin-security-c2b-runtime-validation\.ps1/u,
+  );
+  assert.match(
+    business,
+    /KORA_C2B_INSTANCE: "c2b-ci-business-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}"/u,
+  );
+  assert.match(
+    business,
+    /run: \.\/apps\/api\/prisma\/run-admin-security-c2b-business-validation\.ps1/u,
+  );
+  for (const block of [runtime, business]) {
+    assert.match(block, /shell: pwsh/u);
+    assert.doesNotMatch(
+      block,
+      /continue-on-error|retry|KORA_C2B_INSTANCE:\s*"?local/u,
+    );
+  }
+});
+
+test("résout les exécutables C2b sans suffixe Windows imposé", () => {
+  for (const wrapper of [
+    "apps/api/prisma/run-admin-security-c2b-runtime-validation.ps1",
+    "apps/api/prisma/run-admin-security-c2b-business-validation.ps1",
+  ]) {
+    const source = readFileSync(
+      resolve(repositoryRoot, ...wrapper.split("/")),
+      "utf8",
+    );
+    assert.match(
+      source,
+      /Get-Command docker -CommandType Application -ErrorAction Stop/u,
+    );
+    assert.match(
+      source,
+      /Get-Command node -CommandType Application -ErrorAction Stop/u,
+    );
+    assert.doesNotMatch(source, /docker\.exe|node\.exe|npm\.cmd/u);
+  }
+  const business = readFileSync(
+    resolve(
+      repositoryRoot,
+      "apps",
+      "api",
+      "prisma",
+      "run-admin-security-c2b-business-validation.ps1",
+    ),
+    "utf8",
+  );
+  assert.match(
+    business,
+    /Get-Command npm -CommandType Application -ErrorAction Stop/u,
+  );
 });
 
 test("raccorde le lifecycle a l'identite de projet ephemere resolue", (context) => {

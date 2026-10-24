@@ -1,11 +1,10 @@
 # S1.2-03C2 — Admin Security Runtime Contract
 
-Statut : **C2a R9 PUBLIÉ DANS LA DRAFT PR #52 AU HEAD
-`fd0f084fc6316c379454ef701307e79471ed92e2` — R10+R11 QUALIFIÉS
-LOCALEMENT, PUBLICATION ET CI R11 ENCORE À VENIR — NON FUSIONNÉ, NON DÉPLOYÉ
-— C2b/C3 NON COMMENCÉS**
+Statut : **C2a INTÉGRÉ DANS MAIN AU MERGE
+`029e30bbc795f3d9c153782bc04e45e9f5a03f8a`, NON DÉPLOYÉ — C2b EN
+IMPLÉMENTATION LOCALE, QUALIFICATION TERMINALE BLOQUÉE — C3 NON COMMENCÉ**
 
-Date : 2026-10-12
+Date : 2026-10-24
 
 Autorité : [ADR-026](../adr/ADR-026-admin-security-c2-runtime-contract.md),
 [ADR-025](../adr/ADR-025-admin-auth-session-audit-contexts.md), ADR-004 et
@@ -831,3 +830,69 @@ R11 n'est encore acquise. La PR reste `OPEN/Draft`. L'incident R9, ses limites
 sur les volumes, le signal Windows **NON DEMONSTRATED**, Linux et fournisseurs
 de production non qualifiés, les 61 SKIP, C2b/C3 non commencés et la politique
 OSS différée restent inchangés.
+
+## C2b R1 — candidat local audit et export qualifié — 2026-10-24
+
+La branche locale `codex/c2b-admin-audit-export-runtime`, basée sur le merge
+main `029e30bbc795f3d9c153782bc04e45e9f5a03f8a`, matérialise les quatre
+opérations C2b `listAdminAuditLogs`, `createAdminAuditLogExport`,
+`getAdminAuditLogExport` et `downloadAdminAuditLogExport`, ainsi que les deux
+continuations internes `buildAdminAuditLogExport` et
+`expireAdminAuditLogExport`. C3 n'est pas commencé.
+
+Le trigger `AuditLog_c2b_causality` dispatch selon deux dimensions
+indépendantes : `session_user` et action. L'identité API n'accepte que les
+quatre actions HTTP ; l'identité worker n'accepte que les deux continuations.
+Une identité C2b ne peut ni produire une action inconnue ou nulle, ni permuter
+les actions API/worker. Une identité étrangère ne peut produire aucune action
+réservée C2b. Les autres écritures continuent d'emprunter les gardes C1/C2a
+inchangés.
+
+Le profil signé V2 contient l'identité de l'export, la date PostgreSQL de la
+demande, l'inventaire des payloads, leurs tailles et empreintes, ainsi que la
+règle littérale `READY_PLUS_24_HOURS`. Il n'encode aucune échéance absolue
+fictive. Le worker chiffre, relit et vérifie l'unique ZIP staging, le manifeste
+JCS et le JWS détaché Ed25519 avant de référencer ce même objet par le CAS
+`READY`. Ce CAS établit une fois `readyAt` et `expiresAt` depuis le même instant
+PostgreSQL, exactement à 24 heures d'écart. Le téléchargement, les read leases
+et l'expiration utilisent ces valeurs immuables ; la vérification hors ligne
+ne prétend pas attester l'heure READY du serveur.
+
+Le runtime final qualifie les cinq migrations fresh/upgrade, les rôles dédiés,
+les ACL, les refus durables, la causalité et les frontières C1/C2a. La campagne
+métier passe 11 scénarios réels sur PostgreSQL/Redis/HTTP : snapshot exact de
+10 000 entrées, processus worker/BullMQ, expiration positive, lease concurrent,
+rollback global, `COMMIT_UNKNOWN` sans replay, réutilisation idempotente expirée
+et générations historiques. Les appels externes sont bornés et les wakeups
+coalescés sont drainés sans progression perdue.
+
+Le graphe final qualifie `body-parser@2.4.0`, `multer@2.5.0`,
+`fast-uri@3.1.9` et `zod@4.6.6`. L'installation propre et `npm ls --all`
+passent, les audits complet/production trouvent zéro vulnérabilité, les
+signatures et licences sont conformes. Tooling passe 567/567, OpenAPI reste à
+60 chemins, 67 opérations et 141 schémas, et les 53 modèles Prisma protégés
+sont 39 historiques, neuf C2a et cinq C2b.
+
+Le verdict R1 est **GO LOCAL** sur le candidat non indexé. Les NON-PASS
+antérieurs — verrou à quatre migrations, premier profil signé, audits rouges,
+preuves temporelles absentes, wrappers Windows et essais transactionnels —
+restent historiques. Aucune publication ni qualification de production n'est
+acquise ; fournisseurs et Linux de production restent non qualifiés, C3 n'est
+pas commencé et la politique OSS reste différée.
+
+## C2b — raccordement CI prépublication — 2026-10-24
+
+Le candidat de publication raccorde les deux wrappers officiels C2b à
+Infrastructure après C1, Foundations C2a et le métier C2a, et avant lifecycle
+et API health. La préparation Compose ne crée aucune preuve C2b : elle rend
+seulement disponibles les images épinglées dont les wrappers vérifient ensuite
+l'identité et la préservation d'inventaire.
+
+Chaque wrapper reçoit une instance distincte dérivée de `github.run_id` et
+`github.run_attempt`, refuse `local` et confirme cette identité dans le même
+processus. Les exécutables Docker, Node et npm sont résolus sans suffixe
+Windows imposé afin que le même harnais reste exécutable sous PowerShell Linux.
+Le cleanup et les échecs bloquants demeurent inchangés. Cet instantané reste
+prépublication. La régression de raccordement passe 53/53 et les deux wrappers
+C2b repassent sur des instances propres en préservant l'inventaire étranger ;
+aucun commit, push, PR ou résultat CI C2b n'est encore affirmé.
