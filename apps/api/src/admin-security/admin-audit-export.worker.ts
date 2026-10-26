@@ -5,6 +5,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { AdminC2TransactionError } from '../database/admin-c2-transaction.service';
 import {
   AdminAuditExportRepository,
+  type AdminAuditExportCommitReconciliation,
   type AdminAuditExportFailureDisposition,
   type AdminAuditExportWatchdogCandidate,
   type ClaimedAdminAuditExport,
@@ -149,6 +150,7 @@ export type AdminAuditExportProcessingResult =
   | 'SNAPSHOT_PURGED'
   | 'ORPHAN_STAGING_DELETED'
   | 'STALE_FENCE'
+  | 'WATCHDOG_REQUIRED'
   | 'RECONCILED';
 
 @Injectable()
@@ -301,6 +303,9 @@ export class AdminAuditExportWorker {
       claimed = reconciled as ClaimedAdminAuditExport;
     }
     if (claimed === undefined) return 'IDLE';
+    const claimDisposition = await this.readFailureDisposition(claimed);
+    const claimRouting = this.routeDisposition(claimDisposition);
+    if (claimRouting !== undefined) return claimRouting;
 
     let heartbeatFailed = false;
     const heartbeatTimer = setInterval(() => {
@@ -321,7 +326,7 @@ export class AdminAuditExportWorker {
       const remainingMs = await this.repository.transaction((transaction) =>
         transaction.remainingAttemptMilliseconds(claimed),
       );
-      if (remainingMs === undefined) return 'STALE_FENCE';
+      if (remainingMs === undefined) return this.routeCurrentAttempt(claimed);
       if (remainingMs <= 0) throw new AdminAuditExportAttemptDeadlineError();
       const deadline = new AbortController();
       deadlineTimer = setTimeout(
@@ -357,10 +362,8 @@ export class AdminAuditExportWorker {
       const afterBuild = await this.repository.transaction((transaction) =>
         transaction.failureDisposition(claimed),
       );
-      if (afterBuild === 'DEADLINE_EXPIRED' || afterBuild === 'BUDGET_EXHAUSTED') {
-        throw new AdminAuditExportAttemptDeadlineError();
-      }
-      if (afterBuild === 'STALE_FENCE') return 'STALE_FENCE';
+      const afterBuildRouting = this.routeDisposition(afterBuild);
+      if (afterBuildRouting !== undefined) return afterBuildRouting;
       const metadata: AdminAuditExportEnvelopeMetadata = {
         attemptId: claimed.attemptId,
         contentSha256: artifact.contentSha256,
@@ -411,10 +414,8 @@ export class AdminAuditExportWorker {
       const beforeCommit = await this.repository.transaction((transaction) =>
         transaction.failureDisposition(claimed),
       );
-      if (beforeCommit === 'DEADLINE_EXPIRED' || beforeCommit === 'BUDGET_EXHAUSTED') {
-        throw new AdminAuditExportAttemptDeadlineError();
-      }
-      if (beforeCommit === 'STALE_FENCE') return 'STALE_FENCE';
+      const beforeCommitRouting = this.routeDisposition(beforeCommit);
+      if (beforeCommitRouting !== undefined) return beforeCommitRouting;
       const requestId = `c2b-worker-${randomUUID()}`;
       const systemExecutionRefHash = hash(
         `KORA_ADMIN_C2B_EXPORT_EXECUTION_V1\0${claimed.id}\0${claimed.generation}\0${claimed.attemptId}`,
@@ -435,36 +436,32 @@ export class AdminAuditExportWorker {
         );
       } catch (error: unknown) {
         if (error instanceof AdminC2TransactionError && error.code === 'COMMIT_UNKNOWN') {
-          const reconciled = await this.repository.transaction((transaction) =>
-            transaction.findById(claimed.id),
+          const reconciliation = await this.repository.transaction((transaction) =>
+            transaction.reconcileReady(claimed, readyArtifact, requestId, systemExecutionRefHash),
           );
-          if (reconciled?.state === 'READY' || reconciled?.state === 'FAILED') {
-            return 'RECONCILED';
-          }
-          if (
-            reconciled?.state === 'PROCESSING' &&
-            reconciled.generation === claimed.generation &&
-            reconciled.attemptId === claimed.attemptId &&
-            reconciled.claimOwnerHash === claimed.claimOwnerHash
-          ) {
+          const reconciliationResult = this.routeReconciliation(reconciliation);
+          if (reconciliationResult !== undefined) return reconciliationResult;
+          if (reconciliation === 'ACTIVE') {
             try {
               const resumed = await this.repository.transaction((transaction) =>
                 transaction.finishReady(claimed, readyArtifact, requestId, systemExecutionRefHash),
               );
-              if (!resumed) return 'STALE_FENCE';
+              if (!resumed) return this.routeCurrentAttempt(claimed);
               return 'READY';
             } catch (resumeError: unknown) {
               if (
                 resumeError instanceof AdminC2TransactionError &&
                 resumeError.code === 'COMMIT_UNKNOWN'
               ) {
-                const resumedState = await this.repository.transaction((transaction) =>
-                  transaction.findById(claimed.id),
+                const resumedReconciliation = await this.repository.transaction((transaction) =>
+                  transaction.reconcileReady(
+                    claimed,
+                    readyArtifact,
+                    requestId,
+                    systemExecutionRefHash,
+                  ),
                 );
-                if (resumedState?.state === 'READY' || resumedState?.state === 'FAILED') {
-                  return 'RECONCILED';
-                }
-                return 'STALE_FENCE';
+                return this.routeReconciliation(resumedReconciliation) ?? 'STALE_FENCE';
               }
               throw resumeError;
             }
@@ -473,12 +470,12 @@ export class AdminAuditExportWorker {
         }
         throw error;
       }
-      if (!committed) return 'STALE_FENCE';
+      if (!committed) return this.routeCurrentAttempt(claimed);
       return 'READY';
     } catch (error: unknown) {
       const failureCode =
         error instanceof AdminAuditExportAttemptDeadlineError
-          ? 'RETRY_BUDGET_EXHAUSTED'
+          ? 'DEPENDENCY_UNAVAILABLE'
           : error instanceof AdminAuditExportIntegrityError ||
               error instanceof AdminAuditExportArtifactIntegrityError ||
               error instanceof TypeError
@@ -510,40 +507,39 @@ export class AdminAuditExportWorker {
     try {
       return map(await run());
     } catch (error: unknown) {
+      if (this.isTemporalTransitionRefusal(error)) {
+        return this.routeWatchdogRefusal(candidate);
+      }
       if (!(error instanceof AdminC2TransactionError) || error.code !== 'COMMIT_UNKNOWN') {
         throw error;
       }
-      const reconciled = await this.repository.transaction((transaction) =>
-        transaction.findById(candidate.id),
+      const reconciliation = await this.repository.transaction((transaction) =>
+        transaction.reconcileWatchdog(candidate, requestId, systemExecutionRefHash),
       );
-      if (reconciled?.state === 'FAILED') return 'RECONCILED';
-      if (reconciled?.state === 'PROCESSING' && reconciled.attemptId === null) {
+      if (reconciliation === 'APPLIED' || reconciliation === 'RETRY_SCHEDULED') {
         return 'RECONCILED';
       }
-      if (
-        reconciled?.state !== 'PROCESSING' ||
-        reconciled.generation !== candidate.generation ||
-        reconciled.attemptId !== candidate.attemptId ||
-        reconciled.claimOwnerHash !== candidate.claimOwnerHash
-      ) {
-        return 'STALE_FENCE';
-      }
+      if (reconciliation === 'STALE_FENCE') return 'STALE_FENCE';
+      if (reconciliation === 'ACTIVE') return 'IDLE';
       try {
         return map(await run());
       } catch (resumeError: unknown) {
+        if (this.isTemporalTransitionRefusal(resumeError)) {
+          return this.routeWatchdogRefusal(candidate);
+        }
         if (
           !(resumeError instanceof AdminC2TransactionError) ||
           resumeError.code !== 'COMMIT_UNKNOWN'
         ) {
           throw resumeError;
         }
-        const resumedState = await this.repository.transaction((transaction) =>
-          transaction.findById(candidate.id),
+        const resumedReconciliation = await this.repository.transaction((transaction) =>
+          transaction.reconcileWatchdog(candidate, requestId, systemExecutionRefHash),
         );
-        return resumedState?.state === 'FAILED' ||
-          (resumedState?.state === 'PROCESSING' && resumedState.attemptId === null)
-          ? 'RECONCILED'
-          : 'STALE_FENCE';
+        if (resumedReconciliation === 'APPLIED' || resumedReconciliation === 'RETRY_SCHEDULED') {
+          return 'RECONCILED';
+        }
+        return resumedReconciliation === 'WATCHDOG_REQUIRED' ? 'WATCHDOG_REQUIRED' : 'STALE_FENCE';
       }
     }
   }
@@ -557,10 +553,11 @@ export class AdminAuditExportWorker {
       | 'DEPENDENCY_UNAVAILABLE',
   ): Promise<AdminAuditExportProcessingResult> {
     const disposition = await this.readFailureDisposition(claimed);
-    if (disposition === 'STALE_FENCE') return 'STALE_FENCE';
+    const dispositionRouting = this.routeDisposition(disposition);
+    if (dispositionRouting !== undefined) return dispositionRouting;
     const retry = failureCode === 'DEPENDENCY_UNAVAILABLE' && disposition === 'RETRYABLE';
     const terminalFailureCode =
-      disposition === 'DEADLINE_EXPIRED' || disposition === 'BUDGET_EXHAUSTED'
+      failureCode === 'DEPENDENCY_UNAVAILABLE' && disposition === 'BUDGET_EXHAUSTED'
         ? 'RETRY_BUDGET_EXHAUSTED'
         : failureCode;
     const requestId = `c2b-worker-${randomUUID()}`;
@@ -570,63 +567,118 @@ export class AdminAuditExportWorker {
     try {
       if (retry) {
         const changed = await this.repository.transaction((transaction) =>
-          transaction.scheduleRetry(claimed),
+          transaction.scheduleRetry(claimed, systemExecutionRefHash),
         );
-        return changed ? 'RETRY_SCHEDULED' : 'STALE_FENCE';
+        return changed ? 'RETRY_SCHEDULED' : this.routeCurrentAttempt(claimed);
       }
       const changed = await this.repository.transaction((transaction) =>
         transaction.finishFailed(claimed, terminalFailureCode, requestId, systemExecutionRefHash),
       );
-      return changed ? 'FAILED' : 'STALE_FENCE';
+      return changed ? 'FAILED' : this.routeCurrentAttempt(claimed);
     } catch (error: unknown) {
+      if (this.isTemporalTransitionRefusal(error)) return this.routeCurrentAttempt(claimed);
       if (!(error instanceof AdminC2TransactionError) || error.code !== 'COMMIT_UNKNOWN') {
         throw error;
       }
-      const reconciled = await this.repository.transaction((transaction) =>
-        transaction.findById(claimed.id),
+      const reconciliation = await this.repository.transaction((transaction) =>
+        transaction.reconcileFailedOrRetry(
+          claimed,
+          terminalFailureCode,
+          retry,
+          requestId,
+          systemExecutionRefHash,
+        ),
       );
-      if (reconciled?.state === 'FAILED') return 'RECONCILED';
-      if (retry && reconciled?.state === 'PROCESSING' && reconciled.attemptId === null) {
-        return 'RECONCILED';
-      }
-      if (
-        reconciled?.state !== 'PROCESSING' ||
-        reconciled.generation !== claimed.generation ||
-        reconciled.attemptId !== claimed.attemptId ||
-        reconciled.claimOwnerHash !== claimed.claimOwnerHash
-      ) {
-        return 'STALE_FENCE';
-      }
+      const reconciliationResult = this.routeReconciliation(reconciliation);
+      if (reconciliationResult !== undefined) return reconciliationResult;
       try {
         if (retry) {
           const resumed = await this.repository.transaction((transaction) =>
-            transaction.scheduleRetry(claimed),
+            transaction.scheduleRetry(claimed, systemExecutionRefHash),
           );
-          return resumed ? 'RETRY_SCHEDULED' : 'STALE_FENCE';
+          return resumed ? 'RETRY_SCHEDULED' : this.routeCurrentAttempt(claimed);
         }
         const resumed = await this.repository.transaction((transaction) =>
           transaction.finishFailed(claimed, terminalFailureCode, requestId, systemExecutionRefHash),
         );
-        return resumed ? 'FAILED' : 'STALE_FENCE';
+        return resumed ? 'FAILED' : this.routeCurrentAttempt(claimed);
       } catch (resumeError: unknown) {
+        if (this.isTemporalTransitionRefusal(resumeError)) {
+          return this.routeCurrentAttempt(claimed);
+        }
         if (
           !(resumeError instanceof AdminC2TransactionError) ||
           resumeError.code !== 'COMMIT_UNKNOWN'
         ) {
           throw resumeError;
         }
-        const resumedState = await this.repository.transaction((transaction) =>
-          transaction.findById(claimed.id),
+        const resumedReconciliation = await this.repository.transaction((transaction) =>
+          transaction.reconcileFailedOrRetry(
+            claimed,
+            terminalFailureCode,
+            retry,
+            requestId,
+            systemExecutionRefHash,
+          ),
         );
-        if (
-          resumedState?.state === 'FAILED' ||
-          (retry && resumedState?.state === 'PROCESSING' && resumedState.attemptId === null)
-        ) {
-          return 'RECONCILED';
-        }
-        return 'STALE_FENCE';
+        return this.routeReconciliation(resumedReconciliation) ?? 'STALE_FENCE';
       }
     }
+  }
+
+  private routeDisposition(
+    disposition: AdminAuditExportFailureDisposition,
+  ): AdminAuditExportProcessingResult | undefined {
+    if (disposition === 'STALE_FENCE') return 'STALE_FENCE';
+    if (disposition === 'RETRY_SCHEDULED') return 'RECONCILED';
+    if (disposition === 'DEADLINE_EXPIRED' || disposition === 'LEASE_EXPIRED') {
+      return 'WATCHDOG_REQUIRED';
+    }
+    return undefined;
+  }
+
+  private routeReconciliation(
+    reconciliation: AdminAuditExportCommitReconciliation,
+  ): AdminAuditExportProcessingResult | undefined {
+    if (reconciliation === 'APPLIED' || reconciliation === 'RETRY_SCHEDULED') {
+      return 'RECONCILED';
+    }
+    if (reconciliation === 'WATCHDOG_REQUIRED') return 'WATCHDOG_REQUIRED';
+    if (reconciliation === 'STALE_FENCE') return 'STALE_FENCE';
+    return undefined;
+  }
+
+  private async routeCurrentAttempt(
+    claimed: ClaimedAdminAuditExport,
+  ): Promise<AdminAuditExportProcessingResult> {
+    const disposition = await this.readFailureDisposition(claimed);
+    return this.routeDisposition(disposition) ?? 'STALE_FENCE';
+  }
+
+  private async routeWatchdogRefusal(
+    claimed: ClaimedAdminAuditExport,
+  ): Promise<AdminAuditExportProcessingResult> {
+    const disposition = await this.readFailureDisposition(claimed);
+    if (disposition === 'RETRYABLE' || disposition === 'BUDGET_EXHAUSTED') return 'IDLE';
+    return this.routeDisposition(disposition) ?? 'STALE_FENCE';
+  }
+
+  private isTemporalTransitionRefusal(error: unknown): boolean {
+    if (!(error instanceof AdminC2TransactionError) || error.code !== 'CALLBACK_FAILED') {
+      return false;
+    }
+    const primary = error.primaryError;
+    if (primary === null || typeof primary !== 'object') return false;
+    const code = 'code' in primary ? primary.code : undefined;
+    const message = 'message' in primary ? primary.message : undefined;
+    if (code !== '23514' || typeof message !== 'string') return false;
+    return [
+      'C2b export ordinary retry fence is no longer active',
+      'C2b export heartbeat fence is no longer active',
+      'C2b export READY fence is no longer active',
+      'C2b export FAILED fence is no longer active',
+      'C2b export watchdog transition is not eligible',
+    ].some((expected) => message.includes(expected));
   }
 
   private async readFailureDisposition(

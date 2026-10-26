@@ -11,10 +11,18 @@ import type { AdminRole, AdminStepUpPurpose } from '../src/admin-auth/admin-auth
 import { createApplication } from '../src/app.factory';
 import { AdminAuditExportService } from '../src/admin-security/admin-audit-export.service';
 import {
+  AdminAuditExportTransactionRepository,
+  type AdminAuditExportWatchdogCandidate,
+  type ClaimedAdminAuditExport,
+} from '../src/admin-security/admin-audit-export.repository';
+import {
   AdminAuditRepository,
   type AdminAuditTransactionRepository,
 } from '../src/admin-security/admin-audit.repository';
-import { AdminC2TransactionError } from '../src/database/admin-c2-transaction.service';
+import {
+  AdminC2TransactionError,
+  type AdminC2Transaction,
+} from '../src/database/admin-c2-transaction.service';
 import { createAdminSecurityC2bTestAdapters } from './admin-security-c2b-test-adapters';
 
 const { Pool } = pg;
@@ -360,6 +368,22 @@ async function assertC2bSqlCapabilities(
     'kora_admin_c2b_export_worker',
     required('S1203C2B_BUSINESS_EXPORT_WORKER_PASSWORD'),
   );
+  const auditApiMarkerRead = databasePool(
+    'kora_admin_c2b_audit_api',
+    required('S1203C2B_BUSINESS_AUDIT_API_PASSWORD'),
+  );
+  const auditApiMarkerWrite = databasePool(
+    'kora_admin_c2b_audit_api',
+    required('S1203C2B_BUSINESS_AUDIT_API_PASSWORD'),
+  );
+  const c1MarkerRead = databasePool(
+    'kora_admin_writer',
+    required('S1203C2B_BUSINESS_C1_WRITER_PASSWORD'),
+  );
+  const runtimeMarkerRead = databasePool(
+    'kora_runtime',
+    required('S1203C2B_BUSINESS_READER_PASSWORD'),
+  );
   const probes = await Promise.allSettled([
     probeRoleTransaction('C2b audit API principal lock capability', auditApi, [
       {
@@ -400,6 +424,28 @@ async function assertC2bSqlCapabilities(
       `SELECT public.kora_lock_admin_c2b_export_idempotency($1, $2)`,
       [adminUserId, 'c2b-capability-key-0001'],
     ),
+    assertRoleStatementDenied(
+      'C2b audit API transition-marker read denial',
+      auditApiMarkerRead,
+      `SELECT "lastTransitionRefHash" FROM public."AdminAuditExport" LIMIT 1`,
+    ),
+    assertRoleStatementDenied(
+      'C2b audit API transition-marker write denial',
+      auditApiMarkerWrite,
+      `UPDATE public."AdminAuditExport"
+          SET "lastTransitionRefHash" = repeat('a', 64)
+        WHERE false`,
+    ),
+    assertRoleStatementDenied(
+      'C1 writer transition-marker read denial',
+      c1MarkerRead,
+      `SELECT "lastTransitionRefHash" FROM public."AdminAuditExport" LIMIT 1`,
+    ),
+    assertRoleStatementDenied(
+      'runtime transition-marker read denial',
+      runtimeMarkerRead,
+      `SELECT "lastTransitionRefHash" FROM public."AdminAuditExport" LIMIT 1`,
+    ),
   ]);
   const failures = probes.flatMap((result) =>
     result.status === 'rejected' ? [String(result.reason)] : [],
@@ -412,6 +458,7 @@ realBusiness('Admin C2b real PostgreSQL/Redis/HTTP/worker', { timeout: 300_000 }
   let authCrypto: AdminAuthCrypto;
   let application: INestApplication;
   let owner: PgPool;
+  let exportWorkerDatabase: PgPool;
   let worker: WorkerProcess | undefined;
   let creator: SeededAdmin;
   let foreignCreator: SeededAdmin;
@@ -436,7 +483,106 @@ realBusiness('Admin C2b real PostgreSQL/Redis/HTTP/worker', { timeout: 300_000 }
     }
   }
 
+  async function withExportWorkerTransaction<T>(
+    operation: (repository: AdminAuditExportTransactionRepository) => Promise<T>,
+  ): Promise<T> {
+    const client = await exportWorkerDatabase.connect();
+    try {
+      await client.query('BEGIN');
+      const repository = new AdminAuditExportTransactionRepository({
+        query: client.query.bind(client) as AdminC2Transaction['query'],
+        signal: new AbortController().signal,
+      });
+      const result = await operation(repository);
+      await client.query('COMMIT');
+      return result;
+    } catch (error: unknown) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async function startExportWorkerTransaction<T>(
+    operation: (repository: AdminAuditExportTransactionRepository) => Promise<T>,
+  ): Promise<{ readonly pid: number; readonly result: Promise<T> }> {
+    const client = await exportWorkerDatabase.connect();
+    await client.query('BEGIN');
+    const pidResult = await client.query<{ pid: number }>(
+      `SELECT pg_catalog.pg_backend_pid()::integer AS pid`,
+    );
+    const pid = pidResult.rows[0]?.pid;
+    if (pid === undefined) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      client.release();
+      throw new Error('C2b R3 worker backend PID is missing.');
+    }
+    const repository = new AdminAuditExportTransactionRepository({
+      query: client.query.bind(client) as AdminC2Transaction['query'],
+      signal: new AbortController().signal,
+    });
+    const result = (async () => {
+      try {
+        const value = await operation(repository);
+        await client.query('COMMIT');
+        return value;
+      } catch (error: unknown) {
+        await client.query('ROLLBACK').catch(() => undefined);
+        throw error;
+      } finally {
+        client.release();
+      }
+    })();
+    return { pid, result };
+  }
+
+  async function exportRecord(id: string): Promise<ClaimedAdminAuditExport> {
+    const result = await owner.query<ClaimedAdminAuditExport>(
+      `SELECT * FROM "AdminAuditExport" WHERE "id" = $1`,
+      [id],
+    );
+    const record = result.rows[0];
+    if (record === undefined) throw new Error(`C2b R3 export ${id} is missing.`);
+    return record;
+  }
+
+  async function ageAttempt(
+    id: string,
+    mode: 'DEADLINE_AND_LEASE' | 'LEASE_ONLY',
+  ): Promise<AdminAuditExportWatchdogCandidate> {
+    return withTemporalFixture(async (client) => {
+      const result = await client.query<AdminAuditExportWatchdogCandidate>(
+        `WITH timing AS (
+           SELECT (pg_catalog.clock_timestamp() AT TIME ZONE 'UTC')::timestamp(3) AS database_now
+         )
+         UPDATE "AdminAuditExport" export_entry
+            SET "attemptStartedAt" = CASE $2::text
+                  WHEN 'DEADLINE_AND_LEASE' THEN
+                    timing.database_now - INTERVAL '601 seconds'
+                  ELSE
+                    timing.database_now - INTERVAL '60 seconds'
+                END,
+                "attemptDeadline" = CASE $2::text
+                  WHEN 'DEADLINE_AND_LEASE' THEN
+                    timing.database_now - INTERVAL '1 second'
+                  ELSE
+                    timing.database_now + INTERVAL '540 seconds'
+                END,
+                "leaseExpiresAt" = timing.database_now - INTERVAL '1 second'
+           FROM timing
+          WHERE export_entry."id" = $1
+        RETURNING export_entry.*, ($2::text = 'DEADLINE_AND_LEASE') AS "deadlineExpired"`,
+        [id, mode],
+      );
+      const record = result.rows[0];
+      if (record === undefined) throw new Error(`C2b R3 attempt ${id} is missing.`);
+      return record;
+    });
+  }
+
   async function createExportRequest(input: {
+    readonly action?: string;
     readonly idempotencyKey: string;
     readonly operatorReason: string;
     readonly requestId: string;
@@ -449,6 +595,7 @@ realBusiness('Admin C2b real PostgreSQL/Redis/HTTP/worker', { timeout: 300_000 }
       .set('Sec-Fetch-Site', 'same-origin')
       .set('X-Request-Id', input.requestId)
       .send({
+        ...(input.action === undefined ? {} : { action: input.action }),
         from: '2020-01-01T00:00:00.000Z',
         operatorReason: input.operatorReason,
         reasonCode: 'AUDIT_EXPORT',
@@ -520,6 +667,14 @@ realBusiness('Admin C2b real PostgreSQL/Redis/HTTP/worker', { timeout: 300_000 }
       port: Number(required('S1203C2B_BUSINESS_POSTGRES_PORT')),
       user: 'kora_owner',
     });
+    exportWorkerDatabase = new Pool({
+      database: required('S1203C2B_BUSINESS_DATABASE'),
+      host: '127.0.0.1',
+      max: 4,
+      password: required('S1203C2B_BUSINESS_EXPORT_WORKER_PASSWORD'),
+      port: Number(required('S1203C2B_BUSINESS_POSTGRES_PORT')),
+      user: 'kora_admin_c2b_export_worker',
+    });
     creator = await seedAdmin('c2b-creator@example.invalid', 'SUPER_ADMIN', [
       'GENERAL',
       'AUDIT_EXPORT',
@@ -582,6 +737,7 @@ realBusiness('Admin C2b real PostgreSQL/Redis/HTTP/worker', { timeout: 300_000 }
       const outcome = await worker.stop();
       expect(outcome.code).toBe(0);
     }
+    await exportWorkerDatabase?.end();
     await owner?.end();
   }, 60_000);
 
@@ -1205,5 +1361,677 @@ realBusiness('Admin C2b real PostgreSQL/Redis/HTTP/worker', { timeout: 300_000 }
     process.stdout.write(
       `C2B_CAPACITY_BOUNDARY_PASS entries=10000 snapshot_items=10000 http_elapsed_ms=${elapsedMilliseconds}\n`,
     );
+  });
+
+  it('enforces generation zero, per-attempt deadlines, exact backoffs, and third-attempt success', async () => {
+    await eventually(async () => {
+      const active = await owner.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM "AdminAuditExport"
+          WHERE "state" IN ('PENDING', 'PROCESSING')`,
+      );
+      return active.rows[0]?.count === '0' ? true : undefined;
+    }, 'worker quiescence before the R3 state-machine fixture');
+    if (worker !== undefined) {
+      const outcome = await worker.stop();
+      expect(outcome.code).toBe(0);
+      worker = undefined;
+    }
+
+    const created = await createExportRequest({
+      action: 'R3_STATE_MACHINE_SUCCESS',
+      idempotencyKey: 'c2b-r3-state-machine-success-key',
+      operatorReason: 'R3 state machine success fixture',
+      requestId: 'c2b-r3-state-machine-success-create',
+    });
+    expect(created.status).toBe(202);
+    const stateMachineExportId = created.body.data.exportId as string;
+    const pending = await owner.query<{ attemptNumber: number; generation: string; state: string }>(
+      `SELECT "generation"::text AS generation, "attemptNumber", "state"
+         FROM "AdminAuditExport" WHERE "id" = $1`,
+      [stateMachineExportId],
+    );
+    expect(pending.rows[0]).toEqual({ attemptNumber: 0, generation: '0', state: 'PENDING' });
+
+    const firstAttemptId = randomUUID();
+    const first = await withExportWorkerTransaction((repository) =>
+      repository.claimNext(firstAttemptId, '1'.repeat(64)),
+    );
+    expect(first?.id).toBe(stateMachineExportId);
+    expect(String(first?.generation)).toBe('1');
+    expect(first?.attemptNumber).toBe(1);
+    expect(first?.attemptId).toBe(firstAttemptId);
+    expect(first!.attemptDeadline.getTime() - first!.attemptStartedAt.getTime()).toBe(600_000);
+    expect(first!.leaseExpiresAt.getTime() - first!.attemptStartedAt.getTime()).toBe(120_000);
+    const firstDeadline = first!.attemptDeadline.getTime();
+    await expect(
+      withExportWorkerTransaction((repository) => repository.heartbeat(first!)),
+    ).resolves.toBe(true);
+    expect((await exportRecord(stateMachineExportId)).attemptDeadline.getTime()).toBe(
+      firstDeadline,
+    );
+
+    const rollbackClient = await exportWorkerDatabase.connect();
+    const rolledBackTransitionRefHash = '8'.repeat(64);
+    try {
+      await rollbackClient.query('BEGIN');
+      const rollbackRepository = new AdminAuditExportTransactionRepository({
+        query: rollbackClient.query.bind(rollbackClient) as AdminC2Transaction['query'],
+        signal: new AbortController().signal,
+      });
+      await expect(
+        rollbackRepository.scheduleRetry(first!, rolledBackTransitionRefHash),
+      ).resolves.toBe(true);
+      const insideRollback = await rollbackClient.query<{ lastTransitionRefHash: string | null }>(
+        `SELECT "lastTransitionRefHash" FROM "AdminAuditExport" WHERE "id" = $1`,
+        [stateMachineExportId],
+      );
+      expect(insideRollback.rows[0]?.lastTransitionRefHash).toBe(rolledBackTransitionRefHash);
+      await rollbackClient.query('ROLLBACK');
+    } catch (error: unknown) {
+      await rollbackClient.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      rollbackClient.release();
+    }
+    const afterRollback = await owner.query<{
+      attemptId: string | null;
+      auditCount: string;
+      lastTransitionRefHash: string | null;
+    }>(
+      `SELECT export_entry."attemptId", export_entry."lastTransitionRefHash",
+              (SELECT count(*)::text FROM "AuditLog" audit
+                WHERE audit."adminAuditExportId" = export_entry."id"
+                  AND audit."action" = 'buildAdminAuditLogExport') AS "auditCount"
+         FROM "AdminAuditExport" export_entry WHERE export_entry."id" = $1`,
+      [stateMachineExportId],
+    );
+    expect(afterRollback.rows[0]).toEqual({
+      attemptId: firstAttemptId,
+      auditCount: '0',
+      lastTransitionRefHash: null,
+    });
+
+    const forgedReadyClient = await exportWorkerDatabase.connect();
+    const forgedReadyObjectKey = `c2b/staging/${stateMachineExportId}/${first!.generation}/${firstAttemptId}.zip.enc`;
+    try {
+      await forgedReadyClient.query('BEGIN');
+      const forgedReady = await forgedReadyClient.query(
+        `UPDATE "AdminAuditExport"
+            SET "state" = 'READY', "stagingObjectKey" = $2, "objectKey" = $2,
+                "contentSha256" = $3, "signatureKeyId" = $4, "storageKeyId" = $5,
+                "plaintextBytes" = 64, "encryptedBytes" = 128,
+                "lastTransitionRefHash" = $6
+          WHERE "id" = $1 AND "generation" = $7
+            AND "attemptId" = $8 AND "claimOwnerHash" = $9`,
+        [
+          stateMachineExportId,
+          forgedReadyObjectKey,
+          '9'.repeat(64),
+          'c2b-r3-signature-key',
+          'c2b-r3-storage-key',
+          'b'.repeat(64),
+          first!.generation,
+          firstAttemptId,
+          first!.claimOwnerHash,
+        ],
+      );
+      expect(forgedReady.rowCount).toBe(1);
+      await expect(forgedReadyClient.query('COMMIT')).rejects.toMatchObject({ code: '23514' });
+      await forgedReadyClient.query('ROLLBACK').catch(() => undefined);
+    } catch (error: unknown) {
+      await forgedReadyClient.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      forgedReadyClient.release();
+    }
+    const afterForgedReady = await owner.query<{
+      auditCount: string;
+      lastTransitionRefHash: string | null;
+      state: string;
+    }>(
+      `SELECT export_entry."state", export_entry."lastTransitionRefHash",
+              (SELECT count(*)::text FROM "AuditLog" audit
+                WHERE audit."adminAuditExportId" = export_entry."id"
+                  AND audit."action" = 'buildAdminAuditLogExport') AS "auditCount"
+         FROM "AdminAuditExport" export_entry WHERE export_entry."id" = $1`,
+      [stateMachineExportId],
+    );
+    expect(afterForgedReady.rows[0]).toEqual({
+      auditCount: '0',
+      lastTransitionRefHash: null,
+      state: 'PROCESSING',
+    });
+
+    const firstAuditCount = await owner.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM "AuditLog"
+        WHERE "adminAuditExportId" = $1 AND "action" = 'buildAdminAuditLogExport'`,
+      [stateMachineExportId],
+    );
+    const ordinaryRetryRefHash = 'a'.repeat(64);
+    await expect(
+      withExportWorkerTransaction((repository) =>
+        repository.scheduleRetry(first!, ordinaryRetryRefHash),
+      ),
+    ).resolves.toBe(true);
+    const firstRequeue = await owner.query<{
+      attemptId: string | null;
+      auditCount: string;
+      delayMs: number;
+      lastTransitionRefHash: string | null;
+      nextAttemptAt: Date;
+    }>(
+      `SELECT export_entry."attemptId", export_entry."nextAttemptAt",
+              export_entry."lastTransitionRefHash",
+              pg_catalog.round(EXTRACT(EPOCH FROM (
+                export_entry."nextAttemptAt"
+                - (pg_catalog.clock_timestamp() AT TIME ZONE 'UTC')::timestamp(3)
+              )) * 1000)::integer AS "delayMs",
+              (SELECT count(*)::text FROM "AuditLog" audit
+                WHERE audit."adminAuditExportId" = export_entry."id"
+                  AND audit."action" = 'buildAdminAuditLogExport') AS "auditCount"
+         FROM "AdminAuditExport" export_entry WHERE export_entry."id" = $1`,
+      [stateMachineExportId],
+    );
+    expect(firstRequeue.rows[0]?.attemptId).toBeNull();
+    expect(firstRequeue.rows[0]?.auditCount).toBe(firstAuditCount.rows[0]?.count);
+    expect(firstRequeue.rows[0]?.lastTransitionRefHash).toBe(ordinaryRetryRefHash);
+    expect(firstRequeue.rows[0]!.delayMs).toBeGreaterThanOrEqual(29_000);
+    expect(firstRequeue.rows[0]!.delayMs).toBeLessThanOrEqual(30_000);
+    await expect(
+      withExportWorkerTransaction((repository) =>
+        repository.reconcileFailedOrRetry(
+          first!,
+          'DEPENDENCY_UNAVAILABLE',
+          true,
+          'c2b-r3-ordinary-retry',
+          ordinaryRetryRefHash,
+        ),
+      ),
+    ).resolves.toBe('APPLIED');
+    await expect(
+      withExportWorkerTransaction((repository) =>
+        repository.reconcileWatchdog(
+          { ...first!, deadlineExpired: false },
+          'c2b-r3-crossed-watchdog-proof',
+          '9'.repeat(64),
+        ),
+      ),
+    ).resolves.toBe('STALE_FENCE');
+    await expect(
+      withExportWorkerTransaction((repository) =>
+        repository.claimNext(randomUUID(), '2'.repeat(64)),
+      ),
+    ).resolves.toBeUndefined();
+    await withTemporalFixture((client) =>
+      client.query(
+        `UPDATE "AdminAuditExport"
+            SET "nextAttemptAt" =
+              (pg_catalog.clock_timestamp() AT TIME ZONE 'UTC')::timestamp(3) - INTERVAL '1 second'
+          WHERE "id" = $1`,
+        [stateMachineExportId],
+      ),
+    );
+
+    const secondAttemptId = randomUUID();
+    const second = await withExportWorkerTransaction((repository) =>
+      repository.claimNext(secondAttemptId, '2'.repeat(64)),
+    );
+    expect(second?.id).toBe(stateMachineExportId);
+    expect(String(second?.generation)).toBe('2');
+    expect(second?.attemptNumber).toBe(2);
+    expect(second!.attemptDeadline.getTime() - second!.attemptStartedAt.getTime()).toBe(600_000);
+    expect(second!.attemptDeadline.getTime()).not.toBe(firstDeadline);
+    const markerAfterSecondClaim = await owner.query<{ lastTransitionRefHash: string | null }>(
+      `SELECT "lastTransitionRefHash" FROM "AdminAuditExport" WHERE "id" = $1`,
+      [stateMachineExportId],
+    );
+    expect(markerAfterSecondClaim.rows[0]?.lastTransitionRefHash).toBeNull();
+    await expect(
+      withExportWorkerTransaction((repository) =>
+        repository.reconcileFailedOrRetry(
+          first!,
+          'DEPENDENCY_UNAVAILABLE',
+          true,
+          'c2b-r3-old-retry-after-new-claim',
+          ordinaryRetryRefHash,
+        ),
+      ),
+    ).resolves.toBe('STALE_FENCE');
+
+    const secondExpired = await ageAttempt(stateMachineExportId, 'DEADLINE_AND_LEASE');
+    await expect(
+      withExportWorkerTransaction((repository) =>
+        repository.watchdogOne(secondExpired, 'c2b-r3-deadline-attempt-2', 'b'.repeat(64)),
+      ),
+    ).resolves.toBe('REQUEUED');
+    const secondRequeue = await owner.query<{ auditCount: string; delayMs: number }>(
+      `SELECT pg_catalog.round(EXTRACT(EPOCH FROM (
+                export_entry."nextAttemptAt"
+                - (pg_catalog.clock_timestamp() AT TIME ZONE 'UTC')::timestamp(3)
+              )) * 1000)::integer AS "delayMs",
+              (SELECT count(*)::text FROM "AuditLog" audit
+                WHERE audit."adminAuditExportId" = export_entry."id"
+                  AND audit."action" = 'buildAdminAuditLogExport') AS "auditCount"
+         FROM "AdminAuditExport" export_entry WHERE export_entry."id" = $1`,
+      [stateMachineExportId],
+    );
+    expect(secondRequeue.rows[0]?.auditCount).toBe(firstAuditCount.rows[0]?.count);
+    expect(secondRequeue.rows[0]!.delayMs).toBeGreaterThanOrEqual(119_000);
+    expect(secondRequeue.rows[0]!.delayMs).toBeLessThanOrEqual(120_000);
+    await withTemporalFixture((client) =>
+      client.query(
+        `UPDATE "AdminAuditExport"
+            SET "nextAttemptAt" =
+              (pg_catalog.clock_timestamp() AT TIME ZONE 'UTC')::timestamp(3) - INTERVAL '1 second'
+          WHERE "id" = $1`,
+        [stateMachineExportId],
+      ),
+    );
+
+    const thirdAttemptId = randomUUID();
+    const third = await withExportWorkerTransaction((repository) =>
+      repository.claimNext(thirdAttemptId, '3'.repeat(64)),
+    );
+    expect(String(third?.generation)).toBe('3');
+    expect(third?.attemptNumber).toBe(3);
+    expect(third!.attemptDeadline.getTime() - third!.attemptStartedAt.getTime()).toBe(600_000);
+    await expect(
+      withExportWorkerTransaction((repository) => repository.failureDisposition(third!)),
+    ).resolves.toBe('BUDGET_EXHAUSTED');
+    const stagingObjectKey = `c2b/staging/${stateMachineExportId}/3/${thirdAttemptId}.zip.enc`;
+    await expect(
+      withExportWorkerTransaction((repository) =>
+        repository.finishReady(
+          third!,
+          {
+            contentSha256: 'c'.repeat(64),
+            encryptedBytes: 128,
+            objectKey: stagingObjectKey,
+            plaintextBytes: 64,
+            signatureKeyId: 'c2b-r3-signature-key',
+            stagingObjectKey,
+            storageKeyId: 'c2b-r3-storage-key',
+          },
+          'c2b-r3-third-success',
+          'c'.repeat(64),
+        ),
+      ),
+    ).resolves.toBe(true);
+    const ready = await owner.query<{ audits: string; state: string }>(
+      `SELECT export_entry."state",
+              (SELECT count(*)::text FROM "AuditLog" audit
+                WHERE audit."adminAuditExportId" = export_entry."id"
+                  AND audit."action" = 'buildAdminAuditLogExport'
+                  AND audit."outcome" = 'SUCCESS') AS audits
+         FROM "AdminAuditExport" export_entry WHERE export_entry."id" = $1`,
+      [stateMachineExportId],
+    );
+    expect(ready.rows[0]).toEqual({ audits: '1', state: 'READY' });
+  });
+
+  it('serializes concurrent READY and watchdog at the exact deadline fence', async () => {
+    const created = await createExportRequest({
+      action: 'R3_CONCURRENT_READY_WATCHDOG',
+      idempotencyKey: 'c2b-r3-concurrent-ready-watchdog-key',
+      operatorReason: 'R3 concurrent READY watchdog fixture',
+      requestId: 'c2b-r3-concurrent-ready-watchdog-create',
+    });
+    expect(created.status).toBe(202);
+    const concurrentExportId = created.body.data.exportId as string;
+    const claimed = await withExportWorkerTransaction((repository) =>
+      repository.claimNext(randomUUID(), '4'.repeat(64)),
+    );
+    expect(claimed?.id).toBe(concurrentExportId);
+
+    const locker = await owner.connect();
+    const watchdogRefHash = '4'.repeat(64);
+    const readyRefHash = '5'.repeat(64);
+    const objectKey = `c2b/staging/${concurrentExportId}/${claimed!.generation}/${claimed!.attemptId}.zip.enc`;
+    let readyOperation:
+      Awaited<ReturnType<typeof startExportWorkerTransaction<boolean>>> | undefined;
+    let watchdogOperation:
+      | Awaited<
+          ReturnType<
+            typeof startExportWorkerTransaction<'FAILED' | 'IDLE' | 'REQUEUED' | 'STALE_FENCE'>
+          >
+        >
+      | undefined;
+    let concurrentCandidate: AdminAuditExportWatchdogCandidate | undefined;
+    try {
+      await locker.query('BEGIN');
+      await locker.query('SET LOCAL session_replication_role = replica');
+      const updatedAttempt = await locker.query<AdminAuditExportWatchdogCandidate>(
+        `WITH timing AS (
+           SELECT (pg_catalog.clock_timestamp() AT TIME ZONE 'UTC')::timestamp(3)
+                    + INTERVAL '100 milliseconds' AS fence
+         )
+         UPDATE "AdminAuditExport" export_entry
+            SET "attemptStartedAt" = timing.fence - INTERVAL '600 seconds',
+                "attemptDeadline" = timing.fence,
+                "leaseExpiresAt" = timing.fence
+           FROM timing
+          WHERE export_entry."id" = $1
+        RETURNING export_entry.*, true AS "deadlineExpired"`,
+        [concurrentExportId],
+      );
+      concurrentCandidate = updatedAttempt.rows[0];
+      expect(concurrentCandidate).toBeDefined();
+      await locker.query('SET LOCAL session_replication_role = origin');
+
+      readyOperation = await startExportWorkerTransaction((repository) =>
+        repository.finishReady(
+          claimed!,
+          {
+            contentSha256: '6'.repeat(64),
+            encryptedBytes: 128,
+            objectKey,
+            plaintextBytes: 64,
+            signatureKeyId: 'c2b-r3-signature-key',
+            stagingObjectKey: objectKey,
+            storageKeyId: 'c2b-r3-storage-key',
+          },
+          'c2b-r3-concurrent-ready',
+          readyRefHash,
+        ),
+      );
+      watchdogOperation = await startExportWorkerTransaction((repository) =>
+        repository.watchdogOne(concurrentCandidate!, 'c2b-r3-concurrent-watchdog', watchdogRefHash),
+      );
+      await eventually(async () => {
+        const waiting = await locker.query<{ waiting: number }>(
+          `SELECT count(*)::integer AS waiting
+             FROM pg_catalog.pg_stat_activity activity
+            WHERE activity.pid = ANY($1::integer[])
+              AND activity.wait_event_type = 'Lock'`,
+          [[readyOperation!.pid, watchdogOperation!.pid]],
+        );
+        return waiting.rows[0]?.waiting === 2 ? true : undefined;
+      }, 'READY and watchdog blocked behind the same R3 row lock');
+      await locker.query('SELECT pg_catalog.pg_sleep(0.2)');
+      await locker.query('COMMIT');
+
+      const [readyOutcome, watchdogOutcome] = await Promise.allSettled([
+        readyOperation!.result,
+        watchdogOperation!.result,
+      ]);
+      expect(watchdogOutcome).toEqual({ status: 'fulfilled', value: 'REQUEUED' });
+      if (readyOutcome.status === 'fulfilled') {
+        expect(readyOutcome.value).toBe(false);
+      } else {
+        expect(readyOutcome.reason).toMatchObject({
+          code: '23514',
+          message: 'C2b export READY fence is no longer active',
+        });
+      }
+    } catch (error: unknown) {
+      await locker.query('ROLLBACK').catch(() => undefined);
+      const pendingOperations: Promise<unknown>[] = [];
+      if (readyOperation !== undefined) pendingOperations.push(readyOperation.result);
+      if (watchdogOperation !== undefined) pendingOperations.push(watchdogOperation.result);
+      await Promise.allSettled(pendingOperations);
+      throw error;
+    } finally {
+      locker.release();
+    }
+
+    const durable = await owner.query<{
+      attemptId: string | null;
+      auditCount: string;
+      delayMs: number;
+      lastTransitionRefHash: string | null;
+      objectKey: string | null;
+      state: string;
+    }>(
+      `SELECT export_entry."state", export_entry."attemptId", export_entry."objectKey",
+              export_entry."lastTransitionRefHash",
+              pg_catalog.round(EXTRACT(EPOCH FROM (
+                export_entry."nextAttemptAt"
+                - (pg_catalog.clock_timestamp() AT TIME ZONE 'UTC')::timestamp(3)
+              )) * 1000)::integer AS "delayMs",
+              (SELECT count(*)::text FROM "AuditLog" audit
+                WHERE audit."adminAuditExportId" = export_entry."id"
+                  AND audit."action" = 'buildAdminAuditLogExport') AS "auditCount"
+         FROM "AdminAuditExport" export_entry WHERE export_entry."id" = $1`,
+      [concurrentExportId],
+    );
+    expect(durable.rows[0]).toMatchObject({
+      attemptId: null,
+      auditCount: '0',
+      lastTransitionRefHash: watchdogRefHash,
+      objectKey: null,
+      state: 'PROCESSING',
+    });
+    expect(durable.rows[0]!.delayMs).toBeGreaterThanOrEqual(29_000);
+    expect(durable.rows[0]!.delayMs).toBeLessThanOrEqual(30_000);
+    await expect(
+      withExportWorkerTransaction((repository) =>
+        repository.reconcileWatchdog(
+          concurrentCandidate!,
+          'c2b-r3-concurrent-watchdog',
+          watchdogRefHash,
+        ),
+      ),
+    ).resolves.toBe('APPLIED');
+    await expect(
+      withExportWorkerTransaction((repository) =>
+        repository.reconcileFailedOrRetry(
+          concurrentCandidate!,
+          'DEPENDENCY_UNAVAILABLE',
+          true,
+          'c2b-r3-crossed-retry-proof',
+          readyRefHash,
+        ),
+      ),
+    ).resolves.toBe('STALE_FENCE');
+    await expect(
+      exportWorkerDatabase.query(
+        `UPDATE "AdminAuditExport" SET "lastTransitionRefHash" = $2 WHERE "id" = $1`,
+        [concurrentExportId, '7'.repeat(64)],
+      ),
+    ).rejects.toMatchObject({ code: '23514' });
+    const afterForgery = await owner.query<{
+      auditCount: string;
+      lastTransitionRefHash: string | null;
+    }>(
+      `SELECT export_entry."lastTransitionRefHash",
+              (SELECT count(*)::text FROM "AuditLog" audit
+                WHERE audit."adminAuditExportId" = export_entry."id"
+                  AND audit."action" = 'buildAdminAuditLogExport') AS "auditCount"
+         FROM "AdminAuditExport" export_entry WHERE export_entry."id" = $1`,
+      [concurrentExportId],
+    );
+    expect(afterForgery.rows[0]).toEqual({
+      auditCount: '0',
+      lastTransitionRefHash: watchdogRefHash,
+    });
+  });
+
+  it('refuses late workers, rechecks time after lock wait, and terminalizes the third watchdog once', async () => {
+    const created = await createExportRequest({
+      action: 'R3_STATE_MACHINE_FAILURE',
+      idempotencyKey: 'c2b-r3-state-machine-failure-key',
+      operatorReason: 'R3 state machine failure fixture',
+      requestId: 'c2b-r3-state-machine-failure-create',
+    });
+    expect(created.status).toBe(202);
+    const failureExportId = created.body.data.exportId as string;
+    const first = await withExportWorkerTransaction((repository) =>
+      repository.claimNext(randomUUID(), '4'.repeat(64)),
+    );
+    expect(first?.id).toBe(failureExportId);
+    await ageAttempt(failureExportId, 'LEASE_ONLY');
+    await expect(
+      withExportWorkerTransaction((repository) => repository.heartbeat(first!)),
+    ).rejects.toMatchObject({
+      code: '23514',
+      message: expect.stringContaining('C2b export heartbeat fence is no longer active'),
+    });
+    await expect(
+      withExportWorkerTransaction((repository) => repository.scheduleRetry(first!, '7'.repeat(64))),
+    ).rejects.toMatchObject({
+      code: '23514',
+      message: expect.stringContaining('C2b export ordinary retry fence is no longer active'),
+    });
+    await expect(
+      withExportWorkerTransaction((repository) =>
+        repository.finishFailed(
+          first!,
+          'DEPENDENCY_UNAVAILABLE',
+          'c2b-r3-late-failure',
+          'd'.repeat(64),
+        ),
+      ),
+    ).rejects.toMatchObject({
+      code: '23514',
+      message: expect.stringContaining('C2b export FAILED fence is no longer active'),
+    });
+    const afterExpiredRefusals = await owner.query<{
+      auditCount: string;
+      attemptId: string | null;
+      lastTransitionRefHash: string | null;
+      state: string;
+    }>(
+      `SELECT export_entry."state", export_entry."attemptId",
+              export_entry."lastTransitionRefHash",
+              (SELECT count(*)::text FROM "AuditLog" audit
+                WHERE audit."adminAuditExportId" = export_entry."id"
+                  AND audit."action" = 'buildAdminAuditLogExport') AS "auditCount"
+         FROM "AdminAuditExport" export_entry WHERE export_entry."id" = $1`,
+      [failureExportId],
+    );
+    expect(afterExpiredRefusals.rows[0]).toEqual({
+      attemptId: first!.attemptId,
+      auditCount: '0',
+      lastTransitionRefHash: null,
+      state: 'PROCESSING',
+    });
+    const leaseExpired = await exportRecord(failureExportId);
+    await expect(
+      withExportWorkerTransaction((repository) =>
+        repository.watchdogOne(
+          { ...leaseExpired, deadlineExpired: false },
+          'c2b-r3-lease-reclaim-attempt-1',
+          'e'.repeat(64),
+        ),
+      ),
+    ).resolves.toBe('REQUEUED');
+    const second = await withExportWorkerTransaction((repository) =>
+      repository.claimNext(randomUUID(), '5'.repeat(64)),
+    );
+    expect(second?.attemptNumber).toBe(2);
+
+    const lateObjectKey = `c2b/staging/${failureExportId}/1/${first!.attemptId}.zip.enc`;
+    await expect(
+      withExportWorkerTransaction((repository) =>
+        repository.finishReady(
+          first!,
+          {
+            contentSha256: 'f'.repeat(64),
+            encryptedBytes: 128,
+            objectKey: lateObjectKey,
+            plaintextBytes: 64,
+            signatureKeyId: 'c2b-r3-signature-key',
+            stagingObjectKey: lateObjectKey,
+            storageKeyId: 'c2b-r3-storage-key',
+          },
+          'c2b-r3-late-ready',
+          'f'.repeat(64),
+        ),
+      ),
+    ).resolves.toBe(false);
+    const afterLateWorker = await owner.query<{
+      audits: string;
+      generation: string;
+      objectKey: string | null;
+    }>(
+      `SELECT "generation"::text AS generation, "objectKey",
+              (SELECT count(*)::text FROM "AuditLog" audit
+                WHERE audit."adminAuditExportId" = export_entry."id"
+                  AND audit."action" = 'buildAdminAuditLogExport') AS audits
+         FROM "AdminAuditExport" export_entry WHERE export_entry."id" = $1`,
+      [failureExportId],
+    );
+    expect(afterLateWorker.rows[0]).toEqual({ audits: '0', generation: '2', objectKey: null });
+
+    const locker = await owner.connect();
+    try {
+      await locker.query('BEGIN');
+      await locker.query('SET LOCAL session_replication_role = replica');
+      await locker.query(
+        `WITH timing AS (
+           SELECT (pg_catalog.clock_timestamp() AT TIME ZONE 'UTC')::timestamp(3) AS database_now
+         )
+         UPDATE "AdminAuditExport" export_entry
+            SET "attemptStartedAt" = timing.database_now - INTERVAL '60 seconds',
+                "attemptDeadline" = timing.database_now + INTERVAL '540 seconds',
+                "leaseExpiresAt" = timing.database_now + INTERVAL '100 milliseconds'
+           FROM timing
+          WHERE export_entry."id" = $1`,
+        [failureExportId],
+      );
+      await locker.query('SET LOCAL session_replication_role = origin');
+      const blockedHeartbeat = withExportWorkerTransaction((repository) =>
+        repository.heartbeat(second!),
+      );
+      await eventually(async () => {
+        const waiting = await locker.query<{ waiting: boolean }>(
+          `SELECT EXISTS (
+             SELECT 1 FROM pg_catalog.pg_stat_activity activity
+              WHERE activity.datname = current_database()
+                AND activity.usename = 'kora_admin_c2b_export_worker'
+                AND activity.wait_event_type = 'Lock'
+           ) AS waiting`,
+        );
+        return waiting.rows[0]?.waiting === true ? true : undefined;
+      }, 'heartbeat blocked behind the R3 fixture row lock');
+      await locker.query('SELECT pg_catalog.pg_sleep(0.2)');
+      await locker.query('COMMIT');
+      await expect(blockedHeartbeat).rejects.toMatchObject({
+        code: '23514',
+        message: expect.stringContaining('C2b export heartbeat fence is no longer active'),
+      });
+    } catch (error: unknown) {
+      await locker.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      locker.release();
+    }
+
+    const secondLeaseExpired = await exportRecord(failureExportId);
+    await expect(
+      withExportWorkerTransaction((repository) =>
+        repository.watchdogOne(
+          { ...secondLeaseExpired, deadlineExpired: false },
+          'c2b-r3-lease-reclaim-attempt-2',
+          '1'.repeat(64),
+        ),
+      ),
+    ).resolves.toBe('REQUEUED');
+    const third = await withExportWorkerTransaction((repository) =>
+      repository.claimNext(randomUUID(), '6'.repeat(64)),
+    );
+    expect(third?.attemptNumber).toBe(3);
+    expect(String(third?.generation)).toBe('3');
+    const thirdExpired = await ageAttempt(failureExportId, 'DEADLINE_AND_LEASE');
+    await expect(
+      withExportWorkerTransaction((repository) =>
+        repository.watchdogOne(thirdExpired, 'c2b-r3-third-watchdog-failure', '2'.repeat(64)),
+      ),
+    ).resolves.toBe('FAILED');
+    const failed = await owner.query<{ audits: string; failureCode: string; state: string }>(
+      `SELECT export_entry."state", export_entry."failureCode",
+              (SELECT count(*)::text FROM "AuditLog" audit
+                WHERE audit."adminAuditExportId" = export_entry."id"
+                  AND audit."action" = 'buildAdminAuditLogExport'
+                  AND audit."outcome" = 'REJECTED'
+                  AND audit."failureCode" = 'DEPENDENCY_UNAVAILABLE') AS audits
+         FROM "AdminAuditExport" export_entry WHERE export_entry."id" = $1`,
+      [failureExportId],
+    );
+    expect(failed.rows[0]).toEqual({
+      audits: '1',
+      failureCode: 'RETRY_BUDGET_EXHAUSTED',
+      state: 'FAILED',
+    });
   });
 });

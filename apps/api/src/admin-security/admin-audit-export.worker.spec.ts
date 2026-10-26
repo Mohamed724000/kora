@@ -96,8 +96,8 @@ describe('C2b export worker state machine', () => {
       .mockResolvedValueOnce('REQUEUED');
     const worker = new AdminAuditExportWorker(
       repository({
-        findById: async () => candidate,
         findWatchdogCandidate: async () => candidate,
+        reconcileWatchdog: async () => 'WATCHDOG_REQUIRED',
         watchdogOne,
       }),
       {} as AdminAuditExportCodec,
@@ -108,14 +108,14 @@ describe('C2b export worker state machine', () => {
     expect(watchdogOne).toHaveBeenCalledTimes(2);
   });
 
-  it('publishes the single verified staging object through the READY fence', async () => {
-    const claimed = claim();
+  it('allows the third attempt to publish before its deadline', async () => {
+    const claimed = { ...claim(), attemptNumber: 3 };
     const artifactBytes = Buffer.from('deterministic-zip-bytes');
     const contentSha256 = createHash('sha256').update(artifactBytes).digest('hex');
     const finishReady = vi.fn(async () => true);
     const transaction = {
       claimNext: async () => claimed,
-      failureDisposition: async () => 'RETRYABLE',
+      failureDisposition: async () => 'BUDGET_EXHAUSTED',
       findExpiredObjectCleanup: async () => undefined,
       findExpiryCandidate: async () => undefined,
       finishReady,
@@ -226,14 +226,92 @@ describe('C2b export worker state machine', () => {
     expect(scheduleRetry).toHaveBeenCalledOnce();
   });
 
-  it('fails closed without retry when the verified artifact is invalid', async () => {
-    const claimed = claim();
+  it('routes an atomic retry fence refusal to the watchdog', async () => {
+    const failureDisposition = vi
+      .fn()
+      .mockResolvedValueOnce('RETRYABLE')
+      .mockResolvedValueOnce('RETRYABLE')
+      .mockResolvedValueOnce('LEASE_EXPIRED');
+    const scheduleRetry = vi.fn().mockRejectedValue(
+      new AdminC2TransactionError(
+        'CALLBACK_FAILED',
+        'C2 transaction callback failed.',
+        Object.assign(new Error('C2b export ordinary retry fence is no longer active'), {
+          code: '23514',
+        }),
+      ),
+    );
+    const worker = new AdminAuditExportWorker(
+      repository({
+        claimNext: async () => claim(),
+        failureDisposition,
+        findExpiredObjectCleanup: async () => undefined,
+        findExpiryCandidate: async () => undefined,
+        findWatchdogCandidate: async () => undefined,
+        orphanStagingCutoff: async () => new Date(0),
+        purgeExpiredReadLeases: async () => 0,
+        purgeOneSnapshot: async () => undefined,
+        remainingAttemptMilliseconds: async () => 600_000,
+        scheduleRetry,
+        snapshotEntries: async () => [],
+      }),
+      {
+        build: async () => Promise.reject(new Error('provider unavailable')),
+      } as unknown as AdminAuditExportCodec,
+      new TestMemoryAdminAuditExportStorage(),
+      new TestAdminAuditExportStorageKeyring(),
+    );
+    await expect(worker.processOne()).resolves.toBe('WATCHDOG_REQUIRED');
+    expect(scheduleRetry).toHaveBeenCalledWith(
+      expect.objectContaining({ id: '33333333-3333-4333-8333-333333333333' }),
+      expect.any(String),
+    );
+  });
+
+  it.each([
+    ['APPLIED', 'RECONCILED'],
+    ['WATCHDOG_REQUIRED', 'WATCHDOG_REQUIRED'],
+    ['STALE_FENCE', 'STALE_FENCE'],
+  ] as const)(
+    'routes retry COMMIT_UNKNOWN reconciliation %s without a blind second mutation',
+    async (reconciliation, expected) => {
+      const scheduleRetry = vi
+        .fn()
+        .mockRejectedValue(new AdminC2TransactionError('COMMIT_UNKNOWN', 'lost ack'));
+      const worker = new AdminAuditExportWorker(
+        repository({
+          claimNext: async () => claim(),
+          failureDisposition: async () => 'RETRYABLE',
+          findExpiredObjectCleanup: async () => undefined,
+          findExpiryCandidate: async () => undefined,
+          findWatchdogCandidate: async () => undefined,
+          orphanStagingCutoff: async () => new Date(0),
+          purgeExpiredReadLeases: async () => 0,
+          purgeOneSnapshot: async () => undefined,
+          reconcileFailedOrRetry: async () => reconciliation,
+          remainingAttemptMilliseconds: async () => 600_000,
+          scheduleRetry,
+          snapshotEntries: async () => [],
+        }),
+        {
+          build: async () => Promise.reject(new Error('provider unavailable')),
+        } as unknown as AdminAuditExportCodec,
+        new TestMemoryAdminAuditExportStorage(),
+        new TestAdminAuditExportStorageKeyring(),
+      );
+      await expect(worker.processOne()).resolves.toBe(expected);
+      expect(scheduleRetry).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('preserves a deterministic integrity code on the third attempt', async () => {
+    const claimed = { ...claim(), attemptNumber: 3 };
     const finishFailed = vi.fn(async () => true);
     const scheduleRetry = vi.fn(async () => true);
     const worker = new AdminAuditExportWorker(
       repository({
         claimNext: async () => claimed,
-        failureDisposition: async () => 'RETRYABLE',
+        failureDisposition: async () => 'BUDGET_EXHAUSTED',
         findExpiredObjectCleanup: async () => undefined,
         findExpiryCandidate: async () => undefined,
         finishFailed,
@@ -267,7 +345,39 @@ describe('C2b export worker state machine', () => {
     );
   });
 
-  it('bounds a non-responsive provider with the PostgreSQL attempt deadline', async () => {
+  it('terminalizes a retryable third-attempt failure with the exhausted budget code', async () => {
+    const claimed = { ...claim(), attemptNumber: 3 };
+    const finishFailed = vi.fn(async () => true);
+    const worker = new AdminAuditExportWorker(
+      repository({
+        claimNext: async () => claimed,
+        failureDisposition: async () => 'BUDGET_EXHAUSTED',
+        findExpiredObjectCleanup: async () => undefined,
+        findExpiryCandidate: async () => undefined,
+        findWatchdogCandidate: async () => undefined,
+        finishFailed,
+        orphanStagingCutoff: async () => new Date(0),
+        purgeExpiredReadLeases: async () => 0,
+        purgeOneSnapshot: async () => undefined,
+        remainingAttemptMilliseconds: async () => 600_000,
+        snapshotEntries: async () => [],
+      }),
+      {
+        build: async () => Promise.reject(new Error('provider unavailable')),
+      } as unknown as AdminAuditExportCodec,
+      new TestMemoryAdminAuditExportStorage(),
+      new TestAdminAuditExportStorageKeyring(),
+    );
+    await expect(worker.processOne()).resolves.toBe('FAILED');
+    expect(finishFailed).toHaveBeenCalledWith(
+      claimed,
+      'RETRY_BUDGET_EXHAUSTED',
+      expect.any(String),
+      expect.any(String),
+    );
+  });
+
+  it('routes an expired first attempt to the watchdog without terminalizing it', async () => {
     const finishFailed = vi.fn(async () => true);
     const worker = new AdminAuditExportWorker(
       repository({
@@ -290,13 +400,8 @@ describe('C2b export worker state machine', () => {
       new TestMemoryAdminAuditExportStorage(),
       new TestAdminAuditExportStorageKeyring(),
     );
-    await expect(worker.processOne()).resolves.toBe('FAILED');
-    expect(finishFailed).toHaveBeenCalledWith(
-      expect.any(Object),
-      'RETRY_BUDGET_EXHAUSTED',
-      expect.any(String),
-      expect.any(String),
-    );
+    await expect(worker.processOne()).resolves.toBe('WATCHDOG_REQUIRED');
+    expect(finishFailed).not.toHaveBeenCalled();
   });
 
   it('resumes the exact READY CAS once after COMMIT_UNKNOWN with the same live fence', async () => {
@@ -311,7 +416,6 @@ describe('C2b export worker state machine', () => {
       repository({
         claimNext: async () => claimed,
         failureDisposition: async () => 'RETRYABLE',
-        findById: async () => claimed,
         findExpiredObjectCleanup: async () => undefined,
         findExpiryCandidate: async () => undefined,
         findWatchdogCandidate: async () => undefined,
@@ -320,6 +424,7 @@ describe('C2b export worker state machine', () => {
         orphanStagingCutoff: async () => new Date(0),
         purgeExpiredReadLeases: async () => 0,
         purgeOneSnapshot: async () => undefined,
+        reconcileReady: async () => 'ACTIVE',
         remainingAttemptMilliseconds: async () => 600_000,
         snapshotEntries: async () => [],
       }),

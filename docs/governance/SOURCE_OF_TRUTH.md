@@ -1,12 +1,13 @@
 # KORA+ Final — Source de vérité
 
 Statut : **DOCUMENT OPÉRATIONNEL VIVANT — C2a INTÉGRÉ DANS MAIN AU MERGE
-`029e30bbc795f3d9c153782bc04e45e9f5a03f8a`, NON DÉPLOYÉ — C2b R1
-PUBLIÉ DANS LA PR #53 DRAFT, CORRECTIF R2 QUALIFIÉ LOCALEMENT — FOURNISSEURS DE
+`029e30bbc795f3d9c153782bc04e45e9f5a03f8a`, NON DÉPLOYÉ — C2b R2 PUBLIÉ
+DANS LA PR #53 DRAFT ; R3 QUALIFIÉ LOCALEMENT LE 2026-10-26 — ÉTAT DE
+PUBLICATION COURANT PORTÉ PAR LA PR #53 ET SON HEAD — FOURNISSEURS DE
 PRODUCTION NON QUALIFIÉS — C3 NON COMMENCÉ**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-10-24
+Dernière réconciliation documentaire : 2026-10-26
 
 ## Hiérarchie normative
 
@@ -1573,3 +1574,34 @@ tooling passe 570/570, le scanner 466 fichiers avec historique et les audits
 frais complet/production trouvent zéro vulnérabilité. R2 reste local et non
 indexé jusqu'au commit/push conditionnel ; les quatre workflows du futur head
 et le corps PR réconcilié ne sont pas encore affirmés.
+
+## C2b R2 publié et candidat local R3 — 2026-10-26
+
+Le paragraphe R2 ci-dessus est un instantané prépublication. R2 est ensuite
+publié au commit `b4868b92794925dc2a2c5f4f1fd8949c0e351dcf`, arbre
+`a942115ad3faed41c54b1c47593a31e90078bdd3`, dans la PR #53 toujours
+`OPEN/Draft`. Les runs Infrastructure `40116489202`, Launcher Windows
+`40116489279`, Security `40116489218` et Quality Linux `40116489201` sont tous
+verts en tentative 1 sur ce head ; le merge synthétique exécuté est
+`b3eb477df8ad68c4136155d66c4856799c9de324`.
+
+La revue cumulative post-R2 reste un verdict historique **BLOCK** sur
+`S-PG-01`, `S-PG-02`, `S-PG-03` et `G-QA-01`. R3 ferme localement ces quatre
+findings sans modifier dépendances, lockfile, workflow ou contrat fonctionnel.
+Le temps PostgreSQL, les leases et deadlines par tentative, les backoffs
+30/120, le budget de trois tentatives, le fence, le marqueur durable et l'audit
+terminal atomique sont alignés. Le rôle worker reçoit uniquement `SELECT` et
+`UPDATE` sur `AdminAuditExport.lastTransitionRefHash`; toute autre identité et
+tout privilège supplémentaire restent refusés.
+
+La preuve sélectionnée associe le wrapper runtime PASS à une campagne métier
+finale 14/14. API passe 300 assertions avec 75 SKIP, tooling 570/570, scanner
+466 fichiers, OpenAPI 60/67/141, format/lint/typecheck/build/génération et les
+deux audits à zéro. Les NON-PASS métier 12/14, 13/14 et 13/14 ainsi que le
+contrôle Prettier intermédiaire restent archivés sans requalification. Le
+candidat R3 est local, non indexé et non publié ; aucun SHA, run CI ou succès
+R3 futur n'est annoncé ici.
+
+Les fournisseurs et Linux de production restent non qualifiés, les bases
+persistantes externes ne sont pas attestées, les SKIP restent des SKIP, C3
+n'est pas commencé et la politique OSS demeure différée.

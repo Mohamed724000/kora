@@ -1,8 +1,9 @@
 # S1.2-03C2 — Admin Security Runtime Contract
 
 Statut : **C2a INTÉGRÉ DANS MAIN AU MERGE
-`029e30bbc795f3d9c153782bc04e45e9f5a03f8a`, NON DÉPLOYÉ — C2b R1 DANS LA
-PR #53 DRAFT, R2 QUALIFIÉ LOCALEMENT — C3 NON COMMENCÉ**
+`029e30bbc795f3d9c153782bc04e45e9f5a03f8a`, NON DÉPLOYÉ — C2b R2 PUBLIÉ
+DANS LA PR #53 DRAFT ; R3 QUALIFIÉ LOCALEMENT LE 2026-10-26 — ÉTAT DE
+PUBLICATION COURANT PORTÉ PAR LA PR #53 ET SON HEAD — C3 NON COMMENCÉ**
 
 Date : 2026-10-24
 
@@ -922,3 +923,40 @@ réseaux et 4 images. Tooling passe 570/570, le scanner couvre 466 fichiers et
 les audits frais complet/production trouvent zéro vulnérabilité. Publication
 R2 et CI du futur head restent conditionnelles ; aucun résultat futur n'est
 annoncé.
+
+## C2b R3 — leases, deadlines, fencing et marqueur durable — 2026-10-26
+
+R2 est publié au head `b4868b92794925dc2a2c5f4f1fd8949c0e351dcf`, arbre
+`a942115ad3faed41c54b1c47593a31e90078bdd3`, dans la PR #53 `OPEN/Draft`.
+Infrastructure `40116489202`, Launcher Windows `40116489279`, Security
+`40116489218` et Quality Linux `40116489201` sont tous
+`pull_request/completed/success`, tentative 1 ; le checkout synthétique testé
+est `b3eb477df8ad68c4136155d66c4856799c9de324`. Le NON-PASS Infrastructure R1
+reste historique.
+
+La revue cumulative R2 a ensuite bloqué l'intégration sur `S-PG-01`,
+`S-PG-02`, `S-PG-03` et `G-QA-01`. Le candidat local R3 ferme les trois écarts
+techniques : génération initiale 0, fenêtres PostgreSQL par tentative, leases
+et deadlines réévaluées après verrou, backoffs 30/120, troisième tentative
+terminale, fencing de l'ancien propriétaire et réconciliation exacte après
+`COMMIT_UNKNOWN`. Le marqueur interne `lastTransitionRefHash` est atomique avec
+la transition et, pour un résultat terminal, avec l'audit SYSTEM exact. Seul
+le worker C2b reçoit les deux privilèges de colonne nécessaires ; les matrices
+ACL indépendantes restent exhaustives.
+
+Le wrapper runtime passe fresh/upgrade sur cinq migrations, projections,
+provisionnement, ACL, contamination et préservation C1/C2a. Le wrapper métier
+final passe 14/14 scénarios PostgreSQL/Redis/HTTP avec processus worker et
+BullMQ réels, dont les courses READY/watchdog et heartbeat après attente de
+verrou. API passe 300 assertions et conserve 75 SKIP ; tooling passe 570/570,
+scanner 466 fichiers, OpenAPI 60/67/141 et 53 modèles protégés. Format, lint,
+typecheck, build, génération et audits complet/production à zéro passent.
+
+Les campagnes métier 12/14, 13/14 et 13/14 restent NON-PASS historiques ;
+elles ont isolé trois attentes de harnais utilisant une forme d'erreur ou une
+préimage temporelle incorrecte, sans changement du runtime. Cet instantané
+atteste la qualification locale R3 du 2026-10-26 sans préjuger de son état de
+publication ou de CI ultérieur, qui doit être constaté sur la PR #53 et son
+head. Production, fournisseurs, installations persistantes externes et C3
+restent non qualifiés ; les SKIP restent des SKIP et la politique OSS demeure
+différée.

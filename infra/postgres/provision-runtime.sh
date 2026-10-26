@@ -3520,10 +3520,10 @@ SELECT :'c2b_export_worker_user', 'AdminAuditPaginationSnapshotItem', 'SELECT', 
 FROM unnest(ARRAY['snapshotId','ordinal','resourceId','sourceCreatedAt','projectionJson','utf8Bytes']) WITH ORDINALITY AS c(column_name, ordinal);
 INSERT INTO c2b_column_grants
 SELECT :'c2b_export_worker_user', 'AdminAuditExport', 'SELECT', column_name, ordinal
-FROM unnest(ARRAY['id','creatorAdminUserId','snapshotId','sourceAuditLogId','state','generation','attemptNumber','attemptId','claimOwnerHash','attemptStartedAt','attemptDeadline','leaseExpiresAt','nextAttemptAt','stagingObjectKey','objectKey','contentSha256','signatureKeyId','storageKeyId','plaintextBytes','encryptedBytes','failureCode','createdAt','readyAt','failedAt','expiresAt','expiredAt']) WITH ORDINALITY AS c(column_name, ordinal);
+FROM unnest(ARRAY['id','creatorAdminUserId','snapshotId','sourceAuditLogId','state','generation','attemptNumber','attemptId','claimOwnerHash','attemptStartedAt','attemptDeadline','leaseExpiresAt','nextAttemptAt','stagingObjectKey','objectKey','contentSha256','signatureKeyId','storageKeyId','plaintextBytes','encryptedBytes','failureCode','lastTransitionRefHash','createdAt','readyAt','failedAt','expiresAt','expiredAt']) WITH ORDINALITY AS c(column_name, ordinal);
 INSERT INTO c2b_column_grants
 SELECT :'c2b_export_worker_user', 'AdminAuditExport', 'UPDATE', column_name, ordinal
-FROM unnest(ARRAY['state','generation','attemptNumber','attemptId','claimOwnerHash','attemptStartedAt','attemptDeadline','leaseExpiresAt','nextAttemptAt','stagingObjectKey','objectKey','contentSha256','signatureKeyId','storageKeyId','plaintextBytes','encryptedBytes','failureCode','readyAt','failedAt','expiresAt','expiredAt']) WITH ORDINALITY AS c(column_name, ordinal);
+FROM unnest(ARRAY['state','generation','attemptNumber','attemptId','claimOwnerHash','attemptStartedAt','attemptDeadline','leaseExpiresAt','nextAttemptAt','stagingObjectKey','objectKey','contentSha256','signatureKeyId','storageKeyId','plaintextBytes','encryptedBytes','failureCode','lastTransitionRefHash','readyAt','failedAt','expiresAt','expiredAt']) WITH ORDINALITY AS c(column_name, ordinal);
 INSERT INTO c2b_column_grants
 SELECT :'c2b_export_worker_user', 'AdminAuditExportReadLease', 'SELECT', column_name, ordinal
 FROM unnest(ARRAY['id','exportId','exportGeneration','readerAdminUserId','ownerHash','expiresAt','maximumExpiresAt','lastHeartbeatAt','releasedAt','createdAt']) WITH ORDINALITY AS c(column_name, ordinal);

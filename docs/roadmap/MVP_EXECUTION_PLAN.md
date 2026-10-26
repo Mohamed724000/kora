@@ -30,7 +30,7 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 | Slice 1 / S1.2-03A  | Frontière PostgreSQL runtime en lecture seule | Closed and merged — PR #45                                                       |
 | Slice 1 / S1.2-03B  | Admin Security Contract Gate, sans runtime    | Closed and merged — PR #48, merge `c97992ca2c82bc4f22f9222ea98ed53714fede4c`     |
 | Slice 1 / S1.2-03C1 | Auth admin, TOTP et sessions runtime          | Closed and merged — merge dc97eeef72c4e299988ed19d66460011a8551cf3; not deployed |
-| Slice 1 / S1.2-03C2 | Recovery, audit, invitations et RBAC runtime  | C2a closed and merged; C2b R1 locally qualified and unpublished                  |
+| Slice 1 / S1.2-03C2 | Recovery, audit, invitations et RBAC runtime  | C2a closed/merged; C2b R2 published in Draft PR #53; R3 locally qualified        |
 | Slice 1 / S1.2-03C3 | Interface d'authentification Admin            | Not started — separate authorization required                                    |
 | Slice 1 / S1.2-03D  | Artist API                                    | Not started                                                                      |
 | Slice 1 / S1.2-03E  | Artist Admin UI                               | Not started                                                                      |
@@ -1211,3 +1211,24 @@ ses octets fonctionnels ; le raccordement passe 53/53 et les deux wrappers C2b
 repassent sur des instances propres. Commit, push, nouvelle Draft PR et quatre
 workflows verts restent conditionnels et ne sont pas annoncés dans cet
 instantané.
+
+### C2b R2 publié et R3 qualifié localement — 2026-10-26
+
+R2 est publié dans la Draft PR #53 au head `b4868b9…`; ses quatre workflows
+pull request sont verts. La revue cumulative postpublication demeure un BLOCK
+historique sur leases/fencing, deadlines/retries, génération initiale et
+documents vivants.
+
+R3 ferme localement ces quatre findings : génération PENDING 0, fenêtres
+PostgreSQL par tentative, backoffs 30/120, budget de trois tentatives, gardes
+après attente de verrou et réconciliation par marqueur durable exact. Le
+wrapper runtime passe fresh/upgrade et les frontières C1/C2a/C2b ; la campagne
+métier finale passe 14/14 avec worker et BullMQ. Les NON-PASS 12/14, 13/14 et
+13/14 restent historiques.
+
+Les gates locaux passent, dont API 300 PASS/75 SKIP, tooling 570/570, scanner
+466, OpenAPI 60/67/141 et audits à zéro. La qualification locale R3 du
+2026-10-26 reste soumise à un gel reproductible, trois revues indépendantes et
+aux conditions de publication ; son état Git/CI postérieur doit être constaté
+sur la PR #53 et son head courant. C3, production, fournisseurs et politique
+OSS restent hors périmètre.

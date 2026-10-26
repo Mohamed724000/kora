@@ -51,5 +51,5 @@ if (code !== 0) {
   throw new Error(`S1.2-03C2b business validation failed: Vitest exited with ${String(code)}.`);
 }
 process.stdout.write(
-  'C2B_BUSINESS_VALIDATION_PASS http_operations=4 worker_process=true bullmq=true integrity=true\n',
+  'C2B_BUSINESS_VALIDATION_PASS http_operations=4 worker_process=true bullmq=true integrity=true state_machine_r3=true\n',
 );

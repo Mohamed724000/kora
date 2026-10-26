@@ -2,8 +2,9 @@
 
 Périmètre durable couvert : **BASELINE À S1.2-03B ET S1.2-03C1 FUSIONNÉES +
 C2a INTÉGRÉ DANS MAIN AU MERGE
-`029e30bbc795f3d9c153782bc04e45e9f5a03f8a`, NON DÉPLOYÉ + C2b EN
-IMPLÉMENTATION LOCALE, QUALIFICATION TERMINALE BLOQUÉE — FOURNISSEURS DE
+`029e30bbc795f3d9c153782bc04e45e9f5a03f8a`, NON DÉPLOYÉ + C2b R2 PUBLIÉ
+DANS LA PR #53 DRAFT ; R3 QUALIFIÉ LOCALEMENT LE 2026-10-26 — ÉTAT DE
+PUBLICATION COURANT PORTÉ PAR LA PR #53 ET SON HEAD — FOURNISSEURS DE
 PRODUCTION NON QUALIFIÉS — C3 NON COMMENCÉ**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
@@ -1501,3 +1502,21 @@ OSS différée restent inchangés.
 | Succès C2b déduit d'un intitulé de job       | wrappers officiels obligatoires, marqueurs runtime/métier, décomptes exacts et inspection future des logs ; échec bloquant sans retry automatique | aucun résultat CI futur encore revendiqué |
 | Cleanup omis après échec                     | cleanup conditionnel Infrastructure et cleanup interne des wrappers conservés ; aucun `continue-on-error`                                         | contrôle de workflow conservé             |
 | Surqualification de l'attestation hors ligne | profil V2 et règle `READY_PLUS_24_HOURS`; la signature couvre les octets connus avant READY, pas l'instant serveur                                | limite explicite inchangée                |
+
+## C2b R3 — menaces lease/deadline et preuve durable
+
+| Menace ou dérive                                     | Contrôle R3                                                                                                                                                             | Preuve sélectionnée                                      | Limite conservée                          |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ----------------------------------------- |
+| Worker expiré prolongeant ou terminalisant une tâche | CAS ordinaires exigent fence exact, lease et deadline actives après verrou, sans retry déjà planifié                                                                    | PostgreSQL réel, refus durable et course après verrou    | adaptateurs locaux, production non testée |
+| Première deadline consommant tout le budget          | tentative 1/2 replanifiée sans audit terminal, backoff 30/120 ; tentative 3 seule terminale sur épuisement ; nouveau claim = nouvelle fenêtre PostgreSQL                | machine d'état réelle, succès et épuisement au troisième | horloge distribuée production non testée  |
+| Fence initial divergent du contrat                   | PENDING génération/tentative 0, premier claim 1, incréments monotones                                                                                                   | migration, Prisma et campagne réelle                     | migration candidate non intégrée          |
+| Marqueur falsifié ou réutilisé                       | hash interne lié à la transition et au fence ; seuls `SELECT`/`UPDATE` colonne pour le worker ; état et audit terminal atomiques ; substitution et fence périmé refusés | ACL exactes, trigger différé et état durable             | aucune exposition HTTP                    |
+| Réconciliation aveugle après `COMMIT_UNKNOWN`        | résultat accepté seulement si état, génération, tentative et marqueur exacts correspondent ; absent/remplacé = aucun replay                                             | tests unitaires et PostgreSQL réel                       | panne réseau réelle non simulée           |
+| Faux PASS après reprise                              | NON-PASS 12/14, 13/14 et 13/14 conservés ; campagne finale 14/14 séparée ; API 300 PASS/75 SKIP et tooling 570/570 rapportés distinctement                              | sorties, stderr et codes archivés                        | SKIP restent SKIP                         |
+
+La baseline publiée R2 porte le head `b4868b9…` et les quatre workflows verts
+`40116489202`, `40116489279`, `40116489218` et `40116489201`. La qualification
+locale R3 est datée du 2026-10-26 ; son état de publication ou de CI postérieur
+doit être constaté sur la PR #53 et son head courant. Les fournisseurs et Linux
+de production, les bases persistantes externes et C3 restent non qualifiés, et
+la politique OSS demeure différée.

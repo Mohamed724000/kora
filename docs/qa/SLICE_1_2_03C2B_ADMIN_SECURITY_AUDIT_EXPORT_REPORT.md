@@ -2,15 +2,17 @@
 
 ## Statut
 
-**PR #53 OPEN/DRAFT — R1 PUBLIÉ — R2 QUALIFIÉ LOCALEMENT, NON INDEXÉ —
-PUBLICATION R2 CONDITIONNELLE EN ATTENTE.**
+**R2 PUBLIÉ DANS LA PR #53 DRAFT AVEC QUATRE WORKFLOWS VERTS — R3 QUALIFIÉ
+LOCALEMENT LE 2026-10-26 — ÉTAT DE PUBLICATION COURANT PORTÉ PAR LA PR #53 ET
+SON HEAD.**
 
-Baseline R2 : branche `codex/c2b-admin-audit-export-runtime`, HEAD publié
-`8fcefbdce37e463e4d70e47d20608f5c7528e416`, arbre
-`51d3bb3244ff4179b87a3660df59be357c01718e`, sur la base intégrée
-`029e30bbc795f3d9c153782bc04e45e9f5a03f8a`. Le candidat R2 reste local et
-non indexé. Ce rapport ne vaut ni publication R2, fusion ni qualification de
-production.
+Baseline publiée R2 : branche `codex/c2b-admin-audit-export-runtime`, head
+`b4868b92794925dc2a2c5f4f1fd8949c0e351dcf`, arbre
+`a942115ad3faed41c54b1c47593a31e90078bdd3`, sur la base intégrée
+`029e30bbc795f3d9c153782bc04e45e9f5a03f8a`. Le présent rapport atteste le
+candidat R3 qualifié localement le 2026-10-26 ; son état de publication ou de
+CI ultérieur doit être constaté sur la PR #53 et son head. Ce rapport ne vaut
+ni fusion ni qualification de production.
 
 ## Périmètre matérialisé
 
@@ -214,3 +216,44 @@ une erreur de lancement `spawn EINVAL`, distincte de la reprise qualifiée via
 `cmd.exe /d /s /c`. La publication R2, les quatre workflows du futur commit et
 la réconciliation finale du corps de PR restent à obtenir ; aucun succès CI
 R2 futur n'est affirmé dans cet état local.
+
+## R3 — fermeture locale de S-PG-01, S-PG-02, S-PG-03 et G-QA-01
+
+Le dernier paragraphe R2 ci-dessus est conservé comme instantané local
+prépublication. R2 a ensuite été publié au head `b4868b9…`. Infrastructure
+`40116489202`, Launcher Windows `40116489279`, Security `40116489218` et
+Quality Linux `40116489201` sont `completed/success`, tentative 1, sur ce head
+et le checkout synthétique `b3eb477df8ad68c4136155d66c4856799c9de324`.
+
+La revue cumulative qui suit cette publication demeure un **BLOCK historique**
+sur quatre findings. R3 corrige localement les trois findings PostgreSQL :
+génération initiale 0 ; lease/deadline PostgreSQL réévaluées après verrou ;
+backoffs exacts 30/120 ; trois tentatives maximum ; fencing et réconciliation
+exacte. `lastTransitionRefHash` est un marqueur interne de transition. Son ACL
+accorde au seul worker C2b exactement `SELECT` et `UPDATE` sur la colonne, et
+la garde différée exige la transition durable et son audit terminal exact dans
+la même transaction.
+
+Le wrapper runtime final passe fresh/upgrade, cinq migrations, projections,
+provisioning, ACL et préservation C1/C2a. Le premier wrapper métier de reprise
+reste un NON-PASS terminal 12/14, terminé avant le redémarrage Windows. Les
+deux candidats suivants restent NON-PASS 13/14 : ils ont révélé une forme
+d'erreur puis une préimage temporelle incorrectes dans le harnais. Après
+correction bornée du seul test autorisé, la campagne
+`c2b-business-r3-reconcile-04` passe 14/14, avec worker processus, BullMQ,
+courses READY/watchdog, heartbeat après verrou, état durable et cleanup ciblé.
+
+Sur les mêmes octets, les tests repository/worker passent 42/42, l'API passe
+40 fichiers avec 300 tests réussis et 75 SKIP, tooling 570/570 et le scanner
+466 fichiers. Format, lint, typecheck, build, génération Prisma, OpenAPI
+60/67/141, génération contractuelle, `git diff --check` et les audits npm
+complet/production à zéro passent. Les stderr Prisma informatifs sont conservés
+et ne sont pas reclassés comme vides.
+
+L'inventaire étranger post-redémarrage conserve quatre conteneurs, huit
+volumes et quatre images ; les IDs, montages et états des services observés
+restent inchangés. Chaque instance R3 est absente après cleanup. R3 n'est pas
+encore indexé, commité, poussé ou soumis à CI ; aucun résultat futur n'est
+annoncé. Fournisseurs et Linux de production, installations persistantes
+externes et C3 restent non qualifiés ; les 75 SKIP restent des SKIP et la
+politique OSS demeure différée.

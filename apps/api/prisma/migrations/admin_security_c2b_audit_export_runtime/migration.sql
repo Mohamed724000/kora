@@ -93,7 +93,7 @@ CREATE TABLE public."AdminAuditExport" (
   "snapshotId" TEXT NOT NULL,
   "sourceAuditLogId" TEXT NOT NULL,
   "state" "AdminAuditExportState" NOT NULL DEFAULT 'PENDING',
-  "generation" BIGINT NOT NULL DEFAULT 1,
+  "generation" BIGINT NOT NULL DEFAULT 0,
   "attemptNumber" INTEGER NOT NULL DEFAULT 0,
   "attemptId" TEXT,
   "claimOwnerHash" TEXT,
@@ -109,16 +109,19 @@ CREATE TABLE public."AdminAuditExport" (
   "plaintextBytes" BIGINT,
   "encryptedBytes" BIGINT,
   "failureCode" "AdminAuditExportFailureCode",
+  "lastTransitionRefHash" TEXT,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "readyAt" TIMESTAMP(3),
   "failedAt" TIMESTAMP(3),
   "expiresAt" TIMESTAMP(3),
   "expiredAt" TIMESTAMP(3),
   CONSTRAINT "AdminAuditExport_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "AdminAuditExport_generation_check" CHECK ("generation" >= 1),
+  CONSTRAINT "AdminAuditExport_generation_check" CHECK ("generation" >= 0),
   CONSTRAINT "AdminAuditExport_attempt_check" CHECK ("attemptNumber" BETWEEN 0 AND 3),
   CONSTRAINT "AdminAuditExport_content_hash_check"
     CHECK ("contentSha256" IS NULL OR "contentSha256" ~ '^[a-f0-9]{64}$'),
+  CONSTRAINT "AdminAuditExport_transition_ref_hash_check"
+    CHECK ("lastTransitionRefHash" IS NULL OR "lastTransitionRefHash" ~ '^[a-f0-9]{64}$'),
   CONSTRAINT "AdminAuditExport_sizes_check"
     CHECK (
       ("plaintextBytes" IS NULL OR "plaintextBytes" >= 0)
@@ -818,7 +821,7 @@ BEGIN
   END IF;
   database_now := (pg_catalog.clock_timestamp() AT TIME ZONE 'UTC')::timestamp(3);
   NEW."state" := 'PENDING';
-  NEW."generation" := 1;
+  NEW."generation" := 0;
   NEW."attemptNumber" := 0;
   NEW."attemptId" := NULL;
   NEW."claimOwnerHash" := NULL;
@@ -834,6 +837,7 @@ BEGIN
   NEW."plaintextBytes" := NULL;
   NEW."encryptedBytes" := NULL;
   NEW."failureCode" := NULL;
+  NEW."lastTransitionRefHash" := NULL;
   NEW."createdAt" := database_now;
   NEW."readyAt" := NULL;
   NEW."failedAt" := NULL;
@@ -877,7 +881,8 @@ BEGIN
              NEW."attemptStartedAt", NEW."attemptDeadline", NEW."leaseExpiresAt",
              NEW."nextAttemptAt", NEW."objectKey", NEW."contentSha256",
              NEW."signatureKeyId", NEW."storageKeyId", NEW."plaintextBytes",
-             NEW."encryptedBytes", NEW."failureCode", NEW."createdAt", NEW."readyAt",
+             NEW."encryptedBytes", NEW."failureCode", NEW."lastTransitionRefHash",
+             NEW."createdAt", NEW."readyAt",
              NEW."failedAt", NEW."expiresAt", NEW."expiredAt")
         IS NOT DISTINCT FROM
         ROW(OLD."id", OLD."creatorAdminUserId", OLD."snapshotId", OLD."sourceAuditLogId",
@@ -885,7 +890,8 @@ BEGIN
             OLD."attemptStartedAt", OLD."attemptDeadline", OLD."leaseExpiresAt",
             OLD."nextAttemptAt", OLD."objectKey", OLD."contentSha256",
             OLD."signatureKeyId", OLD."storageKeyId", OLD."plaintextBytes",
-            OLD."encryptedBytes", OLD."failureCode", OLD."createdAt", OLD."readyAt",
+            OLD."encryptedBytes", OLD."failureCode", OLD."lastTransitionRefHash",
+            OLD."createdAt", OLD."readyAt",
             OLD."failedAt", OLD."expiresAt", OLD."expiredAt") THEN
     RETURN NEW;
   END IF;
@@ -905,61 +911,109 @@ BEGIN
        OR NEW."generation" <> OLD."generation" + 1
        OR NEW."attemptNumber" <> OLD."attemptNumber" + 1
        OR NEW."attemptNumber" > 3
-       OR NEW."attemptId" IS NULL OR NEW."claimOwnerHash" IS NULL
-       OR (OLD."state" = 'PROCESSING' AND OLD."attemptDeadline" <= database_now) THEN
+       OR NEW."attemptId" IS NULL OR NEW."claimOwnerHash" IS NULL THEN
       RAISE EXCEPTION USING ERRCODE = '23514',
         MESSAGE = 'C2b export claim is invalid';
     END IF;
     NEW."state" := 'PROCESSING';
-    IF OLD."attemptStartedAt" IS NULL THEN
-      NEW."attemptStartedAt" := database_now;
-      NEW."attemptDeadline" := database_now + INTERVAL '600 seconds';
-    ELSE
-      NEW."attemptStartedAt" := OLD."attemptStartedAt";
-      NEW."attemptDeadline" := OLD."attemptDeadline";
-    END IF;
+    NEW."attemptStartedAt" := database_now;
+    NEW."attemptDeadline" := database_now + INTERVAL '600 seconds';
     NEW."leaseExpiresAt" := LEAST(database_now + INTERVAL '120 seconds', NEW."attemptDeadline");
     NEW."nextAttemptAt" := NULL;
+    NEW."lastTransitionRefHash" := NULL;
   ELSIF OLD."state" = 'PROCESSING' AND NEW."state" = 'PROCESSING' THEN
     IF NEW."generation" IS DISTINCT FROM OLD."generation"
        OR NEW."attemptNumber" IS DISTINCT FROM OLD."attemptNumber"
        OR NEW."attemptStartedAt" IS DISTINCT FROM OLD."attemptStartedAt"
        OR NEW."attemptDeadline" IS DISTINCT FROM OLD."attemptDeadline"
-       OR database_now >= OLD."attemptDeadline"
+       OR NEW."objectKey" IS DISTINCT FROM OLD."objectKey"
+       OR NEW."contentSha256" IS DISTINCT FROM OLD."contentSha256"
+       OR NEW."signatureKeyId" IS DISTINCT FROM OLD."signatureKeyId"
+       OR NEW."storageKeyId" IS DISTINCT FROM OLD."storageKeyId"
+       OR NEW."plaintextBytes" IS DISTINCT FROM OLD."plaintextBytes"
+       OR NEW."encryptedBytes" IS DISTINCT FROM OLD."encryptedBytes"
+       OR NEW."readyAt" IS DISTINCT FROM OLD."readyAt"
+       OR NEW."failedAt" IS DISTINCT FROM OLD."failedAt"
+       OR NEW."expiresAt" IS DISTINCT FROM OLD."expiresAt"
+       OR NEW."expiredAt" IS DISTINCT FROM OLD."expiredAt"
        OR (
          NEW."attemptId" IS NOT NULL
          AND (
            NEW."attemptId" IS DISTINCT FROM OLD."attemptId"
            OR NEW."claimOwnerHash" IS DISTINCT FROM OLD."claimOwnerHash"
            OR NEW."nextAttemptAt" IS NOT NULL
+           OR NEW."failureCode" IS DISTINCT FROM OLD."failureCode"
+           OR NEW."stagingObjectKey" IS DISTINCT FROM OLD."stagingObjectKey"
+           OR NEW."lastTransitionRefHash" IS DISTINCT FROM OLD."lastTransitionRefHash"
          )
        )
        OR (
          NEW."attemptId" IS NULL
          AND (
            OLD."attemptId" IS NULL OR OLD."claimOwnerHash" IS NULL
-           OR NEW."claimOwnerHash" IS NOT NULL OR NEW."leaseExpiresAt" IS NOT NULL
-           OR OLD."attemptNumber" >= 3
+            OR NEW."claimOwnerHash" IS NOT NULL OR NEW."leaseExpiresAt" IS NOT NULL
+            OR NEW."nextAttemptAt" IS NOT NULL
+            OR NEW."stagingObjectKey" IS NOT NULL
          )
        ) THEN
       RAISE EXCEPTION USING ERRCODE = '23514',
         MESSAGE = 'C2b export processing transition is invalid';
     END IF;
     IF NEW."attemptId" IS NULL THEN
-      NEW."claimOwnerHash" := NULL;
-      NEW."leaseExpiresAt" := NULL;
-      NEW."nextAttemptAt" := CASE
-        WHEN NEW."nextAttemptAt" IS NOT NULL
-          AND NEW."nextAttemptAt" = OLD."leaseExpiresAt"
-          THEN OLD."leaseExpiresAt"
-        ELSE database_now + CASE OLD."attemptNumber"
+      IF OLD."attemptNumber" >= 3 THEN
+        RAISE EXCEPTION USING ERRCODE = '23514',
+          MESSAGE = 'C2b export exhausted attempt must be terminalized';
+      END IF;
+      IF NEW."lastTransitionRefHash" IS NULL
+         OR NEW."lastTransitionRefHash" !~ '^[a-f0-9]{64}$' THEN
+        RAISE EXCEPTION USING ERRCODE = '23514',
+          MESSAGE = 'C2b export retry transition reference is invalid';
+      END IF;
+      IF NEW."failureCode" = 'DEPENDENCY_UNAVAILABLE' THEN
+        IF OLD."nextAttemptAt" IS NOT NULL
+           OR OLD."leaseExpiresAt" <= database_now
+           OR database_now >= OLD."attemptDeadline" THEN
+          RAISE EXCEPTION USING ERRCODE = '23514',
+            MESSAGE = 'C2b export ordinary retry fence is no longer active';
+        END IF;
+        NEW."nextAttemptAt" := database_now + CASE OLD."attemptNumber"
           WHEN 1 THEN INTERVAL '30 seconds'
           WHEN 2 THEN INTERVAL '120 seconds'
           ELSE INTERVAL '0 seconds'
-        END
-      END;
+        END;
+        NEW."failureCode" := NULL;
+      ELSIF NEW."failureCode" IS NULL THEN
+        IF OLD."nextAttemptAt" IS NOT NULL
+           OR (
+             OLD."leaseExpiresAt" > database_now
+             AND database_now < OLD."attemptDeadline"
+           ) THEN
+          RAISE EXCEPTION USING ERRCODE = '23514',
+            MESSAGE = 'C2b export watchdog transition is not eligible';
+        END IF;
+        NEW."nextAttemptAt" := CASE
+          WHEN database_now >= OLD."attemptDeadline"
+            THEN database_now + CASE OLD."attemptNumber"
+              WHEN 1 THEN INTERVAL '30 seconds'
+              WHEN 2 THEN INTERVAL '120 seconds'
+              ELSE INTERVAL '0 seconds'
+            END
+          ELSE OLD."leaseExpiresAt"
+        END;
+      ELSE
+        RAISE EXCEPTION USING ERRCODE = '23514',
+          MESSAGE = 'C2b export retry dispatch is invalid';
+      END IF;
+      NEW."claimOwnerHash" := NULL;
+      NEW."leaseExpiresAt" := NULL;
       NEW."stagingObjectKey" := NULL;
     ELSE
+      IF OLD."nextAttemptAt" IS NOT NULL
+         OR OLD."leaseExpiresAt" <= database_now
+         OR database_now >= OLD."attemptDeadline" THEN
+        RAISE EXCEPTION USING ERRCODE = '23514',
+          MESSAGE = 'C2b export heartbeat fence is no longer active';
+      END IF;
       NEW."leaseExpiresAt" := LEAST(
         database_now + INTERVAL '120 seconds',
         OLD."attemptDeadline"
@@ -967,16 +1021,46 @@ BEGIN
       NEW."nextAttemptAt" := NULL;
     END IF;
   ELSIF OLD."state" = 'PROCESSING' AND NEW."state" IN ('READY', 'FAILED') THEN
-    IF (NEW."state" = 'READY' AND database_now >= OLD."attemptDeadline")
-       OR OLD."nextAttemptAt" IS NOT NULL
+    IF OLD."nextAttemptAt" IS NOT NULL
        OR OLD."attemptId" IS NULL OR OLD."claimOwnerHash" IS NULL
-       OR (NEW."state" = 'READY' AND OLD."leaseExpiresAt" <= database_now)
        OR NEW."generation" IS DISTINCT FROM OLD."generation"
        OR NEW."attemptNumber" IS DISTINCT FROM OLD."attemptNumber"
        OR NEW."attemptId" IS DISTINCT FROM OLD."attemptId"
        OR NEW."claimOwnerHash" IS DISTINCT FROM OLD."claimOwnerHash" THEN
       RAISE EXCEPTION USING ERRCODE = '23514',
         MESSAGE = 'C2b export terminal CAS is invalid';
+    END IF;
+    IF NEW."lastTransitionRefHash" IS NULL
+       OR NEW."lastTransitionRefHash" !~ '^[a-f0-9]{64}$' THEN
+      RAISE EXCEPTION USING ERRCODE = '23514',
+        MESSAGE = 'C2b export terminal transition reference is invalid';
+    END IF;
+    IF NEW."state" = 'READY'
+       AND (OLD."leaseExpiresAt" <= database_now OR database_now >= OLD."attemptDeadline") THEN
+      RAISE EXCEPTION USING ERRCODE = '23514',
+        MESSAGE = 'C2b export READY fence is no longer active';
+    END IF;
+    IF NEW."state" = 'FAILED'
+       AND NOT (
+         (
+           OLD."leaseExpiresAt" > database_now
+           AND database_now < OLD."attemptDeadline"
+           AND (
+             NEW."failureCode" <> 'RETRY_BUDGET_EXHAUSTED'
+             OR OLD."attemptNumber" >= 3
+           )
+         )
+         OR (
+           OLD."attemptNumber" >= 3
+           AND NEW."failureCode" = 'RETRY_BUDGET_EXHAUSTED'
+           AND (
+             OLD."leaseExpiresAt" <= database_now
+             OR OLD."attemptDeadline" <= database_now
+           )
+         )
+       ) THEN
+      RAISE EXCEPTION USING ERRCODE = '23514',
+        MESSAGE = 'C2b export FAILED fence is no longer active';
     END IF;
     NEW."attemptId" := NULL;
     NEW."claimOwnerHash" := NULL;
@@ -1002,6 +1086,7 @@ BEGIN
            NEW."attemptDeadline", NEW."leaseExpiresAt", NEW."nextAttemptAt",
            NEW."contentSha256", NEW."signatureKeyId", NEW."storageKeyId",
            NEW."plaintextBytes", NEW."encryptedBytes", NEW."failureCode",
+           NEW."lastTransitionRefHash",
            NEW."createdAt", NEW."readyAt", NEW."failedAt", NEW."expiresAt")
        IS DISTINCT FROM
        ROW(OLD."id", OLD."creatorAdminUserId", OLD."snapshotId",
@@ -1010,6 +1095,7 @@ BEGIN
            OLD."attemptDeadline", OLD."leaseExpiresAt", OLD."nextAttemptAt",
            OLD."contentSha256", OLD."signatureKeyId", OLD."storageKeyId",
            OLD."plaintextBytes", OLD."encryptedBytes", OLD."failureCode",
+           OLD."lastTransitionRefHash",
            OLD."createdAt", OLD."readyAt", OLD."failedAt", OLD."expiresAt")
        OR OLD."expiresAt" > database_now OR NEW."objectKey" IS NOT NULL
        OR EXISTS (
@@ -1614,6 +1700,7 @@ BEGIN
        OR NEW."context" <> 'SYSTEM'
        OR NEW."causationEventId" IS DISTINCT FROM source_audit."id"
        OR NEW."delegatedByAdminUserId" IS DISTINCT FROM source_audit."adminUserId"
+       OR NEW."systemExecutionRefHash" IS DISTINCT FROM export_entry."lastTransitionRefHash"
        OR NEW."causationSecurityEventId" IS NOT NULL
        OR (
          export_entry."state" = 'READY'

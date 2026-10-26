@@ -16,7 +16,29 @@ export interface ClaimedAdminAuditExport extends AdminAuditExportRecord {
 
 export type AdminAuditExportWatchdogResult = 'IDLE' | 'REQUEUED' | 'FAILED' | 'STALE_FENCE';
 export type AdminAuditExportFailureDisposition =
-  'RETRYABLE' | 'DEADLINE_EXPIRED' | 'BUDGET_EXHAUSTED' | 'STALE_FENCE';
+  | 'RETRYABLE'
+  | 'DEADLINE_EXPIRED'
+  | 'LEASE_EXPIRED'
+  | 'BUDGET_EXHAUSTED'
+  | 'RETRY_SCHEDULED'
+  | 'STALE_FENCE';
+
+export type AdminAuditExportCommitReconciliation =
+  'APPLIED' | 'ACTIVE' | 'WATCHDOG_REQUIRED' | 'RETRY_SCHEDULED' | 'STALE_FENCE';
+
+export interface AdminAuditExportReadyArtifact {
+  readonly contentSha256: string;
+  readonly encryptedBytes: number;
+  readonly objectKey: string;
+  readonly plaintextBytes: number;
+  readonly signatureKeyId: string;
+  readonly stagingObjectKey: string;
+  readonly storageKeyId: string;
+}
+
+interface AdminAuditExportInternalRecord extends AdminAuditExportRecord {
+  readonly lastTransitionRefHash: string | null;
+}
 
 export interface AdminAuditExportWatchdogCandidate extends ClaimedAdminAuditExport {
   readonly deadlineExpired: boolean;
@@ -28,11 +50,90 @@ function exportColumns(qualifier?: string): string {
     ${prefix}"generation", ${prefix}"attemptNumber", ${prefix}"attemptId", ${prefix}"claimOwnerHash", ${prefix}"attemptStartedAt",
     ${prefix}"attemptDeadline", ${prefix}"leaseExpiresAt", ${prefix}"nextAttemptAt", ${prefix}"stagingObjectKey", ${prefix}"objectKey",
     ${prefix}"contentSha256", ${prefix}"signatureKeyId", ${prefix}"storageKeyId", ${prefix}"plaintextBytes", ${prefix}"encryptedBytes",
-    ${prefix}"failureCode", ${prefix}"createdAt", ${prefix}"readyAt", ${prefix}"failedAt", ${prefix}"expiresAt", ${prefix}"expiredAt"`;
+    ${prefix}"failureCode", ${prefix}"lastTransitionRefHash", ${prefix}"createdAt", ${prefix}"readyAt", ${prefix}"failedAt", ${prefix}"expiresAt", ${prefix}"expiredAt"`;
 }
 
 export class AdminAuditExportTransactionRepository {
   constructor(private readonly transaction: AdminC2Transaction) {}
+
+  private async lockById(id: string): Promise<AdminAuditExportInternalRecord | undefined> {
+    const result = await this.transaction.query<AdminAuditExportInternalRecord>(
+      `SELECT ${exportColumns()}
+         FROM "AdminAuditExport"
+        WHERE "id" = $1
+        FOR UPDATE`,
+      [id],
+    );
+    return result.rows[0];
+  }
+
+  private async databaseNow(): Promise<Date> {
+    const result = await this.transaction.query<QueryResultRow & { databaseNow: Date }>(
+      `SELECT (pg_catalog.clock_timestamp() AT TIME ZONE 'UTC')::timestamp(3)
+                AS "databaseNow"`,
+    );
+    const databaseNow = result.rows[0]?.databaseNow;
+    if (!(databaseNow instanceof Date)) throw new TypeError('PostgreSQL time is missing.');
+    return databaseNow;
+  }
+
+  private sameGeneration(
+    left: AdminAuditExportRecord['generation'],
+    right: AdminAuditExportRecord['generation'],
+  ): boolean {
+    return String(left) === String(right);
+  }
+
+  private isSameScheduledAttempt(
+    claimed: ClaimedAdminAuditExport,
+    record: AdminAuditExportInternalRecord,
+  ): boolean {
+    return (
+      record.state === 'PROCESSING' &&
+      this.sameGeneration(record.generation, claimed.generation) &&
+      record.attemptNumber === claimed.attemptNumber &&
+      record.attemptId === null &&
+      record.claimOwnerHash === null &&
+      record.attemptStartedAt?.getTime() === claimed.attemptStartedAt.getTime() &&
+      record.attemptDeadline?.getTime() === claimed.attemptDeadline.getTime() &&
+      record.leaseExpiresAt === null &&
+      record.nextAttemptAt !== null &&
+      record.stagingObjectKey === null &&
+      record.failureCode === null
+    );
+  }
+
+  private async classifyLockedAttempt(
+    claimed: ClaimedAdminAuditExport,
+    record: AdminAuditExportRecord,
+  ): Promise<AdminAuditExportFailureDisposition> {
+    if (
+      record.state !== 'PROCESSING' ||
+      !this.sameGeneration(record.generation, claimed.generation)
+    ) {
+      return 'STALE_FENCE';
+    }
+    if (
+      record.attemptId === null &&
+      record.claimOwnerHash === null &&
+      record.nextAttemptAt !== null
+    ) {
+      return 'RETRY_SCHEDULED';
+    }
+    if (
+      record.attemptId !== claimed.attemptId ||
+      record.claimOwnerHash !== claimed.claimOwnerHash ||
+      record.nextAttemptAt !== null ||
+      record.attemptDeadline === null ||
+      record.leaseExpiresAt === null
+    ) {
+      return 'STALE_FENCE';
+    }
+    const databaseNow = await this.databaseNow();
+    if (record.attemptDeadline.getTime() <= databaseNow.getTime()) return 'DEADLINE_EXPIRED';
+    if (record.leaseExpiresAt.getTime() <= databaseNow.getTime()) return 'LEASE_EXPIRED';
+    return record.attemptNumber >= 3 ? 'BUDGET_EXHAUSTED' : 'RETRYABLE';
+  }
 
   async claimNext(
     attemptId: string,
@@ -48,11 +149,6 @@ export class AdminAuditExportTransactionRepository {
             )
             AND "nextAttemptAt" <=
                 (pg_catalog.statement_timestamp() AT TIME ZONE 'UTC')::timestamp(3)
-            AND (
-              "attemptDeadline" IS NULL
-              OR "attemptDeadline" >
-                 (pg_catalog.statement_timestamp() AT TIME ZONE 'UTC')::timestamp(3)
-            )
             AND "attemptNumber" < 3
           ORDER BY "nextAttemptAt" ASC, "createdAt" ASC, "id" ASC
           FOR UPDATE SKIP LOCKED
@@ -90,10 +186,7 @@ export class AdminAuditExportTransactionRepository {
 
   async findWatchdogCandidate(): Promise<AdminAuditExportWatchdogCandidate | undefined> {
     const result = await this.transaction.query<AdminAuditExportWatchdogCandidate>(
-      `SELECT ${exportColumns()},
-              ("attemptDeadline" <=
-               (pg_catalog.statement_timestamp() AT TIME ZONE 'UTC')::timestamp(3))
-                AS "deadlineExpired"
+      `SELECT ${exportColumns()}, false AS "deadlineExpired"
          FROM "AdminAuditExport"
         WHERE "state" = 'PROCESSING'
           AND "attemptId" IS NOT NULL
@@ -121,51 +214,51 @@ export class AdminAuditExportTransactionRepository {
     requestId: string,
     systemExecutionRefHash: string,
   ): Promise<AdminAuditExportWatchdogResult> {
-    const result = await this.transaction.query<AdminAuditExportWatchdogCandidate>(
-      `SELECT ${exportColumns()},
-              ("attemptDeadline" <=
-               (pg_catalog.statement_timestamp() AT TIME ZONE 'UTC')::timestamp(3))
-                AS "deadlineExpired"
-         FROM "AdminAuditExport"
-        WHERE "id" = $1
-          AND "state" = 'PROCESSING'
-          AND "generation" = $2
-          AND "attemptId" = $3
-          AND "claimOwnerHash" = $4
-          AND "leaseExpiresAt" IS NOT NULL
-          AND (
-            "attemptDeadline" <=
-              (pg_catalog.statement_timestamp() AT TIME ZONE 'UTC')::timestamp(3)
-            OR "leaseExpiresAt" <=
-              (pg_catalog.statement_timestamp() AT TIME ZONE 'UTC')::timestamp(3)
-          )
-        FOR UPDATE SKIP LOCKED
-        LIMIT 1`,
-      [candidate.id, candidate.generation, candidate.attemptId, candidate.claimOwnerHash],
-    );
-    const claimed = result.rows[0];
-    if (claimed === undefined) return 'STALE_FENCE';
-    if (claimed.deadlineExpired || claimed.attemptNumber >= 3) {
-      return (await this.finishFailed(
-        claimed,
-        'RETRY_BUDGET_EXHAUSTED',
+    if (candidate.attemptNumber >= 3) {
+      const terminal = await this.transaction.query<QueryResultRow & { id: string }>(
+        `UPDATE "AdminAuditExport"
+            SET "state" = 'FAILED', "failureCode" = 'RETRY_BUDGET_EXHAUSTED',
+                "stagingObjectKey" = NULL, "lastTransitionRefHash" = $5
+          WHERE "id" = $1 AND "state" = 'PROCESSING' AND "generation" = $2
+            AND "attemptId" = $3 AND "claimOwnerHash" = $4
+            AND "nextAttemptAt" IS NULL
+            AND "attemptNumber" >= 3
+         RETURNING "id"`,
+        [
+          candidate.id,
+          candidate.generation,
+          candidate.attemptId,
+          candidate.claimOwnerHash,
+          systemExecutionRefHash,
+        ],
+      );
+      if (terminal.rowCount !== 1) return 'STALE_FENCE';
+      await this.insertSystemAudit(
+        candidate,
+        'REJECTED',
+        'DEPENDENCY_UNAVAILABLE',
         requestId,
         systemExecutionRefHash,
-      ))
-        ? 'FAILED'
-        : 'STALE_FENCE';
+      );
+      return 'FAILED';
     }
     const requeued = await this.transaction.query(
       `UPDATE "AdminAuditExport"
           SET "attemptId" = NULL, "claimOwnerHash" = NULL,
-              "leaseExpiresAt" = NULL, "nextAttemptAt" = "leaseExpiresAt"
+              "leaseExpiresAt" = NULL, "nextAttemptAt" = NULL,
+              "failureCode" = NULL, "stagingObjectKey" = NULL,
+              "lastTransitionRefHash" = $5
         WHERE "id" = $1 AND "state" = 'PROCESSING' AND "generation" = $2
           AND "attemptId" = $3 AND "claimOwnerHash" = $4
-          AND "leaseExpiresAt" <=
-              (pg_catalog.statement_timestamp() AT TIME ZONE 'UTC')::timestamp(3)
-          AND "attemptDeadline" >
-              (pg_catalog.statement_timestamp() AT TIME ZONE 'UTC')::timestamp(3)`,
-      [claimed.id, claimed.generation, claimed.attemptId, claimed.claimOwnerHash],
+          AND "nextAttemptAt" IS NULL
+          AND "attemptNumber" < 3`,
+      [
+        candidate.id,
+        candidate.generation,
+        candidate.attemptId,
+        candidate.claimOwnerHash,
+        systemExecutionRefHash,
+      ],
     );
     return requeued.rowCount === 1 ? 'REQUEUED' : 'STALE_FENCE';
   }
@@ -402,10 +495,10 @@ export class AdminAuditExportTransactionRepository {
   async heartbeat(claimed: ClaimedAdminAuditExport): Promise<boolean> {
     const result = await this.transaction.query(
       `UPDATE "AdminAuditExport"
-          SET "leaseExpiresAt" =
-              (pg_catalog.statement_timestamp() AT TIME ZONE 'UTC')::timestamp(3)
+          SET "leaseExpiresAt" = "leaseExpiresAt"
         WHERE "id" = $1 AND "state" = 'PROCESSING' AND "generation" = $2
-          AND "attemptId" = $3 AND "claimOwnerHash" = $4`,
+          AND "attemptId" = $3 AND "claimOwnerHash" = $4
+          AND "nextAttemptAt" IS NULL`,
       [claimed.id, claimed.generation, claimed.attemptId, claimed.claimOwnerHash],
     );
     return result.rowCount === 1;
@@ -414,75 +507,59 @@ export class AdminAuditExportTransactionRepository {
   async failureDisposition(
     claimed: ClaimedAdminAuditExport,
   ): Promise<AdminAuditExportFailureDisposition> {
-    const result = await this.transaction.query<QueryResultRow & { disposition: string }>(
-      `SELECT CASE
-          WHEN "state" <> 'PROCESSING'
-            OR "generation" <> $2
-            OR "attemptId" IS DISTINCT FROM $3
-            OR "claimOwnerHash" IS DISTINCT FROM $4
-            THEN 'STALE_FENCE'
-          WHEN "attemptDeadline" <=
-               (pg_catalog.statement_timestamp() AT TIME ZONE 'UTC')::timestamp(3)
-            THEN 'DEADLINE_EXPIRED'
-          WHEN "attemptNumber" >= 3 THEN 'BUDGET_EXHAUSTED'
-          ELSE 'RETRYABLE'
-        END AS "disposition"
-        FROM "AdminAuditExport"
-       WHERE "id" = $1`,
-      [claimed.id, claimed.generation, claimed.attemptId, claimed.claimOwnerHash],
-    );
-    const disposition = result.rows[0]?.disposition;
-    return disposition === 'RETRYABLE' ||
-      disposition === 'DEADLINE_EXPIRED' ||
-      disposition === 'BUDGET_EXHAUSTED'
-      ? disposition
-      : 'STALE_FENCE';
+    const record = await this.lockById(claimed.id);
+    return record === undefined ? 'STALE_FENCE' : await this.classifyLockedAttempt(claimed, record);
   }
 
   async remainingAttemptMilliseconds(
     claimed: ClaimedAdminAuditExport,
   ): Promise<number | undefined> {
-    const result = await this.transaction.query<QueryResultRow & { remainingMs: number }>(
-      `SELECT GREATEST(
-          0,
-          floor(EXTRACT(EPOCH FROM (
-            "attemptDeadline"
-            - (pg_catalog.statement_timestamp() AT TIME ZONE 'UTC')::timestamp(3)
-          )) * 1000)
-        )::integer AS "remainingMs"
-        FROM "AdminAuditExport"
-       WHERE "id" = $1 AND "state" = 'PROCESSING' AND "generation" = $2
-         AND "attemptId" = $3 AND "claimOwnerHash" = $4`,
-      [claimed.id, claimed.generation, claimed.attemptId, claimed.claimOwnerHash],
-    );
-    return result.rows[0]?.remainingMs;
+    const record = await this.lockById(claimed.id);
+    if (
+      record === undefined ||
+      record.state !== 'PROCESSING' ||
+      !this.sameGeneration(record.generation, claimed.generation) ||
+      record.attemptId !== claimed.attemptId ||
+      record.claimOwnerHash !== claimed.claimOwnerHash ||
+      record.nextAttemptAt !== null ||
+      record.attemptDeadline === null ||
+      record.leaseExpiresAt === null
+    ) {
+      return undefined;
+    }
+    const databaseNow = await this.databaseNow();
+    if (record.leaseExpiresAt.getTime() <= databaseNow.getTime()) return undefined;
+    return Math.max(0, record.attemptDeadline.getTime() - databaseNow.getTime());
   }
 
-  async scheduleRetry(claimed: ClaimedAdminAuditExport): Promise<boolean> {
+  async scheduleRetry(
+    claimed: ClaimedAdminAuditExport,
+    transitionRefHash: string,
+  ): Promise<boolean> {
     const result = await this.transaction.query(
       `UPDATE "AdminAuditExport"
-          SET "attemptId" = NULL, "claimOwnerHash" = NULL, "leaseExpiresAt" = NULL
+          SET "attemptId" = NULL, "claimOwnerHash" = NULL, "leaseExpiresAt" = NULL,
+              "nextAttemptAt" = NULL,
+              "failureCode" = 'DEPENDENCY_UNAVAILABLE', "stagingObjectKey" = NULL,
+              "lastTransitionRefHash" = $5
         WHERE "id" = $1 AND "state" = 'PROCESSING' AND "generation" = $2
           AND "attemptId" = $3 AND "claimOwnerHash" = $4
-          AND "attemptDeadline" >
-              (pg_catalog.statement_timestamp() AT TIME ZONE 'UTC')::timestamp(3)
+          AND "nextAttemptAt" IS NULL
           AND "attemptNumber" < 3`,
-      [claimed.id, claimed.generation, claimed.attemptId, claimed.claimOwnerHash],
+      [
+        claimed.id,
+        claimed.generation,
+        claimed.attemptId,
+        claimed.claimOwnerHash,
+        transitionRefHash,
+      ],
     );
     return result.rowCount === 1;
   }
 
   async finishReady(
     claimed: ClaimedAdminAuditExport,
-    artifact: Readonly<{
-      contentSha256: string;
-      encryptedBytes: number;
-      objectKey: string;
-      plaintextBytes: number;
-      signatureKeyId: string;
-      stagingObjectKey: string;
-      storageKeyId: string;
-    }>,
+    artifact: AdminAuditExportReadyArtifact,
     requestId: string,
     systemExecutionRefHash: string,
   ): Promise<boolean> {
@@ -490,9 +567,11 @@ export class AdminAuditExportTransactionRepository {
       `UPDATE "AdminAuditExport"
           SET "state" = 'READY', "stagingObjectKey" = $5, "objectKey" = $6,
               "contentSha256" = $7, "signatureKeyId" = $8, "storageKeyId" = $9,
-              "plaintextBytes" = $10, "encryptedBytes" = $11
+              "plaintextBytes" = $10, "encryptedBytes" = $11,
+              "lastTransitionRefHash" = $12
         WHERE "id" = $1 AND "state" = 'PROCESSING' AND "generation" = $2
           AND "attemptId" = $3 AND "claimOwnerHash" = $4
+          AND "nextAttemptAt" IS NULL
        RETURNING "id"`,
       [
         claimed.id,
@@ -506,6 +585,7 @@ export class AdminAuditExportTransactionRepository {
         artifact.storageKeyId,
         artifact.plaintextBytes,
         artifact.encryptedBytes,
+        systemExecutionRefHash,
       ],
     );
     if (updated.rowCount !== 1) return false;
@@ -523,6 +603,7 @@ export class AdminAuditExportTransactionRepository {
     requestId: string,
     systemExecutionRefHash: string,
   ): Promise<boolean> {
+    if (failureCode === 'RETRY_BUDGET_EXHAUSTED' && claimed.attemptNumber < 3) return false;
     const auditFailure =
       failureCode === 'PROJECTION_BUDGET_EXCEEDED'
         ? 'PROJECTION_BUDGET_EXCEEDED'
@@ -531,10 +612,19 @@ export class AdminAuditExportTransactionRepository {
           : 'DEPENDENCY_UNAVAILABLE';
     const updated = await this.transaction.query(
       `UPDATE "AdminAuditExport"
-          SET "state" = 'FAILED', "failureCode" = $5, "stagingObjectKey" = NULL
+          SET "state" = 'FAILED', "failureCode" = $5, "stagingObjectKey" = NULL,
+              "lastTransitionRefHash" = $6
         WHERE "id" = $1 AND "state" = 'PROCESSING' AND "generation" = $2
-          AND "attemptId" = $3 AND "claimOwnerHash" = $4`,
-      [claimed.id, claimed.generation, claimed.attemptId, claimed.claimOwnerHash, failureCode],
+          AND "attemptId" = $3 AND "claimOwnerHash" = $4
+          AND "nextAttemptAt" IS NULL`,
+      [
+        claimed.id,
+        claimed.generation,
+        claimed.attemptId,
+        claimed.claimOwnerHash,
+        failureCode,
+        systemExecutionRefHash,
+      ],
     );
     if (updated.rowCount !== 1) return false;
     await this.insertSystemAudit(
@@ -545,6 +635,125 @@ export class AdminAuditExportTransactionRepository {
       systemExecutionRefHash,
     );
     return true;
+  }
+
+  async reconcileReady(
+    claimed: ClaimedAdminAuditExport,
+    artifact: AdminAuditExportReadyArtifact,
+    _requestId: string,
+    systemExecutionRefHash: string,
+  ): Promise<AdminAuditExportCommitReconciliation> {
+    const record = await this.lockById(claimed.id);
+    if (record === undefined) return 'STALE_FENCE';
+    const exactReady =
+      record.state === 'READY' &&
+      this.sameGeneration(record.generation, claimed.generation) &&
+      record.attemptNumber === claimed.attemptNumber &&
+      record.attemptId === null &&
+      record.claimOwnerHash === null &&
+      record.attemptStartedAt === null &&
+      record.attemptDeadline === null &&
+      record.leaseExpiresAt === null &&
+      record.nextAttemptAt === null &&
+      record.stagingObjectKey === artifact.stagingObjectKey &&
+      record.objectKey === artifact.objectKey &&
+      record.contentSha256 === artifact.contentSha256 &&
+      record.signatureKeyId === artifact.signatureKeyId &&
+      record.storageKeyId === artifact.storageKeyId &&
+      String(record.plaintextBytes) === String(artifact.plaintextBytes) &&
+      String(record.encryptedBytes) === String(artifact.encryptedBytes) &&
+      record.failureCode === null &&
+      record.lastTransitionRefHash === systemExecutionRefHash;
+    if (exactReady) return 'APPLIED';
+    return this.reconciliationFromDisposition(await this.classifyLockedAttempt(claimed, record));
+  }
+
+  async reconcileFailedOrRetry(
+    claimed: ClaimedAdminAuditExport,
+    failureCode:
+      | 'RETRY_BUDGET_EXHAUSTED'
+      | 'PROJECTION_BUDGET_EXCEEDED'
+      | 'INTEGRITY_FAILED'
+      | 'DEPENDENCY_UNAVAILABLE',
+    retry: boolean,
+    _requestId: string,
+    systemExecutionRefHash: string,
+  ): Promise<AdminAuditExportCommitReconciliation> {
+    const record = await this.lockById(claimed.id);
+    if (record === undefined) return 'STALE_FENCE';
+    if (
+      retry &&
+      this.isSameScheduledAttempt(claimed, record) &&
+      record.lastTransitionRefHash === systemExecutionRefHash
+    ) {
+      return 'APPLIED';
+    }
+    if (retry && this.isSameScheduledAttempt(claimed, record)) return 'STALE_FENCE';
+    if (
+      !retry &&
+      record.state === 'FAILED' &&
+      this.sameGeneration(record.generation, claimed.generation) &&
+      record.attemptNumber === claimed.attemptNumber &&
+      record.attemptId === null &&
+      record.claimOwnerHash === null &&
+      record.attemptStartedAt === null &&
+      record.attemptDeadline === null &&
+      record.leaseExpiresAt === null &&
+      record.nextAttemptAt === null &&
+      record.stagingObjectKey === null &&
+      record.failureCode === failureCode &&
+      record.lastTransitionRefHash === systemExecutionRefHash
+    ) {
+      return 'APPLIED';
+    }
+    return this.reconciliationFromDisposition(await this.classifyLockedAttempt(claimed, record));
+  }
+
+  async reconcileWatchdog(
+    candidate: AdminAuditExportWatchdogCandidate,
+    _requestId: string,
+    systemExecutionRefHash: string,
+  ): Promise<AdminAuditExportCommitReconciliation> {
+    const record = await this.lockById(candidate.id);
+    if (record === undefined) return 'STALE_FENCE';
+    if (
+      candidate.attemptNumber < 3 &&
+      this.isSameScheduledAttempt(candidate, record) &&
+      record.lastTransitionRefHash === systemExecutionRefHash
+    ) {
+      return 'APPLIED';
+    }
+    if (candidate.attemptNumber < 3 && this.isSameScheduledAttempt(candidate, record)) {
+      return 'STALE_FENCE';
+    }
+    if (
+      candidate.attemptNumber >= 3 &&
+      record.state === 'FAILED' &&
+      this.sameGeneration(record.generation, candidate.generation) &&
+      record.attemptNumber === candidate.attemptNumber &&
+      record.attemptId === null &&
+      record.claimOwnerHash === null &&
+      record.attemptStartedAt === null &&
+      record.attemptDeadline === null &&
+      record.leaseExpiresAt === null &&
+      record.nextAttemptAt === null &&
+      record.stagingObjectKey === null &&
+      record.failureCode === 'RETRY_BUDGET_EXHAUSTED' &&
+      record.lastTransitionRefHash === systemExecutionRefHash
+    ) {
+      return 'APPLIED';
+    }
+    return this.reconciliationFromDisposition(await this.classifyLockedAttempt(candidate, record));
+  }
+
+  private reconciliationFromDisposition(
+    disposition: AdminAuditExportFailureDisposition,
+  ): AdminAuditExportCommitReconciliation {
+    if (disposition === 'RETRYABLE' || disposition === 'BUDGET_EXHAUSTED') return 'ACTIVE';
+    if (disposition === 'DEADLINE_EXPIRED' || disposition === 'LEASE_EXPIRED') {
+      return 'WATCHDOG_REQUIRED';
+    }
+    return disposition;
   }
 
   private async insertSystemAudit(

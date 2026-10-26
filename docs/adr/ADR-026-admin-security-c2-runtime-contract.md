@@ -1,9 +1,8 @@
 # ADR-026 — Admin Security C2 Runtime Contract
 
-Statut : **ACCEPTED POUR LE PRÉREQUIS CONTRACTUEL S1.2-03C2-P0 — RUNTIME NON
-IMPLÉMENTÉ — P0/R1–R5 PUBLIÉS DANS LA DRAFT PR #51 ; R6 QUALIFIÉ
-LOCALEMENT ET AUTORISÉ POUR PUBLICATION SOUS GATES, CI R6 NON ACQUISE AU
-2026-10-13**
+Statut : **ACCEPTED — C2a INTÉGRÉ DANS MAIN — C2b R2 PUBLIÉ DANS LA DRAFT
+PR #53 ; R3 QUALIFIÉ LOCALEMENT LE 2026-10-26 — ÉTAT DE PUBLICATION COURANT
+PORTÉ PAR LA PR #53 ET SON HEAD — C3 NON COMMENCÉ**
 
 Date : 2026-10-12
 
@@ -541,3 +540,28 @@ mutation dont le résultat est inconnu.
 | connexion perdue                    | rollback pré-COMMIT non confirmable | inconnu                       | discard/destruction physique exactement une fois       | 503 neutre, COMMIT non tenté, aucun replay               |
 | COMMIT confirmé                     | commit confirmé avant 2 000 ms      | `I` post-COMMIT même client   | release réutilisable unique                            | réponse de succès de l'opération                         |
 | COMMIT inconnu                      | accusé non confirmé avant 2 000 ms  | inconnu                       | discard/destruction physique exactement une fois       | 503 neutre, aucun rollback, réconciliation, aucun replay |
+
+## Amendement C2b R3 — leases, deadlines et réconciliation exacte
+
+Un export naît `PENDING` avec génération 0 et tentative 0. Chaque claim
+autorisé crée un nouvel `attemptId`, incrémente génération et tentative, puis
+établit depuis l'heure PostgreSQL une lease de 120 secondes et une deadline
+immuable de 600 secondes. Heartbeat, READY, échec ordinaire et reprise après
+`COMMIT_UNKNOWN` exigent atomiquement l'état `PROCESSING`, le fence exact,
+`nextAttemptAt IS NULL`, une lease active et un instant strictement antérieur à
+la deadline, y compris après une attente de verrou.
+
+Aux tentatives 1 et 2, le watchdog révoque le propriétaire expiré sans audit
+terminal et programme respectivement 30 puis 120 secondes de backoff. Le claim
+suivant établit une nouvelle fenêtre temporelle. La tentative 3 peut réussir
+avant sa deadline ; son échec réessayable ou son épuisement terminalise une
+seule fois avec `RETRY_BUDGET_EXHAUSTED`. Aucun quatrième claim n'est permis.
+
+Chaque transition durable du worker porte un `lastTransitionRefHash` interne,
+lié à l'export, à la génération, au fence et au résultat exact. Seule l'identité
+`kora_admin_c2b_export_worker` dispose de `SELECT` et `UPDATE` sur cette
+colonne, sans privilège de table ni droit pour API, C1, C2a ou `PUBLIC`. Le
+marqueur et l'état durable sont committés ensemble ; une transition terminale
+exige en plus son audit SYSTEM exact dans la même transaction. Une preuve
+absente, remplacée, issue d'une autre transition ou d'un fence périmé ne vaut
+ni succès ni rollback et n'autorise aucun replay aveugle.

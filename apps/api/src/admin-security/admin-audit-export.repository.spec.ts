@@ -57,13 +57,17 @@ describe('AdminAuditExportTransactionRepository', () => {
   });
 
   it('lets PostgreSQL calculate the bounded retry backoff', async () => {
+    const transitionRefHash = 'd'.repeat(64);
     const query = vi.fn().mockResolvedValue({ command: 'UPDATE', rowCount: 1, rows: [] });
-    await expect(repository(query).scheduleRetry(claim())).resolves.toBe(true);
-    const [sql] = query.mock.calls[0] as [string, unknown[]];
+    await expect(repository(query).scheduleRetry(claim(), transitionRefHash)).resolves.toBe(true);
+    const [sql, values] = query.mock.calls[0] as [string, unknown[]];
     expect(sql).toContain('"attemptId" = NULL');
     expect(sql).not.toContain('INTERVAL');
-    expect(sql).toContain('pg_catalog.statement_timestamp()');
-    expect(sql).not.toContain('SET "nextAttemptAt"');
+    expect(sql).not.toContain('clock_timestamp');
+    expect(sql).toContain('"failureCode" = \'DEPENDENCY_UNAVAILABLE\'');
+    expect(sql).toContain('"lastTransitionRefHash" = $5');
+    expect(values[4]).toBe(transitionRefHash);
+    expect(query).toHaveBeenCalledOnce();
   });
 
   it('publishes READY and its SYSTEM audit in the same repository transaction', async () => {
@@ -90,6 +94,8 @@ describe('AdminAuditExportTransactionRepository', () => {
     expect(query).toHaveBeenCalledTimes(2);
     expect(query.mock.calls[0]?.[0]).toContain('AND "generation" = $2');
     expect(query.mock.calls[0]?.[0]).toContain('AND "attemptId" = $3');
+    expect(query.mock.calls[0]?.[0]).not.toContain('clock_timestamp');
+    expect(query.mock.calls[0]?.[0]).toContain('"lastTransitionRefHash" = $12');
     expect(query.mock.calls[1]?.[0]).toContain("'buildAdminAuditLogExport'");
   });
 
@@ -109,12 +115,93 @@ describe('AdminAuditExportTransactionRepository', () => {
   it('uses PostgreSQL time for deadline disposition and retry eligibility', async () => {
     const query = vi
       .fn()
-      .mockResolvedValueOnce({ rows: [{ disposition: 'DEADLINE_EXPIRED' }] })
-      .mockResolvedValueOnce({ rows: [{ remainingMs: 0 }] });
+      .mockResolvedValueOnce({ rows: [claim()] })
+      .mockResolvedValueOnce({
+        rows: [{ databaseNow: new Date('2026-10-23T12:10:00.000Z') }],
+      })
+      .mockResolvedValueOnce({ rows: [claim()] })
+      .mockResolvedValueOnce({
+        rows: [{ databaseNow: new Date('2026-10-23T12:01:00.000Z') }],
+      });
     await expect(repository(query).failureDisposition(claim())).resolves.toBe('DEADLINE_EXPIRED');
-    await expect(repository(query).remainingAttemptMilliseconds(claim())).resolves.toBe(0);
-    expect(query.mock.calls[0]?.[0]).toContain('pg_catalog.statement_timestamp()');
-    expect(query.mock.calls[1]?.[0]).toContain('pg_catalog.statement_timestamp()');
+    await expect(repository(query).remainingAttemptMilliseconds(claim())).resolves.toBe(540_000);
+    expect(query.mock.calls[0]?.[0]).toContain('FOR UPDATE');
+    expect(query.mock.calls[1]?.[0]).toContain('pg_catalog.clock_timestamp()');
+    expect(query.mock.calls[2]?.[0]).toContain('FOR UPDATE');
+    expect(query.mock.calls[3]?.[0]).toContain('pg_catalog.clock_timestamp()');
+  });
+
+  it('delegates the post-lock heartbeat instant to the atomic PostgreSQL trigger', async () => {
+    const query = vi.fn().mockResolvedValue({ command: 'UPDATE', rowCount: 1, rows: [] });
+    await expect(repository(query).heartbeat(claim())).resolves.toBe(true);
+    expect(query).toHaveBeenCalledOnce();
+    expect(query.mock.calls[0]?.[0]).toContain('SET "leaseExpiresAt" = "leaseExpiresAt"');
+    expect(query.mock.calls[0]?.[0]).not.toContain('clock_timestamp');
+  });
+
+  it('delegates deadline-priority watchdog timing to the atomic PostgreSQL trigger', async () => {
+    const candidate = { ...claim(), deadlineExpired: true };
+    const query = vi.fn().mockResolvedValue({ rowCount: 1, rows: [] });
+    await expect(
+      repository(query).watchdogOne(candidate, 'watchdog-request', 'd'.repeat(64)),
+    ).resolves.toBe('REQUEUED');
+    expect(query).toHaveBeenCalledOnce();
+    expect(query.mock.calls[0]?.[0]).not.toContain('clock_timestamp');
+    expect(query.mock.calls[0]?.[0]).toContain('"lastTransitionRefHash" = $5');
+    expect(query.mock.calls[0]?.[1]?.[4]).toBe('d'.repeat(64));
+  });
+
+  it('requires exact READY metadata and its durable transition marker to reconcile COMMIT_UNKNOWN', async () => {
+    const claimed = claim();
+    const artifact = {
+      contentSha256: 'c'.repeat(64),
+      encryptedBytes: 120,
+      objectKey: 'c2b/staging/final.zip.enc',
+      plaintextBytes: 80,
+      signatureKeyId: 'signature-key-v1',
+      stagingObjectKey: 'c2b/staging/final.zip.enc',
+      storageKeyId: 'storage-key-v1',
+    };
+    const ready = {
+      ...claimed,
+      ...artifact,
+      attemptDeadline: null,
+      attemptId: null,
+      attemptStartedAt: null,
+      claimOwnerHash: null,
+      leaseExpiresAt: null,
+      lastTransitionRefHash: 'd'.repeat(64),
+      state: 'READY' as const,
+    };
+    const query = vi.fn().mockResolvedValueOnce({ rows: [ready] });
+    await expect(
+      repository(query).reconcileReady(claimed, artifact, 'request-ready', 'd'.repeat(64)),
+    ).resolves.toBe('APPLIED');
+    expect(query).toHaveBeenCalledOnce();
+    expect(query.mock.calls[0]?.[0]).not.toContain('"AuditLog"');
+  });
+
+  it('refuses to reconcile a retry from a watchdog transition marker', async () => {
+    const claimed = claim();
+    const scheduled = {
+      ...claimed,
+      attemptId: null,
+      claimOwnerHash: null,
+      leaseExpiresAt: null,
+      nextAttemptAt: new Date('2026-10-23T12:01:30.000Z'),
+      lastTransitionRefHash: 'e'.repeat(64),
+    };
+    const query = vi.fn().mockResolvedValue({ rows: [scheduled] });
+    await expect(
+      repository(query).reconcileFailedOrRetry(
+        claimed,
+        'DEPENDENCY_UNAVAILABLE',
+        true,
+        'request-retry',
+        'd'.repeat(64),
+      ),
+    ).resolves.toBe('STALE_FENCE');
+    expect(query).toHaveBeenCalledOnce();
   });
 
   it('keeps cleanup bounded without requiring forbidden UPDATE privileges', async () => {

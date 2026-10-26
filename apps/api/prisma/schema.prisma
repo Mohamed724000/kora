@@ -736,38 +736,39 @@ model AdminAuditExportIdempotencyRecord {
 }
 
 model AdminAuditExport {
-  id                 String                              @id @default(uuid())
-  creatorAdminUserId String
-  creatorAdminUser   AdminUser                           @relation("AuditExportCreator", fields: [creatorAdminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  snapshotId         String                              @unique
-  snapshot           AdminAuditPaginationSnapshot        @relation(fields: [snapshotId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  sourceAuditLogId   String                              @unique
-  sourceAuditLog     AuditLog                            @relation("AuditExportSourceAudit", fields: [sourceAuditLogId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  state              AdminAuditExportState               @default(PENDING)
-  generation         BigInt                              @default(1)
-  attemptNumber      Int                                 @default(0)
-  attemptId          String?
-  claimOwnerHash     String?
-  attemptStartedAt   DateTime?
-  attemptDeadline    DateTime?
-  leaseExpiresAt     DateTime?
-  nextAttemptAt      DateTime?                           @default(now())
-  stagingObjectKey   String?                             @unique
-  objectKey          String?                             @unique
-  contentSha256      String?
-  signatureKeyId     String?
-  storageKeyId       String?
-  plaintextBytes     BigInt?
-  encryptedBytes     BigInt?
-  failureCode        AdminAuditExportFailureCode?
-  createdAt          DateTime                            @default(now())
-  readyAt            DateTime?
-  failedAt           DateTime?
-  expiresAt          DateTime?
-  expiredAt          DateTime?
-  idempotencyRecords AdminAuditExportIdempotencyRecord[]
-  readLeases         AdminAuditExportReadLease[]
-  auditLogs          AuditLog[]                          @relation("AuditExportAudits")
+  id                    String                              @id @default(uuid())
+  creatorAdminUserId    String
+  creatorAdminUser      AdminUser                           @relation("AuditExportCreator", fields: [creatorAdminUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  snapshotId            String                              @unique
+  snapshot              AdminAuditPaginationSnapshot        @relation(fields: [snapshotId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sourceAuditLogId      String                              @unique
+  sourceAuditLog        AuditLog                            @relation("AuditExportSourceAudit", fields: [sourceAuditLogId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  state                 AdminAuditExportState               @default(PENDING)
+  generation            BigInt                              @default(0)
+  attemptNumber         Int                                 @default(0)
+  attemptId             String?
+  claimOwnerHash        String?
+  attemptStartedAt      DateTime?
+  attemptDeadline       DateTime?
+  leaseExpiresAt        DateTime?
+  nextAttemptAt         DateTime?                           @default(now())
+  stagingObjectKey      String?                             @unique
+  objectKey             String?                             @unique
+  contentSha256         String?
+  signatureKeyId        String?
+  storageKeyId          String?
+  plaintextBytes        BigInt?
+  encryptedBytes        BigInt?
+  failureCode           AdminAuditExportFailureCode?
+  lastTransitionRefHash String?
+  createdAt             DateTime                            @default(now())
+  readyAt               DateTime?
+  failedAt              DateTime?
+  expiresAt             DateTime?
+  expiredAt             DateTime?
+  idempotencyRecords    AdminAuditExportIdempotencyRecord[]
+  readLeases            AdminAuditExportReadLease[]
+  auditLogs             AuditLog[]                          @relation("AuditExportAudits")
 
   @@index([state, nextAttemptAt, createdAt], map: "AdminAuditExport_claim_idx")
   @@index([state, leaseExpiresAt, attemptDeadline], map: "AdminAuditExport_watchdog_idx")

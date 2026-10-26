@@ -532,6 +532,82 @@ async function assertSchemaAndAcl(client) {
   const actual = models.rows.map((row) => row.relname).sort();
   if (JSON.stringify(actual) !== JSON.stringify([...C2B_MODELS].sort()))
     fail(`exact C2b table inventory is missing: ${JSON.stringify(actual)}`);
+  const exportDefaults = await client.query(
+    `SELECT column_name, column_default
+       FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'AdminAuditExport'
+        AND column_name IN ('generation', 'attemptNumber')
+      ORDER BY column_name`,
+  );
+  const defaults = Object.fromEntries(
+    exportDefaults.rows.map((row) => [row.column_name, String(row.column_default)]),
+  );
+  if (!/^0(?:::bigint)?$/u.test(defaults.generation ?? '') || defaults.attemptNumber !== '0') {
+    fail(`C2b export initial fence defaults differ: ${JSON.stringify(defaults)}`);
+  }
+  const exportGuards = await client.query(
+    `SELECT pg_catalog.pg_get_constraintdef(constraint_entry.oid) AS definition
+       FROM pg_catalog.pg_constraint constraint_entry
+       JOIN pg_catalog.pg_class relation_entry ON relation_entry.oid = constraint_entry.conrelid
+       JOIN pg_catalog.pg_namespace namespace_entry
+         ON namespace_entry.oid = relation_entry.relnamespace
+      WHERE namespace_entry.nspname = 'public'
+        AND relation_entry.relname = 'AdminAuditExport'
+        AND constraint_entry.conname IN (
+          'AdminAuditExport_generation_check',
+          'AdminAuditExport_attempt_check',
+          'AdminAuditExport_attempt_shape_check',
+          'AdminAuditExport_transition_ref_hash_check'
+        )
+      ORDER BY constraint_entry.conname`,
+  );
+  const guardDefinition = exportGuards.rows.map((row) => String(row.definition)).join('\n');
+  if (
+    exportGuards.rowCount !== 4 ||
+    !guardDefinition.includes('generation') ||
+    !guardDefinition.includes('>= 0') ||
+    !guardDefinition.includes("'00:10:00'::interval")
+  ) {
+    fail('C2b export generation/attempt/deadline constraints are incomplete');
+  }
+  const updateGuard = await client.query(
+    `SELECT pg_catalog.pg_get_functiondef(function_entry.oid) AS definition
+       FROM pg_catalog.pg_proc function_entry
+       JOIN pg_catalog.pg_namespace namespace_entry
+         ON namespace_entry.oid = function_entry.pronamespace
+      WHERE namespace_entry.nspname = 'public'
+        AND function_entry.proname = 'kora_guard_admin_audit_export_update'`,
+  );
+  const updateDefinition = String(updateGuard.rows[0]?.definition ?? '');
+  for (const requiredFragment of [
+    'C2b export ordinary retry fence is no longer active',
+    'C2b export watchdog transition is not eligible',
+    'C2b export retry transition reference is invalid',
+    'C2b export terminal transition reference is invalid',
+    "INTERVAL '30 seconds'",
+    "INTERVAL '120 seconds'",
+    "INTERVAL '600 seconds'",
+  ]) {
+    if (!updateDefinition.includes(requiredFragment)) {
+      fail(`C2b export update guard is missing ${requiredFragment}`);
+    }
+  }
+  const auditCausalityGuard = await client.query(
+    `SELECT pg_catalog.pg_get_functiondef(function_entry.oid) AS definition
+       FROM pg_catalog.pg_proc function_entry
+       JOIN pg_catalog.pg_namespace namespace_entry
+         ON namespace_entry.oid = function_entry.pronamespace
+      WHERE namespace_entry.nspname = 'public'
+        AND function_entry.proname = 'kora_validate_audit_log_c2b_causality'`,
+  );
+  const auditCausalityDefinition = String(auditCausalityGuard.rows[0]?.definition ?? '');
+  if (
+    !auditCausalityDefinition.includes(
+      'NEW."systemExecutionRefHash" IS DISTINCT FROM export_entry."lastTransitionRefHash"',
+    )
+  ) {
+    fail('C2b build audit is not bound to the durable export transition marker');
+  }
   const view = await client.query(
     `SELECT reloptions, pg_catalog.pg_get_viewdef(c.oid, true) AS definition
        FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
@@ -705,6 +781,54 @@ async function assertSchemaAndAcl(client) {
      ) AS allowed`,
   );
   if (workerId.rows[0]?.allowed !== true) fail('C2b worker cannot read its export aggregate');
+  const transitionMarkerPrivileges = await client.query(
+    `SELECT
+       pg_catalog.has_column_privilege(
+         'kora_admin_c2b_export_worker', 'public."AdminAuditExport"',
+         'lastTransitionRefHash', 'SELECT'
+       ) AS worker_select,
+       pg_catalog.has_column_privilege(
+         'kora_admin_c2b_export_worker', 'public."AdminAuditExport"',
+         'lastTransitionRefHash', 'UPDATE'
+       ) AS worker_update,
+       pg_catalog.has_column_privilege(
+         'kora_admin_c2b_audit_api', 'public."AdminAuditExport"',
+         'lastTransitionRefHash', 'SELECT'
+       ) AS api_select,
+       pg_catalog.has_column_privilege(
+         'kora_admin_c2b_audit_api', 'public."AdminAuditExport"',
+         'lastTransitionRefHash', 'UPDATE'
+       ) AS api_update,
+       pg_catalog.has_column_privilege(
+         'kora_admin_c2a_writer', 'public."AdminAuditExport"',
+         'lastTransitionRefHash', 'SELECT'
+       ) AS c2a_select,
+       pg_catalog.has_column_privilege(
+         'kora_admin_c2a_writer', 'public."AdminAuditExport"',
+         'lastTransitionRefHash', 'UPDATE'
+       ) AS c2a_update,
+       pg_catalog.has_column_privilege(
+         'kora_runtime', 'public."AdminAuditExport"',
+         'lastTransitionRefHash', 'SELECT'
+       ) AS runtime_select,
+       pg_catalog.has_column_privilege(
+         'kora_runtime', 'public."AdminAuditExport"',
+         'lastTransitionRefHash', 'UPDATE'
+       ) AS runtime_update`,
+  );
+  const markerAcl = transitionMarkerPrivileges.rows[0];
+  if (
+    markerAcl?.worker_select !== true ||
+    markerAcl?.worker_update !== true ||
+    markerAcl?.api_select !== false ||
+    markerAcl?.api_update !== false ||
+    markerAcl?.c2a_select !== false ||
+    markerAcl?.c2a_update !== false ||
+    markerAcl?.runtime_select !== false ||
+    markerAcl?.runtime_update !== false
+  ) {
+    fail(`C2b transition marker ACL differs: ${JSON.stringify(markerAcl)}`);
+  }
   await expectDenied(client, 'kora_admin_c2b_audit_api', 'SELECT "reason" FROM "AuditLog" LIMIT 1');
   await expectDenied(client, 'kora_admin_c2b_audit_api', 'SELECT "id" FROM "AdminUser" LIMIT 1');
   await expectDenied(
