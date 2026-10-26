@@ -1,11 +1,11 @@
 # KORA+ Final — Threat Model initial
 
-Périmètre durable couvert : **BASELINE À S1.2-03B FUSIONNÉES + S1.2-03C1
-FUSIONNÉ DANS MAIN AU MERGE
-dc97eeef72c4e299988ed19d66460011a8551cf3, NON DÉPLOYÉ + C2a R9 PUBLIÉ DANS
-LA DRAFT PR #52 AU HEAD `fd0f084fc6316c379454ef701307e79471ed92e2`,
-R10+R11 QUALIFIÉS LOCALEMENT, PUBLICATION/CI R11 NON ACQUISES — FOURNISSEURS
-DE PRODUCTION NON QUALIFIÉS — C2b/C3 NOT STARTED**.
+Périmètre durable couvert : **BASELINE À S1.2-03B ET S1.2-03C1 FUSIONNÉES +
+C2a INTÉGRÉ DANS MAIN AU MERGE
+`029e30bbc795f3d9c153782bc04e45e9f5a03f8a`, NON DÉPLOYÉ + C2b R2 PUBLIÉ
+DANS LA PR #53 DRAFT ; R3 QUALIFIÉ LOCALEMENT LE 2026-10-26 — ÉTAT DE
+PUBLICATION COURANT PORTÉ PAR LA PR #53 ET SON HEAD — FOURNISSEURS DE
+PRODUCTION NON QUALIFIÉS — C3 NON COMMENCÉ**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
 commit, push ou changement GitHub S1.1 n’avait encore été effectué : il s’agit
@@ -1475,3 +1475,48 @@ aucune publication ou CI R11 n'est affirmée. L'incident R9 et les limites sur
 les volumes, le signal Windows NON DEMONSTRATED, les 61 SKIP, Linux et les
 fournisseurs de production non qualifiés, C2b/C3 non commencés et la politique
 OSS différée restent inchangés.
+
+## C2b R1 — frontières audit/export du candidat local qualifié
+
+| Menace ou dérive                         | Contrôle local C2b                                                                                                                                  | Preuve sélectionnée                                             | Limite ou statut                |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------- |
+| Usurpation d'action par une identité C2b | matrice `session_user` + action ; quatre actions API, deux actions worker ; null/inconnue et permutations refusées                                  | validations PostgreSQL réelles, refus durable                   | PASS local                      |
+| Action C2b produite par un rôle étranger | actions réservées refusées avant les validations de contexte ; gardes C1/C2a inchangés                                                              | contamination bidirectionnelle et non-régression réelle         | PASS local                      |
+| Export marqué prêt avant vérification    | ZIP immuable, manifeste JCS V2, règle `READY_PLUS_24_HOURS`, JWS Ed25519 détaché et empreinte vérifiés avant CAS `READY`                            | tests codec/worker et campagne réelle                           | PASS local                      |
+| Fausse attestation temporelle hors ligne | signature limitée aux données connues avant READY ; dates absolues calculées au CAS par PostgreSQL et explicitement hors attestation ZIP            | contrat, codec, PostgreSQL et documentation alignés             | PASS local                      |
+| Double traitement ou résultat obsolète   | lease, fencing, verrou d'idempotence, génération, CAS et réconciliation `COMMIT_UNKNOWN` sans replay de mutation                                    | concurrence, rollback, génération expirée et état durable réels | PASS local                      |
+| Objet vérifié puis abandonné             | un seul objet staging chiffré est écrit, relu, vérifié et référencé par le CAS `READY`; cleanup borné des orphelins                                 | test stateful et processus réel                                 | PASS local                      |
+| Durée fournisseur ou retry non bornés    | bornes explicites et annulation/isolation sur BullMQ, stockage, keyring, signature, lecture et housekeeping ; trois tentatives et backoff préservés | tests de timeout et processus réel                              | PASS local                      |
+| Expiration ou read lease incohérent      | `readyAt`/`expiresAt` immuables depuis le même instant PostgreSQL ; décision, lease, transition et audit dans les transactions prévues              | expiration positive, course lease et audit unique réels         | PASS local                      |
+| Régression de la chaîne de migrations    | chaîne courante exacte de cinq migrations, chaînes historiques protégées séparément ; fresh/upgrade, projections, ACL et non-régression C1/C2a      | wrapper runtime final PASS                                      | PASS local                      |
+| Vulnérabilité du graphe npm courant      | versions corrigées parentées, scanner adversarial, installation propre, `npm ls`, audits complet/production zéro, signatures et licences            | fixture byte-identique au lock final                            | PASS local                      |
+| Faux PASS par reprise sélective          | API 287 PASS/72 SKIP ; runtime cinq migrations et métier C2b 11/11 réels rapportés séparément ; tous les anciens NON-PASS conservés                 | sorties/code séparés et archives sans écrasement                | PASS local, publication séparée |
+| Surqualification de l'environnement      | adaptateurs déterministes et infrastructure locale seulement ; aucune identité, clé ou fournisseur de production déclaré réel                       | portée des campagnes et configuration fail-closed               | production NON QUALIFIÉE        |
+
+## C2b — menaces du raccordement CI prépublication
+
+| Menace ou dérive                             | Contrôle candidat                                                                                                                                 | État prépublication                       |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| Campagne dirigée vers l'instance locale      | valeurs `KORA_C2B_INSTANCE` distinctes dérivées du run et de la tentative ; regex et refus explicite de `local` dans le processus wrapper         | PASS local, deux instances propres        |
+| Commande Windows implicite sur runner Linux  | Docker, Node et npm résolus par `Get-Command -CommandType Application`; aucun suffixe `.exe`/`.cmd` imposé                                        | PASS local, CI Linux encore pending       |
+| Succès C2b déduit d'un intitulé de job       | wrappers officiels obligatoires, marqueurs runtime/métier, décomptes exacts et inspection future des logs ; échec bloquant sans retry automatique | aucun résultat CI futur encore revendiqué |
+| Cleanup omis après échec                     | cleanup conditionnel Infrastructure et cleanup interne des wrappers conservés ; aucun `continue-on-error`                                         | contrôle de workflow conservé             |
+| Surqualification de l'attestation hors ligne | profil V2 et règle `READY_PLUS_24_HOURS`; la signature couvre les octets connus avant READY, pas l'instant serveur                                | limite explicite inchangée                |
+
+## C2b R3 — menaces lease/deadline et preuve durable
+
+| Menace ou dérive                                     | Contrôle R3                                                                                                                                                             | Preuve sélectionnée                                      | Limite conservée                          |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ----------------------------------------- |
+| Worker expiré prolongeant ou terminalisant une tâche | CAS ordinaires exigent fence exact, lease et deadline actives après verrou, sans retry déjà planifié                                                                    | PostgreSQL réel, refus durable et course après verrou    | adaptateurs locaux, production non testée |
+| Première deadline consommant tout le budget          | tentative 1/2 replanifiée sans audit terminal, backoff 30/120 ; tentative 3 seule terminale sur épuisement ; nouveau claim = nouvelle fenêtre PostgreSQL                | machine d'état réelle, succès et épuisement au troisième | horloge distribuée production non testée  |
+| Fence initial divergent du contrat                   | PENDING génération/tentative 0, premier claim 1, incréments monotones                                                                                                   | migration, Prisma et campagne réelle                     | migration candidate non intégrée          |
+| Marqueur falsifié ou réutilisé                       | hash interne lié à la transition et au fence ; seuls `SELECT`/`UPDATE` colonne pour le worker ; état et audit terminal atomiques ; substitution et fence périmé refusés | ACL exactes, trigger différé et état durable             | aucune exposition HTTP                    |
+| Réconciliation aveugle après `COMMIT_UNKNOWN`        | résultat accepté seulement si état, génération, tentative et marqueur exacts correspondent ; absent/remplacé = aucun replay                                             | tests unitaires et PostgreSQL réel                       | panne réseau réelle non simulée           |
+| Faux PASS après reprise                              | NON-PASS 12/14, 13/14 et 13/14 conservés ; campagne finale 14/14 séparée ; API 300 PASS/75 SKIP et tooling 570/570 rapportés distinctement                              | sorties, stderr et codes archivés                        | SKIP restent SKIP                         |
+
+La baseline publiée R2 porte le head `b4868b9…` et les quatre workflows verts
+`40116489202`, `40116489279`, `40116489218` et `40116489201`. La qualification
+locale R3 est datée du 2026-10-26 ; son état de publication ou de CI postérieur
+doit être constaté sur la PR #53 et son head courant. Les fournisseurs et Linux
+de production, les bases persistantes externes et C3 restent non qualifiés, et
+la politique OSS demeure différée.

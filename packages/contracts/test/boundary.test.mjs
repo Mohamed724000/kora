@@ -52,6 +52,16 @@ test('the generated boundary materializes all 27 admin-security operations', () 
   assert.match(block, /signatureAlgorithm: 'EdDSA'/);
   assert.match(block, /signaturePath: 'manifest\.sig'/);
   assert.match(block, /payload: 'RFC8785_JCS_CANONICAL_MANIFEST_UTF8_BYTES'/);
+  assert.match(block, /profile: 'KORA_ADMIN_AUDIT_EXPORT_MANIFEST_V2'/);
+  assert.match(block, /manifestVersion: 2/);
+  assert.match(block, /expirationRule: 'READY_PLUS_24_HOURS'/);
+  assert.match(block, /createdAtSemantics: 'EXPORT_REQUEST_CREATED_AT'/);
+  assert.match(block, /READY_AT_AND_EXPIRES_AT_NOT_INCLUDED_OR_SIGNED/);
+  assert.match(
+    block,
+    /manifestFields: \['createdAt', 'entries', 'expirationRule', 'exportId', 'version'\]/,
+  );
+  assert.doesNotMatch(block, /CANONICAL_MANIFEST_BINDS_EXPORT_ID_CREATED_AT_EXPIRES_AT/);
   assert.match(block, /protectedHeader: 'EXACTLY_alg_EdDSA_AND_kid_SIGNATURE_KEY_ID'/);
   assert.match(block, /payloadEncoding: 'BASE64URL_NO_PADDING'/);
   assert.match(block, /unencodedPayload: false/);

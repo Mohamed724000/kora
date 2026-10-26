@@ -1,13 +1,13 @@
 # KORA+ Final — Source de vérité
 
-Statut : **DOCUMENT OPÉRATIONNEL VIVANT — S1.2-03C1 FUSIONNÉ DANS MAIN AU
-MERGE dc97eeef72c4e299988ed19d66460011a8551cf3, NON DÉPLOYÉ — C2a R9 PUBLIÉ
-DANS LA DRAFT PR #52 AU HEAD `fd0f084fc6316c379454ef701307e79471ed92e2`,
-R10+R11 QUALIFIÉS LOCALEMENT, PUBLICATION/CI R11 NON ACQUISES — FOURNISSEURS
-DE PRODUCTION NON QUALIFIÉS — C2b/C3 NOT STARTED**
+Statut : **DOCUMENT OPÉRATIONNEL VIVANT — C2a INTÉGRÉ DANS MAIN AU MERGE
+`029e30bbc795f3d9c153782bc04e45e9f5a03f8a`, NON DÉPLOYÉ — C2b R3 PUBLIÉ
+DANS LA PR #53 DRAFT AVEC QUATRE WORKFLOWS VERTS — G-QA-01 RÉCONCILIÉ PAR
+CORRECTION DOCUMENTAIRE R4 — FOURNISSEURS DE PRODUCTION NON QUALIFIÉS — C3
+NON COMMENCÉ**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-10-22
+Dernière réconciliation documentaire : 2026-10-26
 
 ## Hiérarchie normative
 
@@ -1490,3 +1490,135 @@ workflows verts restent ceux de R9 ; aucune publication ni CI R11 n'est encore
 affirmée. L'incident R9 et ses limites, le signal Windows NON DEMONSTRATED,
 les 61 SKIP, Linux et fournisseurs de production non qualifiés, C2b/C3 non
 commencés et la politique OSS différée restent inchangés.
+
+## État courant C2b R1 qualifié localement — 2026-10-24
+
+C2a est intégré dans main au merge
+`029e30bbc795f3d9c153782bc04e45e9f5a03f8a`, arbre
+`a32f8332e80c18c565521418fe197619f8fb56d9`. C2b est un candidat local non
+indexé sur une branche distincte ; aucune publication C2b n'est acquise.
+
+Le contrat conserve quatre opérations HTTP et deux continuations internes. Le
+dispatch PostgreSQL réservé est la matrice littérale suivante : l'identité
+`kora_admin_c2b_audit_api` produit uniquement `listAdminAuditLogs`,
+`createAdminAuditLogExport`, `getAdminAuditLogExport` et
+`downloadAdminAuditLogExport`; l'identité
+`kora_admin_c2b_export_worker` produit uniquement
+`buildAdminAuditLogExport` et `expireAdminAuditLogExport`. Le trigger combine
+obligatoirement identité de connexion et action ; aucune valeur applicative ou
+GUC ne remplace `session_user`.
+
+Le profil signé V2 remplace explicitement le candidat initial contradictoire.
+Le manifeste couvre la règle `READY_PLUS_24_HOURS`, mais aucune échéance
+absolue fictive. Le CAS READY établit `readyAt` et `expiresAt` depuis un même
+instant PostgreSQL, exactement à +24 h. Une vérification hors ligne du ZIP
+prouve l'intégrité et la règle signée, jamais l'heure READY du serveur.
+
+La campagne runtime finale passe les cinq migrations fresh/upgrade, les
+projections, les ACL, les refus et la préservation C1/C2a. La campagne métier
+passe 11/11 scénarios réels PostgreSQL/Redis/HTTP avec processus worker et
+BullMQ : frontière exacte de 10 000 entrées, expiration positive, read lease,
+rollback global, `COMMIT_UNKNOWN` sans replay et réutilisation atomique d'une
+clé expirée dans une nouvelle génération historique. L'inventaire Docker
+étranger est préservé et seules les ressources de campagne sont nettoyées.
+
+Le graphe final qualifie `body-parser@2.4.0`, `multer@2.5.0`,
+`fast-uri@3.1.9` et `zod@4.6.6`. Une installation propre byte-identique au
+candidat passe `npm ls --all`; les audits complet/production trouvent zéro
+vulnérabilité, les signatures, attestations et licences passent. Le
+`node_modules` de travail antérieur reste consigné NON-PASS et n'est pas la
+preuve sélectionnée.
+
+Les gates passent : API 287 assertions avec 72 SKIP, tooling 567/567, scanner,
+format, lint, typecheck, build, OpenAPI 60/67/141, génération contractuelle et
+licences. Les NON-PASS antérieurs conservent leur portée historique. Le verdict
+courant est **GO LOCAL C2b R1**, sans indexation ni publication. C3 n'est pas
+commencé ; fournisseurs et Linux de production restent non qualifiés, les
+réserves Windows/R9 et installations persistantes demeurent, et la politique
+OSS reste différée.
+
+Le raccordement CI prépublication ajoute les wrappers C2b à Infrastructure
+après les validations C1/C2a et avant lifecycle/API health. Les campagnes
+runtime et métier utilisent deux identités d'instance explicites, uniques et
+non locales ; Docker, Node et npm sont résolus de manière portable pour le
+runner Linux. Le profil signé demeure V2 avec la règle
+`READY_PLUS_24_HOURS`, et une vérification hors ligne ne prouve toujours pas
+l'instant READY du serveur. La régression de raccordement passe 53/53 et les
+deux wrappers repassent sur des instances propres avec inventaire étranger
+préservé. À cet instantané, publication, Draft PR et CI C2b restent à venir et
+aucun résultat futur n'est annoncé.
+
+## Candidat local C2b R2 — portabilité POSIX — 2026-10-24
+
+La publication R1 porte le head
+`8fcefbdce37e463e4d70e47d20608f5c7528e416`, arbre
+`51d3bb3244ff4179b87a3660df59be357c01718e`, dans la PR #53 `OPEN/Draft`.
+Infrastructure `40112550483` reste un échec historique : après les succès C1,
+Foundations C2a, métier C2a et Compose, le runtime C2b applique cinq migrations
+puis l'exécution directe du provisionneur `100644` monté en lecture seule est
+refusée par Linux. Les étapes métier C2b, lifecycle et API health sont skipped
+dans ce run.
+
+Le correctif R2 minimal conserve le montage readonly et fait interpréter le
+script par `sh`, fourni comme argument distinct à `docker exec` dans les deux
+wrappers. La propagation des échecs reste bloquante. Une régression
+comportementale couvre conteneur, arguments, chemin, readonly et code non nul ;
+une preuve Linux sur un vrai fichier 0644 monté readonly démontre le succès via
+`sh`, le refus de l'exécution directe et l'impossibilité d'écrire.
+
+Les deux wrappers officiels passent ensuite sur des instances uniques et non
+locales. Le runtime couvre cinq migrations, identités, ACL et dispatch strict ;
+le métier couvre 11/11 scénarios réels, processus worker et BullMQ. Le socle
+Docker reste identique à 4 conteneurs, 8 volumes, 5 réseaux et 4 images. Le
+tooling passe 570/570, le scanner 466 fichiers avec historique et les audits
+frais complet/production trouvent zéro vulnérabilité. R2 reste local et non
+indexé jusqu'au commit/push conditionnel ; les quatre workflows du futur head
+et le corps PR réconcilié ne sont pas encore affirmés.
+
+## C2b R3 publié et correction documentaire R4 — 2026-10-26
+
+Le paragraphe R2 ci-dessus est un instantané prépublication. R2 est ensuite
+publié au commit `b4868b92794925dc2a2c5f4f1fd8949c0e351dcf`, arbre
+`a942115ad3faed41c54b1c47593a31e90078bdd3`, dans la PR #53 toujours
+`OPEN/Draft`. Les runs Infrastructure `40116489202`, Launcher Windows
+`40116489279`, Security `40116489218` et Quality Linux `40116489201` sont tous
+verts en tentative 1 sur ce head ; le merge synthétique exécuté est
+`b3eb477df8ad68c4136155d66c4856799c9de324`.
+
+La revue cumulative post-R2 reste un verdict historique **BLOCK** sur
+`S-PG-01`, `S-PG-02`, `S-PG-03` et `G-QA-01`. R3 ferme localement ces quatre
+findings sans modifier dépendances, lockfile, workflow ou contrat fonctionnel.
+Le temps PostgreSQL, les leases et deadlines par tentative, les backoffs
+30/120, le budget de trois tentatives, le fence, le marqueur durable et l'audit
+terminal atomique sont alignés. Le rôle worker reçoit uniquement `SELECT` et
+`UPDATE` sur `AdminAuditExport.lastTransitionRefHash`; toute autre identité et
+tout privilège supplémentaire restent refusés.
+
+La preuve sélectionnée associe le wrapper runtime PASS à une campagne métier
+finale 14/14. API passe 300 assertions avec 75 SKIP, tooling 570/570, scanner
+466 fichiers, OpenAPI 60/67/141, format/lint/typecheck/build/génération et les
+deux audits à zéro. Les NON-PASS métier 12/14, 13/14 et 13/14 ainsi que le
+contrôle Prettier intermédiaire restent archivés sans requalification. La
+description de R3 comme candidat local était l'instantané historique antérieur
+à sa publication.
+
+R3 est publié au commit `e1ec2ffded6f6b2edc9a2a5ad7135501412263ec`, arbre
+`16fa1a75726c6b892b4dd33cbda7455312b2858b`, dans la PR #53 toujours
+`OPEN/Draft`. Les workflows pull request Infrastructure `40312158372`,
+Launcher Windows `40312158476`, Security `40312158263` et Quality Linux
+`40312158291` sont `completed/success`, tentative 1, sur le checkout
+synthétique `8aab8daca9ae26b157456bc7aa7025d95a7832c1`. Infrastructure conserve C1
+47/47, Foundations 34/34, C2a 1 contrôle statique + 11 scénarios réels et C2b
+14/14.
+
+La revue cumulative postpublication maintient les GO techniques Backend et
+Security et bloque uniquement la gouvernance documentaire G-QA-01, les
+documents vivants décrivant encore R3 comme local. La correction documentaire
+R4 réconcilie ce statut sans modifier les octets techniques ni transformer les
+75 SKIP ou les anciens NON-PASS en PASS.
+
+Les fournisseurs et Linux de production restent NON QUALIFIÉS ; les clés de
+production, le signal Windows, les limites préincident R9, les bases
+persistantes externes et la perte réelle de l'accusé réseau lors de
+`COMMIT_UNKNOWN` restent NON DEMONSTRATED. Les SKIP restent des SKIP, C3 n'est
+pas commencé et la politique OSS demeure différée.

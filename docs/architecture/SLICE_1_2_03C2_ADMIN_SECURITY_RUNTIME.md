@@ -1,11 +1,11 @@
 # S1.2-03C2 — Admin Security Runtime Contract
 
-Statut : **C2a R9 PUBLIÉ DANS LA DRAFT PR #52 AU HEAD
-`fd0f084fc6316c379454ef701307e79471ed92e2` — R10+R11 QUALIFIÉS
-LOCALEMENT, PUBLICATION ET CI R11 ENCORE À VENIR — NON FUSIONNÉ, NON DÉPLOYÉ
-— C2b/C3 NON COMMENCÉS**
+Statut : **C2a INTÉGRÉ DANS MAIN AU MERGE
+`029e30bbc795f3d9c153782bc04e45e9f5a03f8a`, NON DÉPLOYÉ — C2b R2 PUBLIÉ
+DANS LA PR #53 DRAFT ; R3 QUALIFIÉ LOCALEMENT LE 2026-10-26 — ÉTAT DE
+PUBLICATION COURANT PORTÉ PAR LA PR #53 ET SON HEAD — C3 NON COMMENCÉ**
 
-Date : 2026-10-12
+Date : 2026-10-24
 
 Autorité : [ADR-026](../adr/ADR-026-admin-security-c2-runtime-contract.md),
 [ADR-025](../adr/ADR-025-admin-auth-session-audit-contexts.md), ADR-004 et
@@ -831,3 +831,132 @@ R11 n'est encore acquise. La PR reste `OPEN/Draft`. L'incident R9, ses limites
 sur les volumes, le signal Windows **NON DEMONSTRATED**, Linux et fournisseurs
 de production non qualifiés, les 61 SKIP, C2b/C3 non commencés et la politique
 OSS différée restent inchangés.
+
+## C2b R1 — candidat local audit et export qualifié — 2026-10-24
+
+La branche locale `codex/c2b-admin-audit-export-runtime`, basée sur le merge
+main `029e30bbc795f3d9c153782bc04e45e9f5a03f8a`, matérialise les quatre
+opérations C2b `listAdminAuditLogs`, `createAdminAuditLogExport`,
+`getAdminAuditLogExport` et `downloadAdminAuditLogExport`, ainsi que les deux
+continuations internes `buildAdminAuditLogExport` et
+`expireAdminAuditLogExport`. C3 n'est pas commencé.
+
+Le trigger `AuditLog_c2b_causality` dispatch selon deux dimensions
+indépendantes : `session_user` et action. L'identité API n'accepte que les
+quatre actions HTTP ; l'identité worker n'accepte que les deux continuations.
+Une identité C2b ne peut ni produire une action inconnue ou nulle, ni permuter
+les actions API/worker. Une identité étrangère ne peut produire aucune action
+réservée C2b. Les autres écritures continuent d'emprunter les gardes C1/C2a
+inchangés.
+
+Le profil signé V2 contient l'identité de l'export, la date PostgreSQL de la
+demande, l'inventaire des payloads, leurs tailles et empreintes, ainsi que la
+règle littérale `READY_PLUS_24_HOURS`. Il n'encode aucune échéance absolue
+fictive. Le worker chiffre, relit et vérifie l'unique ZIP staging, le manifeste
+JCS et le JWS détaché Ed25519 avant de référencer ce même objet par le CAS
+`READY`. Ce CAS établit une fois `readyAt` et `expiresAt` depuis le même instant
+PostgreSQL, exactement à 24 heures d'écart. Le téléchargement, les read leases
+et l'expiration utilisent ces valeurs immuables ; la vérification hors ligne
+ne prétend pas attester l'heure READY du serveur.
+
+Le runtime final qualifie les cinq migrations fresh/upgrade, les rôles dédiés,
+les ACL, les refus durables, la causalité et les frontières C1/C2a. La campagne
+métier passe 11 scénarios réels sur PostgreSQL/Redis/HTTP : snapshot exact de
+10 000 entrées, processus worker/BullMQ, expiration positive, lease concurrent,
+rollback global, `COMMIT_UNKNOWN` sans replay, réutilisation idempotente expirée
+et générations historiques. Les appels externes sont bornés et les wakeups
+coalescés sont drainés sans progression perdue.
+
+Le graphe final qualifie `body-parser@2.4.0`, `multer@2.5.0`,
+`fast-uri@3.1.9` et `zod@4.6.6`. L'installation propre et `npm ls --all`
+passent, les audits complet/production trouvent zéro vulnérabilité, les
+signatures et licences sont conformes. Tooling passe 567/567, OpenAPI reste à
+60 chemins, 67 opérations et 141 schémas, et les 53 modèles Prisma protégés
+sont 39 historiques, neuf C2a et cinq C2b.
+
+Le verdict R1 est **GO LOCAL** sur le candidat non indexé. Les NON-PASS
+antérieurs — verrou à quatre migrations, premier profil signé, audits rouges,
+preuves temporelles absentes, wrappers Windows et essais transactionnels —
+restent historiques. Aucune publication ni qualification de production n'est
+acquise ; fournisseurs et Linux de production restent non qualifiés, C3 n'est
+pas commencé et la politique OSS reste différée.
+
+## C2b — raccordement CI prépublication — 2026-10-24
+
+Le candidat de publication raccorde les deux wrappers officiels C2b à
+Infrastructure après C1, Foundations C2a et le métier C2a, et avant lifecycle
+et API health. La préparation Compose ne crée aucune preuve C2b : elle rend
+seulement disponibles les images épinglées dont les wrappers vérifient ensuite
+l'identité et la préservation d'inventaire.
+
+Chaque wrapper reçoit une instance distincte dérivée de `github.run_id` et
+`github.run_attempt`, refuse `local` et confirme cette identité dans le même
+processus. Les exécutables Docker, Node et npm sont résolus sans suffixe
+Windows imposé afin que le même harnais reste exécutable sous PowerShell Linux.
+Le cleanup et les échecs bloquants demeurent inchangés. Cet instantané reste
+prépublication. La régression de raccordement passe 53/53 et les deux wrappers
+C2b repassent sur des instances propres en préservant l'inventaire étranger ;
+aucun commit, push, PR ou résultat CI C2b n'est encore affirmé.
+
+## C2b R2 — invocation POSIX du provisionneur — 2026-10-24
+
+Le run Infrastructure R1 `40112550483`, tentative 1, demeure NON-PASS. Après
+C1, Foundations C2a, métier C2a et Compose concluants, le runtime C2b applique
+les cinq migrations mais Linux refuse l'exécution directe du provisionneur au
+mode Git `100644` monté readonly. Métier C2b, lifecycle et API health restent
+skipped dans ce run historique.
+
+R2 ne change ni le provisionneur ni son mode : chaque wrapper invoque désormais
+`docker exec <conteneur> sh
+/usr/local/bin/kora-provision-postgresql-runtime.sh` avec une liste d'arguments
+explicite. Le montage readonly, l'identité du conteneur, les variables, le
+cleanup et la propagation bloquante des codes sont inchangés. La régression
+exécute les deux invocations réelles, vérifie leurs quatre arguments et force
+un code 23. Une preuve Linux utilise un fichier réellement 0644 dans un volume
+readonly : `sh` le lit, l'exécution directe et l'écriture échouent.
+
+Sur le candidat R2 local, les deux wrappers officiels passent : runtime sur
+cinq migrations avec huit frontières, six actions, ACL et dispatch strict ;
+métier sur 11/11 scénarios PostgreSQL/Redis/HTTP avec build API, worker et
+BullMQ. Les inventaires restent identiques à 4 conteneurs, 8 volumes, 5
+réseaux et 4 images. Tooling passe 570/570, le scanner couvre 466 fichiers et
+les audits frais complet/production trouvent zéro vulnérabilité. Publication
+R2 et CI du futur head restent conditionnelles ; aucun résultat futur n'est
+annoncé.
+
+## C2b R3 — leases, deadlines, fencing et marqueur durable — 2026-10-26
+
+R2 est publié au head `b4868b92794925dc2a2c5f4f1fd8949c0e351dcf`, arbre
+`a942115ad3faed41c54b1c47593a31e90078bdd3`, dans la PR #53 `OPEN/Draft`.
+Infrastructure `40116489202`, Launcher Windows `40116489279`, Security
+`40116489218` et Quality Linux `40116489201` sont tous
+`pull_request/completed/success`, tentative 1 ; le checkout synthétique testé
+est `b3eb477df8ad68c4136155d66c4856799c9de324`. Le NON-PASS Infrastructure R1
+reste historique.
+
+La revue cumulative R2 a ensuite bloqué l'intégration sur `S-PG-01`,
+`S-PG-02`, `S-PG-03` et `G-QA-01`. Le candidat local R3 ferme les trois écarts
+techniques : génération initiale 0, fenêtres PostgreSQL par tentative, leases
+et deadlines réévaluées après verrou, backoffs 30/120, troisième tentative
+terminale, fencing de l'ancien propriétaire et réconciliation exacte après
+`COMMIT_UNKNOWN`. Le marqueur interne `lastTransitionRefHash` est atomique avec
+la transition et, pour un résultat terminal, avec l'audit SYSTEM exact. Seul
+le worker C2b reçoit les deux privilèges de colonne nécessaires ; les matrices
+ACL indépendantes restent exhaustives.
+
+Le wrapper runtime passe fresh/upgrade sur cinq migrations, projections,
+provisionnement, ACL, contamination et préservation C1/C2a. Le wrapper métier
+final passe 14/14 scénarios PostgreSQL/Redis/HTTP avec processus worker et
+BullMQ réels, dont les courses READY/watchdog et heartbeat après attente de
+verrou. API passe 300 assertions et conserve 75 SKIP ; tooling passe 570/570,
+scanner 466 fichiers, OpenAPI 60/67/141 et 53 modèles protégés. Format, lint,
+typecheck, build, génération et audits complet/production à zéro passent.
+
+Les campagnes métier 12/14, 13/14 et 13/14 restent NON-PASS historiques ;
+elles ont isolé trois attentes de harnais utilisant une forme d'erreur ou une
+préimage temporelle incorrecte, sans changement du runtime. Cet instantané
+atteste la qualification locale R3 du 2026-10-26 sans préjuger de son état de
+publication ou de CI ultérieur, qui doit être constaté sur la PR #53 et son
+head. Production, fournisseurs, installations persistantes externes et C3
+restent non qualifiés ; les SKIP restent des SKIP et la politique OSS demeure
+différée.

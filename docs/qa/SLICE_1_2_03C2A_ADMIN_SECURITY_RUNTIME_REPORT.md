@@ -2,8 +2,9 @@
 
 ## Statut
 
-**C2a R9 PUBLIÉ DANS LA DRAFT PR #52 — R10+R11 QUALIFIÉS LOCALEMENT,
-PUBLICATION ET CI R11 ENCORE À VENIR — NON FUSIONNÉ, NON DÉPLOYÉ.**
+**C2a INTÉGRÉ DANS MAIN AU MERGE
+`029e30bbc795f3d9c153782bc04e45e9f5a03f8a`, NON DÉPLOYÉ. C2b EST UN
+CANDIDAT LOCAL DISTINCT ET N'EST PAS QUALIFIÉ TERMINALEMENT.**
 
 Docker Desktop/Linux Engine est disponible depuis Codex et reste démarré.
 La campagne PostgreSQL isolée est concluante. L'avenant ciblé aligne désormais
@@ -11,11 +12,10 @@ le validateur OpenAPI sur exactement 48 modèles Prisma : 39 historiques et neuf
 C2a. Les précédents NO-GO Docker et le premier NON-PASS OpenAPI/tooling restent
 historiques et ne sont pas requalifiés.
 
-Le candidat publié est au commit
-`fd0f084fc6316c379454ef701307e79471ed92e2`, branche
-`feat/s1-2-03c2a-admin-security-runtime`, sur la base
-`d514b87cbef21dfae4585f4d143889aca2d8b229`. La PR #52 reste `OPEN/Draft`.
-Aucun Ready, approval, merge, tag, release ou déploiement n'est acquis.
+Le résultat C2a est intégré dans l'arbre `a32f8332e80c18c565521418fe197619f8fb56d9`
+du merge main `029e30bbc795f3d9c153782bc04e45e9f5a03f8a`. Les instantanés R9 et
+R10+R11 décrits plus bas restent des états historiques prépublication. Aucun
+tag, release ou déploiement n'est acquis.
 
 ## Périmètre observé
 
@@ -999,3 +999,42 @@ aucune CI R11 n'est encore acquise. L'incident R9, l'intégrité byte-à-byte de
 volumes et l'état logique complet préincident NON DEMONSTRATED, le signal
 Windows NON DEMONSTRATED, les 61 SKIP, Linux et fournisseurs de production non
 qualifiés, C2b/C3 non commencés et la politique OSS différée sont conservés.
+
+## Addendum post-intégration et impact C2b R1 — 2026-10-24
+
+C2a a ensuite été intégré dans main au merge
+`029e30bbc795f3d9c153782bc04e45e9f5a03f8a`, arbre
+`a32f8332e80c18c565521418fe197619f8fb56d9`. Les paragraphes R9–R11
+précédents restent des instantanés historiques et ne décrivent plus le statut
+GitHub courant.
+
+La traversée locale du candidat C2b confirme C1 47/47 et le métier C2a avec un
+contrôle statique plus onze scénarios réels. Le premier wrapper Foundations,
+encore figé sur quatre migrations, reste **NON-PASS historique**. R1 sépare la
+chaîne historique C2a de la chaîne courante C2b et qualifie les cinq migrations
+exactes, fresh/upgrade, projections, données, ACL et transactions. Cette preuve
+n'altère ni ne surinterprète le Foundations 34/34 publié pour C2a.
+
+Les 61 SKIP historiques C2a restent des SKIP. Le signal Windows, les limites
+préincident R9, les installations persistantes externes, les fournisseurs et
+Linux de production restent dans leur portée précédente.
+
+R1 ne modifie aucune surface métier C2a : sa campagne reste 1 contrôle statique
+et 11 scénarios réels. La preuve C2b sélectionnée qualifie séparément 11
+scénarios PostgreSQL/Redis/HTTP, dont la frontière snapshot à 10 000 entrées,
+l'expiration positive et la réutilisation idempotente expirée. Les audits npm
+complet/production trouvent zéro vulnérabilité sur le graphe propre final. Les
+premiers audits rouges, le verrou à quatre migrations et les preuves C2b
+incomplètes restent archivés comme NON-PASS historiques.
+
+Le verdict **GO LOCAL C2b R1** ne republie ni ne requalifie C2a. Les 72 SKIP de
+la suite API finale C2b restent distincts des campagnes réelles ; aucun SKIP
+n'est converti en PASS. Publication C2b, fournisseurs et Linux de production
+restent hors qualification.
+
+Le raccordement CI candidat ne change aucun runtime C2a ni ses compteurs. Il
+réutilise les commandes officielles C1, Foundations et métier C2a avant les
+deux campagnes C2b, puis lifecycle et API health. Cette topologie ne transforme
+ni les 61 SKIP historiques C2a ni les 72 SKIP de la suite API C2b en PASS. À
+ce stade documentaire, le harnais ciblé passe 53/53 et les deux campagnes C2b
+propres passent ; publication et workflows C2b restent à venir.

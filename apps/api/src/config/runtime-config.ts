@@ -48,6 +48,30 @@ export type AdminC2aRuntimeConfig =
       pool: RuntimePostgresqlConfig;
     };
 
+export const ADMIN_C2B_DATABASE_USERS = Object.freeze({
+  auditApi: 'kora_admin_c2b_audit_api',
+  exportWorker: 'kora_admin_c2b_export_worker',
+});
+
+export const ADMIN_C2B_PROCESS_PROFILES = ['HTTP', 'EXPORT_WORKER'] as const;
+export type AdminC2bProcessProfile = (typeof ADMIN_C2B_PROCESS_PROFILES)[number];
+export type AdminC2bDatabaseRole = keyof typeof ADMIN_C2B_DATABASE_USERS;
+
+export const ADMIN_C2B_PROFILE_DATABASE_ROLES: Readonly<
+  Record<AdminC2bProcessProfile, AdminC2bDatabaseRole>
+> = Object.freeze({
+  HTTP: 'auditApi',
+  EXPORT_WORKER: 'exportWorker',
+});
+
+export type AdminC2bRuntimeConfig =
+  | { enabled: false }
+  | {
+      enabled: true;
+      profile: AdminC2bProcessProfile;
+      pool: RuntimePostgresqlConfig;
+    };
+
 export interface RuntimeConfig {
   adminAuth: {
     origin: string;
@@ -68,6 +92,7 @@ export interface RuntimeConfig {
     };
   };
   adminC2a: AdminC2aRuntimeConfig;
+  adminC2b: AdminC2bRuntimeConfig;
   environment: NodeEnvironment;
   http: {
     host: string;
@@ -351,6 +376,49 @@ export function loadRuntimeConfig(environment: Record<string, string | undefined
       userField: 'ADMIN_C2A_BOOTSTRAP_DATABASE_USER',
     },
   } as const;
+  const adminC2bEnabled = booleanWithDefaultFalse(environment, 'ADMIN_C2B_ENABLED');
+  const adminC2bProfile = enumeration(environment, 'ADMIN_C2B_PROFILE', ADMIN_C2B_PROCESS_PROFILES);
+  const adminC2bHost = requiredString(
+    environment,
+    'ADMIN_C2B_DATABASE_HOST',
+    /^(?!.*:\/\/)(?!.*\/)\S+$/,
+  );
+  const adminC2bPort = integer(environment, 'ADMIN_C2B_DATABASE_PORT', 1, 65_535);
+  const adminC2bDatabase = requiredString(
+    environment,
+    'ADMIN_C2B_DATABASE_NAME',
+    /^[A-Za-z_][A-Za-z0-9_-]*$/,
+  );
+  const adminC2bSsl = boolean(environment, 'ADMIN_C2B_DATABASE_SSL');
+  const adminC2bAuditApiUser = requiredString(environment, 'ADMIN_C2B_AUDIT_API_DATABASE_USER');
+  const adminC2bAuditApiPassword = requiredString(
+    environment,
+    'ADMIN_C2B_AUDIT_API_DATABASE_PASSWORD',
+  );
+  const adminC2bExportWorkerUser = requiredString(
+    environment,
+    'ADMIN_C2B_EXPORT_WORKER_DATABASE_USER',
+  );
+  const adminC2bExportWorkerPassword = requiredString(
+    environment,
+    'ADMIN_C2B_EXPORT_WORKER_DATABASE_PASSWORD',
+  );
+  const adminC2bCredentials = {
+    HTTP: {
+      password: adminC2bAuditApiPassword,
+      passwordField: 'ADMIN_C2B_AUDIT_API_DATABASE_PASSWORD',
+      role: 'auditApi',
+      user: adminC2bAuditApiUser,
+      userField: 'ADMIN_C2B_AUDIT_API_DATABASE_USER',
+    },
+    EXPORT_WORKER: {
+      password: adminC2bExportWorkerPassword,
+      passwordField: 'ADMIN_C2B_EXPORT_WORKER_DATABASE_PASSWORD',
+      role: 'exportWorker',
+      user: adminC2bExportWorkerUser,
+      userField: 'ADMIN_C2B_EXPORT_WORKER_DATABASE_USER',
+    },
+  } as const;
 
   const results = [
     nodeEnvironment,
@@ -379,11 +447,19 @@ export function loadRuntimeConfig(environment: Record<string, string | undefined
     adminRedisTls,
     adminRedisWaitAofTimeout,
     adminC2aEnabled,
+    adminC2bEnabled,
   ];
   if (adminC2aEnabled.value === true) {
     results.push(adminC2aProfile, adminC2aHost, adminC2aPort, adminC2aDatabase, adminC2aSsl);
     if (adminC2aProfile.value !== undefined) {
       const credentials = adminC2aCredentials[adminC2aProfile.value];
+      results.push(credentials.user, credentials.password);
+    }
+  }
+  if (adminC2bEnabled.value === true) {
+    results.push(adminC2bProfile, adminC2bHost, adminC2bPort, adminC2bDatabase, adminC2bSsl);
+    if (adminC2bProfile.value !== undefined) {
+      const credentials = adminC2bCredentials[adminC2bProfile.value];
       results.push(credentials.user, credentials.password);
     }
   }
@@ -470,6 +546,61 @@ export function loadRuntimeConfig(environment: Record<string, string | undefined
     }
   }
 
+  if (adminC2bEnabled.value === true) {
+    const activeProfile = adminC2bProfile.value;
+    if (activeProfile !== undefined) {
+      const active = adminC2bCredentials[activeProfile];
+      const expectedUser = ADMIN_C2B_DATABASE_USERS[active.role];
+      if (active.user.value !== undefined && active.user.value !== expectedUser) {
+        invalid.push(active.user.field);
+      }
+      const forbiddenUsers = [
+        databaseUser.value,
+        adminDatabaseUser.value,
+        ...Object.values(ADMIN_C2A_DATABASE_USERS),
+      ];
+      if (active.user.value !== undefined && forbiddenUsers.includes(active.user.value)) {
+        invalid.push(active.user.field);
+      }
+      const forbiddenPasswords = [databasePassword.value, adminDatabasePassword.value];
+      if (adminC2aEnabled.value === true && adminC2aProfile.value !== undefined) {
+        forbiddenPasswords.push(adminC2aCredentials[adminC2aProfile.value].password.value);
+      }
+      if (
+        active.password.value !== undefined &&
+        forbiddenPasswords.includes(active.password.value)
+      ) {
+        invalid.push(active.password.field);
+      }
+      for (const [profile, credentials] of Object.entries(adminC2bCredentials)) {
+        if (profile === activeProfile) continue;
+        for (const field of [credentials.userField, credentials.passwordField]) {
+          if (environment[field] !== undefined) invalid.push(field);
+        }
+      }
+    } else {
+      for (const credentials of Object.values(adminC2bCredentials)) {
+        for (const field of [credentials.userField, credentials.passwordField]) {
+          if (environment[field] !== undefined) invalid.push(field);
+        }
+      }
+    }
+  } else {
+    for (const field of [
+      'ADMIN_C2B_PROFILE',
+      'ADMIN_C2B_DATABASE_HOST',
+      'ADMIN_C2B_DATABASE_PORT',
+      'ADMIN_C2B_DATABASE_NAME',
+      'ADMIN_C2B_DATABASE_SSL',
+      'ADMIN_C2B_AUDIT_API_DATABASE_USER',
+      'ADMIN_C2B_AUDIT_API_DATABASE_PASSWORD',
+      'ADMIN_C2B_EXPORT_WORKER_DATABASE_USER',
+      'ADMIN_C2B_EXPORT_WORKER_DATABASE_PASSWORD',
+    ]) {
+      if (environment[field] !== undefined) invalid.push(field);
+    }
+  }
+
   for (const optional of [sentryDsn, sentryEnvironment, sentryRelease]) {
     const supplied = environment[optional.field];
     if (optional.value === undefined && supplied !== undefined && supplied.length > 0) {
@@ -509,6 +640,27 @@ export function loadRuntimeConfig(environment: Record<string, string | undefined
           ),
         }
       : { enabled: false };
+  const c2bPool = (user: string, password: string): RuntimePostgresqlConfig => ({
+    host: adminC2bHost.value as string,
+    port: adminC2bPort.value as number,
+    database: adminC2bDatabase.value as string,
+    user,
+    password,
+    ssl: adminC2bSsl.value as boolean,
+  });
+  const adminC2b: AdminC2bRuntimeConfig =
+    adminC2bEnabled.value === true
+      ? {
+          enabled: true,
+          profile: adminC2bProfile.value as AdminC2bProcessProfile,
+          pool: c2bPool(
+            adminC2bCredentials[adminC2bProfile.value as AdminC2bProcessProfile].user
+              .value as string,
+            adminC2bCredentials[adminC2bProfile.value as AdminC2bProcessProfile].password
+              .value as string,
+          ),
+        }
+      : { enabled: false };
 
   return {
     adminAuth: {
@@ -530,6 +682,7 @@ export function loadRuntimeConfig(environment: Record<string, string | undefined
       },
     },
     adminC2a,
+    adminC2b,
     environment: nodeEnvironment.value as NodeEnvironment,
     http: {
       host: apiHost.value as string,

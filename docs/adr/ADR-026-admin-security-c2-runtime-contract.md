@@ -1,9 +1,8 @@
 # ADR-026 — Admin Security C2 Runtime Contract
 
-Statut : **ACCEPTED POUR LE PRÉREQUIS CONTRACTUEL S1.2-03C2-P0 — RUNTIME NON
-IMPLÉMENTÉ — P0/R1–R5 PUBLIÉS DANS LA DRAFT PR #51 ; R6 QUALIFIÉ
-LOCALEMENT ET AUTORISÉ POUR PUBLICATION SOUS GATES, CI R6 NON ACQUISE AU
-2026-10-13**
+Statut : **ACCEPTED — C2a INTÉGRÉ DANS MAIN — C2b R2 PUBLIÉ DANS LA DRAFT
+PR #53 ; R3 QUALIFIÉ LOCALEMENT LE 2026-10-26 — ÉTAT DE PUBLICATION COURANT
+PORTÉ PAR LA PR #53 ET SON HEAD — C3 NON COMMENCÉ**
 
 Date : 2026-10-12
 
@@ -221,11 +220,18 @@ Les filtres d’export sont combinés par AND. Le snapshot est immuable, borné 
 10 000 entrées et 25 MiB UTF-8 non compressés, sans troncature. Le stockage est
 privé, chiffré et référencé de façon opaque; aucune URL signée n’est rendue.
 L’artefact dérivé expire 24 heures après READY et seul cet artefact est
-supprimé.
+supprimé. PostgreSQL fixe une seule fois `readyAt` et `expiresAt` depuis le
+même instant de transition READY, avec `expiresAt = readyAt + interval '24
+hours'`; ces deux dates sont ensuite immuables.
 
 Le masking utilise une allowlist positive par action et exclut secret, e-mail
 brut, IP brute et justification libre. Les clés Ed25519, JWT et de chiffrement
-sont distinctes. Le profil JCS/JWS Ed25519 de R4 reste inchangé. PostgreSQL est
+sont distinctes. Le transport JCS/JWS Ed25519 de R4 reste inchangé. Son profil
+de manifeste v2 signe `version=2`, l'identité de l'export, le `createdAt`
+PostgreSQL de la demande, la règle exacte `READY_PLUS_24_HOURS` et l'inventaire
+des payloads. Il exclut explicitement `readyAt` et `expiresAt`; une vérification
+hors ligne ne prétend donc ni connaître l'instant READY ni prouver l'application
+serveur de l'expiration. PostgreSQL est
 la source de vérité; les claims/retries worker sont bornés et idempotents; un
 COMMIT inconnu se réconcilie sans retry aveugle.
 
@@ -329,8 +335,10 @@ après déchiffrement et former exactement le corps du téléchargement, sans
 recompression ni reconstruction. Le ciphertext, le manifeste seul, les seuls
 payloads, les en-têtes et le framing HTTP sont exclus. Le hash est conservé en
 état `EXPIRED` après suppression de l'artefact dérivé. Pour éviter toute
-autoréférence, `contentSha256` est absent du ZIP et de son manifeste ; le profil
-JCS/JWS Ed25519 R4 et les hashes par entrée restent inchangés.
+autoréférence, `contentSha256` est absent du ZIP et de son manifeste ; le
+transport JCS/JWS Ed25519 R4 et les hashes par entrée restent inchangés. Le
+profil signé v2 remplace avant première publication runtime l'ancienne forme
+locale v1 à échéance absolue par la règle relative `READY_PLUS_24_HOURS`.
 
 ## Amendement R4 — causalité d'exécution complète
 
@@ -532,3 +540,28 @@ mutation dont le résultat est inconnu.
 | connexion perdue                    | rollback pré-COMMIT non confirmable | inconnu                       | discard/destruction physique exactement une fois       | 503 neutre, COMMIT non tenté, aucun replay               |
 | COMMIT confirmé                     | commit confirmé avant 2 000 ms      | `I` post-COMMIT même client   | release réutilisable unique                            | réponse de succès de l'opération                         |
 | COMMIT inconnu                      | accusé non confirmé avant 2 000 ms  | inconnu                       | discard/destruction physique exactement une fois       | 503 neutre, aucun rollback, réconciliation, aucun replay |
+
+## Amendement C2b R3 — leases, deadlines et réconciliation exacte
+
+Un export naît `PENDING` avec génération 0 et tentative 0. Chaque claim
+autorisé crée un nouvel `attemptId`, incrémente génération et tentative, puis
+établit depuis l'heure PostgreSQL une lease de 120 secondes et une deadline
+immuable de 600 secondes. Heartbeat, READY, échec ordinaire et reprise après
+`COMMIT_UNKNOWN` exigent atomiquement l'état `PROCESSING`, le fence exact,
+`nextAttemptAt IS NULL`, une lease active et un instant strictement antérieur à
+la deadline, y compris après une attente de verrou.
+
+Aux tentatives 1 et 2, le watchdog révoque le propriétaire expiré sans audit
+terminal et programme respectivement 30 puis 120 secondes de backoff. Le claim
+suivant établit une nouvelle fenêtre temporelle. La tentative 3 peut réussir
+avant sa deadline ; son échec réessayable ou son épuisement terminalise une
+seule fois avec `RETRY_BUDGET_EXHAUSTED`. Aucun quatrième claim n'est permis.
+
+Chaque transition durable du worker porte un `lastTransitionRefHash` interne,
+lié à l'export, à la génération, au fence et au résultat exact. Seule l'identité
+`kora_admin_c2b_export_worker` dispose de `SELECT` et `UPDATE` sur cette
+colonne, sans privilège de table ni droit pour API, C1, C2a ou `PUBLIC`. Le
+marqueur et l'état durable sont committés ensemble ; une transition terminale
+exige en plus son audit SYSTEM exact dans la même transaction. Une preuve
+absente, remplacée, issue d'une autre transition ou d'un fence périmé ne vaut
+ni succès ni rollback et n'autorise aucun replay aveugle.

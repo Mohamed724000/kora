@@ -951,6 +951,19 @@ const REQUIRED_ADMIN_AUTH_DATA_POLICY = {
 };
 
 const REQUIRED_ADMIN_AUDIT_EXPORT_MANIFEST = {
+  profile: "KORA_ADMIN_AUDIT_EXPORT_MANIFEST_V2",
+  manifestVersion: 2,
+  manifestFields: [
+    "createdAt",
+    "entries",
+    "expirationRule",
+    "exportId",
+    "version",
+  ],
+  createdAtSemantics: "EXPORT_REQUEST_CREATED_AT",
+  expirationRule: "READY_PLUS_24_HOURS",
+  absoluteOperationalTimestamps:
+    "READY_AT_AND_EXPIRES_AT_NOT_INCLUDED_OR_SIGNED",
   manifestPath: "manifest.json",
   signaturePath: "manifest.sig",
   canonicalization: "RFC8785_JCS_UTF8",
@@ -971,7 +984,7 @@ const REQUIRED_ADMIN_AUDIT_EXPORT_MANIFEST = {
   payloadPathPolicy:
     "RELATIVE_FORWARD_SLASH_NFC_NO_DOT_SEGMENTS_NO_DOT_DOT_NO_ABSOLUTE_NO_BACKSLASH_UNIQUE_CASE_SENSITIVE",
   coverage:
-    "CANONICAL_MANIFEST_BINDS_EXPORT_ID_CREATED_AT_EXPIRES_AT_AND_SORTED_UNIQUE_PAYLOAD_PATH_SIZE_SHA256",
+    "CANONICAL_MANIFEST_V2_BINDS_EXPORT_ID_REQUEST_CREATED_AT_READY_PLUS_24_HOURS_RULE_AND_SORTED_UNIQUE_PAYLOAD_PATH_SIZE_SHA256",
   rejectUnlistedEntries: true,
   rejectMissingEntries: true,
   rejectDuplicateEntries: true,
@@ -5061,7 +5074,7 @@ function validateAdminSecurityContract(document) {
       JSON.stringify(REQUIRED_ADMIN_AUDIT_EXPORT_MANIFEST)
   ) {
     fail(
-      "audit exports require one versioned projection, exact immutable ZIP-byte hashing, signed manifest metadata and state-bound expiry",
+      "audit exports require one versioned projection, exact immutable ZIP-byte hashing, the closed V2 signed validity rule and PostgreSQL state-bound expiry",
     );
   }
 
@@ -5329,6 +5342,13 @@ export function validatePrismaTargetSchema(source) {
     "AdminPaginationSnapshotItem",
     "AdminBootstrapGuard",
   ];
+  const c2bModelsBeforeBusinessModels = [
+    "AdminAuditPaginationSnapshot",
+    "AdminAuditPaginationSnapshotItem",
+    "AdminAuditExportIdempotencyRecord",
+    "AdminAuditExport",
+    "AdminAuditExportReadLease",
+  ];
   const historicalBusinessModels = [
     "Artist",
     "AudioContent",
@@ -5367,16 +5387,22 @@ export function validatePrismaTargetSchema(source) {
     ...c2aModelsBeforeBusinessModels,
     ...c2aModelsBeforeAuditLog,
   ];
+  const c2bModels = [...c2bModelsBeforeBusinessModels];
   const requiredModels = [
     ...historicalModelsBeforeC2a,
     ...c2aModelsBeforeBusinessModels,
+    ...c2bModelsBeforeBusinessModels,
     ...historicalBusinessModels,
     ...c2aModelsBeforeAuditLog,
     ...historicalFinalModels,
   ];
-  if (historicalModels.length !== 39 || c2aModels.length !== 9) {
+  if (
+    historicalModels.length !== 39 ||
+    c2aModels.length !== 9 ||
+    c2bModels.length !== 5
+  ) {
     fail(
-      "Prisma target model inventory must preserve 39 historical and 9 C2a models",
+      "Prisma target model inventory must preserve 39 historical, 9 C2a and 5 C2b models",
     );
   }
   const actualModels = [
@@ -5384,7 +5410,7 @@ export function validatePrismaTargetSchema(source) {
   ].map((match) => match[1]);
   if (!stableEqual(actualModels, requiredModels)) {
     fail(
-      "Prisma target models must be exactly the 39 historical and 9 C2a approved models (48 total)",
+      "Prisma target models must be exactly the 39 historical, 9 C2a and 5 C2b approved models (53 total)",
     );
   }
   for (const name of requiredModels) {
@@ -5882,6 +5908,7 @@ export function validatePrismaTargetSchema(source) {
 
   return {
     c2aModels: c2aModels.length,
+    c2bModels: c2bModels.length,
     historicalModels: historicalModels.length,
     integerFinancialFields: integerMoneyFields.length,
     models: actualModels.length,
@@ -5912,6 +5939,6 @@ const direct =
 if (direct) {
   const result = readAndValidateOpenApi();
   console.log(
-    `S1.2-03C2-P0 admin-security contract valid: ${result.openapi.paths} paths, ${result.openapi.operations} operations, ${result.openapi.schemas} schemas, ${result.openapi.invariants} inherited invariants, ${result.prisma.models} preserved target models (${result.prisma.historicalModels} historical and ${result.prisma.c2aModels} C2a).`,
+    `S1.2-03C2-P0 admin-security contract valid: ${result.openapi.paths} paths, ${result.openapi.operations} operations, ${result.openapi.schemas} schemas, ${result.openapi.invariants} inherited invariants, ${result.prisma.models} preserved target models (${result.prisma.historicalModels} historical, ${result.prisma.c2aModels} C2a and ${result.prisma.c2bModels} C2b).`,
   );
 }

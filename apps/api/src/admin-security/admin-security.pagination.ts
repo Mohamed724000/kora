@@ -3,7 +3,8 @@ import type { AdminKeyedDigestProvider } from '../admin-auth/admin-key-provider'
 
 export const ADMIN_SECURITY_PAGINATION = Symbol('ADMIN_SECURITY_PAGINATION');
 
-export type AdminSnapshotOperation = 'LIST_ADMIN_RECOVERY_CASES' | 'LIST_ADMIN_USERS';
+export type AdminSnapshotOperation =
+  'LIST_ADMIN_RECOVERY_CASES' | 'LIST_ADMIN_USERS' | 'LIST_ADMIN_AUDIT_LOGS';
 
 export interface AdminSnapshotCursor {
   readonly expiresAt: string;
@@ -138,7 +139,9 @@ export class AdminSecurityPagination {
       !/^[0-9a-f-]{36}$/iu.test(cursor.snapshotId) ||
       !/^[0-9a-f-]{36}$/iu.test(cursor.principalAdminUserId) ||
       !/^[a-f0-9]{64}$/u.test(cursor.filtersDigest) ||
-      !['LIST_ADMIN_RECOVERY_CASES', 'LIST_ADMIN_USERS'].includes(cursor.operation) ||
+      !['LIST_ADMIN_RECOVERY_CASES', 'LIST_ADMIN_USERS', 'LIST_ADMIN_AUDIT_LOGS'].includes(
+        cursor.operation,
+      ) ||
       !Number.isSafeInteger(cursor.nextOrdinal) ||
       cursor.nextOrdinal < 0 ||
       !Number.isFinite(new Date(cursor.expiresAt).getTime())
