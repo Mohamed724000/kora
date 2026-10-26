@@ -2,17 +2,16 @@
 
 ## Statut
 
-**R2 PUBLIÉ DANS LA PR #53 DRAFT AVEC QUATRE WORKFLOWS VERTS — R3 QUALIFIÉ
-LOCALEMENT LE 2026-10-26 — ÉTAT DE PUBLICATION COURANT PORTÉ PAR LA PR #53 ET
-SON HEAD.**
+**R3 PUBLIÉ DANS LA PR #53 DRAFT AVEC QUATRE WORKFLOWS VERTS — CORRECTION
+DOCUMENTAIRE R4 DE G-QA-01 — AUCUNE FUSION NI QUALIFICATION DE PRODUCTION.**
 
-Baseline publiée R2 : branche `codex/c2b-admin-audit-export-runtime`, head
-`b4868b92794925dc2a2c5f4f1fd8949c0e351dcf`, arbre
-`a942115ad3faed41c54b1c47593a31e90078bdd3`, sur la base intégrée
-`029e30bbc795f3d9c153782bc04e45e9f5a03f8a`. Le présent rapport atteste le
-candidat R3 qualifié localement le 2026-10-26 ; son état de publication ou de
-CI ultérieur doit être constaté sur la PR #53 et son head. Ce rapport ne vaut
-ni fusion ni qualification de production.
+Baseline publiée R3 : branche `codex/c2b-admin-audit-export-runtime`, head
+`e1ec2ffded6f6b2edc9a2a5ad7135501412263ec`, arbre
+`16fa1a75726c6b892b4dd33cbda7455312b2858b`, sur la base intégrée
+`029e30bbc795f3d9c153782bc04e45e9f5a03f8a`. La PR #53 reste `OPEN/Draft`.
+Le présent rapport relie la qualification locale R3 du 2026-10-26 à sa
+publication et réconcilie le finding documentaire G-QA-01. Il ne vaut ni
+fusion ni qualification de production.
 
 ## Périmètre matérialisé
 
@@ -217,7 +216,7 @@ une erreur de lancement `spawn EINVAL`, distincte de la reprise qualifiée via
 la réconciliation finale du corps de PR restent à obtenir ; aucun succès CI
 R2 futur n'est affirmé dans cet état local.
 
-## R3 — fermeture locale de S-PG-01, S-PG-02, S-PG-03 et G-QA-01
+## R3 publié — fermeture de S-PG-01, S-PG-02 et S-PG-03 ; R4 documentaire
 
 Le dernier paragraphe R2 ci-dessus est conservé comme instantané local
 prépublication. R2 a ensuite été publié au head `b4868b9…`. Infrastructure
@@ -252,8 +251,28 @@ et ne sont pas reclassés comme vides.
 
 L'inventaire étranger post-redémarrage conserve quatre conteneurs, huit
 volumes et quatre images ; les IDs, montages et états des services observés
-restent inchangés. Chaque instance R3 est absente après cleanup. R3 n'est pas
-encore indexé, commité, poussé ou soumis à CI ; aucun résultat futur n'est
-annoncé. Fournisseurs et Linux de production, installations persistantes
-externes et C3 restent non qualifiés ; les 75 SKIP restent des SKIP et la
-politique OSS demeure différée.
+restent inchangés. Chaque instance R3 est absente après cleanup. La phrase de
+non-publication du candidat local constituait un instantané historique
+antérieur au commit R3.
+
+R3 est publié au commit `e1ec2ffded6f6b2edc9a2a5ad7135501412263ec` dans la
+PR #53 toujours `OPEN/Draft`. Les workflows pull request Infrastructure
+`40312158372`, Launcher Windows `40312158476`, Security `40312158263` et
+Quality Linux `40312158291` sont `completed/success`, tentative 1, sur ce head
+et le checkout synthétique
+`8aab8daca9ae26b157456bc7aa7025d95a7832c1`. Infrastructure conserve les
+décompositions exactes C1 47/47, Foundations 34/34, C2a 1 contrôle statique +
+11 scénarios réels et C2b 14/14 ; ces résultats ne transforment pas les 75 SKIP
+API en PASS.
+
+La revue cumulative postpublication conclut GO pour Backend et Security sur
+les octets techniques R3, mais BLOCK pour Governance/QA sur le seul finding
+G-QA-01 : les documents vivants décrivaient encore R3 comme local. La
+correction documentaire R4 ferme cette contradiction sans modifier un fichier
+technique ni requalifier rétroactivement un incident ou un NON-PASS.
+Fournisseurs et Linux de production restent NON QUALIFIÉS ; clés de production,
+signal Windows, limites préincident R9, installations persistantes externes et
+perte réelle de l'accusé réseau lors de `COMMIT_UNKNOWN` restent NON
+DEMONSTRATED. C3 reste hors preuve. Les NON-PASS 12/14, 13/14 et 13/14
+demeurent historiques, les 75 SKIP restent des SKIP et la politique OSS
+demeure différée.

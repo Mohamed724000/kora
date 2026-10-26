@@ -30,7 +30,7 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 | Slice 1 / S1.2-03A  | Frontière PostgreSQL runtime en lecture seule | Closed and merged — PR #45                                                       |
 | Slice 1 / S1.2-03B  | Admin Security Contract Gate, sans runtime    | Closed and merged — PR #48, merge `c97992ca2c82bc4f22f9222ea98ed53714fede4c`     |
 | Slice 1 / S1.2-03C1 | Auth admin, TOTP et sessions runtime          | Closed and merged — merge dc97eeef72c4e299988ed19d66460011a8551cf3; not deployed |
-| Slice 1 / S1.2-03C2 | Recovery, audit, invitations et RBAC runtime  | C2a closed/merged; C2b R2 published in Draft PR #53; R3 locally qualified        |
+| Slice 1 / S1.2-03C2 | Recovery, audit, invitations et RBAC runtime  | C2a closed/merged; C2b R3 published in Draft PR #53; G-QA-01 reconciled          |
 | Slice 1 / S1.2-03C3 | Interface d'authentification Admin            | Not started — separate authorization required                                    |
 | Slice 1 / S1.2-03D  | Artist API                                    | Not started                                                                      |
 | Slice 1 / S1.2-03E  | Artist Admin UI                               | Not started                                                                      |
@@ -1212,7 +1212,7 @@ repassent sur des instances propres. Commit, push, nouvelle Draft PR et quatre
 workflows verts restent conditionnels et ne sont pas annoncés dans cet
 instantané.
 
-### C2b R2 publié et R3 qualifié localement — 2026-10-26
+### C2b R3 publié et réconciliation documentaire R4 — 2026-10-26
 
 R2 est publié dans la Draft PR #53 au head `b4868b9…`; ses quatre workflows
 pull request sont verts. La revue cumulative postpublication demeure un BLOCK
@@ -1227,8 +1227,22 @@ métier finale passe 14/14 avec worker et BullMQ. Les NON-PASS 12/14, 13/14 et
 13/14 restent historiques.
 
 Les gates locaux passent, dont API 300 PASS/75 SKIP, tooling 570/570, scanner
-466, OpenAPI 60/67/141 et audits à zéro. La qualification locale R3 du
-2026-10-26 reste soumise à un gel reproductible, trois revues indépendantes et
-aux conditions de publication ; son état Git/CI postérieur doit être constaté
-sur la PR #53 et son head courant. C3, production, fournisseurs et politique
-OSS restent hors périmètre.
+466, OpenAPI 60/67/141 et audits à zéro. Cette qualification locale est
+désormais un instantané historique relié au commit R3 publié
+`e1ec2ffded6f6b2edc9a2a5ad7135501412263ec`, arbre
+`16fa1a75726c6b892b4dd33cbda7455312b2858b`, dans la PR #53 toujours
+`OPEN/Draft`.
+
+Les workflows pull request Infrastructure `40312158372`, Launcher Windows
+`40312158476`, Security `40312158263` et Quality Linux `40312158291` sont
+`completed/success`, tentative 1, sur le checkout synthétique
+`8aab8daca9ae26b157456bc7aa7025d95a7832c1`. Infrastructure conserve C1 47/47,
+Foundations 34/34, C2a 1 contrôle statique + 11 scénarios réels et C2b 14/14.
+
+La revue cumulative postpublication conclut GO Backend et GO Security, puis
+BLOCK Governance/QA sur le seul finding G-QA-01, avant la présente correction
+documentaire R4. Celle-ci réconcilie les quatre documents vivants sans changer
+les preuves techniques. Les NON-PASS 12/14, 13/14 et 13/14, les 75 SKIP, les
+réserves sur production, fournisseurs, clés, signal Windows, préincident R9,
+bases externes et perte réelle de l'accusé réseau lors de `COMMIT_UNKNOWN`
+restent NON DEMONSTRATED. C3 et la politique OSS restent hors périmètre.

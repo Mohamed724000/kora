@@ -1,10 +1,10 @@
 # KORA+ Final — Source de vérité
 
 Statut : **DOCUMENT OPÉRATIONNEL VIVANT — C2a INTÉGRÉ DANS MAIN AU MERGE
-`029e30bbc795f3d9c153782bc04e45e9f5a03f8a`, NON DÉPLOYÉ — C2b R2 PUBLIÉ
-DANS LA PR #53 DRAFT ; R3 QUALIFIÉ LOCALEMENT LE 2026-10-26 — ÉTAT DE
-PUBLICATION COURANT PORTÉ PAR LA PR #53 ET SON HEAD — FOURNISSEURS DE
-PRODUCTION NON QUALIFIÉS — C3 NON COMMENCÉ**
+`029e30bbc795f3d9c153782bc04e45e9f5a03f8a`, NON DÉPLOYÉ — C2b R3 PUBLIÉ
+DANS LA PR #53 DRAFT AVEC QUATRE WORKFLOWS VERTS — G-QA-01 RÉCONCILIÉ PAR
+CORRECTION DOCUMENTAIRE R4 — FOURNISSEURS DE PRODUCTION NON QUALIFIÉS — C3
+NON COMMENCÉ**
 
 Date d’effet : 2026-07-28
 Dernière réconciliation documentaire : 2026-10-26
@@ -1575,7 +1575,7 @@ frais complet/production trouvent zéro vulnérabilité. R2 reste local et non
 indexé jusqu'au commit/push conditionnel ; les quatre workflows du futur head
 et le corps PR réconcilié ne sont pas encore affirmés.
 
-## C2b R2 publié et candidat local R3 — 2026-10-26
+## C2b R3 publié et correction documentaire R4 — 2026-10-26
 
 Le paragraphe R2 ci-dessus est un instantané prépublication. R2 est ensuite
 publié au commit `b4868b92794925dc2a2c5f4f1fd8949c0e351dcf`, arbre
@@ -1598,10 +1598,27 @@ La preuve sélectionnée associe le wrapper runtime PASS à une campagne métier
 finale 14/14. API passe 300 assertions avec 75 SKIP, tooling 570/570, scanner
 466 fichiers, OpenAPI 60/67/141, format/lint/typecheck/build/génération et les
 deux audits à zéro. Les NON-PASS métier 12/14, 13/14 et 13/14 ainsi que le
-contrôle Prettier intermédiaire restent archivés sans requalification. Le
-candidat R3 est local, non indexé et non publié ; aucun SHA, run CI ou succès
-R3 futur n'est annoncé ici.
+contrôle Prettier intermédiaire restent archivés sans requalification. La
+description de R3 comme candidat local était l'instantané historique antérieur
+à sa publication.
 
-Les fournisseurs et Linux de production restent non qualifiés, les bases
-persistantes externes ne sont pas attestées, les SKIP restent des SKIP, C3
-n'est pas commencé et la politique OSS demeure différée.
+R3 est publié au commit `e1ec2ffded6f6b2edc9a2a5ad7135501412263ec`, arbre
+`16fa1a75726c6b892b4dd33cbda7455312b2858b`, dans la PR #53 toujours
+`OPEN/Draft`. Les workflows pull request Infrastructure `40312158372`,
+Launcher Windows `40312158476`, Security `40312158263` et Quality Linux
+`40312158291` sont `completed/success`, tentative 1, sur le checkout
+synthétique `8aab8daca9ae26b157456bc7aa7025d95a7832c1`. Infrastructure conserve C1
+47/47, Foundations 34/34, C2a 1 contrôle statique + 11 scénarios réels et C2b
+14/14.
+
+La revue cumulative postpublication maintient les GO techniques Backend et
+Security et bloque uniquement la gouvernance documentaire G-QA-01, les
+documents vivants décrivant encore R3 comme local. La correction documentaire
+R4 réconcilie ce statut sans modifier les octets techniques ni transformer les
+75 SKIP ou les anciens NON-PASS en PASS.
+
+Les fournisseurs et Linux de production restent NON QUALIFIÉS ; les clés de
+production, le signal Windows, les limites préincident R9, les bases
+persistantes externes et la perte réelle de l'accusé réseau lors de
+`COMMIT_UNKNOWN` restent NON DEMONSTRATED. Les SKIP restent des SKIP, C3 n'est
+pas commencé et la politique OSS demeure différée.
