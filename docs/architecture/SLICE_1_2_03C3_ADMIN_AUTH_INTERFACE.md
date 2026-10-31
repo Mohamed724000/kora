@@ -1,9 +1,9 @@
 # S1.2-03C3 — Interface d'authentification Admin
 
-Statut : **CANDIDAT LOCAL L0–L5 IMPLÉMENTÉ — A-02 GO LOCAL/CI —
-QUALIFICATION TECHNIQUE LOCALE GO FINAL BORNÉ — FIREFOX WINDOWS GO BORNÉ —
-APPROBATION VISUELLE PRODUCT OWNER BORNÉE — C3-PUB-SC-01 FERMÉ LOCALEMENT —
-NON INDEXÉ, NON PUBLIÉ, NON DÉPLOYÉ**
+Statut : **CANDIDAT C3 PUBLIÉ DANS LA DRAFT PR #54 AU HEAD `e27ee24…` —
+TROIS WORKFLOWS VERTS ET INFRASTRUCTURE `41221134116` NON-PASS HISTORIQUE —
+RACCORDEMENT BUILD C2a CORRIGÉ ET QUALIFIÉ LOCALEMENT, NON ENCORE PUBLIÉ —
+A-02, FIREFOX WINDOWS ET VISUEL PRODUCT OWNER BORNÉS — NON DÉPLOYÉ**
 
 Date : 2026-10-31
 
@@ -264,3 +264,42 @@ et dépendances d'exécution ne changent pas. Aucune nouvelle exécution globale
 Verdict local après C3-PUB-SC-01 : **GO LOCAL FINAL BORNÉ**. La publication,
 la CI de pull request, l'intégration et la production restent des décisions et
 preuves distinctes.
+
+## Raccordement du build C2a après la première publication C3 — 2026-10-31
+
+Le candidat SC-01 est publié au head
+`e27ee24f6a5be39adedaf45e324c0e482c87675b`, arbre
+`b39a425075f87f15f2884625f0ed0bf26be80c86`, dans la Draft PR #54. Security
+`41221133897`, Launcher Windows `41221133900` et Quality Linux `41221133919`
+sont verts. Infrastructure `41221134116` reste **NON-PASS** historique : C1 et
+Foundations C2a y passent, puis le wrapper métier tente encore d'exécuter
+`node_modules/@nestjs/cli/bin/nest.js`, absent du graphe qualifié. Les étapes
+C2a métier, C2b, C3, lifecycle et API health non exécutées par ce run ne sont
+pas reclassées PASS.
+
+Le raccordement local qualifié vérifie d'abord les quatre scripts du build API
+et l'absence des cinq hooks npm implicites qu'il ne réimplémente pas, puis
+exécute par arguments structurés et `shell:false` : génération Prisma,
+suppression ciblée de `apps/api/dist`, et TypeScript 5.9.3 avec
+`tsconfig.build.json`. Les quatre entrées compilées nécessaires doivent être
+des fichiers frais. Les mots de passe `S1203C2A_BUSINESS_*` sont retirés de
+l'environnement des outils de build ; les autres variables de campagne restent
+héritées comme dans le build canonique. Toute erreur de lancement, code non nul,
+signal, timeout, échec de nettoyage ou sortie manquante bloque avant Vitest.
+
+Sur les mêmes octets, les régressions ciblées passent 13/13, tooling 592/592,
+le scanner officiel passe sur 526 fichiers et le format workspace est
+concluant. La campagne réelle isolée passe `1` contrôle statique et `11`
+scénarios C2a, puis C1 47/47 ; conteneurs, réseau et secrets de campagne sont
+nettoyés. Les inventaires étrangers avant/après sont identiques après
+normalisation stricte : les sorties brutes diffèrent uniquement par l'ordre des
+labels réseau et par l'ordre des trois montages Redis, dont les objets complets,
+IDs et valeurs sont inchangés. Les deux comparateurs bruts NON-PASS restent
+archivés avant la comparaison normalisée concluante. Les audits npm frais
+complet et production trouvent zéro vulnérabilité.
+
+Ce snapshot qualifie le correctif local. Il ne revendique ni sa publication,
+ni une nouvelle CI, ni une nouvelle campagne navigateur. Les preuves C3 et
+l'approbation visuelle restent applicables parce qu'aucune source, dépendance,
+configuration ou artefact navigateur concerné ne change. La limite de signal
+gracieux Windows demeure explicitement NON DEMONSTRATED.

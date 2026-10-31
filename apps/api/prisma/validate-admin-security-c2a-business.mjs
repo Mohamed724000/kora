@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { existsSync, lstatSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
@@ -9,9 +10,28 @@ const prismaDirectory = dirname(fileURLToPath(import.meta.url));
 const apiDirectory = resolve(prismaDirectory, '..');
 const repositoryRoot = resolve(apiDirectory, '..', '..');
 const prismaEntry = resolve(repositoryRoot, 'node_modules', 'prisma', 'build', 'index.js');
-const nestEntry = resolve(repositoryRoot, 'node_modules', '@nestjs', 'cli', 'bin', 'nest.js');
+const typescriptEntry = resolve(repositoryRoot, 'node_modules', 'typescript', 'bin', 'tsc');
 const vitestEntry = resolve(repositoryRoot, 'node_modules', 'vitest', 'vitest.mjs');
 const provisionScriptContainerPath = '/usr/local/bin/kora-provision-postgresql-runtime.sh';
+const OFFICIAL_API_BUILD_SCRIPTS = Object.freeze({
+  build: 'npm run clean:dist && tsc -p tsconfig.build.json',
+  'clean:dist': "node -e \"require('node:fs').rmSync('dist', { force: true, recursive: true })\"",
+  'db:generate': 'prisma generate --config prisma.config.ts',
+  prebuild: 'npm run db:generate',
+});
+const FORBIDDEN_IMPLICIT_API_BUILD_HOOKS = Object.freeze([
+  'predb:generate',
+  'postdb:generate',
+  'preclean:dist',
+  'postclean:dist',
+  'postbuild',
+]);
+const OFFICIAL_API_BUILD_OUTPUTS = Object.freeze([
+  'dist/src/main.js',
+  'dist/src/admin-security/admin-bootstrap.main.js',
+  'dist/src/admin-security/admin-notification.main.js',
+  'dist/src/admin-security/admin-recovery-expiration.main.js',
+]);
 
 const REQUIRED_ENVIRONMENT = Object.freeze([
   'S1203C2A_BUSINESS_ADMIN_PASSWORD',
@@ -146,18 +166,128 @@ function runProvisioner(database, c2aEnabled) {
   if (result.status !== 0) throw new Error(`C2a provisioner exited ${result.status}.`);
 }
 
-function runBuild() {
-  const result = spawnSync(process.execPath, [nestEntry, 'build'], {
-    cwd: apiDirectory,
-    encoding: 'utf8',
-    env: process.env,
-    shell: false,
-    timeout: 300_000,
-    windowsHide: true,
+export function assertOfficialApiBuildScripts(manifestPath) {
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  for (const [name, expected] of Object.entries(OFFICIAL_API_BUILD_SCRIPTS)) {
+    if (manifest?.scripts?.[name] !== expected) {
+      throw new Error(
+        `C2a process-proof build script ${name} diverged from the qualified API build.`,
+      );
+    }
+  }
+  for (const name of FORBIDDEN_IMPLICIT_API_BUILD_HOOKS) {
+    if (Object.hasOwn(manifest?.scripts ?? {}, name)) {
+      throw new Error(`C2a process-proof build cannot bypass implicit npm hook ${name}.`);
+    }
+  }
+}
+
+function buildPhaseError(label, result) {
+  let message;
+  if (result.error !== undefined) {
+    message = `${label} launch failed (${result.error.code ?? 'unknown'}).`;
+  } else if (result.signal !== null && result.signal !== undefined) {
+    message = `${label} terminated by signal ${result.signal}.`;
+  } else {
+    message = `${label} exited ${result.status ?? 'unknown'}.`;
+  }
+  return Object.assign(new Error(message), {
+    cause: result.error,
+    signal: result.signal ?? null,
+    spawnCode: result.error?.code ?? null,
+    status: result.status ?? null,
   });
-  process.stdout.write(normalized(result.stdout));
-  process.stderr.write(normalized(result.stderr));
-  if (result.status !== 0) throw new Error(`C2a process-proof build exited ${result.status}.`);
+}
+
+function remainingBuildTime(deadline, now, timeoutMs) {
+  const remaining = deadline - now();
+  if (remaining > 0) return remaining;
+  throw Object.assign(
+    new Error(`C2a process-proof build exceeded its ${timeoutMs} millisecond bound.`),
+    {
+      signal: null,
+      spawnCode: 'ETIMEDOUT',
+      status: null,
+    },
+  );
+}
+
+export function runOfficialApiBuild(options = {}) {
+  const apiRoot = options.apiRoot ?? apiDirectory;
+  const environment = { ...(options.environment ?? process.env) };
+  for (const name of REQUIRED_ENVIRONMENT.filter((entry) => entry.endsWith('_PASSWORD'))) {
+    delete environment[name];
+  }
+  const manifestPath = options.manifestPath ?? resolve(apiRoot, 'package.json');
+  const now = options.now ?? Date.now;
+  const pathExists = options.pathExists ?? existsSync;
+  const pathInfo = options.pathInfo ?? lstatSync;
+  const prismaCli = options.prismaCli ?? prismaEntry;
+  const removeDirectory = options.removeDirectory ?? rmSync;
+  const spawn = options.spawn ?? spawnSync;
+  const timeoutMs = options.timeoutMs ?? 300_000;
+  const typescriptCli = options.typescriptCli ?? typescriptEntry;
+  const writeOutput =
+    options.writeOutput ??
+    ((stdout, stderr) => {
+      process.stdout.write(normalized(stdout));
+      process.stderr.write(normalized(stderr));
+    });
+  const deadline = now() + timeoutMs;
+
+  assertOfficialApiBuildScripts(manifestPath);
+
+  const runNodeTool = (label, entry, args) => {
+    const result = spawn(process.execPath, [entry, ...args], {
+      cwd: apiRoot,
+      encoding: 'utf8',
+      env: environment,
+      shell: false,
+      timeout: remainingBuildTime(deadline, now, timeoutMs),
+      windowsHide: true,
+    });
+    writeOutput(result.stdout, result.stderr);
+    if (result.error !== undefined || result.signal !== null || result.status !== 0) {
+      throw buildPhaseError(label, result);
+    }
+  };
+
+  runNodeTool('C2a process-proof Prisma generate', prismaCli, [
+    'generate',
+    '--config',
+    'prisma.config.ts',
+  ]);
+
+  const distDirectory = resolve(apiRoot, 'dist');
+  try {
+    removeDirectory(distDirectory, { force: true, recursive: true });
+  } catch (error) {
+    throw Object.assign(new Error('C2a process-proof dist cleanup failed.', { cause: error }), {
+      signal: null,
+      spawnCode: error?.code ?? null,
+      status: null,
+    });
+  }
+  if (pathExists(distDirectory)) {
+    throw Object.assign(new Error('C2a process-proof dist cleanup left the target present.'), {
+      signal: null,
+      spawnCode: null,
+      status: null,
+    });
+  }
+
+  runNodeTool('C2a process-proof TypeScript compile', typescriptCli, ['-p', 'tsconfig.build.json']);
+
+  for (const output of OFFICIAL_API_BUILD_OUTPUTS) {
+    const outputPath = resolve(apiRoot, ...output.split('/'));
+    if (!pathExists(outputPath) || !pathInfo(outputPath).isFile()) {
+      throw Object.assign(new Error(`C2a process-proof build output is missing: ${output}.`), {
+        signal: null,
+        spawnCode: null,
+        status: null,
+      });
+    }
+  }
 }
 
 function runBusinessTests(database) {
@@ -219,6 +349,14 @@ function runC1RegressionTests(database) {
   );
 }
 
+export function runBuildThenBusinessTests(
+  database,
+  { build = runOfficialApiBuild, businessTests = runBusinessTests } = {},
+) {
+  build();
+  businessTests(database);
+}
+
 async function main() {
   for (const name of REQUIRED_ENVIRONMENT) required(name);
   port('S1203C2A_BUSINESS_POSTGRES_PORT');
@@ -247,8 +385,7 @@ async function main() {
     }
     runPrisma(database);
     runProvisioner(database, true);
-    runBuild();
-    runBusinessTests(database);
+    runBuildThenBusinessTests(database);
     runPrisma(c1Database);
     runProvisioner(c1Database, false);
     runC1RegressionTests(c1Database);

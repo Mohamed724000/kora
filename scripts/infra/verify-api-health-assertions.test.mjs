@@ -45,6 +45,10 @@ import {
 } from "../../apps/api/prisma/validate-admin-security-c2a-runtime.mjs";
 
 import { validateExactC2bMigrationNames } from "../../apps/api/prisma/validate-admin-security-c2b-runtime.mjs";
+import {
+  runBuildThenBusinessTests,
+  runOfficialApiBuild,
+} from "../../apps/api/prisma/validate-admin-security-c2a-business.mjs";
 
 import {
   assertNoSensitiveValue,
@@ -110,6 +114,67 @@ function runPowerShellImageFixture(wrapperPath, body) {
   } finally {
     rmSync(fixtureRoot, { force: true, recursive: true });
   }
+}
+
+const officialApiBuildScripts = {
+  build: "npm run clean:dist && tsc -p tsconfig.build.json",
+  "clean:dist":
+    "node -e \"require('node:fs').rmSync('dist', { force: true, recursive: true })\"",
+  "db:generate": "prisma generate --config prisma.config.ts",
+  prebuild: "npm run db:generate",
+};
+
+const officialApiBuildOutputs = [
+  "dist/src/main.js",
+  "dist/src/admin-security/admin-bootstrap.main.js",
+  "dist/src/admin-security/admin-notification.main.js",
+  "dist/src/admin-security/admin-recovery-expiration.main.js",
+];
+
+function writeBuildBridgeFixture(root, { typescriptExitCode = 0 } = {}) {
+  const apiRoot = resolve(root, "API worktree with spaces");
+  const toolsRoot = resolve(root, "tool entries with spaces");
+  mkdirSync(apiRoot, { recursive: true });
+  mkdirSync(toolsRoot, { recursive: true });
+  writeFileSync(
+    resolve(apiRoot, "package.json"),
+    `${JSON.stringify({ scripts: officialApiBuildScripts }, null, 2)}\n`,
+    { encoding: "utf8", flag: "wx" },
+  );
+  writeFileSync(resolve(apiRoot, "tsconfig.build.json"), "{}\n", {
+    encoding: "utf8",
+    flag: "wx",
+  });
+
+  const prismaCli = resolve(toolsRoot, "prisma fixture.mjs");
+  writeFileSync(
+    prismaCli,
+    `import { writeFileSync } from "node:fs";\n` +
+      `writeFileSync(new URL("./prisma-record.json", import.meta.url), JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd(), marker: process.env.KORA_BUILD_BRIDGE_MARKER, campaign: process.env.S1203C2A_BUSINESS_POSTGRES_PORT, secret: process.env.S1203C2A_BUSINESS_ADMIN_PASSWORD }));\n`,
+    { encoding: "utf8", flag: "wx" },
+  );
+
+  const typescriptCli = resolve(toolsRoot, "typescript fixture.mjs");
+  const outputCreation = officialApiBuildOutputs
+    .map(
+      (output) =>
+        `mkdirSync(resolve(process.cwd(), ${JSON.stringify(dirname(output))}), { recursive: true });\n` +
+        `writeFileSync(resolve(process.cwd(), ${JSON.stringify(output)}), "compiled\\n", { flag: "wx" });\n`,
+    )
+    .join("");
+  writeFileSync(
+    typescriptCli,
+    `import { existsSync, mkdirSync, writeFileSync } from "node:fs";\n` +
+      `import { resolve } from "node:path";\n` +
+      `if (existsSync(resolve(process.cwd(), "dist", "stale-sentinel.txt"))) process.exit(41);\n` +
+      `writeFileSync(new URL("./typescript-record.json", import.meta.url), JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd(), marker: process.env.KORA_BUILD_BRIDGE_MARKER, campaign: process.env.S1203C2A_BUSINESS_POSTGRES_PORT, secret: process.env.S1203C2A_BUSINESS_ADMIN_PASSWORD }));\n` +
+      (typescriptExitCode === 0
+        ? outputCreation
+        : `process.exit(${typescriptExitCode});\n`),
+    { encoding: "utf8", flag: "wx" },
+  );
+
+  return { apiRoot, prismaCli, toolsRoot, typescriptCli };
 }
 
 function imageIdentityFixtureBody() {
@@ -2087,6 +2152,489 @@ test("conserve le resultat non nul explicitement allowFailure", () => {
       stdout: "",
     },
   );
+});
+
+test("exécute le build API officiel sans Nest CLI dans un chemin avec espaces", () => {
+  const fixtureRoot = mkdtempSync(resolve(tmpdir(), "kora-c2a-build bridge "));
+  try {
+    const fixture = writeBuildBridgeFixture(fixtureRoot);
+    const staleSentinel = resolve(
+      fixture.apiRoot,
+      "dist",
+      "stale-sentinel.txt",
+    );
+    const outsideSentinel = resolve(fixture.apiRoot, "outside-sentinel.txt");
+    mkdirSync(dirname(staleSentinel), { recursive: true });
+    writeFileSync(staleSentinel, "stale\n", { encoding: "utf8", flag: "wx" });
+    writeFileSync(outsideSentinel, "preserve\n", {
+      encoding: "utf8",
+      flag: "wx",
+    });
+
+    assert.equal(
+      existsSync(
+        resolve(
+          repositoryRoot,
+          "node_modules",
+          "@nestjs",
+          "cli",
+          "bin",
+          "nest.js",
+        ),
+      ),
+      false,
+    );
+    runOfficialApiBuild({
+      apiRoot: fixture.apiRoot,
+      environment: {
+        ...process.env,
+        KORA_BUILD_BRIDGE_MARKER: "marker with spaces & metacharacters",
+        S1203C2A_BUSINESS_ADMIN_PASSWORD: "must-not-reach-build-tools",
+        S1203C2A_BUSINESS_POSTGRES_PORT: "55432",
+      },
+      prismaCli: fixture.prismaCli,
+      typescriptCli: fixture.typescriptCli,
+      writeOutput() {},
+    });
+
+    assert.equal(existsSync(staleSentinel), false);
+    assert.equal(readFileSync(outsideSentinel, "utf8"), "preserve\n");
+    for (const output of officialApiBuildOutputs) {
+      assert.equal(
+        readFileSync(resolve(fixture.apiRoot, output), "utf8"),
+        "compiled\n",
+      );
+    }
+    for (const [recordName, expectedArguments] of [
+      ["prisma-record.json", ["generate", "--config", "prisma.config.ts"]],
+      ["typescript-record.json", ["-p", "tsconfig.build.json"]],
+    ]) {
+      const record = JSON.parse(
+        readFileSync(resolve(fixture.toolsRoot, recordName), "utf8"),
+      );
+      assert.deepEqual(record.argv, expectedArguments);
+      assert.equal(record.cwd, fixture.apiRoot);
+      assert.equal(record.marker, "marker with spaces & metacharacters");
+      assert.equal(record.campaign, "55432");
+      assert.equal(Object.hasOwn(record, "secret"), false);
+    }
+  } finally {
+    rmSync(fixtureRoot, { force: true, recursive: true });
+  }
+});
+
+test("refuse une dérive du build API officiel avant tout lancement", () => {
+  const fixtureRoot = mkdtempSync(resolve(tmpdir(), "kora-c2a-build-drift-"));
+  try {
+    const fixture = writeBuildBridgeFixture(fixtureRoot);
+    writeFileSync(
+      resolve(fixture.apiRoot, "package.json"),
+      `${JSON.stringify({ scripts: { ...officialApiBuildScripts, build: "nest build" } }, null, 2)}\n`,
+    );
+    assert.throws(
+      () =>
+        runOfficialApiBuild({
+          apiRoot: fixture.apiRoot,
+          prismaCli: fixture.prismaCli,
+          typescriptCli: fixture.typescriptCli,
+          writeOutput() {},
+        }),
+      /build script build diverged/u,
+    );
+    assert.equal(
+      existsSync(resolve(fixture.toolsRoot, "prisma-record.json")),
+      false,
+    );
+  } finally {
+    rmSync(fixtureRoot, { force: true, recursive: true });
+  }
+});
+
+test("refuse tout hook npm implicite omis par le bridge avant lancement", () => {
+  const fixtureRoot = mkdtempSync(
+    resolve(tmpdir(), "kora-c2a-build-implicit-hook-"),
+  );
+  try {
+    const fixture = writeBuildBridgeFixture(fixtureRoot);
+    for (const hook of [
+      "predb:generate",
+      "postdb:generate",
+      "preclean:dist",
+      "postclean:dist",
+      "postbuild",
+    ]) {
+      writeFileSync(
+        resolve(fixture.apiRoot, "package.json"),
+        `${JSON.stringify({ scripts: { ...officialApiBuildScripts, [hook]: "node omitted-hook.mjs" } }, null, 2)}\n`,
+      );
+      let spawnCalls = 0;
+      assert.throws(
+        () =>
+          runOfficialApiBuild({
+            apiRoot: fixture.apiRoot,
+            prismaCli: fixture.prismaCli,
+            spawn: () => {
+              spawnCalls += 1;
+              return { signal: null, status: 0, stderr: "", stdout: "" };
+            },
+            typescriptCli: fixture.typescriptCli,
+            writeOutput() {},
+          }),
+        new RegExp(`implicit npm hook ${hook}`, "u"),
+      );
+      assert.equal(spawnCalls, 0);
+    }
+  } finally {
+    rmSync(fixtureRoot, { force: true, recursive: true });
+  }
+});
+
+test("borne et transmet exactement les deux outils du build sans shell", () => {
+  const fixtureRoot = mkdtempSync(resolve(tmpdir(), "kora-c2a-build-options-"));
+  try {
+    const fixture = writeBuildBridgeFixture(fixtureRoot);
+    const invocations = [];
+    runOfficialApiBuild({
+      apiRoot: fixture.apiRoot,
+      environment: {
+        KORA_BUILD_BRIDGE_MARKER: "preserved",
+        PATH: process.env.PATH,
+        S1203C2A_BUSINESS_ADMIN_PASSWORD: "redacted-from-child",
+        S1203C2A_BUSINESS_POSTGRES_PORT: "55432",
+      },
+      prismaCli: fixture.prismaCli,
+      spawn: (command, args, options) => {
+        invocations.push({ args, command, options });
+        if (invocations.length === 2) {
+          for (const output of officialApiBuildOutputs) {
+            const outputPath = resolve(fixture.apiRoot, output);
+            mkdirSync(dirname(outputPath), { recursive: true });
+            writeFileSync(outputPath, "compiled\n", { flag: "wx" });
+          }
+        }
+        return { signal: null, status: 0, stderr: "", stdout: "" };
+      },
+      timeoutMs: 12_345,
+      typescriptCli: fixture.typescriptCli,
+      writeOutput() {},
+    });
+
+    assert.equal(invocations.length, 2);
+    assert.deepEqual(
+      invocations.map(({ command }) => command),
+      [process.execPath, process.execPath],
+    );
+    assert.deepEqual(
+      invocations.map(({ args }) => args),
+      [
+        [fixture.prismaCli, "generate", "--config", "prisma.config.ts"],
+        [fixture.typescriptCli, "-p", "tsconfig.build.json"],
+      ],
+    );
+    for (const { options } of invocations) {
+      assert.equal(options.cwd, fixture.apiRoot);
+      assert.equal(options.shell, false);
+      assert.equal(options.windowsHide, true);
+      assert.ok(options.timeout > 0 && options.timeout <= 12_345);
+      assert.equal(options.env.KORA_BUILD_BRIDGE_MARKER, "preserved");
+      assert.equal(options.env.S1203C2A_BUSINESS_POSTGRES_PORT, "55432");
+      assert.equal(
+        Object.hasOwn(options.env, "S1203C2A_BUSINESS_ADMIN_PASSWORD"),
+        false,
+      );
+    }
+  } finally {
+    rmSync(fixtureRoot, { force: true, recursive: true });
+  }
+});
+
+test("arrête avant Vitest et refuse un artefact dist périmé après un build en échec", () => {
+  const fixtureRoot = mkdtempSync(resolve(tmpdir(), "kora-c2a-build-failure-"));
+  try {
+    const fixture = writeBuildBridgeFixture(fixtureRoot, {
+      typescriptExitCode: 23,
+    });
+    const staleOutput = resolve(fixture.apiRoot, "dist", "src", "main.js");
+    mkdirSync(dirname(staleOutput), { recursive: true });
+    writeFileSync(staleOutput, "stale\n", { encoding: "utf8", flag: "wx" });
+    let businessStarted = false;
+    assert.throws(
+      () =>
+        runBuildThenBusinessTests("fixture", {
+          build: () =>
+            runOfficialApiBuild({
+              apiRoot: fixture.apiRoot,
+              prismaCli: fixture.prismaCli,
+              typescriptCli: fixture.typescriptCli,
+              writeOutput() {},
+            }),
+          businessTests: () => {
+            businessStarted = true;
+          },
+        }),
+      (error) => {
+        assert.equal(error.status, 23);
+        assert.equal(error.signal, null);
+        assert.match(error.message, /TypeScript compile exited 23/u);
+        return true;
+      },
+    );
+    assert.equal(businessStarted, false);
+    assert.equal(existsSync(staleOutput), false);
+  } finally {
+    rmSync(fixtureRoot, { force: true, recursive: true });
+  }
+});
+
+test("arrête avant cleanup, TypeScript et Vitest lorsque Prisma échoue", () => {
+  const fixtureRoot = mkdtempSync(
+    resolve(tmpdir(), "kora-c2a-prisma-failure-"),
+  );
+  try {
+    const fixture = writeBuildBridgeFixture(fixtureRoot);
+    const sentinel = resolve(
+      fixture.apiRoot,
+      "dist",
+      "preserved-before-cleanup.txt",
+    );
+    mkdirSync(dirname(sentinel), { recursive: true });
+    writeFileSync(sentinel, "preserve\n", { encoding: "utf8", flag: "wx" });
+    let businessStarted = false;
+    let cleanupStarted = false;
+    let spawnCalls = 0;
+    assert.throws(
+      () =>
+        runBuildThenBusinessTests("fixture", {
+          build: () =>
+            runOfficialApiBuild({
+              apiRoot: fixture.apiRoot,
+              prismaCli: fixture.prismaCli,
+              removeDirectory: () => {
+                cleanupStarted = true;
+              },
+              spawn: () => {
+                spawnCalls += 1;
+                return { signal: null, status: 19, stderr: "", stdout: "" };
+              },
+              typescriptCli: fixture.typescriptCli,
+              writeOutput() {},
+            }),
+          businessTests: () => {
+            businessStarted = true;
+          },
+        }),
+      (error) =>
+        error.status === 19 && /Prisma generate exited 19/u.test(error.message),
+    );
+    assert.equal(spawnCalls, 1);
+    assert.equal(cleanupStarted, false);
+    assert.equal(businessStarted, false);
+    assert.equal(readFileSync(sentinel, "utf8"), "preserve\n");
+  } finally {
+    rmSync(fixtureRoot, { force: true, recursive: true });
+  }
+});
+
+test("arrête avant TypeScript et Vitest lorsque le cleanup dist échoue", () => {
+  const fixtureRoot = mkdtempSync(
+    resolve(tmpdir(), "kora-c2a-cleanup-failure-"),
+  );
+  try {
+    const fixture = writeBuildBridgeFixture(fixtureRoot);
+    let businessStarted = false;
+    let spawnCalls = 0;
+    assert.throws(
+      () =>
+        runBuildThenBusinessTests("fixture", {
+          build: () =>
+            runOfficialApiBuild({
+              apiRoot: fixture.apiRoot,
+              prismaCli: fixture.prismaCli,
+              removeDirectory: () => {
+                throw Object.assign(new Error("cleanup denied"), {
+                  code: "EACCES",
+                });
+              },
+              spawn: () => {
+                spawnCalls += 1;
+                return { signal: null, status: 0, stderr: "", stdout: "" };
+              },
+              typescriptCli: fixture.typescriptCli,
+              writeOutput() {},
+            }),
+          businessTests: () => {
+            businessStarted = true;
+          },
+        }),
+      (error) => {
+        assert.equal(error.spawnCode, "EACCES");
+        assert.match(error.message, /dist cleanup failed/u);
+        return true;
+      },
+    );
+    assert.equal(spawnCalls, 1);
+    assert.equal(businessStarted, false);
+  } finally {
+    rmSync(fixtureRoot, { force: true, recursive: true });
+  }
+});
+
+test("refuse un succès TypeScript sans sorties fraîches avant Vitest", () => {
+  const fixtureRoot = mkdtempSync(
+    resolve(tmpdir(), "kora-c2a-missing-output-"),
+  );
+  try {
+    const fixture = writeBuildBridgeFixture(fixtureRoot);
+    let businessStarted = false;
+    let spawnCalls = 0;
+    assert.throws(
+      () =>
+        runBuildThenBusinessTests("fixture", {
+          build: () =>
+            runOfficialApiBuild({
+              apiRoot: fixture.apiRoot,
+              prismaCli: fixture.prismaCli,
+              spawn: () => {
+                spawnCalls += 1;
+                return { signal: null, status: 0, stderr: "", stdout: "" };
+              },
+              typescriptCli: fixture.typescriptCli,
+              writeOutput() {},
+            }),
+          businessTests: () => {
+            businessStarted = true;
+          },
+        }),
+      /build output is missing/u,
+    );
+    assert.equal(spawnCalls, 2);
+    assert.equal(businessStarted, false);
+  } finally {
+    rmSync(fixtureRoot, { force: true, recursive: true });
+  }
+});
+
+test("refuse une deadline épuisée entre Prisma et TypeScript", () => {
+  const fixtureRoot = mkdtempSync(
+    resolve(tmpdir(), "kora-c2a-build-deadline-"),
+  );
+  try {
+    const fixture = writeBuildBridgeFixture(fixtureRoot);
+    const clock = [0, 1, 200];
+    let businessStarted = false;
+    let spawnCalls = 0;
+    assert.throws(
+      () =>
+        runBuildThenBusinessTests("fixture", {
+          build: () =>
+            runOfficialApiBuild({
+              apiRoot: fixture.apiRoot,
+              now: () => clock.shift(),
+              prismaCli: fixture.prismaCli,
+              spawn: () => {
+                spawnCalls += 1;
+                return { signal: null, status: 0, stderr: "", stdout: "" };
+              },
+              timeoutMs: 100,
+              typescriptCli: fixture.typescriptCli,
+              writeOutput() {},
+            }),
+          businessTests: () => {
+            businessStarted = true;
+          },
+        }),
+      (error) =>
+        error.spawnCode === "ETIMEDOUT" &&
+        /100 millisecond bound/u.test(error.message),
+    );
+    assert.equal(spawnCalls, 1);
+    assert.equal(businessStarted, false);
+  } finally {
+    rmSync(fixtureRoot, { force: true, recursive: true });
+  }
+});
+
+for (const failure of [
+  {
+    expectedCode: "ENOENT",
+    expectedSignal: null,
+    name: "erreur de lancement",
+    result: {
+      error: Object.assign(new Error("missing executable"), { code: "ENOENT" }),
+      signal: null,
+      status: null,
+      stderr: "",
+      stdout: "",
+    },
+  },
+  {
+    expectedCode: null,
+    expectedSignal: "SIGTERM",
+    name: "signal",
+    result: { signal: "SIGTERM", status: null, stderr: "", stdout: "" },
+  },
+  {
+    expectedCode: "ETIMEDOUT",
+    expectedSignal: "SIGTERM",
+    name: "timeout",
+    result: {
+      error: Object.assign(new Error("timed out"), { code: "ETIMEDOUT" }),
+      signal: "SIGTERM",
+      status: null,
+      stderr: "",
+      stdout: "",
+    },
+  },
+]) {
+  test(`propage le défaut de build ${failure.name}`, () => {
+    const fixtureRoot = mkdtempSync(resolve(tmpdir(), "kora-c2a-build-spawn-"));
+    try {
+      const fixture = writeBuildBridgeFixture(fixtureRoot);
+      assert.throws(
+        () =>
+          runOfficialApiBuild({
+            apiRoot: fixture.apiRoot,
+            prismaCli: fixture.prismaCli,
+            spawn: () => failure.result,
+            typescriptCli: fixture.typescriptCli,
+            writeOutput() {},
+          }),
+        (error) => {
+          assert.equal(error.spawnCode, failure.expectedCode);
+          assert.equal(error.signal, failure.expectedSignal);
+          assert.equal(error.status, null);
+          return true;
+        },
+      );
+    } finally {
+      rmSync(fixtureRoot, { force: true, recursive: true });
+    }
+  });
+}
+
+test("interdit le retour du raccordement exécutable Nest CLI", () => {
+  const validatorSource = readFileSync(
+    resolve(
+      repositoryRoot,
+      "apps",
+      "api",
+      "prisma",
+      "validate-admin-security-c2a-business.mjs",
+    ),
+    "utf8",
+  );
+  assert.doesNotMatch(validatorSource, /@nestjs\/cli|nestEntry/u);
+  for (const manifest of [
+    "package.json",
+    "apps/api/package.json",
+    "package-lock.json",
+  ]) {
+    const source = readFileSync(
+      resolve(repositoryRoot, ...manifest.split("/")),
+      "utf8",
+    );
+    assert.doesNotMatch(source, /@nestjs\/cli/u);
+  }
 });
 
 for (const wrapper of [

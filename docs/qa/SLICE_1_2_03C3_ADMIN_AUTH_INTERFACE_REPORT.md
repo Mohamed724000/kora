@@ -1,8 +1,9 @@
 # S1.2-03C3 — Rapport de qualification de l'interface Admin Auth
 
-Statut : **QUALIFICATION TECHNIQUE LOCALE GO FINAL BORNÉ — FIREFOX WINDOWS
-GO BORNÉ — APPROBATION VISUELLE PRODUCT OWNER BORNÉE — C3-PUB-SC-01 FERMÉ
-LOCALEMENT — CANDIDAT NON INDEXÉ ET NON PUBLIÉ**
+Statut : **C3 PUBLIÉ DANS LA DRAFT PR #54 AU HEAD `e27ee24f…75b` — TROIS
+WORKFLOWS INITIAUX VERTS — INFRASTRUCTURE `41221134116` NON-PASS HISTORIQUE —
+CORRECTIF DE RACCORDEMENT BUILD C2a QUALIFIÉ LOCALEMENT, NON ENCORE PUBLIÉ —
+APPROBATION VISUELLE PRODUCT OWNER BORNÉE**
 
 Date : 2026-10-31
 
@@ -274,3 +275,43 @@ revendiquée.
 Verdict local SC-01 : **GO LOCAL FINAL BORNÉ**, sous réserve des trois revues
 terminales sur le même gel. Publication, CI, intégration et production restent
 distinctes.
+
+## Correction du raccordement build C2a — 2026-10-31
+
+La publication initiale C3 au head `e27ee24f6a5be39adedaf45e324c0e482c87675b`
+a produit trois workflows concluants et le NON-PASS Infrastructure historique
+`41221134116`. C1 et Foundations avaient terminé ; le wrapper métier C2a s'est
+arrêté avant Vitest car le validateur invoquait directement le binaire absent
+`node_modules/@nestjs/cli/bin/nest.js`. Ce résultat reste NON-PASS et n'est pas
+réinterprété comme une défaillance métier C2a.
+
+Le candidat local protège les scripts officiels de l'API et exécute, sous une
+borne commune, Prisma `generate`, le nettoyage exact de `apps/api/dist`, puis
+`tsc -p tsconfig.build.json`. Il exige quatre entrées fraîches avant de pouvoir
+lancer Vitest et refuse les cinq hooks npm implicites qu'il ne réimplémente
+pas. Le wrapper PowerShell est restauré byte-à-byte à sa version publiée : le
+run historique prouve qu'il lançait déjà le validateur, donc ce delta non causal
+n'est pas conservé.
+
+| Contrôle                                          | Résultat sélectionné                                                                                                                                                     |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Régressions comportementales du raccordement      | 13/13 PASS                                                                                                                                                               |
+| Tooling, première tentative                       | 591/592 NON-PASS ; timeout du test socket historique, conservé                                                                                                           |
+| Test socket isolé puis reprise causale du tooling | 1/1 PASS puis 592/592 PASS                                                                                                                                               |
+| Format officiel, scanner et diff-check            | PASS                                                                                                                                                                     |
+| Wrapper métier C2a réel                           | 1 contrôle statique + 11 scénarios réels PASS                                                                                                                            |
+| Non-régression C1 associée                        | 47/47 PASS                                                                                                                                                               |
+| Inventaire Docker étranger                        | IDs, labels et montages préservés ; deux comparateurs bruts NON-PASS sur l'ordre des labels réseau et des trois montages Redis, puis comparaison normalisée stricte PASS |
+| Audits npm complet et production                  | codes 0 ; zéro vulnérabilité                                                                                                                                             |
+
+Le candidat ne modifie ni runtime C3, dépendances, lockfile, workflow,
+configuration navigateur, image ni artefact visuel. Les preuves C3 et
+l'approbation Product Owner bornée aux neuf captures restent applicables ;
+aucune nouvelle exécution navigateur globale ou `24/24` n'est revendiquée.
+Le signal Windows, les parcours visuels absents, les fournisseurs et Linux de
+production, les SKIP historiques et la politique OSS conservent leur portée.
+
+Verdict de ce delta : **GO LOCAL CONDITIONNEL AU GEL COMMUN ET AUX TROIS
+CONTRE-REVUES**. Le commit, le push, les nouveaux workflows, l'actualisation du
+corps PR, l'intégration et la production ne sont pas encore acquis à cet
+instantané.

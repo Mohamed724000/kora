@@ -31,7 +31,7 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 | Slice 1 / S1.2-03B  | Admin Security Contract Gate, sans runtime    | Closed and merged — PR #48, merge `c97992ca2c82bc4f22f9222ea98ed53714fede4c`     |
 | Slice 1 / S1.2-03C1 | Auth admin, TOTP et sessions runtime          | Closed and merged — merge dc97eeef72c4e299988ed19d66460011a8551cf3; not deployed |
 | Slice 1 / S1.2-03C2 | Recovery, audit, invitations et RBAC runtime  | Closed and merged — C2a + C2b, merge `c47a1507…`; not deployed                   |
-| Slice 1 / S1.2-03C3 | Interface d'authentification Admin            | GO local final borné ; visuel PO borné ; SC-01 fermé localement ; non publié     |
+| Slice 1 / S1.2-03C3 | Interface d'authentification Admin            | Draft PR #54 au head `e27ee24f…` ; Infrastructure initial NON-PASS ; correctif build C2a qualifié localement ; non déployé |
 | Slice 1 / S1.2-03D  | Artist API                                    | Not started                                                                      |
 | Slice 1 / S1.2-03E  | Artist Admin UI                               | Not started                                                                      |
 | Slice 1 / S1.2-03F  | Audio Draft API                               | Not started                                                                      |
@@ -1323,3 +1323,24 @@ inchangées ; aucune nouvelle campagne globale 24/24 n'est affirmée. Le jalon
 est **GO LOCAL FINAL BORNÉ**, toujours non indexé et non publié à cet
 instantané. Publication, quatre workflows et revue d'intégration restent des
 étapes distinctes.
+
+### Raccordement build C2a de la publication C3 — 2026-10-31
+
+La Draft PR #54 contient le head publié `e27ee24f6a5be39adedaf45e324c0e482c87675b`.
+Son workflow Infrastructure `41221134116` demeure un NON-PASS historique : le
+validateur métier C2a appelait un Nest CLI volontairement absent du graphe
+qualifié. Le correctif local remplace ce raccordement par le build officiel de
+l'API, en conservant génération Prisma, nettoyage `dist`, compilation
+`tsconfig.build.json`, borne, propagation des échecs et cleanup ciblé. Il
+refuse aussi les cinq hooks npm implicites non réimplémentés ; le wrapper
+PowerShell déjà fonctionnel reste byte-identique au head publié.
+
+Les régressions du raccordement passent `13/13` ; le wrapper réel passe `1`
+contrôle statique, `11` scénarios métier et C1 `47/47`. Tooling final,
+scanner, format, diff-check et audits frais sont concluants. La tentative
+tooling `591/592` reste un NON-PASS historique avant sa reprise causale
+`592/592`. Les preuves C3 et le visuel PO restent réutilisés sur leurs surfaces
+inchangées, sans nouvelle campagne navigateur globale.
+
+Ce statut ne préjuge ni le commit/push du correctif, ni les quatre nouveaux
+workflows, ni la revue cumulative d'intégration. C3 reste non déployé.

@@ -2,11 +2,11 @@
 
 Périmètre durable couvert : **BASELINE À S1.2-03B ET S1.2-03C1 FUSIONNÉES +
 C2a ET C2b INTÉGRÉS DANS MAIN AU MERGE
-`c47a1507dce6ea7333ce7e372f9bd34aa548c81b`, NON DÉPLOYÉS — C3 CANDIDAT
-LOCAL NON INDEXÉ ET NON PUBLIÉ — A-02 QUALIFIÉ LOCAL/CI — GO LOCAL FINAL
-BORNÉ — FIREFOX WINDOWS GO BORNÉ — APPROBATION VISUELLE PRODUCT OWNER BORNÉE
-— C3-PUB-SC-01 FERMÉ LOCALEMENT — FOURNISSEURS ET LINUX DE PRODUCTION NON
-QUALIFIÉS**.
+`c47a1507dce6ea7333ce7e372f9bd34aa548c81b`, NON DÉPLOYÉS — C3 PUBLIÉ DANS
+LA DRAFT PR #54 AU HEAD `e27ee24f…75b` — INFRASTRUCTURE INITIALE NON-PASS —
+CORRECTIF BUILD C2a QUALIFIÉ LOCALEMENT, NON ENCORE PUBLIÉ — A-02 QUALIFIÉ
+LOCAL/CI — FIREFOX WINDOWS GO BORNÉ — APPROBATION VISUELLE PRODUCT OWNER
+BORNÉE — FOURNISSEURS ET LINUX DE PRODUCTION NON QUALIFIÉS**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
 commit, push ou changement GitHub S1.1 n’avait encore été effectué : il s’agit
@@ -1584,3 +1584,14 @@ parcours absents restent hors portée. Les sept artefacts WASM optionnels
 `ELSPROBLEMS` ni code non nul. Fournisseurs, clés, certificats, réseau,
 cache Firefox personnel, Linux de production et politique OSS restent non
 qualifiés.
+
+### Mise à jour raccordement build C2a — 2026-10-31
+
+| Menace ou dérive                         | Contrôle actualisé                                                                                                                                                                          | Preuve sélectionnée                                                                      | Limite conservée                                                                                                                                          |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Outil de build absent                    | protection des scripts officiels, refus des cinq hooks npm implicites non réimplémentés ; Prisma generate puis nettoyage `dist` et `tsc -p tsconfig.build.json`, sans réintroduire Nest CLI | régressions build 13/13 et wrapper réel C2a                                              | correctif local non encore publié                                                                                                                         |
+| Faux succès depuis un ancien `dist`      | suppression exacte de `apps/api/dist`, sentinelle vérifiée, quatre sorties fraîches obligatoires avant Vitest                                                                               | cas succès, sorties absentes et échecs cleanup/tsc                                       | aucune preuve de CI du correctif avant nouvelle publication                                                                                               |
+| Masquage d'un échec ou d'un timeout      | codes, signaux, erreurs de lancement et deadline commune propagés ; Vitest et runtime interdits après un build non concluant                                                                | cas ENOENT, non-zéro, SIGTERM et ETIMEDOUT                                               | borne locale et borne wrapper distinctes conservées                                                                                                       |
+| Injection par chemin ou environnement    | appels structurés sans shell pour les outils de build ; secrets `*_PASSWORD` retirés de leur sous-processus ; wrapper publié conservé après preuve qu'il lançait déjà le validateur         | fixture avec espaces/métacaractères et env capturé                                       | mots de passe métier exclus ; autres variables non secrètes héritées comme dans le build canonique ; allowlist environnementale générale NON DEMONSTRATED |
+| Mutation de ressources Docker étrangères | instance isolée, inventaires par IDs/labels/montages et cleanup limité aux ressources de campagne                                                                                           | wrapper réel ; deux comparateurs bruts NON-PASS puis comparaison normalisée stricte PASS | ordre des labels réseau et des trois montages Redis non contractuel ; objets complets, IDs et valeurs inchangés                                           |
+| Surqualification de C3                   | réutilisation uniquement après constat d'absence de changement runtime, dépendances, lockfile, navigateur, image et visuel ; aucune nouvelle exécution `24/24`                              | matrice causale et diff du candidat                                                      | signal Windows, parcours absents et réserves historiques restent actifs                                                                                   |

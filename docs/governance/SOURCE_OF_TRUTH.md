@@ -1,11 +1,11 @@
 # KORA+ Final — Source de vérité
 
 Statut : **DOCUMENT OPÉRATIONNEL VIVANT — C2a ET C2b INTÉGRÉS DANS MAIN AU
-MERGE `c47a1507dce6ea7333ce7e372f9bd34aa548c81b`, ARBRE
-`063f2c7ab5cdf9df489332263e4b3184adf90330`, NON DÉPLOYÉS — C3 CANDIDAT
-LOCAL NON INDEXÉ ET NON PUBLIÉ — A-02 QUALIFIÉ LOCAL/CI — GO LOCAL FINAL
-BORNÉ — APPROBATION VISUELLE PRODUCT OWNER BORNÉE — C3-PUB-SC-01 FERMÉ
-LOCALEMENT — FOURNISSEURS ET LINUX DE PRODUCTION NON QUALIFIÉS**
+MERGE `c47a1507dce6ea7333ce7e372f9bd34aa548c81b`, NON DÉPLOYÉS — C3 PUBLIÉ
+DANS LA DRAFT PR #54 AU HEAD `e27ee24…` — TROIS WORKFLOWS VERTS,
+INFRASTRUCTURE `41221134116` NON-PASS HISTORIQUE — CORRECTIF BUILD C2a
+QUALIFIÉ LOCALEMENT ET NON ENCORE PUBLIÉ — FOURNISSEURS ET LINUX DE
+PRODUCTION NON QUALIFIÉS**
 
 Date d’effet : 2026-07-28
 Dernière réconciliation documentaire : 2026-10-31
@@ -1751,3 +1751,38 @@ nouvelle campagne Docker/navigateur ni exécution globale 24/24 n'est
 revendiquée. Le statut vivant est **GO LOCAL FINAL BORNÉ**. Publication,
 workflows de pull request, intégration et production restent distincts et ne
 sont pas encore affirmés.
+
+## Publication initiale C3 et correction locale du build C2a — 2026-10-31
+
+Le candidat C3/SC-01 est publié dans la Draft PR #54 au head
+`e27ee24f6a5be39adedaf45e324c0e482c87675b`, arbre
+`b39a425075f87f15f2884625f0ed0bf26be80c86`, sur la base
+`c47a1507dce6ea7333ce7e372f9bd34aa548c81b`. Security `41221133897`,
+Launcher Windows `41221133900` et Quality Linux `41221133919` réussissent.
+Infrastructure `41221134116` reste NON-PASS : après C1 et Foundations C2a,
+l'appel historique à `node_modules/@nestjs/cli/bin/nest.js` échoue avant les
+scénarios métier. Ce run ne qualifie donc pas les étapes ensuite skipped.
+
+Le candidat correctif local ne change ni manifestes, ni lockfile, ni runtime,
+ni migration, ni workflow. Il aligne seulement le validateur C2a sur le build
+API déclaré : Prisma generate, nettoyage de `dist`, puis TypeScript 5.9.3 avec
+`tsconfig.build.json`. Les commandes utilisent `process.execPath`, des argv
+séparés et `shell:false`; cinq hooks npm implicites non réimplémentés sont
+explicitement refusés. Le wrapper PowerShell publié reste byte-identique : le
+run historique avait déjà lancé le validateur. La deadline reste bornée et
+toute erreur empêche Vitest. Les mots de passe de la campagne sont exclus de
+l'environnement des outils de build.
+
+Les preuves locales sélectionnées sont : 13/13 régressions du bridge,
+tooling 592/592, scanner 526 fichiers, format et diff-check concluants, audits
+npm complet/production zéro, puis wrapper réel C2a `1` statique + `11`
+scénarios et C1 47/47. Le cleanup ciblé passe et l'inventaire étranger est
+préservé. Le premier tooling final 591/592, affecté par un timeout de cleanup
+sur une socket PostgreSQL historique, reste NON-PASS ; le test isolé et la
+reprise complète passent sans changement d'assertion ou de timeout.
+
+Cette qualification locale ne vaut pas publication du correctif ni succès CI
+futur. A-02, Chromium, WebKit, Firefox, Nginx et la décision visuelle PO sont
+réutilisés sur leurs surfaces inchangées ; aucune exécution globale 24/24 n'est
+revendiquée. Les réserves Windows, production, fournisseurs, parcours visuels
+absents, artefacts WASM optionnels et politique OSS restent inchangées.
