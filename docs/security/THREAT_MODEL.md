@@ -1,11 +1,12 @@
 # KORA+ Final — Threat Model initial
 
 Périmètre durable couvert : **BASELINE À S1.2-03B ET S1.2-03C1 FUSIONNÉES +
-C2a INTÉGRÉ DANS MAIN AU MERGE
-`029e30bbc795f3d9c153782bc04e45e9f5a03f8a`, NON DÉPLOYÉ + C2b R2 PUBLIÉ
-DANS LA PR #53 DRAFT ; R3 QUALIFIÉ LOCALEMENT LE 2026-10-26 — ÉTAT DE
-PUBLICATION COURANT PORTÉ PAR LA PR #53 ET SON HEAD — FOURNISSEURS DE
-PRODUCTION NON QUALIFIÉS — C3 NON COMMENCÉ**.
+C2a ET C2b INTÉGRÉS DANS MAIN AU MERGE
+`c47a1507dce6ea7333ce7e372f9bd34aa548c81b`, NON DÉPLOYÉS — C3 CANDIDAT
+LOCAL NON INDEXÉ ET NON PUBLIÉ — A-02 QUALIFIÉ LOCAL/CI — GO LOCAL FINAL
+BORNÉ — FIREFOX WINDOWS GO BORNÉ — APPROBATION VISUELLE PRODUCT OWNER BORNÉE
+— C3-PUB-SC-01 FERMÉ LOCALEMENT — FOURNISSEURS ET LINUX DE PRODUCTION NON
+QUALIFIÉS**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
 commit, push ou changement GitHub S1.1 n’avait encore été effectué : il s’agit
@@ -1520,3 +1521,66 @@ locale R3 est datée du 2026-10-26 ; son état de publication ou de CI postérie
 doit être constaté sur la PR #53 et son head courant. Les fournisseurs et Linux
 de production, les bases persistantes externes et C3 restent non qualifiés, et
 la politique OSS demeure différée.
+
+## C3 — menaces de l'interface d'authentification Admin
+
+| Menace ou dérive                      | Contrôle C3                                                                                                    | Preuve sélectionnée                                                                 | Limite ou statut                                                              |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Provenance IP forgée                  | Nginx remplace les headers client depuis son pair ; provenance unique canonique ; BFF et API privés            | A-02 Admin 50/50, API 38/38, config 20/20                                           | GO local/CI ; topologie production non qualifiée                              |
+| Accès direct ou usurpation mTLS       | CA, SAN DNS/URI, EKU et empreintes exactes dans les deux sens ; profils C3/DIRECT distincts                    | refus BFF direct et certificats absent, expiré, étranger ou autre identité          | certificats et réseau production non qualifiés                                |
+| Header smuggling ou route ambiguë     | table fermée méthode/chemin ; query, traversal, encodage ambigu, slash inverse et doublons refusés             | tests proxy et parcours réels                                                       | PASS local                                                                    |
+| CSRF ou replay de mutation            | Origin exact, Fetch Metadata, double-submit CSRF, cookies exacts ; timeout sans retry automatique              | tests BFF/cookies et navigateurs                                                    | PASS local sur navigateurs exécutés                                           |
+| Session ancienne réinstallée          | access token mémoire, génération/invalidation, Web Locks single-flight fail-closed, réponses tardives ignorées | tests sessions/concurrence                                                          | effacement physique mémoire JS non garanti                                    |
+| Secret QR ou recovery persistant      | QR/object URL et codes single-display éphémères ; traces/HAR/vidéos désactivés sur secrets                     | secret scan final, 176 fichiers et 196 sentinelles, zéro violation                  | neuf PNG de fixtures exclus du scan textuel, dont deux états DOM synthétiques |
+| Mot de passe Unicode transformé       | 12–128 points de code exacts, aucune normalisation, trim ou troncature                                         | tests bornes/mélanges et login réel après reset/invitation                          | PASS local                                                                    |
+| Reset C2a consommé mais parent actif  | parent `revokedAt` dans la transaction credential/version/sessions/audit ; outbox `DELIVERED` préservé         | unitaires, PostgreSQL/HTTP, rollback et concurrence                                 | bases persistantes externes non réparées                                      |
+| État global révélant le shell protégé | loading/error/not-found anonymes, noindex, focus/annonces et redaction ; retry de rendu uniquement             | vrais routages Next et tests d'états                                                | PASS local                                                                    |
+| Faux PASS navigateur                  | instantané historique : résultats séparés par moteur, graphe traversé et assertions réellement exécutées       | Chromium 18/18 et WebKit 3/3 ; Firefox 0/3, NON-PASS à `Browser.newPage()`          | HISTORIQUE — supersédé par la mise à jour Firefox du 2026-10-31               |
+| Faux PASS visuel                      | visual final rejoué ; comparaison byte-à-byte des PNG ; états synthétiques signalés                            | visual 1/1, neuf PNG identiques à v54 ; deux DOM synthétiques                       | validation Product Owner en attente                                           |
+| Dérive supply-chain npm               | versions, intégrités, parents, licences et signatures contrôlés ; audits frais séparés                         | TS 5.9.3 + concurrently 10.0.6 ; audits 0/0 ; licences 824/0/0 ; signatures 822/191 | NON-PASS historiques conservés, production non qualifiée                      |
+| Surqualification de Nginx             | image, manifeste amd64, SBOM SPDX, provenance et branche Alpine contrôlés                                      | enfant exact ; Alpine 3.24/main classe `musl@1.2.6-r3` corrigé                      | Scout brut conservé ; `NOASSERTION`, prod non qualifiée                       |
+| Ressources Docker étrangères altérées | instance unique, identité enfant vérifiée, cleanup ciblé, inventaires comparés                                 | cleanup final code 0, `SEMANTIC_IDENTICAL`, aucun résidu ciblé                      | aucune exploitation production qualifiée                                      |
+
+Dans l'instantané antérieur, la campagne Chromium/WebKit terminait au code 0
+avec redaction, visual,
+secret scan et cleanup qualifiés. La reprise ferme causalement les findings
+`qs`, `deepmerge`, scanner `cosmiconfig` et affectation Nginx sans effacer les
+NON-PASS historiques ni appliquer de waiver. Elle ne transforme pas le
+NON-PASS Firefox en PASS et ne remplaçait pas la validation visuelle Product
+Owner. La mise à jour suivante supersède uniquement le statut Firefox. C3
+reste local, non indexé, non publié et non déployé.
+
+### Mise à jour Firefox Windows — 2026-10-31
+
+| Menace ou dérive                      | Contrôle actualisé                                                                                                                                                                      | Preuve sélectionnée                                                             | Limite conservée                                                       |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Onglet de premier lancement inattendu | `datareporting.policy.firstRunURL=''` uniquement dans le profil Firefox de campagne ; aucune préférence de télémétrie, Safe Browsing ou tracking modifiée                               | deux URI observées, puis une seule cible `about:blank` dans le différentiel     | portée Firefox 157/révision 1555                                       |
+| Cache personnel utilisé implicitement | chemin de cache isolé explicite ; version, révision, empreintes exécutables et manifeste de 61 fichiers, y compris cachés, exigés ; aucun fallback ni `PLAYWRIGHT_BROWSERS_PATH` global | régressions 27/27, dont fichier caché refusé, et identité archivée avant Docker | cache personnel NON QUALIFIÉ ; cause SideBySide par chemin non conclue |
+| Faux PASS par fermeture d'un onglet   | aucune cible fermée arbitrairement et assertion Playwright inchangée ; le correctif empêche la création de la page de premier lancement                                                 | protocole Juggler et sonde visible                                              | NON-PASS antérieurs conservés                                          |
+| Faux PASS Firefox par extrapolation   | projet Firefox exact exécuté séparément, trois scénarios réels, un worker, zéro retry                                                                                                   | `c3-ff-qualified-20261031t1041` : 3/3 PASS                                      | qualification Windows locale, pas Linux ou production                  |
+| Secret ou ressource résiduelle        | redaction, scan de 178 textes/14 sentinelles, cleanup ciblé et comparaison de l'inventaire étranger                                                                                     | zéro violation, cleanup code 0, `SEMANTIC_IDENTICAL`                            | PNG synthétiques exclus du scan textuel, contrôlés séparément          |
+
+Les preuves Chromium 18/18 et WebKit 3/3 restent applicables : seules la
+sélection du binaire Firefox et la branche ciblée du wrapper changent. La
+qualification technique locale est GO, mais l'approbation Product Owner des
+neuf captures demeure absente. Aucun fournisseur, environnement Linux de
+production ou cache personnel Firefox n'est qualifié par cette fermeture.
+
+### Mise à jour supply-chain C3-PUB-SC-01 — 2026-10-31
+
+| Menace ou dérive                          | Contrôle actualisé                                                                                                                                                                        | Preuve sélectionnée                                      | Limite conservée                                                             |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Copie minimatch affectée                  | override exact 11.0.1 ; singleton ; refus de toute version antérieure à 11.0.1, prerelease comprise                                                                                       | lock npm, npm ls/explain, audits complet/production zéro | dépendance de développement, aucune qualification production ajoutée         |
+| Substitution du paquet corrigé            | URL, intégrité, licence BlueOak, moteur et dépendances exactes ; transitive nonrecursive 1.0.3 unique et sans dépendance                                                                  | scanner et mutations adversariales                       | métadonnées du registre qualifiées à la date du candidat                     |
+| Nouveau parent ou graphe permissif        | sept parents/ranges exacts, brace-expansion 5.0.12 et nonrecursive comme seul parent transitoire ; parent ou emplacement supplémentaire refusé                                            | scanner officiel et tooling 579/579                      | toute évolution du graphe exige une qualification distincte                  |
+| Incompatibilité API minimatch v11         | découverte/exclusion des six workspaces et lints actifs comparés ; garde interdisant les règles legacy-callable dormantes                                                                 | probes consommateurs, lint code 0                        | deux options dormantes incompatibles ; pas de compatibilité générale         |
+| Amplification de pattern                  | régression bornée sur construction d'ensemble, braces et chemins Windows                                                                                                                  | test avec timeout et bornes explicites                   | ce probe ne constitue pas une preuve exhaustive de tous les motifs possibles |
+| Faux PASS par extrapolation des campagnes | Docker et navigateurs non rejoués seulement après démonstration que sources, configurations, dépendances d'exécution, image et artefacts sont inchangés ; aucune nouvelle exécution 24/24 | matrice de causalité et gels                             | preuves réutilisées, pas nouvelle exécution                                  |
+
+L'approbation Product Owner lève le BLOCK visuel uniquement pour les neuf
+captures de la planche `5485987f…b11` ; les deux états synthétiques et les
+parcours absents restent hors portée. Les sept artefacts WASM optionnels
+`extraneous` de npm 10 sont conservés comme réserve sans `invalid`,
+`ELSPROBLEMS` ni code non nul. Fournisseurs, clés, certificats, réseau,
+cache Firefox personnel, Linux de production et politique OSS restent non
+qualifiés.

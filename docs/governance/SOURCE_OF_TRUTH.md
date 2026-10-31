@@ -1,13 +1,14 @@
 # KORA+ Final — Source de vérité
 
-Statut : **DOCUMENT OPÉRATIONNEL VIVANT — C2a INTÉGRÉ DANS MAIN AU MERGE
-`029e30bbc795f3d9c153782bc04e45e9f5a03f8a`, NON DÉPLOYÉ — C2b R3 PUBLIÉ
-DANS LA PR #53 DRAFT AVEC QUATRE WORKFLOWS VERTS — G-QA-01 RÉCONCILIÉ PAR
-CORRECTION DOCUMENTAIRE R4 — FOURNISSEURS DE PRODUCTION NON QUALIFIÉS — C3
-NON COMMENCÉ**
+Statut : **DOCUMENT OPÉRATIONNEL VIVANT — C2a ET C2b INTÉGRÉS DANS MAIN AU
+MERGE `c47a1507dce6ea7333ce7e372f9bd34aa548c81b`, ARBRE
+`063f2c7ab5cdf9df489332263e4b3184adf90330`, NON DÉPLOYÉS — C3 CANDIDAT
+LOCAL NON INDEXÉ ET NON PUBLIÉ — A-02 QUALIFIÉ LOCAL/CI — GO LOCAL FINAL
+BORNÉ — APPROBATION VISUELLE PRODUCT OWNER BORNÉE — C3-PUB-SC-01 FERMÉ
+LOCALEMENT — FOURNISSEURS ET LINUX DE PRODUCTION NON QUALIFIÉS**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-10-26
+Dernière réconciliation documentaire : 2026-10-31
 
 ## Hiérarchie normative
 
@@ -1622,3 +1623,131 @@ production, le signal Windows, les limites préincident R9, les bases
 persistantes externes et la perte réelle de l'accusé réseau lors de
 `COMMIT_UNKNOWN` restent NON DEMONSTRATED. Les SKIP restent des SKIP, C3 n'est
 pas commencé et la politique OSS demeure différée.
+
+## C3 — instantané avant fermeture ciblée Firefox — 2026-10-30
+
+La phrase précédente appartient à l'instantané C2b R4. L'état vivant courant
+est le suivant : C2b est intégré dans main au merge
+`c47a1507dce6ea7333ce7e372f9bd34aa548c81b`, arbre
+`063f2c7ab5cdf9df489332263e4b3184adf90330`. La PR #53 est fusionnée et les
+quatre workflows push/main de tentative 1 sont verts : Infrastructure
+`40332591718`, Launcher Windows `40332591968`, Security `40332592167` et
+Quality Linux `40332591799`.
+
+Le candidat C3 consomme treize opérations C1/C2a derrière A-02 : navigateur,
+Nginx HTTPS contrôlé, BFF Next privé et API privée mTLS. Il ne crée aucun
+endpoint et n'expose ni opération C2b, ni console users/RBAC/statuts, ni
+récupération assistée, ni révocation ciblée. Les corrections Unicode, états
+globaux anonymes et terminalisation atomique du reset C2a sont démontrées dans
+leur portée. Le reset terminalise contexte et requête parente dans la même
+transaction que credential, `authorizationVersion`, sessions et audit ;
+l'outbox `DELIVERED` historique reste inchangé.
+
+La campagne finale `c3-causal-cw-20261030t1705` traverse le candidat courant :
+Chromium 18/18 et WebKit 3/3 passent, sans échec, skip ou interruption. La
+redaction synthétique attendue, le visual 1/1, le scan de 176 fichiers texte et
+196 sentinelles, le cleanup et l'inventaire étranger `SEMANTIC_IDENTICAL`
+passent également. Le wrapper reste par défaut en mode `Complete`; la
+sélection `ChromiumWebKit` est locale et explicite.
+
+Firefox n'exécute aucun de ses trois scénarios. Le premier cache a produit le
+NON-PASS historique `spawn UNKNOWN`/SideBySide `mozglue`. Sur une installation
+fraîche, Firefox se lance mais l'unique `Browser.newPage()` échoue avec
+`Unexpected number of tabs in the new window: 2`. L'URL du second onglet et
+son attribution exclusive restent NON DEMONSTRATED. Les succès Chromium et
+WebKit ne sont pas utilisés comme preuve Firefox. Les neuf captures du visual
+final sont byte-identiques à v54 ; deux états sont des DOM synthétiques et la
+validation visuelle Product Owner reste en attente.
+
+OpenAPI 60/67/141, génération contractuelle, 115 tests Admin, build Admin,
+API format/lint/typecheck/build/tests/fail-closed, tooling 573/573 et scanner
+526 fichiers passent. Le scanner conserve `history=true`, `immutable=52` et
+six scripts d'installation qualifiés. Le graphe final utilise
+`typescript@5.9.3` et `concurrently@10.0.6`; Nest CLI, fork-ts-checker,
+deepmerge et cosmiconfig sont absents. Licences 824/0/0, signatures 822/191 et
+audits complet/production zéro passent. Les candidats supply-chain et scanner
+rejetés restent des NON-PASS historiques.
+
+Le digest Nginx courant dispose d'un SBOM SPDX attesté et d'une provenance
+SLSA pour l'enfant `linux/amd64`. Docker Scout signale brutement
+`CVE-2026-107891` sur `musl@1.2.6-r3` avec une borne générique/edge `r6`, mais
+Alpine 3.24/main classe `r3` corrigé pour l'enfant exact : le faux positif
+d'affectation est démontré sans waiver. Les 26 paquets, 808 relations,
+`licenseConcluded=NOASSERTION`, la provenance `reproducible=false` et la
+production non qualifiée sont conservés.
+
+Le verdict de cet instantané antérieur était **QUALIFICATION TECHNIQUE LOCALE
+PARTIELLE — BLOCK GLOBAL**.
+Les axes supply-chain npm et affectation Nginx sont fermés dans leur portée.
+Firefox Windows reste NON-PASS avant navigation et l'approbation visuelle
+Product Owner manque. Le candidat reste local, non indexé, non publié et non
+déployé. Fournisseurs, certificats, réseau, Linux de production, traitement
+juridique des licences de l'image Nginx et effacement physique de toute mémoire
+JavaScript restent non qualifiés ou NON DEMONSTRATED. Les mentions historiques
+antérieures « C3 non commencé » restent vraies dans leur instantané daté et ne
+décrivent pas l'état vivant courant.
+
+### C3 — état vivant après fermeture ciblée Firefox Windows — 2026-10-31
+
+Les paragraphes précédents restent l'instantané historique antérieur à la
+fermeture ciblée. La sonde visible identifie la seconde cible comme la page de
+premier lancement Firefox. La préférence de profil de campagne
+`datareporting.policy.firstRunURL=''`, confinée au projet Firefox, ramène la
+création à une seule cible sans modifier les protections de sécurité du
+navigateur.
+
+Le cache personnel Windows reste NON QUALIFIÉ : il échoue avec
+`SideBySide/33`/`mozglue`, contrairement au cache isolé byte-identique. La
+cause profonde de cette divergence par chemin reste NON CONCLUSIVE. Le wrapper
+vérifie le cache isolé, Firefox 157/révision 1555, les empreintes exécutables
+et un manifeste exact de 61 fichiers, sans fallback ni variable globale.
+
+La campagne isolée `c3-ff-qualified-20261031t1041` passe Firefox **3/3** sans
+retry, avec redaction, scan de secrets, cleanup ciblé et inventaire étranger
+`SEMANTIC_IDENTICAL`. Chromium 18/18 et WebKit 3/3 restent applicables aux
+mêmes sources et dépendances ; tooling ciblé 27/27 et complet 573/573 passent.
+La régression ajoutée démontre qu'un fichier caché supplémentaire est inclus
+dans l'inventaire et provoque le refus fail-closed.
+
+Le verdict technique courant est **GO LOCAL**. Le verdict global demeure
+**BLOCK VISUEL PRODUCT OWNER** : les neuf captures sont consultables, mais
+l'approbation explicite manque encore ; `loading` et `unavailable` sont des
+états synthétiques. Aucune publication ou qualification de production n'est
+affirmée.
+
+### C3 — décision visuelle et remédiation de publication SC-01 — 2026-10-31
+
+Le bloc précédent reste l'instantané pré-approbation. Le Product Owner a
+ensuite approuvé la planche SHA-256 `5485987f…b11` pour ses neuf captures
+uniquement, sur le gel `79cc6da1…c2fd`. Les deux états synthétiques et tous
+les parcours ou contrôles d'accessibilité absents restent hors portée.
+
+Le premier préflight de publication a découvert l'advisory
+`GHSA-g3hv-75wg-m249` sur l'unique `minimatch@10.2.6` de développement et
+a correctement bloqué avant indexation. Le candidat SC-01 remplace cet
+override par `minimatch@11.0.1` et ajoute uniquement sa transitive publiée
+`@isaacs/nonrecursive-glob-match@1.0.3` via npm. Versions, emplacements,
+intégrités, licences, moteurs, parents, ranges et graphes exacts sont protégés
+par le scanner et ses régressions adversariales ; aucune copie affectée ne
+subsiste.
+
+La compatibilité est qualifiée pour les configurations ESLint effectivement
+actives de KORA+ uniquement. Les découvertes, exclusions et diagnostics sont
+stables sur six workspaces, y compris les chemins Windows. Deux options
+dormantes de plugins installés restent incompatibles et interdites :
+`import/no-internal-modules` avec `forbid` et
+`react/jsx-pascal-case` avec `ignore`. Aucune compatibilité générale des
+plugins n'est affirmée.
+
+Installation propre, chaîne npm, scanner, tooling 579/579, audits complet et
+production à zéro, signatures 823/191, licences 825/0/0, lint, typecheck,
+tests et build sont concluants. Le build iOS reste NON EXÉCUTÉ sur Windows et
+sept artefacts WASM optionnels restent signalés `extraneous` par npm 10,
+sans invalidité ni code non nul.
+
+Les preuves A-02, Nginx et navigateurs restent applicables car leurs sources,
+configurations, dépendances d'exécution et artefacts ne changent pas ; aucune
+nouvelle campagne Docker/navigateur ni exécution globale 24/24 n'est
+revendiquée. Le statut vivant est **GO LOCAL FINAL BORNÉ**. Publication,
+workflows de pull request, intégration et production restent distincts et ne
+sont pas encore affirmés.

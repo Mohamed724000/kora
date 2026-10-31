@@ -1,0 +1,541 @@
+name: ${KORA_C3_PROJECT_NAME:?KORA_C3_PROJECT_NAME is required}
+
+x-kora-labels: &kora-labels
+  com.kora-plus.campaign: ${KORA_C3_CAMPAIGN_ID:?KORA_C3_CAMPAIGN_ID is required}
+  com.kora-plus.managed: "true"
+  com.kora-plus.project: ${KORA_C3_PROJECT_NAME:?KORA_C3_PROJECT_NAME is required}
+
+x-node-image: &node-image node:22.18.0-bookworm-slim@sha256:752ea8a2f758c34002a0461bd9f1cee4f9a3c36d48494586f60ffce1fc708e0e
+
+services:
+  postgres:
+    image: postgres:18.4-alpine3.24@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+    environment:
+      POSTGRES_DB: ${KORA_C3_POSTGRES_DB:?KORA_C3_POSTGRES_DB is required}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_USER: ${KORA_C3_POSTGRES_OWNER:?KORA_C3_POSTGRES_OWNER is required}
+      KORA_POSTGRES_ADMIN_WRITER_USER: kora_admin_writer
+      KORA_POSTGRES_C2A_BOOTSTRAP_USER: kora_admin_c2a_bootstrap
+      KORA_POSTGRES_C2A_ENABLED: "true"
+      KORA_POSTGRES_C2A_EXPIRATION_WORKER_USER: kora_admin_c2a_expiration_worker
+      KORA_POSTGRES_C2A_NOTIFICATION_WORKER_USER: kora_admin_c2a_notification_worker
+      KORA_POSTGRES_C2A_SECRET_DIRECTORY: /run/secrets
+      KORA_POSTGRES_C2A_WRITER_USER: kora_admin_c2a_writer
+      KORA_POSTGRES_RUNTIME_USER: kora_runtime
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'pg_isready -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"',
+        ]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 5s
+    labels:
+      <<: *kora-labels
+      com.kora-plus.service: c3-postgresql
+    networks: [data]
+    restart: "no"
+    secrets:
+      - postgres_password
+      - postgres_runtime_password
+      - postgres_admin_writer_password
+      - postgres_admin_c2a_bootstrap_password
+      - postgres_admin_c2a_expiration_worker_password
+      - postgres_admin_c2a_notification_worker_password
+      - postgres_admin_c2a_writer_password
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ${KORA_C3_SOURCE_ROOT:?KORA_C3_SOURCE_ROOT is required}:/workspace:ro
+      - ../postgres/provision-runtime.sh:/usr/local/bin/kora-provision-postgresql-runtime.sh:ro
+
+  redis:
+    image: redis:7.2.15-alpine3.21@sha256:05a97a479bc73de66f087dc05b569010772880f778cc8671fa6b8aadee32e5c6
+    entrypoint: ["/usr/local/bin/kora-redis-entrypoint.sh"]
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'REDISCLI_AUTH="$$(cat /run/secrets/redis_password)" redis-cli --no-auth-warning -h 127.0.0.1 ping | grep -qx PONG',
+        ]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 3s
+    labels:
+      <<: *kora-labels
+      com.kora-plus.service: c3-redis
+    networks: [data]
+    restart: "no"
+    secrets: [redis_password]
+    tmpfs: [/run/kora-redis:mode=0700]
+    volumes:
+      - redis-data:/data
+      - ../redis/entrypoint.sh:/usr/local/bin/kora-redis-entrypoint.sh:ro
+
+  build:
+    profiles: [build]
+    image: *node-image
+    command:
+      - /bin/sh
+      - -euc
+      - |
+        test -z "$$(find /workspace -mindepth 1 -maxdepth 1 -print -quit)"
+        tar -C /source \
+          --exclude='./.git' \
+          --exclude='./node_modules' \
+          --exclude='*/node_modules' \
+          --exclude='*/.next' \
+          --exclude='*/dist' \
+          --exclude='*/coverage' \
+          --exclude='*/.turbo' \
+          -cf - . | tar -C /workspace -xf -
+        npm ci --ignore-scripts --no-audit
+        npm run db:generate
+        npm run build --workspace @kora-plus/contracts
+        npm run build --workspace @kora-plus/api
+        ./node_modules/.bin/tsc \
+          --module commonjs \
+          --target ES2023 \
+          --moduleResolution node \
+          --esModuleInterop \
+          --allowSyntheticDefaultImports \
+          --skipLibCheck \
+          --strict \
+          --exactOptionalPropertyTypes \
+          --noFallthroughCasesInSwitch \
+          --noImplicitOverride \
+          --noImplicitReturns \
+          --noUncheckedIndexedAccess \
+          --useUnknownInCatchVariables \
+          --noEmitOnError \
+          --rootDir apps/api/test \
+          --outDir apps/api/dist/test \
+          apps/api/test/admin-auth-c3-browser.harness.ts
+        npm run build --workspace @kora-plus/admin
+    labels:
+      <<: *kora-labels
+      com.kora-plus.service: c3-build
+    networks: [build]
+    restart: "no"
+    volumes:
+      - ${KORA_C3_SOURCE_ROOT:?KORA_C3_SOURCE_ROOT is required}:/source:ro
+      - workspace:/workspace
+    working_dir: /workspace
+
+  migrate:
+    profiles: [migrate]
+    image: *node-image
+    command:
+      - /bin/sh
+      - -euc
+      - |
+        export DATABASE_PASSWORD="$$(tr -d '\r\n' </run/secrets/postgres_password)"
+        cd /workspace/apps/api
+        exec ../../node_modules/.bin/prisma migrate deploy --config prisma.config.ts
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_NAME: ${KORA_C3_POSTGRES_DB:?KORA_C3_POSTGRES_DB is required}
+      DATABASE_PORT: "5432"
+      DATABASE_USER: ${KORA_C3_POSTGRES_OWNER:?KORA_C3_POSTGRES_OWNER is required}
+    labels:
+      <<: *kora-labels
+      com.kora-plus.service: c3-migrate
+    networks: [data]
+    restart: "no"
+    secrets: [postgres_password]
+    volumes: [workspace:/workspace:ro]
+    working_dir: /workspace
+
+  api:
+    profiles: [runtime]
+    image: *node-image
+    command:
+      - /bin/sh
+      - -euc
+      - |
+        export DATABASE_PASSWORD="$$(cat /run/secrets/postgres_runtime_password)"
+        export ADMIN_DATABASE_PASSWORD="$$(cat /run/secrets/postgres_admin_writer_password)"
+        export ADMIN_C2A_WRITER_DATABASE_PASSWORD="$$(cat /run/secrets/postgres_admin_c2a_writer_password)"
+        export REDIS_PASSWORD="$$(cat /run/secrets/redis_password)"
+        export ADMIN_REDIS_PASSWORD="$$(cat /run/secrets/redis_password)"
+        exec node apps/api/dist/test/admin-auth-c3-browser.harness.js api
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    environment:
+      ADMIN_BFF_CLIENT_CERTIFICATE_SHA256: ${KORA_C3_BFF_CERT_SHA256:?KORA_C3_BFF_CERT_SHA256 is required}
+      ADMIN_C2A_DATABASE_HOST: postgres
+      ADMIN_C2A_DATABASE_NAME: ${KORA_C3_POSTGRES_DB:?KORA_C3_POSTGRES_DB is required}
+      ADMIN_C2A_DATABASE_PORT: "5432"
+      ADMIN_C2A_DATABASE_SSL: "false"
+      ADMIN_C2A_ENABLED: "true"
+      ADMIN_C2A_PROFILE: HTTP
+      ADMIN_C2A_WRITER_DATABASE_USER: kora_admin_c2a_writer
+      ADMIN_C2B_ENABLED: "false"
+      ADMIN_CLIENT_PROVENANCE_MODE: MTLS_BFF
+      ADMIN_DATABASE_HOST: postgres
+      ADMIN_DATABASE_NAME: ${KORA_C3_POSTGRES_DB:?KORA_C3_POSTGRES_DB is required}
+      ADMIN_DATABASE_PORT: "5432"
+      ADMIN_DATABASE_SSL: "false"
+      ADMIN_DATABASE_USER: kora_admin_writer
+      ADMIN_ORIGIN: https://admin.c3.invalid:${KORA_C3_HTTPS_PORT:?KORA_C3_HTTPS_PORT is required}
+      ADMIN_REDIS_HOST: redis
+      ADMIN_REDIS_PORT: "6379"
+      ADMIN_REDIS_TLS: "false"
+      ADMIN_REDIS_WAIT_AOF_TIMEOUT_MS: "2000"
+      API_HOST: 0.0.0.0
+      API_PORT: "3001"
+      API_TLS_CERTIFICATE_PATH: /run/secrets/c3-api-cert.pem
+      API_TLS_CLIENT_CA_PATH: /run/secrets/c3-client-ca.pem
+      API_TLS_PRIVATE_KEY_PATH: /run/secrets/c3-api-key.pem
+      KORA_C3_BROWSER_HARNESS: "1"
+      KORA_C3_CAMPAIGN_ID: ${KORA_C3_CAMPAIGN_ID:?KORA_C3_CAMPAIGN_ID is required}
+      KORA_C3_PRIVATE_DIRECTORY: /run/kora-c3-private
+      KORA_C3_PROJECT_NAME: ${KORA_C3_PROJECT_NAME:?KORA_C3_PROJECT_NAME is required}
+      DATABASE_HOST: postgres
+      DATABASE_NAME: ${KORA_C3_POSTGRES_DB:?KORA_C3_POSTGRES_DB is required}
+      DATABASE_PORT: "5432"
+      DATABASE_SSL: "false"
+      DATABASE_USER: kora_runtime
+      LOG_LEVEL: silent
+      NODE_PATH: /workspace/node_modules
+      NODE_ENV: test
+      READINESS_TIMEOUT_MS: "3000"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_TLS: "false"
+    expose: ["3001"]
+    labels:
+      <<: *kora-labels
+      com.kora-plus.service: c3-api
+    networks:
+      mtls:
+        aliases: [api.c3.internal]
+      data: {}
+    restart: "no"
+    secrets:
+      - postgres_admin_c2a_writer_password
+      - c3_harness_capability
+      - postgres_runtime_password
+      - postgres_admin_writer_password
+      - redis_password
+    volumes:
+      - ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/api-cert.pem:/run/secrets/c3-api-cert.pem:ro
+      - ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/api-cert-key.pem:/run/secrets/c3-api-key.pem:ro
+      - ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/client-ca.pem:/run/secrets/c3-client-ca.pem:ro
+      - ${KORA_C3_PRIVATE_DIR:?KORA_C3_PRIVATE_DIR is required}:/run/kora-c3-private
+      - workspace:/workspace:ro
+    working_dir: /workspace
+
+  notification:
+    profiles: [runtime]
+    image: *node-image
+    command:
+      - /bin/sh
+      - -euc
+      - |
+        export DATABASE_PASSWORD="$$(cat /run/secrets/postgres_runtime_password)"
+        export ADMIN_DATABASE_PASSWORD="$$(cat /run/secrets/postgres_admin_writer_password)"
+        export ADMIN_C2A_NOTIFICATION_WORKER_DATABASE_PASSWORD="$$(cat /run/secrets/postgres_admin_c2a_notification_worker_password)"
+        export REDIS_PASSWORD="$$(cat /run/secrets/redis_password)"
+        export ADMIN_REDIS_PASSWORD="$$(cat /run/secrets/redis_password)"
+        exec node apps/api/dist/test/admin-auth-c3-browser.harness.js notification
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    environment:
+      ADMIN_C2A_DATABASE_HOST: postgres
+      ADMIN_C2A_DATABASE_NAME: ${KORA_C3_POSTGRES_DB:?KORA_C3_POSTGRES_DB is required}
+      ADMIN_C2A_DATABASE_PORT: "5432"
+      ADMIN_C2A_DATABASE_SSL: "false"
+      ADMIN_C2A_ENABLED: "true"
+      ADMIN_C2A_NOTIFICATION_WORKER_DATABASE_USER: kora_admin_c2a_notification_worker
+      ADMIN_C2A_PROFILE: NOTIFICATION
+      ADMIN_C2B_ENABLED: "false"
+      ADMIN_DATABASE_HOST: postgres
+      ADMIN_DATABASE_NAME: ${KORA_C3_POSTGRES_DB:?KORA_C3_POSTGRES_DB is required}
+      ADMIN_DATABASE_PORT: "5432"
+      ADMIN_DATABASE_SSL: "false"
+      ADMIN_DATABASE_USER: kora_admin_writer
+      ADMIN_ORIGIN: https://admin.c3.invalid:${KORA_C3_HTTPS_PORT:?KORA_C3_HTTPS_PORT is required}
+      ADMIN_REDIS_HOST: redis
+      ADMIN_REDIS_PORT: "6379"
+      ADMIN_REDIS_TLS: "false"
+      ADMIN_REDIS_WAIT_AOF_TIMEOUT_MS: "1000"
+      API_HOST: 127.0.0.1
+      API_PORT: "3001"
+      DATABASE_HOST: postgres
+      DATABASE_NAME: ${KORA_C3_POSTGRES_DB:?KORA_C3_POSTGRES_DB is required}
+      DATABASE_PORT: "5432"
+      DATABASE_SSL: "false"
+      DATABASE_USER: kora_runtime
+      KORA_C3_BROWSER_HARNESS: "1"
+      KORA_C3_CAMPAIGN_ID: ${KORA_C3_CAMPAIGN_ID:?KORA_C3_CAMPAIGN_ID is required}
+      KORA_C3_PRIVATE_DIRECTORY: /run/kora-c3-private
+      KORA_C3_PROJECT_NAME: ${KORA_C3_PROJECT_NAME:?KORA_C3_PROJECT_NAME is required}
+      LOG_LEVEL: silent
+      NODE_ENV: test
+      NODE_PATH: /workspace/node_modules
+      READINESS_TIMEOUT_MS: "1000"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_TLS: "false"
+    labels:
+      <<: *kora-labels
+      com.kora-plus.service: c3-notification
+    networks: [data]
+    restart: "no"
+    secrets:
+      - c3_harness_capability
+      - postgres_admin_c2a_notification_worker_password
+      - postgres_runtime_password
+      - postgres_admin_writer_password
+      - redis_password
+    volumes:
+      - ${KORA_C3_PRIVATE_DIR:?KORA_C3_PRIVATE_DIR is required}:/run/kora-c3-private
+      - workspace:/workspace:ro
+    working_dir: /workspace
+
+  bootstrap:
+    profiles: [fixtures]
+    image: *node-image
+    command:
+      - /bin/sh
+      - -euc
+      - |
+        export DATABASE_PASSWORD="$$(cat /run/secrets/postgres_runtime_password)"
+        export ADMIN_DATABASE_PASSWORD="$$(cat /run/secrets/postgres_admin_writer_password)"
+        export ADMIN_C2A_BOOTSTRAP_DATABASE_PASSWORD="$$(cat /run/secrets/postgres_admin_c2a_bootstrap_password)"
+        export REDIS_PASSWORD="$$(cat /run/secrets/redis_password)"
+        export ADMIN_REDIS_PASSWORD="$$(cat /run/secrets/redis_password)"
+        exec node apps/api/dist/src/admin-security/admin-bootstrap.main.js \
+          </run/secrets/c3_bootstrap_input
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    environment:
+      ADMIN_C2A_BOOTSTRAP_DATABASE_USER: kora_admin_c2a_bootstrap
+      ADMIN_C2A_DATABASE_HOST: postgres
+      ADMIN_C2A_DATABASE_NAME: ${KORA_C3_POSTGRES_DB:?KORA_C3_POSTGRES_DB is required}
+      ADMIN_C2A_DATABASE_PORT: "5432"
+      ADMIN_C2A_DATABASE_SSL: "false"
+      ADMIN_C2A_ENABLED: "true"
+      ADMIN_C2A_PROFILE: BOOTSTRAP
+      ADMIN_C2B_ENABLED: "false"
+      ADMIN_DATABASE_HOST: postgres
+      ADMIN_DATABASE_NAME: ${KORA_C3_POSTGRES_DB:?KORA_C3_POSTGRES_DB is required}
+      ADMIN_DATABASE_PORT: "5432"
+      ADMIN_DATABASE_SSL: "false"
+      ADMIN_DATABASE_USER: kora_admin_writer
+      ADMIN_ORIGIN: https://admin.c3.invalid:${KORA_C3_HTTPS_PORT:?KORA_C3_HTTPS_PORT is required}
+      ADMIN_REDIS_HOST: redis
+      ADMIN_REDIS_PORT: "6379"
+      ADMIN_REDIS_TLS: "false"
+      ADMIN_REDIS_WAIT_AOF_TIMEOUT_MS: "1000"
+      API_HOST: 127.0.0.1
+      API_PORT: "3001"
+      DATABASE_HOST: postgres
+      DATABASE_NAME: ${KORA_C3_POSTGRES_DB:?KORA_C3_POSTGRES_DB is required}
+      DATABASE_PORT: "5432"
+      DATABASE_SSL: "false"
+      DATABASE_USER: kora_runtime
+      LOG_LEVEL: silent
+      NODE_ENV: test
+      NODE_PATH: /workspace/node_modules
+      READINESS_TIMEOUT_MS: "1000"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_TLS: "false"
+      S1203C2A_PROCESS_PROOF: "1"
+    labels:
+      <<: *kora-labels
+      com.kora-plus.service: c3-bootstrap
+    networks: [data]
+    restart: "no"
+    secrets:
+      - c3_bootstrap_input
+      - postgres_admin_c2a_bootstrap_password
+      - postgres_runtime_password
+      - postgres_admin_writer_password
+      - redis_password
+    volumes: [workspace:/workspace:ro]
+    working_dir: /workspace
+
+  admin:
+    profiles: [runtime]
+    image: *node-image
+    command:
+      [
+        "npm",
+        "run",
+        "start",
+        "--workspace",
+        "@kora-plus/admin",
+        "--",
+        "--hostname",
+        "0.0.0.0",
+        "--port",
+        "3000",
+      ]
+    depends_on:
+      api: { condition: service_started }
+    environment:
+      ADMIN_API_CA_PATH: /run/secrets/c3-api-ca.pem
+      ADMIN_API_ORIGIN: https://api.c3.internal:3001
+      ADMIN_API_SERVER_CERTIFICATE_SHA256: ${KORA_C3_API_CERT_SHA256:?KORA_C3_API_CERT_SHA256 is required}
+      ADMIN_BFF_CLIENT_CERTIFICATE_PATH: /run/secrets/c3-bff-cert.pem
+      ADMIN_BFF_CLIENT_PRIVATE_KEY_PATH: /run/secrets/c3-bff-key.pem
+      ADMIN_ORIGIN: https://admin.c3.invalid:${KORA_C3_HTTPS_PORT:?KORA_C3_HTTPS_PORT is required}
+      KORA_C3_GLOBAL_STATE_PROBE: "1"
+      NODE_ENV: production
+    expose: ["3000"]
+    labels:
+      <<: *kora-labels
+      com.kora-plus.service: c3-admin
+    networks: [entry, mtls]
+    restart: "no"
+    volumes:
+      - ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/api-ca.pem:/run/secrets/c3-api-ca.pem:ro
+      - ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/bff-cert.pem:/run/secrets/c3-bff-cert.pem:ro
+      - ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/bff-cert-key.pem:/run/secrets/c3-bff-key.pem:ro
+      - workspace:/workspace:ro
+    working_dir: /workspace
+
+  nginx:
+    profiles: [runtime]
+    image: nginx:1.31.8-alpine3.24-slim@sha256:f45171d36c76a8b2f5ef97108a3a8a2294248a6578a0a180edc2d78f7d2edc26
+    depends_on: [admin]
+    labels:
+      <<: *kora-labels
+      com.kora-plus.service: c3-entry
+    networks: [client, entry, host-entry]
+    ports:
+      ["127.0.0.1:${KORA_C3_HTTPS_PORT:?KORA_C3_HTTPS_PORT is required}:8443"]
+    read_only: true
+    restart: "no"
+    tmpfs:
+      - /tmp:mode=0700
+      - /var/cache/nginx:mode=0700
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/entry-cert.pem:/run/secrets/c3-entry-cert.pem:ro
+      - ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/entry-cert-key.pem:/run/secrets/c3-entry-key.pem:ro
+
+  probe-a:
+    profiles: [probes]
+    image: *node-image
+    command: ["tail", "-f", "/dev/null"]
+    labels:
+      <<: *kora-labels
+      com.kora-plus.service: c3-probe-a
+    networks: [client]
+    restart: "no"
+    volumes:
+      - ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/entry-ca.pem:/run/secrets/c3-entry-ca.pem:ro
+
+  probe-b:
+    profiles: [probes]
+    image: *node-image
+    command: ["tail", "-f", "/dev/null"]
+    labels:
+      <<: *kora-labels
+      com.kora-plus.service: c3-probe-b
+    networks: [client]
+    restart: "no"
+    volumes:
+      - ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/entry-ca.pem:/run/secrets/c3-entry-ca.pem:ro
+
+  probe-c:
+    profiles: [probes]
+    image: *node-image
+    command: ["tail", "-f", "/dev/null"]
+    labels:
+      <<: *kora-labels
+      com.kora-plus.service: c3-probe-c
+    networks: [client]
+    restart: "no"
+    volumes:
+      - ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/entry-ca.pem:/run/secrets/c3-entry-ca.pem:ro
+
+  probe-d:
+    profiles: [probes]
+    image: *node-image
+    command: ["tail", "-f", "/dev/null"]
+    labels:
+      <<: *kora-labels
+      com.kora-plus.service: c3-probe-d
+    networks: [client]
+    restart: "no"
+    volumes:
+      - ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/entry-ca.pem:/run/secrets/c3-entry-ca.pem:ro
+
+  probe-mtls:
+    profiles: [probes]
+    image: *node-image
+    command: ["tail", "-f", "/dev/null"]
+    labels:
+      <<: *kora-labels
+      com.kora-plus.service: c3-probe-mtls
+    networks: [mtls]
+    restart: "no"
+    volumes:
+      - ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/api-ca.pem:/run/secrets/c3-api-ca.pem:ro
+      - ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/bff-cert.pem:/run/secrets/c3-bff-cert.pem:ro
+      - ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/bff-cert-key.pem:/run/secrets/c3-bff-key.pem:ro
+      - ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/bff-other.pem:/run/secrets/c3-bff-other.pem:ro
+      - ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/bff-other-key.pem:/run/secrets/c3-bff-other-key.pem:ro
+      - ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/bff-expired.pem:/run/secrets/c3-bff-expired.pem:ro
+      - ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/bff-expired-key.pem:/run/secrets/c3-bff-expired-key.pem:ro
+      - ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/bff-foreign.pem:/run/secrets/c3-bff-foreign.pem:ro
+      - ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/bff-foreign-key.pem:/run/secrets/c3-bff-foreign-key.pem:ro
+
+networks:
+  build:
+    driver: bridge
+    labels: *kora-labels
+  client:
+    internal: true
+    labels: *kora-labels
+  data:
+    internal: true
+    labels: *kora-labels
+  entry:
+    internal: true
+    labels: *kora-labels
+  host-entry:
+    driver: bridge
+    labels: *kora-labels
+  mtls:
+    internal: true
+    labels: *kora-labels
+
+volumes:
+  postgres-data: { labels: *kora-labels }
+  redis-data: { labels: *kora-labels }
+  workspace: { labels: *kora-labels }
+
+secrets:
+  c3_harness_capability:
+    file: ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/c3_harness_capability
+  c3_bootstrap_input:
+    file: ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/c3_bootstrap_input.json
+  postgres_admin_writer_password:
+    file: ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/postgres_admin_writer_password
+  postgres_admin_c2a_bootstrap_password:
+    file: ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/postgres_admin_c2a_bootstrap_password
+  postgres_admin_c2a_expiration_worker_password:
+    file: ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/postgres_admin_c2a_expiration_worker_password
+  postgres_admin_c2a_notification_worker_password:
+    file: ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/postgres_admin_c2a_notification_worker_password
+  postgres_admin_c2a_writer_password:
+    file: ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/postgres_admin_c2a_writer_password
+  postgres_password:
+    file: ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/postgres_password
+  postgres_runtime_password:
+    file: ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/postgres_runtime_password
+  redis_password:
+    file: ${KORA_C3_SECRETS_DIR:?KORA_C3_SECRETS_DIR is required}/redis_password

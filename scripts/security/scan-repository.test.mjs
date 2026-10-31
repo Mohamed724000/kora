@@ -15,6 +15,8 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { deepmerge } from "deepmerge-ts";
+import { ESLint } from "eslint";
+import { Minimatch, minimatch } from "minimatch";
 
 import {
   assertRequiredRepositoryFiles,
@@ -1465,19 +1467,20 @@ test("rejects an unapproved fast-uri lock parent", () => {
     version: "1.0.0",
   };
 
-  assert.deepEqual(validateAjvFastUriOverride(validAjvFastUriManifests, lockfile), [
-    "fast-uri has an unapproved lock parent: node_modules/example",
-  ]);
+  assert.deepEqual(
+    validateAjvFastUriOverride(validAjvFastUriManifests, lockfile),
+    ["fast-uri has an unapproved lock parent: node_modules/example"],
+  );
 });
 
 const validBodyParserManifests = {
   "": {
     overrides: {
-      "body-parser@2.4.0": { qs: "6.16.0" },
+      "body-parser@2.4.0": { qs: "6.16.1" },
       "express@5.2.1": {
         "body-parser": "2.4.0",
         "proxy-addr": "2.0.8",
-        qs: "6.16.0",
+        qs: "6.16.1",
       },
     },
   },
@@ -1523,7 +1526,9 @@ test("rejects body-parser 2.3.0, override widening, duplicate parents and integr
     ),
   );
   assert.ok(
-    errors.includes("body-parser has an unapproved lock parent: node_modules/example"),
+    errors.includes(
+      "body-parser has an unapproved lock parent: node_modules/example",
+    ),
   );
   assert.ok(
     errors.includes(
@@ -1566,7 +1571,10 @@ const validZodLock = {
 };
 
 test("accepts the exact dev-only React Hooks zod 4.6.6 security resolution", () => {
-  assert.deepEqual(validateReactHooksZodOverride(validZodManifests, validZodLock), []);
+  assert.deepEqual(
+    validateReactHooksZodOverride(validZodManifests, validZodLock),
+    [],
+  );
 });
 
 test("rejects zod 4.4.3, a second override, an extra parent and integrity drift", () => {
@@ -1585,8 +1593,12 @@ test("rejects zod 4.4.3, a second override, an extra parent and integrity drift"
       "eslint-plugin-react-hooks@7.1.1 must be the only override parent for zod and pin exact 4.6.6",
     ),
   );
-  assert.ok(errors.includes("zod has an unapproved lock parent: node_modules/example"));
-  assert.ok(errors.includes("vulnerable zod installation(s): node_modules/zod@4.4.3"));
+  assert.ok(
+    errors.includes("zod has an unapproved lock parent: node_modules/example"),
+  );
+  assert.ok(
+    errors.includes("vulnerable zod installation(s): node_modules/zod@4.4.3"),
+  );
   assert.ok(
     errors.some((error) =>
       error.startsWith(
@@ -1599,13 +1611,13 @@ test("rejects zod 4.4.3, a second override, an extra parent and integrity drift"
 const validQsManifests = {
   "": {
     overrides: {
-      "body-parser@2.4.0": { qs: "6.16.0" },
+      "body-parser@2.4.0": { qs: "6.16.1" },
       "express@5.2.1": {
         "body-parser": "2.4.0",
         "proxy-addr": "2.0.8",
-        qs: "6.16.0",
+        qs: "6.16.1",
       },
-      "superagent@10.3.0": { qs: "6.16.0" },
+      "superagent@10.3.0": { qs: "6.16.1" },
     },
   },
 };
@@ -1620,7 +1632,11 @@ const validQsLock = {
       dependencies: { qs: "^6.14.0" },
       version: "5.2.1",
     },
-    "node_modules/qs": { version: "6.16.0" },
+    "node_modules/qs": {
+      integrity:
+        "sha512-5Px6J7rfHBAGUhNQ3es4YzcOdBBw0SDcVtThJml4RdnKw4tKs2epA0kPZ+K8X+WiHktT93RHVcQ/3ym5aTCgtg==",
+      version: "6.16.1",
+    },
     "node_modules/superagent": {
       dependencies: { qs: "^6.14.1" },
       version: "10.3.0",
@@ -1632,18 +1648,24 @@ test("accepts the three exact targeted qs security overrides", () => {
   assert.deepEqual(validateQsOverrides(validQsManifests, validQsLock), []);
 });
 
-test("rejects vulnerable and different qs resolutions", () => {
+test("rejects vulnerable, different and integrity-drifted qs resolutions", () => {
   const vulnerableLock = structuredClone(validQsLock);
-  vulnerableLock.packages["node_modules/qs"].version = "6.15.3";
+  vulnerableLock.packages["node_modules/qs"].version = "6.16.0";
   assert.deepEqual(validateQsOverrides(validQsManifests, vulnerableLock), [
-    "vulnerable qs installation(s): node_modules/qs@6.15.3",
-    "qs must have one physical installation at node_modules/qs@6.16.0; found node_modules/qs@6.15.3",
+    "vulnerable qs installation(s): node_modules/qs@6.16.0",
+    "qs must have one physical installation at node_modules/qs@6.16.1; found node_modules/qs@6.16.0",
   ]);
 
   const differentLock = structuredClone(validQsLock);
-  differentLock.packages["node_modules/qs"].version = "6.16.1";
+  differentLock.packages["node_modules/qs"].version = "6.17.0";
   assert.deepEqual(validateQsOverrides(validQsManifests, differentLock), [
-    "qs must have one physical installation at node_modules/qs@6.16.0; found node_modules/qs@6.16.1",
+    "qs must have one physical installation at node_modules/qs@6.16.1; found node_modules/qs@6.17.0",
+  ]);
+
+  const integrityDrift = structuredClone(validQsLock);
+  integrityDrift.packages["node_modules/qs"].integrity = "sha512-altered";
+  assert.deepEqual(validateQsOverrides(validQsManifests, integrityDrift), [
+    "qs@6.16.1 lock integrity must equal sha512-5Px6J7rfHBAGUhNQ3es4YzcOdBBw0SDcVtThJml4RdnKw4tKs2epA0kPZ+K8X+WiHktT93RHVcQ/3ym5aTCgtg==",
   ]);
 });
 
@@ -1651,38 +1673,38 @@ test("rejects missing, duplicate and misplaced qs installations", () => {
   const missingLock = structuredClone(validQsLock);
   delete missingLock.packages["node_modules/qs"];
   assert.deepEqual(validateQsOverrides(validQsManifests, missingLock), [
-    "qs must have one physical installation at node_modules/qs@6.16.0; found NONE",
+    "qs must have one physical installation at node_modules/qs@6.16.1; found NONE",
   ]);
 
   const duplicateLock = structuredClone(validQsLock);
   duplicateLock.packages["node_modules/example/node_modules/qs"] = {
-    version: "6.16.0",
+    version: "6.16.1",
   };
   assert.deepEqual(validateQsOverrides(validQsManifests, duplicateLock), [
-    "qs must have one physical installation at node_modules/qs@6.16.0; found node_modules/qs@6.16.0, node_modules/example/node_modules/qs@6.16.0",
+    "qs must have one physical installation at node_modules/qs@6.16.1; found node_modules/qs@6.16.1, node_modules/example/node_modules/qs@6.16.1",
   ]);
 
   const misplacedLock = structuredClone(validQsLock);
   delete misplacedLock.packages["node_modules/qs"];
   misplacedLock.packages["node_modules/example/node_modules/qs"] = {
-    version: "6.16.0",
+    version: "6.16.1",
   };
   assert.deepEqual(validateQsOverrides(validQsManifests, misplacedLock), [
-    "qs must have one physical installation at node_modules/qs@6.16.0; found node_modules/example/node_modules/qs@6.16.0",
+    "qs must have one physical installation at node_modules/qs@6.16.1; found node_modules/example/node_modules/qs@6.16.1",
   ]);
 });
 
 test("rejects widened, malformed and global qs overrides", () => {
-  for (const specification of ["^6.16.0", "*", "latest", "github:ljharb/qs"]) {
+  for (const specification of ["^6.16.1", "*", "latest", "github:ljharb/qs"]) {
     const manifests = structuredClone(validQsManifests);
     manifests[""].overrides["express@5.2.1"].qs = specification;
     assert.deepEqual(validateQsOverrides(manifests, validQsLock), [
-      "express@5.2.1 must override qs to exact version 6.16.0",
+      "express@5.2.1 must override qs to exact version 6.16.1",
     ]);
   }
 
   const global = structuredClone(validQsManifests);
-  global[""].overrides.qs = "6.16.0";
+  global[""].overrides.qs = "6.16.1";
   assert.deepEqual(validateQsOverrides(global, validQsLock), [
     "qs security override is forbidden at path: qs",
   ]);
@@ -1690,7 +1712,7 @@ test("rejects widened, malformed and global qs overrides", () => {
 
 test("rejects wrong qs parents, broadened parents and parallel paths", () => {
   const wrongParent = structuredClone(validQsManifests);
-  wrongParent[""].overrides["example@1.0.0"] = { qs: "6.16.0" };
+  wrongParent[""].overrides["example@1.0.0"] = { qs: "6.16.1" };
   assert.deepEqual(validateQsOverrides(wrongParent, validQsLock), [
     "qs security override is forbidden at path: example@1.0.0 > qs",
   ]);
@@ -1698,11 +1720,11 @@ test("rejects wrong qs parents, broadened parents and parallel paths", () => {
   const broadened = structuredClone(validQsManifests);
   broadened[""].overrides["express@5.2.1"].example = "1.0.0";
   assert.deepEqual(validateQsOverrides(broadened, validQsLock), [
-    "express@5.2.1 must override qs to exact version 6.16.0",
+    "express@5.2.1 must override qs to exact version 6.16.1",
   ]);
 
   const parallel = structuredClone(validQsManifests);
-  parallel[""].overrides["express@^5.2.1"] = { qs: "6.16.0" };
+  parallel[""].overrides["express@^5.2.1"] = { qs: "6.16.1" };
   assert.deepEqual(validateQsOverrides(parallel, validQsLock), [
     "qs security override is forbidden at path: express@^5.2.1",
     "qs security override is forbidden at path: express@^5.2.1 > qs",
@@ -1716,7 +1738,7 @@ test("rejects wrong qs parents, broadened parents and parallel paths", () => {
 
   const nestedSibling = structuredClone(validQsManifests);
   nestedSibling[""].overrides["express@5.2.1"]["body-parser"] = {
-    qs: "6.16.0",
+    qs: "6.16.1",
   };
   assert.deepEqual(validateQsOverrides(nestedSibling, validQsLock), [
     "qs security override is forbidden at path: express@5.2.1 > body-parser",
@@ -1742,22 +1764,68 @@ const validBraceExpansionManifests = {
   "": {
     overrides: {
       "brace-expansion": "5.0.12",
-      minimatch: "10.2.6",
+      minimatch: "11.0.1",
     },
   },
 };
 
 const validBraceExpansionLock = {
   packages: {
+    "node_modules/@eslint/config-array": {
+      dependencies: { minimatch: "^3.1.5" },
+      version: "0.21.2",
+    },
+    "node_modules/@eslint/eslintrc": {
+      dependencies: { minimatch: "^3.1.5" },
+      version: "3.3.6",
+    },
+    "node_modules/@isaacs/nonrecursive-glob-match": {
+      dev: true,
+      integrity:
+        "sha512-SI7kyKHq4XXDRozw+r9GlRZkia1ZkFrpLW98r2IC2Bpr8YkFGE3fvjzmxCG0x78A++69HmDNrDvSMYBZmHGpKA==",
+      license: "BlueOak-1.0.0",
+      resolved:
+        "https://registry.npmjs.org/@isaacs/nonrecursive-glob-match/-/nonrecursive-glob-match-1.0.3.tgz",
+      version: "1.0.3",
+    },
+    "node_modules/@typescript-eslint/typescript-estree": {
+      dependencies: { minimatch: "^10.2.2" },
+      version: "8.65.0",
+    },
     "node_modules/brace-expansion": { version: "5.0.12" },
+    "node_modules/eslint": {
+      dependencies: { minimatch: "^3.1.2" },
+      version: "9.39.2",
+    },
+    "node_modules/eslint-plugin-import": {
+      dependencies: { minimatch: "^3.1.2" },
+      version: "2.32.0",
+    },
+    "node_modules/eslint-plugin-jsx-a11y": {
+      dependencies: { minimatch: "^3.1.2" },
+      version: "6.10.2",
+    },
+    "node_modules/eslint-plugin-react": {
+      dependencies: { minimatch: "^3.1.2" },
+      version: "7.37.5",
+    },
     "node_modules/minimatch": {
-      dependencies: { "brace-expansion": "^5.0.8" },
-      version: "10.2.6",
+      dependencies: {
+        "@isaacs/nonrecursive-glob-match": "^1.0.1",
+        "brace-expansion": "^5.0.12",
+      },
+      dev: true,
+      engines: { node: "18 || 20 || >=22" },
+      integrity:
+        "sha512-t+Vn6DX4wPCxS23y03C0uhF7S1jpi1GfqPrnlEipCJaA2ykiNbMkVlDutZtmvLfRcUN6R8AYVlzTsQrT4RZoLQ==",
+      license: "BlueOak-1.0.0",
+      resolved: "https://registry.npmjs.org/minimatch/-/minimatch-11.0.1.tgz",
+      version: "11.0.1",
     },
   },
 };
 
-test("accepts the exact minimatch brace-expansion security override", () => {
+test("accepts the exact minimatch security graph", () => {
   assert.deepEqual(
     validateBraceExpansionOverride(
       validBraceExpansionManifests,
@@ -1905,14 +1973,14 @@ test("rejects widened, stale and parallel brace-expansion overrides", () => {
 
 test("rejects minimatch override and parent graph drift", () => {
   const ranged = structuredClone(validBraceExpansionManifests);
-  ranged[""].overrides.minimatch = "^10.2.6";
+  ranged[""].overrides.minimatch = "^11.0.1";
   assert.deepEqual(
     validateBraceExpansionOverride(ranged, validBraceExpansionLock),
-    ["minimatch must remain overridden to exact version 10.2.6"],
+    ["minimatch must remain overridden to exact version 11.0.1"],
   );
 
   const nested = structuredClone(validBraceExpansionManifests);
-  nested[""].overrides["example@1.0.0"] = { minimatch: "10.2.6" };
+  nested[""].overrides["example@1.0.0"] = { minimatch: "11.0.1" };
   assert.deepEqual(
     validateBraceExpansionOverride(nested, validBraceExpansionLock),
     [
@@ -1924,26 +1992,324 @@ test("rejects minimatch override and parent graph drift", () => {
   metadata.packages["node_modules/minimatch"].dependencies["brace-expansion"] =
     "5.0.12";
   metadata.packages["node_modules/example"] = {
-    dependencies: { "brace-expansion": "5.0.12" },
+    dependencies: {
+      "@isaacs/nonrecursive-glob-match": "^1.0.1",
+      "brace-expansion": "5.0.12",
+    },
     version: "1.0.0",
   };
   assert.deepEqual(
     validateBraceExpansionOverride(validBraceExpansionManifests, metadata),
     [
-      "minimatch@10.2.6 lock metadata must retain its audited brace-expansion ^5.0.8 dependency",
+      "minimatch@11.0.1 lock metadata must retain its qualified package identity and exact dependency graph",
       "brace-expansion has an unapproved lock parent: node_modules/example",
+      "@isaacs/nonrecursive-glob-match has an unapproved lock parent: node_modules/example",
     ],
   );
 
   const version = structuredClone(validBraceExpansionLock);
-  version.packages["node_modules/minimatch"].version = "10.2.5";
+  version.packages["node_modules/minimatch"].version = "10.2.6";
   assert.deepEqual(
     validateBraceExpansionOverride(validBraceExpansionManifests, version),
     [
-      "minimatch@10.2.6 lock metadata must retain its audited brace-expansion ^5.0.8 dependency",
-      "minimatch must have one physical installation at node_modules/minimatch@10.2.6; found node_modules/minimatch@10.2.5",
+      "minimatch@11.0.1 lock metadata must retain its qualified package identity and exact dependency graph",
+      "vulnerable minimatch installation(s): node_modules/minimatch@10.2.6",
+      "minimatch must have one physical installation at node_modules/minimatch@11.0.1; found node_modules/minimatch@10.2.6",
     ],
   );
+});
+
+test("rejects vulnerable minimatch boundaries without mislabelling patched versions", () => {
+  for (const version of [
+    "0.0.1",
+    "3.1.2",
+    "10.2.6",
+    "11.0.0",
+    "11.0.1-beta.1",
+  ]) {
+    const lockfile = structuredClone(validBraceExpansionLock);
+    lockfile.packages["node_modules/minimatch"].version = version;
+    const errors = validateBraceExpansionOverride(
+      validBraceExpansionManifests,
+      lockfile,
+    );
+    assert.equal(
+      errors.includes(
+        `vulnerable minimatch installation(s): node_modules/minimatch@${version}`,
+      ),
+      true,
+      version,
+    );
+  }
+
+  for (const version of ["11.0.1", "11.0.2", "12.0.0", "not-semver"]) {
+    const lockfile = structuredClone(validBraceExpansionLock);
+    lockfile.packages["node_modules/minimatch"].version = version;
+    const errors = validateBraceExpansionOverride(
+      validBraceExpansionManifests,
+      lockfile,
+    );
+    assert.equal(
+      errors.some((error) =>
+        error.startsWith("vulnerable minimatch installation(s):"),
+      ),
+      false,
+      version,
+    );
+  }
+});
+
+test("rejects minimatch approved-parent version, range and membership drift", () => {
+  const ranged = structuredClone(validBraceExpansionLock);
+  ranged.packages["node_modules/@eslint/config-array"].dependencies.minimatch =
+    "^11.0.1";
+  assert.deepEqual(
+    validateBraceExpansionOverride(validBraceExpansionManifests, ranged),
+    [
+      "node_modules/@eslint/config-array@0.21.2 must retain its audited minimatch ^3.1.5 dependency declaration",
+    ],
+  );
+
+  const version = structuredClone(validBraceExpansionLock);
+  version.packages["node_modules/eslint-plugin-react"].version = "7.37.4";
+  assert.deepEqual(
+    validateBraceExpansionOverride(validBraceExpansionManifests, version),
+    [
+      "node_modules/eslint-plugin-react@7.37.5 must retain its audited minimatch ^3.1.2 dependency declaration",
+    ],
+  );
+
+  const missing = structuredClone(validBraceExpansionLock);
+  delete missing.packages["node_modules/@typescript-eslint/typescript-estree"];
+  assert.deepEqual(
+    validateBraceExpansionOverride(validBraceExpansionManifests, missing),
+    [
+      "node_modules/@typescript-eslint/typescript-estree@8.65.0 must retain its audited minimatch ^10.2.2 dependency declaration",
+    ],
+  );
+
+  const extra = structuredClone(validBraceExpansionLock);
+  extra.packages["node_modules/example"] = {
+    dependencies: { minimatch: "^11.0.1" },
+    version: "1.0.0",
+  };
+  assert.deepEqual(
+    validateBraceExpansionOverride(validBraceExpansionManifests, extra),
+    ["minimatch has an unapproved lock parent: node_modules/example"],
+  );
+});
+
+test("rejects minimatch package identity and dependency substitution", () => {
+  const mutations = [
+    (metadata) => {
+      metadata.resolved =
+        "https://registry.npmjs.org/minimatch/-/minimatch-11.0.0.tgz";
+    },
+    (metadata) => {
+      metadata.integrity = "sha512-substituted";
+    },
+    (metadata) => {
+      metadata.license = "MIT";
+    },
+    (metadata) => {
+      metadata.dev = false;
+    },
+    (metadata) => {
+      metadata.engines.node = ">=18";
+    },
+    (metadata) => {
+      metadata.dependencies["@isaacs/nonrecursive-glob-match"] = "1.0.3";
+    },
+    (metadata) => {
+      metadata.dependencies.example = "1.0.0";
+    },
+    (metadata) => {
+      metadata.optionalDependencies = { example: "1.0.0" };
+    },
+  ];
+  for (const mutate of mutations) {
+    const lockfile = structuredClone(validBraceExpansionLock);
+    mutate(lockfile.packages["node_modules/minimatch"]);
+    assert.deepEqual(
+      validateBraceExpansionOverride(validBraceExpansionManifests, lockfile),
+      [
+        "minimatch@11.0.1 lock metadata must retain its qualified package identity and exact dependency graph",
+      ],
+    );
+  }
+});
+
+test("rejects nonrecursive-glob-match identity, graph and placement drift", () => {
+  const metadataError =
+    "@isaacs/nonrecursive-glob-match@1.0.3 lock metadata must retain its qualified dev-only dependency-free package identity";
+  const mutations = [
+    (metadata) => {
+      metadata.version = "1.0.2";
+    },
+    (metadata) => {
+      metadata.resolved = "https://example.invalid/substitution.tgz";
+    },
+    (metadata) => {
+      metadata.integrity = "sha512-substituted";
+    },
+    (metadata) => {
+      metadata.license = "MIT";
+    },
+    (metadata) => {
+      metadata.dev = false;
+    },
+    (metadata) => {
+      metadata.dependencies = { example: "1.0.0" };
+    },
+  ];
+  for (const mutate of mutations) {
+    const lockfile = structuredClone(validBraceExpansionLock);
+    mutate(lockfile.packages["node_modules/@isaacs/nonrecursive-glob-match"]);
+    const errors = validateBraceExpansionOverride(
+      validBraceExpansionManifests,
+      lockfile,
+    );
+    assert.equal(errors.includes(metadataError), true);
+  }
+
+  const missing = structuredClone(validBraceExpansionLock);
+  delete missing.packages["node_modules/@isaacs/nonrecursive-glob-match"];
+  assert.deepEqual(
+    validateBraceExpansionOverride(validBraceExpansionManifests, missing),
+    [
+      metadataError,
+      "@isaacs/nonrecursive-glob-match must have one physical installation at node_modules/@isaacs/nonrecursive-glob-match@1.0.3; found NONE",
+    ],
+  );
+
+  const duplicate = structuredClone(validBraceExpansionLock);
+  duplicate.packages[
+    "node_modules/example/node_modules/@isaacs/nonrecursive-glob-match"
+  ] = structuredClone(
+    duplicate.packages["node_modules/@isaacs/nonrecursive-glob-match"],
+  );
+  assert.deepEqual(
+    validateBraceExpansionOverride(validBraceExpansionManifests, duplicate),
+    [
+      "@isaacs/nonrecursive-glob-match must have one physical installation at node_modules/@isaacs/nonrecursive-glob-match@1.0.3; found node_modules/@isaacs/nonrecursive-glob-match@1.0.3, node_modules/example/node_modules/@isaacs/nonrecursive-glob-match@1.0.3",
+    ],
+  );
+
+  const extraParent = structuredClone(validBraceExpansionLock);
+  extraParent.packages["node_modules/example"] = {
+    dependencies: { "@isaacs/nonrecursive-glob-match": "^1.0.1" },
+    version: "1.0.0",
+  };
+  assert.deepEqual(
+    validateBraceExpansionOverride(validBraceExpansionManifests, extraParent),
+    [
+      "@isaacs/nonrecursive-glob-match has an unapproved lock parent: node_modules/example",
+    ],
+  );
+});
+
+test(
+  "bounds minimatch optimization-level amplification and preserves selected path behavior",
+  { timeout: 2_000 },
+  () => {
+    const amplified = new Minimatch(Array(30).fill("**/../a/b").join("/"), {
+      braceExpandMax: 64,
+      optimizationLevel: 2,
+    });
+    const four = new Minimatch("**/../a/b/**/../c/d", {
+      braceExpandMax: 64,
+      optimizationLevel: 2,
+    });
+    const brace = new Minimatch("{x,*}/{0..999}", {
+      braceExpandMax: 4_096,
+      optimizationLevel: 2,
+    });
+
+    assert.equal(amplified.set.length, 64);
+    assert.equal(four.set.length, 4);
+    assert.equal(four.match("a/b/c/d"), true);
+    assert.equal(brace.set.length, 2_000);
+    assert.equal(brace.match("x/0"), true);
+    assert.equal(brace.match("anything/999"), true);
+    assert.equal(minimatch("C:/repo/src/a.ts", "C:/repo/**/*.ts"), true);
+    assert.equal(
+      minimatch("C:\\repo\\src\\a.ts", "C:/repo/**/*.ts", {
+        platform: "win32",
+        windowsPathsNoEscape: true,
+      }),
+      true,
+    );
+    assert.equal(
+      minimatch("//server/share/src/a.ts", "//server/share/**/*.ts", {
+        platform: "win32",
+      }),
+      true,
+    );
+  },
+);
+
+test("keeps minimatch legacy-callable plugin rules dormant in active Next configs", async () => {
+  const incompatibleRules = [
+    "import/extensions",
+    "import/no-extraneous-dependencies",
+    "import/no-import-module-exports",
+    "import/no-internal-modules",
+    "import/no-namespace",
+    "import/no-unassigned-import",
+    "import/order",
+    "jsx-a11y/control-has-associated-label",
+    "jsx-a11y/label-has-associated-control",
+    "react/forbid-component-props",
+    "react/jsx-handler-names",
+    "react/jsx-pascal-case",
+    "react/no-danger",
+    "react/no-unstable-nested-components",
+  ];
+  const representativeFiles = [
+    ["apps/admin", "app/(auth)/login/page.tsx"],
+    ["apps/web", "app/page.tsx"],
+    ["packages/ui", "src/action-button.tsx"],
+  ];
+
+  for (const [workspacePath, filePath] of representativeFiles) {
+    const workspaceRoot = join(repositoryRoot, workspacePath);
+    const eslint = new ESLint({ cwd: workspaceRoot });
+    const config = await eslint.calculateConfigForFile(
+      join(workspaceRoot, filePath),
+    );
+    const active = incompatibleRules.filter((ruleName) => {
+      const rule = config?.rules?.[ruleName];
+      const severity = Array.isArray(rule) ? rule[0] : rule;
+      return severity !== undefined && severity !== 0 && severity !== "off";
+    });
+    assert.deepEqual(
+      active,
+      [],
+      `${workspacePath} activates minimatch legacy-callable rules without a separate compatibility qualification`,
+    );
+
+    const ignored = {};
+    for (const sample of [
+      ".next/generated.js",
+      "coverage/report.js",
+      "dist/output.js",
+      "next-env.d.ts",
+      "node_modules/example/index.js",
+      "src/a.ts",
+      "src\\a.ts",
+    ]) {
+      ignored[sample] = await eslint.isPathIgnored(join(workspaceRoot, sample));
+    }
+    assert.deepEqual(ignored, {
+      ".next/generated.js": true,
+      "coverage/report.js": true,
+      "dist/output.js": true,
+      "next-env.d.ts": true,
+      "node_modules/example/index.js": true,
+      "src/a.ts": false,
+      "src\\a.ts": false,
+    });
+  }
 });
 
 const validR2Manifests = {
@@ -1953,16 +2319,16 @@ const validR2Manifests = {
         "fast-glob": "npm:tinyglobby@0.2.17",
       },
       "@nestjs/platform-express@11.1.28": { multer: "2.5.0" },
-      "body-parser@2.4.0": { qs: "6.16.0" },
+      "body-parser@2.4.0": { qs: "6.16.1" },
       "express@5.2.1": {
         "body-parser": "2.4.0",
         "proxy-addr": "2.0.8",
-        qs: "6.16.0",
+        qs: "6.16.1",
       },
       "js-yaml@4.3.0": "4.3.2",
       sharp: "0.35.5",
       "source-map-js": "1.2.2",
-      "superagent@10.3.0": { qs: "6.16.0" },
+      "superagent@10.3.0": { qs: "6.16.1" },
     },
   },
   "apps/admin": {
@@ -2041,10 +2407,6 @@ const validR2Lock = {
         "sha512-Ifk1KcLrxaGt1occQagQNFNNOqRt1LFuehEnHHzB8Z6cRgIxRU1TBaiIsUiCdA+gy5PL7Y1IX31DNKkRmxtXjQ==",
       version: "2.4.0",
     },
-    "node_modules/cosmiconfig": {
-      dependencies: { "js-yaml": "^4.1.0" },
-      version: "8.3.6",
-    },
     "node_modules/css-tree": {
       dependencies: { "source-map-js": "^1.2.1" },
       version: "3.2.1",
@@ -2101,7 +2463,11 @@ const validR2Lock = {
       version: "8.5.24",
     },
     "node_modules/proxy-addr": { version: "2.0.8" },
-    "node_modules/qs": { version: "6.16.0" },
+    "node_modules/qs": {
+      integrity:
+        "sha512-5Px6J7rfHBAGUhNQ3es4YzcOdBBw0SDcVtThJml4RdnKw4tKs2epA0kPZ+K8X+WiHktT93RHVcQ/3ym5aTCgtg==",
+      version: "6.16.1",
+    },
     "node_modules/sharp": {
       optionalDependencies: {
         "@img/sharp-darwin-arm64": "0.35.5",
@@ -2248,7 +2614,7 @@ test("accepts exact qs and proxy-addr composition in either key order", () => {
 
   const reversed = structuredClone(validR2Manifests);
   reversed[""].overrides["express@5.2.1"] = {
-    qs: "6.16.0",
+    qs: "6.16.1",
     "proxy-addr": "2.0.8",
     "body-parser": "2.4.0",
   };
@@ -2267,10 +2633,10 @@ test("rejects one-axis qs and proxy-addr composition drift", () => {
       delete manifests[""].overrides["express@5.2.1"]["proxy-addr"];
     },
     (manifests) => {
-      manifests[""].overrides["express@5.2.1"].qs = "^6.16.0";
+      manifests[""].overrides["express@5.2.1"].qs = "^6.16.1";
     },
     (manifests) => {
-      manifests[""].overrides["express@5.2.1"].qs = "6.16.1";
+      manifests[""].overrides["express@5.2.1"].qs = "6.16.0";
     },
     (manifests) => {
       manifests[""].overrides["express@5.2.1"]["proxy-addr"] = "^2.0.8";
@@ -2292,7 +2658,7 @@ test("rejects one-axis qs and proxy-addr composition drift", () => {
 
 test("rejects wrong qs or proxy-addr placement with one-axis mutations", () => {
   const wrongQsParent = structuredClone(validR2Manifests);
-  wrongQsParent[""].overrides["example@1.0.0"] = { qs: "6.16.0" };
+  wrongQsParent[""].overrides["example@1.0.0"] = { qs: "6.16.1" };
   assert.ok(
     validateIntegratedQsProxyComposition(wrongQsParent, validR2Lock).some(
       (error) => error.includes("qs security override is forbidden"),
@@ -2335,7 +2701,7 @@ test("preserves strict qs composition for body-parser and superagent", () => {
     manifests[""].overrides[selector].example = "1.0.0";
     assert.ok(
       validateQsOverrides(manifests, validR2Lock).includes(
-        `${selector} must override qs to exact version 6.16.0`,
+        `${selector} must override qs to exact version 6.16.1`,
       ),
     );
   }
@@ -2601,6 +2967,47 @@ test("rejects broadened, global and malversioned js-yaml overrides", () => {
     assert.ok(
       errors.length > 0,
       `${selector}=${JSON.stringify(specification)}`,
+    );
+  }
+});
+
+test("accepts the js-yaml graph after the retired Nest CLI parent is removed", () => {
+  assert.equal(validR2Lock.packages["node_modules/cosmiconfig"], undefined);
+  assert.deepEqual(validateJsYamlOverrides(validR2Manifests, validR2Lock), []);
+});
+
+test("rejects reintroduction of the retired cosmiconfig js-yaml parent", () => {
+  const lockfile = structuredClone(validR2Lock);
+  lockfile.packages["node_modules/cosmiconfig"] = {
+    dependencies: { "js-yaml": "^4.1.0" },
+    version: "8.3.6",
+  };
+
+  assert.deepEqual(validateJsYamlOverrides(validR2Manifests, lockfile), [
+    "js-yaml has an unapproved lock parent: node_modules/cosmiconfig",
+  ]);
+});
+
+test("rejects absence or drift of the retained ESLint js-yaml parent", () => {
+  for (const mutate of [
+    (lockfile) => {
+      delete lockfile.packages["node_modules/@eslint/eslintrc"];
+    },
+    (lockfile) => {
+      lockfile.packages["node_modules/@eslint/eslintrc"].version = "3.3.5";
+    },
+    (lockfile) => {
+      lockfile.packages["node_modules/@eslint/eslintrc"].dependencies[
+        "js-yaml"
+      ] = "^4.2.0";
+    },
+  ]) {
+    const lockfile = structuredClone(validR2Lock);
+    mutate(lockfile);
+    assert.ok(
+      validateJsYamlOverrides(validR2Manifests, lockfile).includes(
+        "node_modules/@eslint/eslintrc lock metadata must retain its audited js-yaml ^4.3.0 dependency",
+      ),
     );
   }
 });

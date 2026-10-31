@@ -1,14 +1,11 @@
-import { AppContent } from '@adminlte/react';
-import { StatusPanel } from '@kora-plus/ui';
-
 export default function Loading() {
   return (
-    <AppContent title="Chargement">
-      <StatusPanel
-        description="Le shell d’administration est en cours de préparation."
-        title="Chargement"
-        variant="loading"
-      />
-    </AppContent>
+    <main aria-busy="true" className="admin-session-gate" id="contenu-principal" tabIndex={-1}>
+      <section aria-live="polite" className="admin-status-card" role="status">
+        <p className="admin-eyebrow">Administration KORA+</p>
+        <h1>Chargement sécurisé</h1>
+        <p>L’interface d’authentification est en cours de préparation.</p>
+      </section>
+    </main>
   );
 }

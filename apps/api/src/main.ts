@@ -1,11 +1,26 @@
 import { ConfigService } from '@nestjs/config';
-import type { RuntimeConfig } from './config/runtime-config';
+import { readFileSync } from 'node:fs';
+import { loadRuntimeConfig, type RuntimeConfig } from './config/runtime-config';
 import { createApplication } from './app.factory';
 import { createStructuredLogger } from './observability/structured-logger';
 import { captureSentryException } from './observability/sentry';
 
 async function bootstrap(): Promise<void> {
-  const application = await createApplication();
+  const runtimeConfig = loadRuntimeConfig(process.env);
+  const application = await createApplication(
+    {},
+    runtimeConfig.adminClientProvenance.mode === 'MTLS_BFF'
+      ? {
+          httpsOptions: {
+            ca: readFileSync(runtimeConfig.adminClientProvenance.clientCaPath),
+            cert: readFileSync(runtimeConfig.adminClientProvenance.serverCertificatePath),
+            key: readFileSync(runtimeConfig.adminClientProvenance.serverPrivateKeyPath),
+            rejectUnauthorized: true,
+            requestCert: true,
+          },
+        }
+      : {},
+  );
   const config = application.get(ConfigService<RuntimeConfig, true>);
   const http = config.get('http', { infer: true });
 

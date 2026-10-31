@@ -1,4 +1,5 @@
 import type { ServerResponse } from 'node:http';
+import { resolveAdminClientProvenance } from '../admin-auth/admin-client-provenance';
 import {
   AdminRequestPolicyError,
   type AdminRequestPolicy,
@@ -9,10 +10,14 @@ import { AdminSecurityController } from './admin-security.controller';
 import type { AdminSecurityService } from './admin-security.service';
 
 function request(id = 'request-c2a-unit'): RequestWithId {
-  return {
+  const candidate = {
     id,
+    headers: {},
+    rawHeaders: [],
     socket: { remoteAddress: '192.0.2.10' },
-  } as RequestWithId;
+  } as unknown as RequestWithId;
+  resolveAdminClientProvenance(candidate, { mode: 'DIRECT' });
+  return candidate;
 }
 
 describe('AdminSecurityController', () => {

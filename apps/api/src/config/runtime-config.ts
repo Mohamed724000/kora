@@ -1,9 +1,20 @@
 import type { LevelWithSilent } from 'pino';
+import { isAbsolute } from 'node:path';
 
 const NODE_ENVIRONMENTS = ['development', 'test', 'production'] as const;
 const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'] as const;
 
 type NodeEnvironment = (typeof NODE_ENVIRONMENTS)[number];
+
+export type AdminClientProvenanceConfig =
+  | { mode: 'DIRECT' }
+  | {
+      clientCaPath: string;
+      clientCertificateSha256: string;
+      mode: 'MTLS_BFF';
+      serverCertificatePath: string;
+      serverPrivateKeyPath: string;
+    };
 
 export interface RuntimePostgresqlConfig {
   host: string;
@@ -73,6 +84,7 @@ export type AdminC2bRuntimeConfig =
     };
 
 export interface RuntimeConfig {
+  adminClientProvenance: AdminClientProvenanceConfig;
   adminAuth: {
     origin: string;
     postgresql: {
@@ -257,7 +269,27 @@ function invalidFields(results: readonly ValidationResult<unknown>[]): string[] 
   return results.filter((result) => result.value === undefined).map((result) => result.field);
 }
 
+function absolutePath(
+  environment: Record<string, string | undefined>,
+  field: string,
+): ValidationResult<string> {
+  const result = requiredString(environment, field);
+  return result.value !== undefined && isAbsolute(result.value) ? result : { field };
+}
+
 export function loadRuntimeConfig(environment: Record<string, string | undefined>): RuntimeConfig {
+  const adminClientProvenanceMode =
+    environment.ADMIN_CLIENT_PROVENANCE_MODE === undefined
+      ? ({ field: 'ADMIN_CLIENT_PROVENANCE_MODE', value: 'DIRECT' } as const)
+      : enumeration(environment, 'ADMIN_CLIENT_PROVENANCE_MODE', ['DIRECT', 'MTLS_BFF'] as const);
+  const apiTlsCertificatePath = absolutePath(environment, 'API_TLS_CERTIFICATE_PATH');
+  const apiTlsPrivateKeyPath = absolutePath(environment, 'API_TLS_PRIVATE_KEY_PATH');
+  const apiTlsClientCaPath = absolutePath(environment, 'API_TLS_CLIENT_CA_PATH');
+  const adminBffClientCertificateSha256 = requiredString(
+    environment,
+    'ADMIN_BFF_CLIENT_CERTIFICATE_SHA256',
+    /^[a-f0-9]{64}$/u,
+  );
   const nodeEnvironment = enumeration(environment, 'NODE_ENV', NODE_ENVIRONMENTS);
   const apiHost = requiredString(environment, 'API_HOST', /^(?!.*:\/\/)(?!.*\/)\S+$/);
   const apiPort = integer(environment, 'API_PORT', 1, 65_535);
@@ -421,6 +453,7 @@ export function loadRuntimeConfig(environment: Record<string, string | undefined
   } as const;
 
   const results = [
+    adminClientProvenanceMode,
     nodeEnvironment,
     apiHost,
     apiPort,
@@ -449,6 +482,14 @@ export function loadRuntimeConfig(environment: Record<string, string | undefined
     adminC2aEnabled,
     adminC2bEnabled,
   ];
+  if (adminClientProvenanceMode.value === 'MTLS_BFF') {
+    results.push(
+      apiTlsCertificatePath,
+      apiTlsPrivateKeyPath,
+      apiTlsClientCaPath,
+      adminBffClientCertificateSha256,
+    );
+  }
   if (adminC2aEnabled.value === true) {
     results.push(adminC2aProfile, adminC2aHost, adminC2aPort, adminC2aDatabase, adminC2aSsl);
     if (adminC2aProfile.value !== undefined) {
@@ -464,6 +505,17 @@ export function loadRuntimeConfig(environment: Record<string, string | undefined
     }
   }
   const invalid = invalidFields(results);
+
+  if (adminClientProvenanceMode.value !== 'MTLS_BFF') {
+    for (const field of [
+      'API_TLS_CERTIFICATE_PATH',
+      'API_TLS_PRIVATE_KEY_PATH',
+      'API_TLS_CLIENT_CA_PATH',
+      'ADMIN_BFF_CLIENT_CERTIFICATE_SHA256',
+    ]) {
+      if (environment[field] !== undefined) invalid.push(field);
+    }
+  }
 
   if (redisPassword.value === undefined && environment.REDIS_PASSWORD !== undefined) {
     const suppliedRedisPassword = environment.REDIS_PASSWORD;
@@ -663,6 +715,16 @@ export function loadRuntimeConfig(environment: Record<string, string | undefined
       : { enabled: false };
 
   return {
+    adminClientProvenance:
+      adminClientProvenanceMode.value === 'MTLS_BFF'
+        ? {
+            clientCaPath: apiTlsClientCaPath.value as string,
+            clientCertificateSha256: adminBffClientCertificateSha256.value as string,
+            mode: 'MTLS_BFF',
+            serverCertificatePath: apiTlsCertificatePath.value as string,
+            serverPrivateKeyPath: apiTlsPrivateKeyPath.value as string,
+          }
+        : { mode: 'DIRECT' },
     adminAuth: {
       origin: adminOrigin.value as string,
       postgresql: {

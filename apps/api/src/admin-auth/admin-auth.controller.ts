@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import type { ServerResponse } from 'node:http';
 import type { RequestWithId } from '../observability/http-logger';
+import { getResolvedAdminClientAddress } from './admin-client-provenance';
 import {
   AdminAuthService,
   assertAdminUuid,
@@ -53,7 +54,7 @@ function oneHeader(headers: HeadersMap, name: string): string | undefined {
 
 function execution(request: RequestWithId): { ipAddress: string; requestId: string } {
   return {
-    ipAddress: request.socket.remoteAddress ?? 'unavailable',
+    ipAddress: getResolvedAdminClientAddress(request),
     requestId: request.id ?? 'unavailable',
   };
 }

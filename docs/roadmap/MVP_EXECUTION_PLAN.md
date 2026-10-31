@@ -30,8 +30,8 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 | Slice 1 / S1.2-03A  | Frontière PostgreSQL runtime en lecture seule | Closed and merged — PR #45                                                       |
 | Slice 1 / S1.2-03B  | Admin Security Contract Gate, sans runtime    | Closed and merged — PR #48, merge `c97992ca2c82bc4f22f9222ea98ed53714fede4c`     |
 | Slice 1 / S1.2-03C1 | Auth admin, TOTP et sessions runtime          | Closed and merged — merge dc97eeef72c4e299988ed19d66460011a8551cf3; not deployed |
-| Slice 1 / S1.2-03C2 | Recovery, audit, invitations et RBAC runtime  | C2a closed/merged; C2b R3 published in Draft PR #53; G-QA-01 reconciled          |
-| Slice 1 / S1.2-03C3 | Interface d'authentification Admin            | Not started — separate authorization required                                    |
+| Slice 1 / S1.2-03C2 | Recovery, audit, invitations et RBAC runtime  | Closed and merged — C2a + C2b, merge `c47a1507…`; not deployed                   |
+| Slice 1 / S1.2-03C3 | Interface d'authentification Admin            | GO local final borné ; visuel PO borné ; SC-01 fermé localement ; non publié     |
 | Slice 1 / S1.2-03D  | Artist API                                    | Not started                                                                      |
 | Slice 1 / S1.2-03E  | Artist Admin UI                               | Not started                                                                      |
 | Slice 1 / S1.2-03F  | Audio Draft API                               | Not started                                                                      |
@@ -1246,3 +1246,80 @@ les preuves techniques. Les NON-PASS 12/14, 13/14 et 13/14, les 75 SKIP, les
 réserves sur production, fournisseurs, clés, signal Windows, préincident R9,
 bases externes et perte réelle de l'accusé réseau lors de `COMMIT_UNKNOWN`
 restent NON DEMONSTRATED. C3 et la politique OSS restent hors périmètre.
+
+### S1.2-03C3 — instantané avant fermeture ciblée Firefox — 2026-10-29
+
+C2b est intégré au merge `c47a1507dce6ea7333ce7e372f9bd34aa548c81b`,
+arbre `063f2c7ab5cdf9df489332263e4b3184adf90330`. C3 consomme treize
+opérations C1/C2a sans endpoint nouveau. La frontière A-02 locale/CI est
+qualifiée : Nginx HTTPS contrôlé, BFF privé et API privée mTLS.
+
+Le candidat ferme localement l'alignement Unicode, les états globaux anonymes
+et la terminalisation atomique du reset C2a. La campagne finale traverse le
+graphe courant : Chromium 18/18 et WebKit 3/3 passent avec redaction, visual,
+scan des secrets et cleanup ciblé concluants. Firefox reste non exécuté : le
+premier lancement a produit le NON-PASS historique `spawn UNKNOWN`/SideBySide,
+puis l'installation fraîche lance Firefox mais échoue à l'unique
+`Browser.newPage()` avec deux onglets comptés. Sa cause exclusive n'est pas
+démontrée. Le visual final 1/1 reproduit byte-à-byte les neuf PNG v54, dont
+deux états synthétiques ; la validation Product Owner reste en attente.
+
+Les gates applicatifs, OpenAPI/génération, tooling 573/573, scanner 526,
+licences 824/0/0 et signatures 822/191 passent. Le graphe sélectionné utilise
+TypeScript 5.9.3 et concurrently 10.0.6, sans Nest CLI, fork-ts-checker,
+deepmerge ou cosmiconfig ; les audits complet et production sont à zéro. Pour
+le digest Nginx exact, Alpine 3.24/main classe `musl@1.2.6-r3` corrigé : le
+signal Scout générique/edge est un faux positif d'affectation démontré sans
+waiver. Le SBOM 26/808, les `NOASSERTION`, la provenance non reproductible et
+la production non qualifiée restent déclarés.
+
+Dans cet instantané antérieur, le jalon obtenait une **qualification technique
+locale partielle** et restait BLOCK, local, non indexé, non publié et non
+déployé. Firefox Windows et l'approbation visuelle Product Owner nécessitaient
+alors des suites autorisées distinctes.
+
+### Mise à jour C3 — fermeture ciblée Firefox Windows — 2026-10-31
+
+Les constats précédents sur Firefox restent historiques. La cible
+surnuméraire a été identifiée comme la page de premier lancement Firefox ; la
+préférence confinée au profil de campagne la supprime sans abaisser les
+protections du navigateur. Le cache personnel Windows reste non qualifié après
+un échec `SideBySide/mozglue` dépendant du chemin, dont la cause profonde reste
+NON CONCLUSIVE. Le wrapper exige désormais un cache isolé exact et vérifié.
+
+La campagne `c3-ff-qualified-20261031t1041` passe Firefox 3/3 sans retry, avec
+redaction, scan de secrets, cleanup et préservation des ressources étrangères.
+Chromium 18/18 et WebKit 3/3 restent applicables ; tooling 573/573 passe.
+
+Le jalon atteint un **GO TECHNIQUE LOCAL**. Il reste **BLOCK VISUEL PRODUCT
+OWNER** tant que l'approbation explicite des neuf captures n'est pas reçue.
+Deux états sont synthétiques et aucun parcours absent n'est extrapolé. Le lot
+reste local, non indexé, non publié et non déployé.
+
+### Mise à jour C3 — décision visuelle et C3-PUB-SC-01 — 2026-10-31
+
+Le Product Owner approuve ensuite la planche `5485987f…b11` pour les neuf
+captures représentées sur le gel `79cc6da1…c2fd`. `loading` et
+`unavailable` restent synthétiques ; aucun écran, parcours ou contrôle
+d'accessibilité absent n'est extrapolé.
+
+Le premier préflight de publication bloque avant indexation sur
+`GHSA-g3hv-75wg-m249`, porté par l'unique `minimatch@10.2.6` de
+développement. La remédiation locale utilise l'override exact
+`minimatch@11.0.1` et sa transitive
+`@isaacs/nonrecursive-glob-match@1.0.3`, générée par npm. Le scanner protège
+le graphe exact et refuse copie affectée, substitution ou parent
+supplémentaire.
+
+Installation propre, chaîne npm, audits complet/production zéro, signatures,
+licences, scanner, tooling 579/579, lint, typecheck, tests et build passent.
+La compatibilité reste bornée aux configurations ESLint KORA+ actives ; deux
+options dormantes de plugins restent incompatibles et interdites jusqu'à
+qualification distincte. Sept artefacts WASM optionnels restent signalés
+`extraneous` par npm 10 sans invalidité.
+
+Les preuves A-02, Nginx et navigateurs sont réutilisées sur leurs surfaces
+inchangées ; aucune nouvelle campagne globale 24/24 n'est affirmée. Le jalon
+est **GO LOCAL FINAL BORNÉ**, toujours non indexé et non publié à cet
+instantané. Publication, quatre workflows et revue d'intégration restent des
+étapes distinctes.
