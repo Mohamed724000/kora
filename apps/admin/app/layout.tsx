@@ -1,12 +1,11 @@
-import { DashboardLayout } from '@adminlte/react';
 import '@adminlte/react/css';
-import { BrandMark } from '@kora-plus/ui';
 import '@kora-plus/ui/styles.css';
 import 'bootstrap-icons/font/bootstrap-icons.css';
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 import type { ReactNode } from 'react';
 
-import { adminMenuItems } from '../lib/admin-navigation';
+import { AdminSessionProvider } from '../lib/auth/admin-session-context';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -25,23 +24,16 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
+  // Reading request headers keeps nonce-bearing CSP responses dynamically rendered.
+  await headers();
   return (
     <html data-bs-theme="light" lang="fr">
       <body>
-        <DashboardLayout
-          colorModeToggle={false}
-          fixedHeader
-          fixedSidebar
-          footer={<span>KORA+ · Administration</span>}
-          initialColorMode="light"
-          logo={<BrandMark context="Administration" />}
-          logoHref="/"
-          menuItems={adminMenuItems}
-          sidebarTheme="light"
-        >
-          {children}
-        </DashboardLayout>
+        <a className="admin-skip-link" href="#contenu-principal">
+          Aller au contenu principal
+        </a>
+        <AdminSessionProvider>{children}</AdminSessionProvider>
       </body>
     </html>
   );

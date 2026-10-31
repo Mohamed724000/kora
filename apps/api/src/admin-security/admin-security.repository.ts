@@ -115,6 +115,17 @@ export interface AdminPasswordResetContextRecord extends QueryResultRow {
   readonly userStatus: AdminStatus;
 }
 
+interface AdminPasswordResetReplacementCounts extends QueryResultRow {
+  readonly cancelledOutboxes: number;
+  readonly terminalizedRequests: number;
+}
+
+interface AdminPasswordResetConsumptionCounts extends QueryResultRow {
+  readonly consumedContexts: number;
+  readonly terminalizedRequests: number;
+  readonly updatedUsers: number;
+}
+
 export interface AdminInvitationRecord extends QueryResultRow {
   readonly acceptedAdminUserId: string | null;
   readonly codeHash: string;
@@ -505,25 +516,34 @@ export class AdminSecurityTransactionRepository {
   }
 
   async replacePasswordReset(requestId: string, outboxId: string, now: Date): Promise<void> {
-    await this.transaction.query(
-      `UPDATE "AdminPasswordResetRequest" SET "revokedAt" = $2
-        WHERE "id" = $1 AND "revokedAt" IS NULL`,
-      [requestId, now],
+    const result = await this.transaction.query<AdminPasswordResetReplacementCounts>(
+      `WITH cancelled_outbox AS (
+         UPDATE "AdminNotificationOutbox"
+            SET "state" = 'CANCELLED'::"AdminNotificationState",
+                "generation" = "generation" + 1,
+                "cancelledAt" = $3
+          WHERE "id" = $2
+            AND "passwordResetRequestId" = $1
+            AND "purpose" = 'PASSWORD_RESET'
+            AND "state" = 'PENDING'
+         RETURNING 1
+       ), terminalized_request AS (
+         UPDATE "AdminPasswordResetRequest"
+            SET "revokedAt" = $3
+          WHERE "id" = $1
+            AND "revokedAt" IS NULL
+            AND EXISTS (SELECT 1 FROM cancelled_outbox)
+         RETURNING 1
+       )
+       SELECT
+         (SELECT count(*)::int FROM cancelled_outbox) AS "cancelledOutboxes",
+         (SELECT count(*)::int FROM terminalized_request) AS "terminalizedRequests"`,
+      [requestId, outboxId, now],
     );
-    await this.transaction.query(
-      `UPDATE "AdminNotificationOutbox"
-          SET "state" = CASE
-                WHEN "state" = 'PENDING' THEN 'CANCELLED'::"AdminNotificationState"
-                ELSE 'DELIVERY_UNCERTAIN'::"AdminNotificationState"
-              END,
-              "generation" = "generation" + 1,
-              "claimOwnerHash" = NULL, "leaseExpiresAt" = NULL,
-              "cancelledAt" = CASE WHEN "state" = 'PENDING' THEN $2 ELSE NULL END,
-              "uncertainAt" = CASE WHEN "state" = 'CLAIMED' THEN $2 ELSE NULL END,
-              "nextAttemptAt" = NULL
-        WHERE "id" = $1 AND "state" IN ('PENDING', 'CLAIMED')`,
-      [outboxId, now],
-    );
+    const counts = one(result.rows);
+    if (counts?.cancelledOutboxes !== 1 || counts.terminalizedRequests !== 1) {
+      throw new Error('Admin password reset replacement cardinality invariant violated.');
+    }
   }
 
   async insertPasswordReset(input: {
@@ -606,19 +626,56 @@ export class AdminSecurityTransactionRepository {
     passwordHash: string,
     now: Date,
   ): Promise<void> {
-    await this.transaction.query(
-      `UPDATE "AdminPasswordResetContext"
-          SET "consumedAt" = $2
-        WHERE "id" = $1 AND "consumedAt" IS NULL AND "revokedAt" IS NULL`,
-      [context.contextId, now],
+    const result = await this.transaction.query<AdminPasswordResetConsumptionCounts>(
+      `WITH consumed_context AS (
+         UPDATE "AdminPasswordResetContext"
+            SET "consumedAt" = $2
+          WHERE "id" = $1
+            AND "passwordResetRequestId" = $3
+            AND "adminUserId" = $4
+            AND "authorizationVersion" = $5
+            AND "consumedAt" IS NULL
+            AND "revokedAt" IS NULL
+         RETURNING 1
+       ), terminalized_request AS (
+         UPDATE "AdminPasswordResetRequest"
+            SET "revokedAt" = $2
+          WHERE "id" = $3
+            AND "adminUserId" = $4
+            AND "revokedAt" IS NULL
+            AND EXISTS (SELECT 1 FROM consumed_context)
+         RETURNING 1
+       ), updated_user AS (
+         UPDATE "AdminUser"
+            SET "passwordHash" = $6,
+                "authorizationVersion" = "authorizationVersion" + 1
+          WHERE "id" = $4
+            AND "status" = 'ACTIVE'
+            AND "authorizationVersion" = $5
+            AND EXISTS (SELECT 1 FROM terminalized_request)
+         RETURNING 1
+       )
+       SELECT
+         (SELECT count(*)::int FROM consumed_context) AS "consumedContexts",
+         (SELECT count(*)::int FROM terminalized_request) AS "terminalizedRequests",
+         (SELECT count(*)::int FROM updated_user) AS "updatedUsers"`,
+      [
+        context.contextId,
+        now,
+        context.passwordResetRequestId,
+        context.adminUserId,
+        context.authorizationVersion,
+        passwordHash,
+      ],
     );
-    await this.transaction.query(
-      `UPDATE "AdminUser"
-          SET "passwordHash" = $2,
-              "authorizationVersion" = "authorizationVersion" + 1
-        WHERE "id" = $1`,
-      [context.adminUserId, passwordHash],
-    );
+    const counts = one(result.rows);
+    if (
+      counts?.consumedContexts !== 1 ||
+      counts.terminalizedRequests !== 1 ||
+      counts.updatedUsers !== 1
+    ) {
+      throw new Error('Admin password reset transaction cardinality invariant violated.');
+    }
     await this.transaction.query(
       `UPDATE "AdminSession" SET "revokedAt" = $2
         WHERE "adminUserId" = $1 AND "revokedAt" IS NULL`,
