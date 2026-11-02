@@ -138,11 +138,18 @@ function New-C3SafeBrowserCounts() {
 function New-C3SafeBrowserGenericSummary([string]$Phase, [string]$Status) {
   return [ordered]@{
     counts = New-C3SafeBrowserCounts
+    diagnostic = [ordered]@{
+      cleanup = 'NOT_APPLICABLE'
+      firstFailedInvariant = 'NONE'
+      lastConfirmedMilestone = 'NONE'
+      mismatchFields = @()
+      origin = 'UNKNOWN'
+    }
     engine = 'NONE'
     phase = $Phase
     scenario = 'NONE'
     status = $Status
-    version = 1
+    version = 2
   }
 }
 
@@ -222,13 +229,16 @@ function Get-C3SafeBrowserPublicSummary(
     $file = Get-Item -LiteralPath $Path
     if ($file.Length -le 0 -or $file.Length -gt 4096) { return $invalid }
     $record = [IO.File]::ReadAllText($Path) | ConvertFrom-Json
-    if (-not (Test-C3ExactPropertySet $record @('counts', 'engine', 'phase', 'scenario', 'status', 'version'))) {
+    if (-not (Test-C3ExactPropertySet $record @('counts', 'diagnostic', 'engine', 'phase', 'scenario', 'status', 'version'))) {
       return $invalid
     }
     if (-not (Test-C3ExactPropertySet $record.counts @('began', 'discovered', 'failed', 'interrupted', 'notRun', 'passed', 'skipped', 'timedOut'))) {
       return $invalid
     }
-    if (($record.version -isnot [int] -and $record.version -isnot [long]) -or [long]$record.version -ne 1) {
+    if (-not (Test-C3ExactPropertySet $record.diagnostic @('cleanup', 'firstFailedInvariant', 'lastConfirmedMilestone', 'mismatchFields', 'origin'))) {
+      return $invalid
+    }
+    if (($record.version -isnot [int] -and $record.version -isnot [long]) -or [long]$record.version -ne 2) {
       return $invalid
     }
     foreach ($name in @('began', 'discovered', 'failed', 'interrupted', 'notRun', 'passed', 'skipped', 'timedOut')) {
@@ -242,6 +252,75 @@ function Get-C3SafeBrowserPublicSummary(
       $record.engine -isnot [string] -or $record.scenario -isnot [string] -or
       -not (Test-C3SafeBrowserIdentity $record.engine $record.scenario)
     ) { return $invalid }
+
+    $allowedCleanups = @('FAILED', 'NOT_APPLICABLE', 'NOT_REQUIRED', 'NOT_RUN', 'PASSED')
+    $allowedInvariants = @(
+      'COMPROMISED_DIAGNOSTICS',
+      'COMPROMISED_REFUSAL',
+      'DELIVERY_RECIPIENT',
+      'FIXTURE_PREPARATION',
+      'FORM_CONFIRMATION_FOCUS',
+      'GENERIC_REQUEST_RESPONSE',
+      'NONE',
+      'SUCCESS_CONFIRMATION',
+      'UNICODE_POLICY_PREPARATION',
+      'UNICODE_SUBMISSION',
+      'UNKNOWN'
+    )
+    $allowedMilestones = @(
+      'COMPROMISED_DIAGNOSTICS_CONFIRMED',
+      'COMPROMISED_REFUSAL_RECEIVED',
+      'DELIVERY_RECIPIENT_CONFIRMED',
+      'FIXTURES_PREPARED',
+      'FORM_CONFIRMATION_FOCUS_CONFIRMED',
+      'GENERIC_REQUEST_RESPONSE_CONFIRMED',
+      'NONE',
+      'SUCCESS_CONFIRMED',
+      'UNICODE_POLICY_READY',
+      'UNICODE_SUBMITTED'
+    )
+    $allowedMismatchFields = @(
+      'RESPONSE_ERROR_CODE',
+      'RESPONSE_STATUS',
+      'RESPONSE_ORIGIN',
+      'DIAGNOSTICS_HIBP_CHECKS',
+      'DIAGNOSTICS_HIBP_COMPROMISED_RESULTS',
+      'DIAGNOSTICS_LAST_CONSTRAINT',
+      'DIAGNOSTICS_LAST_PRIMARY_CODE',
+      'DIAGNOSTICS_LAST_RATE_LIMIT_FAILURE',
+      'DIAGNOSTICS_LAST_RATE_LIMIT_STAGE',
+      'DIAGNOSTICS_LAST_TRANSACTION_CODE',
+      'DIAGNOSTICS_RATE_LIMIT_CALLS',
+      'DIAGNOSTICS_RATE_LIMIT_FAILURES',
+      'DIAGNOSTICS_TRANSACTION_CALLS',
+      'DIAGNOSTICS_TRANSACTION_FAILURES'
+    )
+    if (
+      $record.diagnostic.cleanup -isnot [string] -or
+      $allowedCleanups -cnotcontains $record.diagnostic.cleanup -or
+      $record.diagnostic.firstFailedInvariant -isnot [string] -or
+      $allowedInvariants -cnotcontains $record.diagnostic.firstFailedInvariant -or
+      $record.diagnostic.lastConfirmedMilestone -isnot [string] -or
+      $allowedMilestones -cnotcontains $record.diagnostic.lastConfirmedMilestone -or
+      $record.diagnostic.origin -isnot [string] -or
+      @('API', 'BFF', 'UNKNOWN') -cnotcontains $record.diagnostic.origin -or
+      $record.diagnostic.mismatchFields -isnot [Array]
+    ) { return $invalid }
+    $mismatchFields = @($record.diagnostic.mismatchFields)
+    $lastMismatchIndex = -1
+    foreach ($field in $mismatchFields) {
+      if ($field -isnot [string]) { return $invalid }
+      $index = [Array]::IndexOf([object[]]$allowedMismatchFields, [object]$field)
+      if ($index -lt 0 -or $index -le $lastMismatchIndex) { return $invalid }
+      $lastMismatchIndex = $index
+    }
+    $diagnostic = [ordered]@{
+      cleanup = [string]$record.diagnostic.cleanup
+      firstFailedInvariant = [string]$record.diagnostic.firstFailedInvariant
+      lastConfirmedMilestone = [string]$record.diagnostic.lastConfirmedMilestone
+      mismatchFields = [object[]]$mismatchFields
+      origin = [string]$record.diagnostic.origin
+    }
 
     $counts = [ordered]@{}
     foreach ($name in @('began', 'discovered', 'failed', 'interrupted', 'notRun', 'passed', 'skipped', 'timedOut')) {
@@ -291,6 +370,66 @@ function Get-C3SafeBrowserPublicSummary(
         )
       ) { return $invalid }
     }
+
+    $diagnosticIsNeutral = (
+      $diagnostic.cleanup -ceq 'NOT_APPLICABLE' -and
+      $diagnostic.firstFailedInvariant -ceq 'NONE' -and
+      $diagnostic.lastConfirmedMilestone -ceq 'NONE' -and
+      $diagnostic.mismatchFields.Count -eq 0 -and
+      $diagnostic.origin -ceq 'UNKNOWN'
+    )
+    if ($record.scenario -cne 'CHROMIUM_RESET_UNICODE_PASSWORD') {
+      if (-not $diagnosticIsNeutral) { return $invalid }
+    }
+    elseif ($record.phase -notin @('TEST_FINISHED', 'TERMINAL')) {
+      if (-not $diagnosticIsNeutral) { return $invalid }
+    }
+    elseif ($record.status -ceq 'PASSED') {
+      if (
+        $diagnostic.cleanup -cne 'NOT_REQUIRED' -or
+        $diagnostic.firstFailedInvariant -cne 'NONE' -or
+        $diagnostic.lastConfirmedMilestone -cne 'SUCCESS_CONFIRMED' -or
+        $diagnostic.mismatchFields.Count -ne 0 -or
+        $diagnostic.origin -cne 'API'
+      ) { return $invalid }
+    }
+    elseif ($record.status -in @('FAILED', 'INTERRUPTED', 'TIMED_OUT')) {
+      if (
+        $diagnostic.cleanup -notin @('FAILED', 'NOT_RUN', 'PASSED') -or
+        $diagnostic.firstFailedInvariant -ceq 'NONE' -or
+        ($diagnostic.mismatchFields.Count -gt 0 -and
+          $diagnostic.firstFailedInvariant -cne 'COMPROMISED_DIAGNOSTICS') -or
+        ($diagnostic.firstFailedInvariant -cne 'COMPROMISED_DIAGNOSTICS' -and
+          $diagnostic.mismatchFields.Count -ne 0)
+      ) { return $invalid }
+      $milestoneRank = @{
+        NONE = 0
+        FIXTURES_PREPARED = 1
+        GENERIC_REQUEST_RESPONSE_CONFIRMED = 2
+        DELIVERY_RECIPIENT_CONFIRMED = 3
+        FORM_CONFIRMATION_FOCUS_CONFIRMED = 4
+        COMPROMISED_REFUSAL_RECEIVED = 5
+        COMPROMISED_DIAGNOSTICS_CONFIRMED = 6
+        UNICODE_POLICY_READY = 7
+        UNICODE_SUBMITTED = 8
+        SUCCESS_CONFIRMED = 9
+      }
+      $invariantRank = @{
+        FIXTURE_PREPARATION = 1
+        GENERIC_REQUEST_RESPONSE = 2
+        DELIVERY_RECIPIENT = 3
+        FORM_CONFIRMATION_FOCUS = 4
+        COMPROMISED_REFUSAL = 5
+        COMPROMISED_DIAGNOSTICS = 6
+        UNICODE_POLICY_PREPARATION = 7
+        UNICODE_SUBMISSION = 8
+        SUCCESS_CONFIRMATION = 9
+        UNKNOWN = 10
+      }
+      if ($milestoneRank[$diagnostic.lastConfirmedMilestone] -ge $invariantRank[$diagnostic.firstFailedInvariant]) {
+        return $invalid
+      }
+    }
     if (
       $null -ne $ProcessExitCode -and
       $ProcessExitCode -eq 0 -and
@@ -319,11 +458,12 @@ function Get-C3SafeBrowserPublicSummary(
     return [pscustomobject]@{
       Public = [ordered]@{
         counts = $counts
+        diagnostic = $diagnostic
         engine = [string]$record.engine
         phase = $publicPhase
         scenario = [string]$record.scenario
         status = $publicStatus
-        version = 1
+        version = 2
       }
       Valid = $true
     }
@@ -337,6 +477,58 @@ function Write-C3SafeBrowserPublicSummary([object]$Result) {
   )
 }
 # END C3 SAFE BROWSER SUMMARY FUNCTIONS
+
+# BEGIN C3 SAFE CLEANUP SUMMARY FUNCTIONS
+function New-C3SafeCleanupSummary() {
+  return [ordered]@{
+    campaignRoot = 'NOT_RUN'
+    compose = 'NOT_RUN'
+    evidenceScan = 'NOT_RUN'
+    inventory = 'NOT_RUN'
+    status = 'NOT_RUN'
+    version = 1
+  }
+}
+
+function Write-C3SafeCleanupPublicSummary([object]$Summary) {
+  [Console]::Out.WriteLine(
+    'C3_SAFE_CLEANUP_SUMMARY ' + ($Summary | ConvertTo-Json -Compress -Depth 3)
+  )
+}
+
+function ConvertTo-C3Exception([object]$Failure) {
+  if ($Failure -is [Management.Automation.ErrorRecord]) { return $Failure.Exception }
+  if ($Failure -is [Exception]) { return $Failure }
+  return [Exception]::new([string]$Failure)
+}
+
+function Add-C3SafeCleanupFailure(
+  [Collections.Generic.List[Exception]]$Failures,
+  [string]$Stage
+) {
+  $Failures.Add([Exception]::new("C3 cleanup failed at the $Stage stage."))
+}
+
+function Complete-C3RunWithFailures(
+  [object]$PrimaryFailure,
+  [Collections.Generic.List[Exception]]$CleanupFailures
+) {
+  $terminalFailures = [Collections.Generic.List[Exception]]::new()
+  if ($null -ne $PrimaryFailure) {
+    $terminalFailures.Add((ConvertTo-C3Exception $PrimaryFailure))
+  }
+  foreach ($cleanupFailure in $CleanupFailures) {
+    $terminalFailures.Add($cleanupFailure)
+  }
+  if ($terminalFailures.Count -eq 1) { throw $terminalFailures[0] }
+  if ($terminalFailures.Count -gt 1) {
+    throw [AggregateException]::new(
+      'The C3 campaign and one or more cleanup stages failed.',
+      [Exception[]]$terminalFailures
+    )
+  }
+}
+# END C3 SAFE CLEANUP SUMMARY FUNCTIONS
 
 # BEGIN C3 QUALIFIED FIREFOX CACHE FUNCTIONS
 function Get-C3FirefoxBrowserInventory([string]$FirefoxDirectory) {
@@ -892,7 +1084,8 @@ $ForeignInventoryBefore = $null
 $ForeignInventoryBeforeByLabel = @{}
 $QualifiedCampaignImageReferences = @(Get-QualifiedComposeImageReferences $ComposeFile)
 $PrimaryFailure = $null
-$CleanupFailure = $null
+$CleanupFailures = [Collections.Generic.List[Exception]]::new()
+$CleanupSummary = New-C3SafeCleanupSummary
 $BrowserFailures = [Collections.Generic.List[Exception]]::new()
 $SensitiveValues = [Collections.Generic.List[string]]::new()
 try {
@@ -1240,8 +1433,12 @@ catch {
 finally {
   try {
     [void](Invoke-Docker 'compose-cleanup' @('compose', '-f', $ComposeFile, '--project-name', $ProjectName, '--profile', 'build', '--profile', 'migrate', '--profile', 'fixtures', '--profile', 'runtime', 'down', '--volumes', '--timeout', '20'))
+    $CleanupSummary.compose = 'PASSED'
   }
-  catch { $CleanupFailure = $_ }
+  catch {
+    $CleanupSummary.compose = 'FAILED'
+    Add-C3SafeCleanupFailure $CleanupFailures 'COMPOSE'
+  }
 
   try {
     $inventoryParts = @()
@@ -1266,42 +1463,47 @@ finally {
     Write-NewText (Join-Path $EvidenceDirectory 'campaign-acquired-images.canonical.txt') (($comparison.AcquiredImageRows -join "`n") + "`n")
     if ($null -ne $ForeignInventoryBefore -and $comparison.Status -ceq 'SEMANTIC_DIFFERENT') {
       Write-NewText (Join-Path $EvidenceDirectory 'foreign-inventory-comparison.txt') ($comparison.Status + "`n")
-      if ($null -eq $PrimaryFailure) { $PrimaryFailure = [Exception]::new('Foreign Docker inventory changed during the campaign.') }
+      $CleanupSummary.inventory = 'FAILED'
+      Add-C3SafeCleanupFailure $CleanupFailures 'INVENTORY'
     }
-    else { Write-NewText (Join-Path $EvidenceDirectory 'foreign-inventory-comparison.txt') ($comparison.Status + "`n") }
-  }
-  catch {
-    if ($null -eq $PrimaryFailure) { $PrimaryFailure = $_ }
-  }
-
-  try { Invoke-EvidenceSecretScan $SensitiveValues }
-  catch {
-    if ($null -eq $PrimaryFailure) { $PrimaryFailure = $_ }
     else {
-      $existingException = if ($PrimaryFailure -is [Management.Automation.ErrorRecord]) {
-        $PrimaryFailure.Exception
-      } elseif ($PrimaryFailure -is [Exception]) {
-        $PrimaryFailure
-      } else {
-        [Exception]::new([string]$PrimaryFailure)
-      }
-      $PrimaryFailure = [AggregateException]::new(
-        'The C3 campaign failed and its evidence scan also failed.',
-        [Exception[]]@($existingException, $_.Exception)
-      )
+      Write-NewText (Join-Path $EvidenceDirectory 'foreign-inventory-comparison.txt') ($comparison.Status + "`n")
+      $CleanupSummary.inventory = 'PASSED'
     }
+  }
+  catch {
+    $CleanupSummary.inventory = 'FAILED'
+    Add-C3SafeCleanupFailure $CleanupFailures 'INVENTORY'
   }
 
-  if (Test-Path -LiteralPath $CampaignRoot) {
-    $resolvedCampaignRoot = (Resolve-Path -LiteralPath $CampaignRoot).Path
-    $resolvedTempRoot = (Resolve-Path -LiteralPath ([IO.Path]::GetTempPath())).Path
-    if (-not $resolvedCampaignRoot.StartsWith($resolvedTempRoot, [StringComparison]::OrdinalIgnoreCase) -or $resolvedCampaignRoot -notmatch 'kora-c3-') {
-      if ($null -eq $PrimaryFailure) { $PrimaryFailure = [Exception]::new('Refusing unsafe campaign-directory cleanup.') }
-    }
-    else { Remove-Item -LiteralPath $resolvedCampaignRoot -Recurse -Force }
+  try {
+    Invoke-EvidenceSecretScan $SensitiveValues
+    $CleanupSummary.evidenceScan = 'PASSED'
   }
+  catch {
+    $CleanupSummary.evidenceScan = 'FAILED'
+    Add-C3SafeCleanupFailure $CleanupFailures 'EVIDENCE_SCAN'
+  }
+
+  try {
+    if (Test-Path -LiteralPath $CampaignRoot) {
+      $resolvedCampaignRoot = (Resolve-Path -LiteralPath $CampaignRoot).Path
+      $resolvedTempRoot = (Resolve-Path -LiteralPath ([IO.Path]::GetTempPath())).Path
+      if (-not $resolvedCampaignRoot.StartsWith($resolvedTempRoot, [StringComparison]::OrdinalIgnoreCase) -or $resolvedCampaignRoot -notmatch 'kora-c3-') {
+        throw 'Refusing unsafe campaign-directory cleanup.'
+      }
+      Remove-Item -LiteralPath $resolvedCampaignRoot -Recurse -Force
+    }
+    $CleanupSummary.campaignRoot = 'PASSED'
+  }
+  catch {
+    $CleanupSummary.campaignRoot = 'FAILED'
+    Add-C3SafeCleanupFailure $CleanupFailures 'CAMPAIGN_ROOT'
+  }
+
+  $CleanupSummary.status = if ($CleanupFailures.Count -eq 0) { 'PASSED' } else { 'FAILED' }
+  Write-C3SafeCleanupPublicSummary $CleanupSummary
 }
 
-if ($null -ne $CleanupFailure -and $null -eq $PrimaryFailure) { $PrimaryFailure = $CleanupFailure }
-if ($null -ne $PrimaryFailure) { throw $PrimaryFailure }
+Complete-C3RunWithFailures $PrimaryFailure $CleanupFailures
 Write-Output 'C3 browser runtime validation PASS.'

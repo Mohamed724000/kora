@@ -738,6 +738,12 @@ test('@artifact-redaction-probe sanitizes the final Playwright error artifact', 
 test.describe.serial('C3 browser contract', () => {
   test.afterEach(async ({ chainPage: page, privateChannel }, testInfo) => {
     if (testInfo.status === testInfo.expectedStatus) return;
+    const resetDiagnosticActive = testInfo.annotations.some(
+      ({ description, type }) => type === 'c3-reset-diagnostic-active' && description === undefined,
+    );
+    if (resetDiagnosticActive) {
+      testInfo.annotations.push({ type: 'c3-reset-cleanup-started' });
+    }
     privateChannel.redactTestErrors(testInfo.errors);
     const neutralizations = await Promise.allSettled(
       page
@@ -748,6 +754,9 @@ test.describe.serial('C3 browser contract', () => {
     );
     const rejected = neutralizations.filter((result) => result.status === 'rejected').length;
     if (rejected > 0) throw new Error(`Unable to neutralize ${rejected} browser page(s).`);
+    if (resetDiagnosticActive) {
+      testInfo.annotations.push({ type: 'c3-reset-cleanup-passed' });
+    }
   });
 
   test('first login enrolls TOTP and displays recovery codes once', async ({
@@ -791,80 +800,216 @@ test.describe.serial('C3 browser contract', () => {
     chainPage: page,
     privateChannel,
   }) => {
-    const previous = privateChannel.deliveryIds();
-    await page.goto('/recuperation');
-    await page.getByRole('textbox', { name: 'Adresse e-mail' }).fill(bootstrapEmail);
-    await page.getByRole('button', { name: 'Demander un code' }).click();
-    await expect(page.getByText('Si la demande est recevable, elle a été acceptée.')).toBeVisible();
-    const delivery = await privateChannel.waitForDelivery('PASSWORD_RESET', previous);
-    expect(delivery.email === bootstrapEmail).toBe(true);
+    type ResetInvariant =
+      | 'COMPROMISED_DIAGNOSTICS'
+      | 'COMPROMISED_REFUSAL'
+      | 'DELIVERY_RECIPIENT'
+      | 'FIXTURE_PREPARATION'
+      | 'FORM_CONFIRMATION_FOCUS'
+      | 'GENERIC_REQUEST_RESPONSE'
+      | 'SUCCESS_CONFIRMATION'
+      | 'UNICODE_POLICY_PREPARATION'
+      | 'UNICODE_SUBMISSION';
+    type ResetMilestone =
+      | 'COMPROMISED_DIAGNOSTICS_CONFIRMED'
+      | 'COMPROMISED_REFUSAL_RECEIVED'
+      | 'DELIVERY_RECIPIENT_CONFIRMED'
+      | 'FIXTURES_PREPARED'
+      | 'FORM_CONFIRMATION_FOCUS_CONFIRMED'
+      | 'GENERIC_REQUEST_RESPONSE_CONFIRMED'
+      | 'SUCCESS_CONFIRMED'
+      | 'UNICODE_POLICY_READY'
+      | 'UNICODE_SUBMITTED';
+    const runResetStep = async <T>(
+      invariant: ResetInvariant,
+      milestone: ResetMilestone,
+      body: () => Promise<T>,
+    ): Promise<T> => {
+      test.info().annotations.push({ type: `c3-reset-pending-${invariant}` });
+      const result = await test.step(`C3_RESET_${invariant}`, body);
+      test.info().annotations.push({ type: `c3-reset-confirmed-${milestone}` });
+      return result;
+    };
+
+    test.info().annotations.push({ type: 'c3-reset-diagnostic-active' });
+    const previous = await runResetStep('FIXTURE_PREPARATION', 'FIXTURES_PREPARED', async () => {
+      const deliveryIds = privateChannel.deliveryIds();
+      await page.goto('/recuperation');
+      await page.getByRole('textbox', { name: 'Adresse e-mail' }).fill(bootstrapEmail);
+      return deliveryIds;
+    });
+    await runResetStep(
+      'GENERIC_REQUEST_RESPONSE',
+      'GENERIC_REQUEST_RESPONSE_CONFIRMED',
+      async () => {
+        await page.getByRole('button', { name: 'Demander un code' }).click();
+        await expect(
+          page.getByText('Si la demande est recevable, elle a été acceptée.'),
+        ).toBeVisible();
+      },
+    );
+    const delivery = await runResetStep(
+      'DELIVERY_RECIPIENT',
+      'DELIVERY_RECIPIENT_CONFIRMED',
+      async () => {
+        const delivered = await privateChannel.waitForDelivery('PASSWORD_RESET', previous);
+        expect(delivered.email === bootstrapEmail).toBe(true);
+        return delivered;
+      },
+    );
     const compromisedPassword = 'Compromise🙂12';
     privateChannel.registerSensitiveValues([compromisedPassword]);
-    await privateChannel.configureHibp(true, [compromisedPassword]);
-    await page.getByRole('link', { name: 'J’ai reçu un code' }).click();
-    await page.getByLabel('Code de réinitialisation').fill(delivery.code);
-    const mismatchPassword = 'Mismatch🙂2026A';
-    const mismatchConfirmation = 'Mismatch🙂2026B';
-    privateChannel.registerSensitiveValues([mismatchPassword, mismatchConfirmation]);
-    await page.getByLabel('Nouveau mot de passe').fill(mismatchPassword);
-    await page.getByLabel('Confirmer le mot de passe').fill(mismatchConfirmation);
-    await page.getByRole('button', { name: 'Remplacer le mot de passe' }).click();
-    await expect(page.getByLabel('Confirmer le mot de passe')).toBeFocused();
-    await expect(page.getByLabel('Confirmer le mot de passe')).toHaveAttribute(
-      'aria-invalid',
-      'true',
-    );
-    await expect(page.getByLabel('Nouveau mot de passe')).not.toHaveAttribute('aria-invalid');
-    await page.getByLabel('Nouveau mot de passe').fill(compromisedPassword);
-    await page.getByLabel('Confirmer le mot de passe').fill(compromisedPassword);
-    await privateChannel.resetPasswordDiagnostics();
-    const compromisedResponse = page.waitForResponse(
-      (candidate) =>
-        candidate.url().endsWith('/api/v1/admin/auth/password/reset') &&
-        candidate.request().method() === 'POST',
-    );
-    await page.getByRole('button', { name: 'Remplacer le mot de passe' }).click();
-    const completedCompromisedResponse = await compromisedResponse;
-    const compromisedBody = (await completedCompromisedResponse.json()) as {
-      error?: { code?: unknown };
-      requestId?: unknown;
-    };
-    const passwordDiagnostics = await privateChannel.passwordDiagnostics();
-    expect({
-      code: compromisedBody.error?.code,
-      diagnostics: passwordDiagnostics,
-      origin:
-        typeof compromisedBody.requestId === 'string' &&
-        compromisedBody.requestId.startsWith('bff_')
-          ? 'BFF'
-          : 'API',
-      status: completedCompromisedResponse.status(),
-    }).toEqual({
-      code: 'VALIDATION_ERROR',
-      diagnostics: {
-        hibpChecks: 1,
-        hibpCompromisedResults: 1,
-        lastConstraint: null,
-        lastPrimaryCode: null,
-        lastRateLimitFailure: 'NONE',
-        lastRateLimitStage: 'WAITAOF_LOCAL_DURABLE',
-        lastTransactionCode: null,
-        rateLimitCalls: 1,
-        rateLimitFailures: 0,
-        transactionCalls: 2,
-        transactionFailures: 0,
-      },
-      origin: 'API',
-      status: 400,
+    await runResetStep('FORM_CONFIRMATION_FOCUS', 'FORM_CONFIRMATION_FOCUS_CONFIRMED', async () => {
+      await privateChannel.configureHibp(true, [compromisedPassword]);
+      await page.getByRole('link', { name: 'J’ai reçu un code' }).click();
+      await page.getByLabel('Code de réinitialisation').fill(delivery.code);
+      const mismatchPassword = 'Mismatch🙂2026A';
+      const mismatchConfirmation = 'Mismatch🙂2026B';
+      privateChannel.registerSensitiveValues([mismatchPassword, mismatchConfirmation]);
+      await page.getByLabel('Nouveau mot de passe').fill(mismatchPassword);
+      await page.getByLabel('Confirmer le mot de passe').fill(mismatchConfirmation);
+      await page.getByRole('button', { name: 'Remplacer le mot de passe' }).click();
+      await expect(page.getByLabel('Confirmer le mot de passe')).toBeFocused();
+      await expect(page.getByLabel('Confirmer le mot de passe')).toHaveAttribute(
+        'aria-invalid',
+        'true',
+      );
+      await expect(page.getByLabel('Nouveau mot de passe')).not.toHaveAttribute('aria-invalid');
     });
-    await expect(page.getByText('Vérifiez les informations saisies.')).toBeVisible();
-    await privateChannel.configureHibp(true, []);
-    bootstrapPassword = '🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂';
-    privateChannel.registerSensitiveValues([bootstrapPassword]);
-    await page.getByLabel('Nouveau mot de passe').fill(bootstrapPassword);
-    await page.getByLabel('Confirmer le mot de passe').fill(bootstrapPassword);
-    await page.getByRole('button', { name: 'Remplacer le mot de passe' }).click();
-    await expect(page.getByText('Le mot de passe a été remplacé.')).toBeVisible();
+    const compromised = await runResetStep(
+      'COMPROMISED_REFUSAL',
+      'COMPROMISED_REFUSAL_RECEIVED',
+      async () => {
+        await page.getByLabel('Nouveau mot de passe').fill(compromisedPassword);
+        await page.getByLabel('Confirmer le mot de passe').fill(compromisedPassword);
+        await privateChannel.resetPasswordDiagnostics();
+        const compromisedResponse = page.waitForResponse(
+          (candidate) =>
+            candidate.url().endsWith('/api/v1/admin/auth/password/reset') &&
+            candidate.request().method() === 'POST',
+        );
+        await page.getByRole('button', { name: 'Remplacer le mot de passe' }).click();
+        const response = await compromisedResponse;
+        const body = (await response.json()) as {
+          error?: { code?: unknown };
+          requestId?: unknown;
+        };
+        return { body, status: response.status() };
+      },
+    );
+    await runResetStep('COMPROMISED_DIAGNOSTICS', 'COMPROMISED_DIAGNOSTICS_CONFIRMED', async () => {
+      const passwordDiagnostics = await privateChannel.passwordDiagnostics();
+      const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
+      const origin =
+        typeof compromised.body.requestId === 'string' &&
+        new RegExp(`^bff_${uuid}$`, 'iu').test(compromised.body.requestId)
+          ? 'BFF'
+          : typeof compromised.body.requestId === 'string' &&
+              new RegExp(`^${uuid}$`, 'iu').test(compromised.body.requestId)
+            ? 'API'
+            : 'UNKNOWN';
+      test.info().annotations.push({ type: `c3-reset-origin-${origin}` });
+      const actual = {
+        code: compromised.body.error?.code,
+        diagnostics: passwordDiagnostics,
+        origin,
+        status: compromised.status,
+      };
+      const expected = {
+        code: 'VALIDATION_ERROR',
+        diagnostics: {
+          hibpChecks: 1,
+          hibpCompromisedResults: 1,
+          lastConstraint: null,
+          lastPrimaryCode: null,
+          lastRateLimitFailure: 'NONE',
+          lastRateLimitStage: 'WAITAOF_LOCAL_DURABLE',
+          lastTransactionCode: null,
+          rateLimitCalls: 1,
+          rateLimitFailures: 0,
+          transactionCalls: 2,
+          transactionFailures: 0,
+        },
+        origin: 'API',
+        status: 400,
+      } as const;
+      const fields = [
+        ['RESPONSE_ERROR_CODE', actual.code, expected.code],
+        ['RESPONSE_STATUS', actual.status, expected.status],
+        ['RESPONSE_ORIGIN', actual.origin, expected.origin],
+        ['DIAGNOSTICS_HIBP_CHECKS', actual.diagnostics.hibpChecks, expected.diagnostics.hibpChecks],
+        [
+          'DIAGNOSTICS_HIBP_COMPROMISED_RESULTS',
+          actual.diagnostics.hibpCompromisedResults,
+          expected.diagnostics.hibpCompromisedResults,
+        ],
+        [
+          'DIAGNOSTICS_LAST_CONSTRAINT',
+          actual.diagnostics.lastConstraint,
+          expected.diagnostics.lastConstraint,
+        ],
+        [
+          'DIAGNOSTICS_LAST_PRIMARY_CODE',
+          actual.diagnostics.lastPrimaryCode,
+          expected.diagnostics.lastPrimaryCode,
+        ],
+        [
+          'DIAGNOSTICS_LAST_RATE_LIMIT_FAILURE',
+          actual.diagnostics.lastRateLimitFailure,
+          expected.diagnostics.lastRateLimitFailure,
+        ],
+        [
+          'DIAGNOSTICS_LAST_RATE_LIMIT_STAGE',
+          actual.diagnostics.lastRateLimitStage,
+          expected.diagnostics.lastRateLimitStage,
+        ],
+        [
+          'DIAGNOSTICS_LAST_TRANSACTION_CODE',
+          actual.diagnostics.lastTransactionCode,
+          expected.diagnostics.lastTransactionCode,
+        ],
+        [
+          'DIAGNOSTICS_RATE_LIMIT_CALLS',
+          actual.diagnostics.rateLimitCalls,
+          expected.diagnostics.rateLimitCalls,
+        ],
+        [
+          'DIAGNOSTICS_RATE_LIMIT_FAILURES',
+          actual.diagnostics.rateLimitFailures,
+          expected.diagnostics.rateLimitFailures,
+        ],
+        [
+          'DIAGNOSTICS_TRANSACTION_CALLS',
+          actual.diagnostics.transactionCalls,
+          expected.diagnostics.transactionCalls,
+        ],
+        [
+          'DIAGNOSTICS_TRANSACTION_FAILURES',
+          actual.diagnostics.transactionFailures,
+          expected.diagnostics.transactionFailures,
+        ],
+      ] as const;
+      for (const [field, observed, wanted] of fields) {
+        if (!Object.is(observed, wanted)) {
+          test.info().annotations.push({ type: `c3-reset-mismatch-${field}` });
+        }
+      }
+      expect(actual).toEqual(expected);
+      await expect(page.getByText('Vérifiez les informations saisies.')).toBeVisible();
+    });
+    await runResetStep('UNICODE_POLICY_PREPARATION', 'UNICODE_POLICY_READY', async () => {
+      await privateChannel.configureHibp(true, []);
+      bootstrapPassword = '🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂';
+      privateChannel.registerSensitiveValues([bootstrapPassword]);
+      await page.getByLabel('Nouveau mot de passe').fill(bootstrapPassword);
+      await page.getByLabel('Confirmer le mot de passe').fill(bootstrapPassword);
+    });
+    await runResetStep('UNICODE_SUBMISSION', 'UNICODE_SUBMITTED', async () => {
+      await page.getByRole('button', { name: 'Remplacer le mot de passe' }).click();
+    });
+    await runResetStep('SUCCESS_CONFIRMATION', 'SUCCESS_CONFIRMED', async () => {
+      await expect(page.getByText('Le mot de passe a été remplacé.')).toBeVisible();
+    });
   });
 
   test('unavailable password-compromise capability fails reset closed', async ({

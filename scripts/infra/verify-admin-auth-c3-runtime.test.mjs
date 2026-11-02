@@ -255,18 +255,13 @@ $path = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encodedPa
 $result = Get-C3SafeBrowserPublicSummary -Path $path -ProcessExitCode ${exitCodeLiteral} -LaunchFailed $${launchFailed ? "true" : "false"}
 [ordered]@{ public = $result.Public; valid = $result.Valid } | ConvertTo-Json -Compress -Depth 6
 `;
-  const encodedScript = Buffer.from(script, "utf16le").toString("base64");
+  const scriptPath = join(directory, "invoke-safe-summary.ps1");
+  writeFileSync(scriptPath, script, "utf8");
   const executable = process.platform === "win32" ? "pwsh.exe" : "pwsh";
   try {
     const result = spawnSync(
       executable,
-      [
-        "-NoLogo",
-        "-NoProfile",
-        "-NonInteractive",
-        "-EncodedCommand",
-        encodedScript,
-      ],
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", scriptPath],
       { encoding: "utf8" },
     );
     assert.equal(result.error, undefined);
@@ -279,25 +274,88 @@ $result = Get-C3SafeBrowserPublicSummary -Path $path -ProcessExitCode ${exitCode
   }
 }
 
+function extractSafeCleanupSummaryFunctions() {
+  const beginMarker = "# BEGIN C3 SAFE CLEANUP SUMMARY FUNCTIONS";
+  const endMarker = "# END C3 SAFE CLEANUP SUMMARY FUNCTIONS";
+  const begin = runner.indexOf(beginMarker);
+  const end = runner.indexOf(endMarker);
+  assert.ok(
+    begin >= 0 && end > begin,
+    "safe cleanup summary functions are extractable",
+  );
+  return runner.slice(begin + beginMarker.length, end);
+}
+
+function invokeSafeCleanupFixture(mode) {
+  const encodedMode = Buffer.from(mode, "utf8").toString("base64");
+  const script = `$ErrorActionPreference = 'Stop'
+${extractSafeCleanupSummaryFunctions()}
+$mode = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encodedMode}'))
+$primary = if ($mode -in @('primary', 'both')) { [Exception]::new('SENTINEL_PRIMARY') } else { $null }
+$cleanup = [Collections.Generic.List[Exception]]::new()
+if ($mode -in @('cleanup', 'both')) { Add-C3SafeCleanupFailure $cleanup 'INVENTORY' }
+try {
+  Complete-C3RunWithFailures $primary $cleanup
+  [ordered]@{
+    aggregate = $false
+    cleanupPreserved = $false
+    innerCount = 0
+    primaryPreserved = $false
+    threw = $false
+  } | ConvertTo-Json -Compress
+}
+catch {
+  $exception = $_.Exception
+  $aggregate = $exception -is [AggregateException]
+  $messages = if ($aggregate) { @($exception.InnerExceptions | ForEach-Object Message) } else { @($exception.Message) }
+  [ordered]@{
+    aggregate = $aggregate
+    cleanupPreserved = $messages -contains 'C3 cleanup failed at the INVENTORY stage.'
+    innerCount = if ($aggregate) { $exception.InnerExceptions.Count } else { 1 }
+    primaryPreserved = $messages -contains 'SENTINEL_PRIMARY'
+    threw = $true
+  } | ConvertTo-Json -Compress
+}
+`;
+  const encodedScript = Buffer.from(script, "utf16le").toString("base64");
+  const executable = process.platform === "win32" ? "pwsh.exe" : "pwsh";
+  const result = spawnSync(
+    executable,
+    [
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-EncodedCommand",
+      encodedScript,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  const output = result.stdout.trim().split(/\r?\n/u).at(-1);
+  assert.ok(output);
+  return JSON.parse(output);
+}
+
 const safeScenarioCoordinates = [
   ["chromium-c3", 506],
-  ["chromium-c3", 753],
-  ["chromium-c3", 765],
-  ["chromium-c3", 790],
-  ["chromium-c3", 870],
-  ["chromium-c3", 894],
-  ["chromium-c3", 1008],
-  ["chromium-c3", 1041],
-  ["chromium-c3", 1158],
-  ["chromium-c3", 1298],
-  ["chromium-c3", 1436],
-  ["chromium-c3", 1553],
-  ["chromium-c3", 1728],
-  ["chromium-c3", 1792],
-  ["chromium-c3", 1875],
-  ["chromium-c3", 1921],
-  ["chromium-c3", 1976],
-  ["chromium-c3", 2076],
+  ["chromium-c3", 762],
+  ["chromium-c3", 774],
+  ["chromium-c3", 799],
+  ["chromium-c3", 1015],
+  ["chromium-c3", 1039],
+  ["chromium-c3", 1153],
+  ["chromium-c3", 1186],
+  ["chromium-c3", 1303],
+  ["chromium-c3", 1443],
+  ["chromium-c3", 1581],
+  ["chromium-c3", 1698],
+  ["chromium-c3", 1873],
+  ["chromium-c3", 1937],
+  ["chromium-c3", 2020],
+  ["chromium-c3", 2066],
+  ["chromium-c3", 2121],
+  ["chromium-c3", 2221],
   ["firefox-public-smoke", 458],
   ["firefox-public-smoke", 477],
   ["firefox-public-smoke", 496],
@@ -305,6 +363,30 @@ const safeScenarioCoordinates = [
   ["webkit-public-smoke", 477],
   ["webkit-public-smoke", 496],
 ];
+
+const resetDiagnosticSequence = [
+  ["FIXTURE_PREPARATION", "FIXTURES_PREPARED"],
+  ["GENERIC_REQUEST_RESPONSE", "GENERIC_REQUEST_RESPONSE_CONFIRMED"],
+  ["DELIVERY_RECIPIENT", "DELIVERY_RECIPIENT_CONFIRMED"],
+  ["FORM_CONFIRMATION_FOCUS", "FORM_CONFIRMATION_FOCUS_CONFIRMED"],
+  ["COMPROMISED_REFUSAL", "COMPROMISED_REFUSAL_RECEIVED"],
+  ["COMPROMISED_DIAGNOSTICS", "COMPROMISED_DIAGNOSTICS_CONFIRMED"],
+  ["UNICODE_POLICY_PREPARATION", "UNICODE_POLICY_READY"],
+  ["UNICODE_SUBMISSION", "UNICODE_SUBMITTED"],
+  ["SUCCESS_CONFIRMATION", "SUCCESS_CONFIRMED"],
+];
+
+function resetAnnotationsThrough(count) {
+  const annotations = [{ type: "c3-reset-diagnostic-active" }];
+  for (const [invariant, milestone] of resetDiagnosticSequence.slice(
+    0,
+    count,
+  )) {
+    annotations.push({ type: `c3-reset-pending-${invariant}` });
+    annotations.push({ type: `c3-reset-confirmed-${milestone}` });
+  }
+  return annotations;
+}
 
 function safeTestCase(project, line, title = "SAFE_STATIC_TITLE") {
   return {
@@ -336,12 +418,75 @@ async function invokeSafeReporterFixture(mode) {
       reporter.onTestEnd(tests[0], { status: "passed" });
       reporter.onTestBegin(tests[7]);
       reporter.onTestEnd(tests[7], {
+        annotations: [],
         error: {
           message: "SENTINEL_ERROR_MESSAGE",
           stack: "SENTINEL_STACK",
         },
         status: "failed",
         stdout: ["SENTINEL_STDOUT"],
+      });
+      await reporter.onEnd({ status: "failed" });
+    } else if (mode === "reset-field-failure") {
+      const tests = safeScenarioCoordinates.map(([project, line], index) =>
+        safeTestCase(project, line, `SENTINEL_TITLE_${index}`),
+      );
+      const reset = tests[3];
+      reporter.onBegin({}, { allTests: () => tests });
+      reporter.onTestBegin(reset);
+      reporter.onTestEnd(reset, {
+        annotations: [
+          ...resetAnnotationsThrough(5),
+          { type: "c3-reset-pending-COMPROMISED_DIAGNOSTICS" },
+          { type: "c3-reset-origin-BFF" },
+          { type: "c3-reset-mismatch-RESPONSE_ORIGIN" },
+          { type: "c3-reset-mismatch-DIAGNOSTICS_RATE_LIMIT_CALLS" },
+          { type: "c3-reset-cleanup-started" },
+          { type: "c3-reset-cleanup-passed" },
+        ],
+        status: "failed",
+      });
+      await reporter.onEnd({ status: "failed" });
+    } else if (mode === "reset-pass") {
+      const tests = safeScenarioCoordinates.map(([project, line], index) =>
+        safeTestCase(project, line, `SENTINEL_TITLE_${index}`),
+      );
+      const reset = tests[3];
+      reporter.onBegin({}, { allTests: () => tests });
+      reporter.onTestBegin(reset);
+      const annotations = [
+        ...resetAnnotationsThrough(5),
+        { type: "c3-reset-pending-COMPROMISED_DIAGNOSTICS" },
+        { type: "c3-reset-origin-API" },
+        { type: "c3-reset-confirmed-COMPROMISED_DIAGNOSTICS_CONFIRMED" },
+      ];
+      for (const [invariant, milestone] of resetDiagnosticSequence.slice(6)) {
+        annotations.push({ type: `c3-reset-pending-${invariant}` });
+        annotations.push({ type: `c3-reset-confirmed-${milestone}` });
+      }
+      reporter.onTestEnd(reset, {
+        annotations,
+        status: "passed",
+      });
+      await reporter.onEnd({ status: "passed" });
+    } else if (mode === "reset-sentinel-invalid") {
+      const tests = safeScenarioCoordinates.map(([project, line], index) =>
+        safeTestCase(project, line, `SENTINEL_TITLE_${index}`),
+      );
+      const reset = tests[3];
+      reporter.onBegin({}, { allTests: () => tests });
+      reporter.onTestBegin(reset);
+      reporter.onTestEnd(reset, {
+        annotations: [
+          { type: "c3-reset-diagnostic-active" },
+          { type: "c3-reset-pending-COMPROMISED_DIAGNOSTICS" },
+          {
+            description: "SENTINEL_DESCRIPTION",
+            type: "c3-reset-mismatch-SENTINEL_FIELD",
+          },
+        ],
+        error: { message: "SENTINEL_ERROR_MESSAGE", stack: "SENTINEL_STACK" },
+        status: "failed",
       });
       await reporter.onEnd({ status: "failed" });
     } else if (mode === "unknown") {
@@ -354,7 +499,7 @@ async function invokeSafeReporterFixture(mode) {
       reporter.onError(new Error("SENTINEL_GLOBAL_ERROR"));
       const known = safeTestCase(...safeScenarioCoordinates[0]);
       reporter.onTestBegin(known);
-      reporter.onTestEnd(known, { status: "passed" });
+      reporter.onTestEnd(known, { annotations: [], status: "passed" });
     } else if (mode === "empty") {
       reporter.onBegin({}, { allTests: () => [] });
     } else {
@@ -529,6 +674,7 @@ test("the safe reporter publishes only closed identities and counters", async ()
   const known = JSON.parse(knownText);
   assert.deepEqual(Object.keys(known).sort(), [
     "counts",
+    "diagnostic",
     "engine",
     "phase",
     "scenario",
@@ -546,15 +692,67 @@ test("the safe reporter publishes only closed identities and counters", async ()
       skipped: 0,
       timedOut: 0,
     },
+    diagnostic: {
+      cleanup: "NOT_APPLICABLE",
+      firstFailedInvariant: "NONE",
+      lastConfirmedMilestone: "NONE",
+      mismatchFields: [],
+      origin: "UNKNOWN",
+    },
     engine: "CHROMIUM",
     phase: "TERMINAL",
     scenario: "CHROMIUM_RECOVERY_ROTATION_LOGOUT",
     status: "FAILED",
-    version: 1,
+    version: 2,
   });
   const accepted = invokeSafeBrowserSummaryFixture(knownText, 1);
   assert.equal(accepted.valid, true);
   assert.deepEqual(accepted.public, known);
+
+  const resetFailureText = await invokeSafeReporterFixture(
+    "reset-field-failure",
+  );
+  const resetFailure = JSON.parse(resetFailureText);
+  assert.deepEqual(resetFailure.diagnostic, {
+    cleanup: "PASSED",
+    firstFailedInvariant: "COMPROMISED_DIAGNOSTICS",
+    lastConfirmedMilestone: "COMPROMISED_REFUSAL_RECEIVED",
+    mismatchFields: ["RESPONSE_ORIGIN", "DIAGNOSTICS_RATE_LIMIT_CALLS"],
+    origin: "BFF",
+  });
+  assert.equal(resetFailure.engine, "CHROMIUM");
+  assert.equal(resetFailure.scenario, "CHROMIUM_RESET_UNICODE_PASSWORD");
+  assert.equal(resetFailure.status, "FAILED");
+  assert.equal(
+    invokeSafeBrowserSummaryFixture(resetFailureText, 1).valid,
+    true,
+  );
+
+  const resetPass = JSON.parse(await invokeSafeReporterFixture("reset-pass"));
+  assert.deepEqual(resetPass.diagnostic, {
+    cleanup: "NOT_REQUIRED",
+    firstFailedInvariant: "NONE",
+    lastConfirmedMilestone: "SUCCESS_CONFIRMED",
+    mismatchFields: [],
+    origin: "API",
+  });
+  assert.equal(resetPass.scenario, "CHROMIUM_RESET_UNICODE_PASSWORD");
+  assert.equal(resetPass.status, "PASSED");
+
+  const invalidResetText = await invokeSafeReporterFixture(
+    "reset-sentinel-invalid",
+  );
+  assert.doesNotMatch(invalidResetText, /SENTINEL/u);
+  const invalidReset = JSON.parse(invalidResetText);
+  assert.equal(invalidReset.phase, "INVALID");
+  assert.equal(invalidReset.status, "INVALID");
+  assert.deepEqual(invalidReset.diagnostic, {
+    cleanup: "NOT_APPLICABLE",
+    firstFailedInvariant: "NONE",
+    lastConfirmedMilestone: "NONE",
+    mismatchFields: [],
+    origin: "UNKNOWN",
+  });
 
   const unknownText = await invokeSafeReporterFixture("unknown");
   assert.doesNotMatch(unknownText, /SENTINEL/u);
@@ -569,11 +767,18 @@ test("the safe reporter publishes only closed identities and counters", async ()
       skipped: 0,
       timedOut: 0,
     },
+    diagnostic: {
+      cleanup: "NOT_APPLICABLE",
+      firstFailedInvariant: "NONE",
+      lastConfirmedMilestone: "NONE",
+      mismatchFields: [],
+      origin: "UNKNOWN",
+    },
     engine: "NONE",
     phase: "INVALID",
     scenario: "NONE",
     status: "INVALID",
-    version: 1,
+    version: 2,
   });
 
   const emptyText = await invokeSafeReporterFixture("empty");
@@ -598,11 +803,18 @@ test("the runner rejects malformed summaries without republishing their content"
       skipped: 0,
       timedOut: 0,
     },
+    diagnostic: {
+      cleanup: "NOT_APPLICABLE",
+      firstFailedInvariant: "NONE",
+      lastConfirmedMilestone: "NONE",
+      mismatchFields: [],
+      origin: "UNKNOWN",
+    },
     engine: "NONE",
     phase: "NO_EVENT_OBSERVED",
     scenario: "NONE",
     status: "NO_EVENT_OBSERVED",
-    version: 1,
+    version: 2,
   });
   const noEvent = invokeSafeBrowserSummaryFixture(initial, null, true);
   assert.equal(noEvent.valid, true);
@@ -667,11 +879,18 @@ test("the runner rejects malformed summaries without republishing their content"
         skipped: 0,
         timedOut: 0,
       },
+      diagnostic: {
+        cleanup: "NOT_APPLICABLE",
+        firstFailedInvariant: "NONE",
+        lastConfirmedMilestone: "NONE",
+        mismatchFields: [],
+        origin: "UNKNOWN",
+      },
       engine: "NONE",
       phase: "INVALID",
       scenario: "NONE",
       status: "INVALID",
-      version: 1,
+      version: 2,
     });
     assert.doesNotMatch(JSON.stringify(result.public), /SENTINEL/u);
   }
@@ -710,6 +929,37 @@ test("the runner rejects malformed summaries without republishing their content"
     },
   });
   assert.equal(invokeSafeBrowserSummaryFixture(notRunPass, 0).valid, false);
+});
+
+test("the runner preserves primary and cleanup failures without masking either", () => {
+  assert.deepEqual(invokeSafeCleanupFixture("none"), {
+    aggregate: false,
+    cleanupPreserved: false,
+    innerCount: 0,
+    primaryPreserved: false,
+    threw: false,
+  });
+  assert.deepEqual(invokeSafeCleanupFixture("primary"), {
+    aggregate: false,
+    cleanupPreserved: false,
+    innerCount: 1,
+    primaryPreserved: true,
+    threw: true,
+  });
+  assert.deepEqual(invokeSafeCleanupFixture("cleanup"), {
+    aggregate: false,
+    cleanupPreserved: true,
+    innerCount: 1,
+    primaryPreserved: false,
+    threw: true,
+  });
+  assert.deepEqual(invokeSafeCleanupFixture("both"), {
+    aggregate: true,
+    cleanupPreserved: true,
+    innerCount: 2,
+    primaryPreserved: true,
+    threw: true,
+  });
 });
 
 test("the safe summary is confined to the main secret-bearing campaign", () => {

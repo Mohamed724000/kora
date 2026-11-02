@@ -5,23 +5,23 @@ const SUMMARY_BASENAME = 'c3-safe-browser-summary.json';
 
 const scenarioByProjectAndLine = new Map([
   ['chromium-c3:506', 'CHROMIUM_RETRY_AFTER_BOUNDARIES'],
-  ['chromium-c3:753', 'CHROMIUM_FIRST_LOGIN_TOTP_RECOVERY'],
-  ['chromium-c3:765', 'CHROMIUM_ENROLLMENT_SESSION_LOGOUT'],
-  ['chromium-c3:790', 'CHROMIUM_RESET_UNICODE_PASSWORD'],
-  ['chromium-c3:870', 'CHROMIUM_RESET_HIBP_FAIL_CLOSED'],
-  ['chromium-c3:894', 'CHROMIUM_LOGIN_INVITATION_POST_COMMIT'],
-  ['chromium-c3:1008', 'CHROMIUM_RECOVERY_FRESH_ENROLLMENT'],
-  ['chromium-c3:1041', 'CHROMIUM_RECOVERY_ROTATION_LOGOUT'],
-  ['chromium-c3:1158', 'CHROMIUM_REFRESH_EXPIRY'],
-  ['chromium-c3:1298', 'CHROMIUM_MULTITAB_REFRESH'],
-  ['chromium-c3:1436', 'CHROMIUM_REFRESH_429_RECOVERY'],
-  ['chromium-c3:1553', 'CHROMIUM_CROSS_TAB_CANCEL'],
-  ['chromium-c3:1728', 'CHROMIUM_REFRESH_429_COOKIES'],
-  ['chromium-c3:1792', 'CHROMIUM_UNCERTAIN_LOGOUT'],
-  ['chromium-c3:1875', 'CHROMIUM_EXPIRED_PREAUTH'],
-  ['chromium-c3:1921', 'CHROMIUM_LOGIN_RATE_LIMIT'],
-  ['chromium-c3:1976', 'CHROMIUM_CROSS_SITE_LOGIN'],
-  ['chromium-c3:2076', 'CHROMIUM_PUBLIC_AXE'],
+  ['chromium-c3:762', 'CHROMIUM_FIRST_LOGIN_TOTP_RECOVERY'],
+  ['chromium-c3:774', 'CHROMIUM_ENROLLMENT_SESSION_LOGOUT'],
+  ['chromium-c3:799', 'CHROMIUM_RESET_UNICODE_PASSWORD'],
+  ['chromium-c3:1015', 'CHROMIUM_RESET_HIBP_FAIL_CLOSED'],
+  ['chromium-c3:1039', 'CHROMIUM_LOGIN_INVITATION_POST_COMMIT'],
+  ['chromium-c3:1153', 'CHROMIUM_RECOVERY_FRESH_ENROLLMENT'],
+  ['chromium-c3:1186', 'CHROMIUM_RECOVERY_ROTATION_LOGOUT'],
+  ['chromium-c3:1303', 'CHROMIUM_REFRESH_EXPIRY'],
+  ['chromium-c3:1443', 'CHROMIUM_MULTITAB_REFRESH'],
+  ['chromium-c3:1581', 'CHROMIUM_REFRESH_429_RECOVERY'],
+  ['chromium-c3:1698', 'CHROMIUM_CROSS_TAB_CANCEL'],
+  ['chromium-c3:1873', 'CHROMIUM_REFRESH_429_COOKIES'],
+  ['chromium-c3:1937', 'CHROMIUM_UNCERTAIN_LOGOUT'],
+  ['chromium-c3:2020', 'CHROMIUM_EXPIRED_PREAUTH'],
+  ['chromium-c3:2066', 'CHROMIUM_LOGIN_RATE_LIMIT'],
+  ['chromium-c3:2121', 'CHROMIUM_CROSS_SITE_LOGIN'],
+  ['chromium-c3:2221', 'CHROMIUM_PUBLIC_AXE'],
   ['firefox-public-smoke:458', 'FIREFOX_PUBLIC_SHELL'],
   ['firefox-public-smoke:477', 'FIREFOX_MOBILE_BOUNDS'],
   ['firefox-public-smoke:496', 'FIREFOX_WEB_LOCKS_FAIL_CLOSED'],
@@ -37,6 +37,174 @@ const engineByProject = new Map([
 ]);
 
 const expectedScenarioOrder = [...scenarioByProjectAndLine.values()];
+const RESET_SCENARIO = 'CHROMIUM_RESET_UNICODE_PASSWORD';
+const resetSequence = [
+  ['FIXTURE_PREPARATION', 'FIXTURES_PREPARED'],
+  ['GENERIC_REQUEST_RESPONSE', 'GENERIC_REQUEST_RESPONSE_CONFIRMED'],
+  ['DELIVERY_RECIPIENT', 'DELIVERY_RECIPIENT_CONFIRMED'],
+  ['FORM_CONFIRMATION_FOCUS', 'FORM_CONFIRMATION_FOCUS_CONFIRMED'],
+  ['COMPROMISED_REFUSAL', 'COMPROMISED_REFUSAL_RECEIVED'],
+  ['COMPROMISED_DIAGNOSTICS', 'COMPROMISED_DIAGNOSTICS_CONFIRMED'],
+  ['UNICODE_POLICY_PREPARATION', 'UNICODE_POLICY_READY'],
+  ['UNICODE_SUBMISSION', 'UNICODE_SUBMITTED'],
+  ['SUCCESS_CONFIRMATION', 'SUCCESS_CONFIRMED'],
+];
+const resetMismatchFields = [
+  'RESPONSE_ERROR_CODE',
+  'RESPONSE_STATUS',
+  'RESPONSE_ORIGIN',
+  'DIAGNOSTICS_HIBP_CHECKS',
+  'DIAGNOSTICS_HIBP_COMPROMISED_RESULTS',
+  'DIAGNOSTICS_LAST_CONSTRAINT',
+  'DIAGNOSTICS_LAST_PRIMARY_CODE',
+  'DIAGNOSTICS_LAST_RATE_LIMIT_FAILURE',
+  'DIAGNOSTICS_LAST_RATE_LIMIT_STAGE',
+  'DIAGNOSTICS_LAST_TRANSACTION_CODE',
+  'DIAGNOSTICS_RATE_LIMIT_CALLS',
+  'DIAGNOSTICS_RATE_LIMIT_FAILURES',
+  'DIAGNOSTICS_TRANSACTION_CALLS',
+  'DIAGNOSTICS_TRANSACTION_FAILURES',
+];
+const resetMismatchFieldIndex = new Map(resetMismatchFields.map((field, index) => [field, index]));
+
+function neutralDiagnostic() {
+  return {
+    cleanup: 'NOT_APPLICABLE',
+    firstFailedInvariant: 'NONE',
+    lastConfirmedMilestone: 'NONE',
+    mismatchFields: [],
+    origin: 'UNKNOWN',
+  };
+}
+
+function parseResetDiagnostic(annotations, scenario, status) {
+  const resetAnnotations = annotations.filter(({ type }) => type.startsWith('c3-reset-'));
+  if (scenario !== RESET_SCENARIO)
+    return resetAnnotations.length === 0 ? neutralDiagnostic() : null;
+  if (status === 'skipped' && resetAnnotations.length === 0) return neutralDiagnostic();
+
+  let active = false;
+  let cleanupPassed = false;
+  let cleanupStarted = false;
+  let cursor = 0;
+  let lastConfirmedMilestone = 'NONE';
+  let lastMismatchIndex = -1;
+  let origin = 'UNKNOWN';
+  let originObserved = false;
+  let pendingInvariant = null;
+  const mismatchFields = [];
+
+  for (const annotation of resetAnnotations) {
+    if (annotation.description !== undefined) return null;
+    const { type } = annotation;
+    if (type === 'c3-reset-diagnostic-active') {
+      if (active || cursor !== 0 || pendingInvariant !== null) return null;
+      active = true;
+      continue;
+    }
+    if (!active) return null;
+
+    if (type.startsWith('c3-reset-pending-')) {
+      const invariant = type.slice('c3-reset-pending-'.length);
+      if (
+        cleanupStarted ||
+        pendingInvariant !== null ||
+        cursor >= resetSequence.length ||
+        invariant !== resetSequence[cursor][0]
+      ) {
+        return null;
+      }
+      pendingInvariant = invariant;
+      continue;
+    }
+    if (type.startsWith('c3-reset-confirmed-')) {
+      const milestone = type.slice('c3-reset-confirmed-'.length);
+      if (
+        cleanupStarted ||
+        pendingInvariant !== resetSequence[cursor]?.[0] ||
+        milestone !== resetSequence[cursor]?.[1]
+      ) {
+        return null;
+      }
+      lastConfirmedMilestone = milestone;
+      pendingInvariant = null;
+      cursor += 1;
+      continue;
+    }
+    if (type.startsWith('c3-reset-origin-')) {
+      const candidate = type.slice('c3-reset-origin-'.length);
+      if (
+        cleanupStarted ||
+        pendingInvariant !== 'COMPROMISED_DIAGNOSTICS' ||
+        originObserved ||
+        !['API', 'BFF', 'UNKNOWN'].includes(candidate)
+      ) {
+        return null;
+      }
+      origin = candidate;
+      originObserved = true;
+      continue;
+    }
+    if (type.startsWith('c3-reset-mismatch-')) {
+      const field = type.slice('c3-reset-mismatch-'.length);
+      const index = resetMismatchFieldIndex.get(field);
+      if (
+        cleanupStarted ||
+        pendingInvariant !== 'COMPROMISED_DIAGNOSTICS' ||
+        index === undefined ||
+        index <= lastMismatchIndex
+      ) {
+        return null;
+      }
+      mismatchFields.push(field);
+      lastMismatchIndex = index;
+      continue;
+    }
+    if (type === 'c3-reset-cleanup-started') {
+      if (cleanupStarted || cleanupPassed || pendingInvariant === null) return null;
+      cleanupStarted = true;
+      continue;
+    }
+    if (type === 'c3-reset-cleanup-passed') {
+      if (!cleanupStarted || cleanupPassed) return null;
+      cleanupPassed = true;
+      continue;
+    }
+    return null;
+  }
+
+  if (!active) return null;
+  if (status === 'passed') {
+    if (
+      cursor !== resetSequence.length ||
+      pendingInvariant !== null ||
+      mismatchFields.length !== 0 ||
+      cleanupStarted ||
+      origin !== 'API'
+    ) {
+      return null;
+    }
+    return {
+      cleanup: 'NOT_REQUIRED',
+      firstFailedInvariant: 'NONE',
+      lastConfirmedMilestone,
+      mismatchFields,
+      origin,
+    };
+  }
+
+  const firstFailedInvariant = pendingInvariant ?? 'UNKNOWN';
+  if (mismatchFields.length > 0 && firstFailedInvariant !== 'COMPROMISED_DIAGNOSTICS') {
+    return null;
+  }
+  return {
+    cleanup: cleanupStarted ? (cleanupPassed ? 'PASSED' : 'FAILED') : 'NOT_RUN',
+    firstFailedInvariant,
+    lastConfirmedMilestone,
+    mismatchFields,
+    origin,
+  };
+}
 
 const statusByPlaywrightStatus = new Map([
   ['passed', 'PASSED'],
@@ -82,7 +250,9 @@ export default class C3SafeReporter {
     this.outputFile = outputFile;
     this.counts = newCounts();
     this.current = { engine: 'NONE', scenario: 'NONE' };
+    this.currentDiagnostic = neutralDiagnostic();
     this.firstFailure = null;
+    this.firstFailureDiagnostic = null;
     this.invalid = false;
     this.write('REPORTER_READY', 'NO_TEST_STARTED');
   }
@@ -106,13 +276,21 @@ export default class C3SafeReporter {
 
   write(phase, status) {
     const identity = this.firstFailure ?? this.current;
+    const diagnostic =
+      phase === 'INVALID' || status === 'INVALID'
+        ? neutralDiagnostic()
+        : (this.firstFailureDiagnostic ?? this.currentDiagnostic);
     const record = {
       counts: { ...this.counts },
+      diagnostic: {
+        ...diagnostic,
+        mismatchFields: [...diagnostic.mismatchFields],
+      },
       engine: identity.engine,
       phase,
       scenario: identity.scenario,
       status,
-      version: 1,
+      version: 2,
     };
     writeFileSync(this.outputFile, `${JSON.stringify(record)}\n`, {
       encoding: 'utf8',
@@ -145,6 +323,7 @@ export default class C3SafeReporter {
       return;
     }
     this.current = { engine: 'NONE', scenario: 'NONE' };
+    this.currentDiagnostic = neutralDiagnostic();
     this.write('DISCOVERED', 'NO_TEST_STARTED');
   }
 
@@ -156,6 +335,7 @@ export default class C3SafeReporter {
     const identity = this.identify(testCase);
     if (identity === null) return;
     this.current = identity;
+    this.currentDiagnostic = neutralDiagnostic();
     this.counts.began += 1;
     this.write('TEST_STARTED', 'RUNNING');
   }
@@ -173,7 +353,20 @@ export default class C3SafeReporter {
       this.write('INVALID', 'INVALID');
       return;
     }
+    const diagnostic = parseResetDiagnostic(
+      result.annotations ?? [],
+      identity.scenario,
+      result.status,
+    );
+    if (diagnostic === null) {
+      this.invalid = true;
+      this.current = { engine: 'NONE', scenario: 'NONE' };
+      this.currentDiagnostic = neutralDiagnostic();
+      this.write('INVALID', 'INVALID');
+      return;
+    }
     this.current = identity;
+    this.currentDiagnostic = diagnostic;
     const counter = {
       FAILED: 'failed',
       INTERRUPTED: 'interrupted',
@@ -184,6 +377,7 @@ export default class C3SafeReporter {
     this.counts[counter] += 1;
     if (this.firstFailure === null && ['FAILED', 'INTERRUPTED', 'TIMED_OUT'].includes(status)) {
       this.firstFailure = identity;
+      this.firstFailureDiagnostic = diagnostic;
     }
     this.write('TEST_FINISHED', status);
   }
@@ -195,6 +389,7 @@ export default class C3SafeReporter {
     }
     if (this.firstFailure === null) {
       this.firstFailure = { engine: 'NONE', scenario: 'NONE' };
+      this.firstFailureDiagnostic = neutralDiagnostic();
     }
     this.write('TEST_FINISHED', 'FAILED');
   }
