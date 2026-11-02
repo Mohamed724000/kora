@@ -4,7 +4,13 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Page, Request, Response, Route } from '@playwright/test';
 
-import { expect, test, totp, type C3PrivateChannel } from './admin-auth.fixtures';
+import {
+  C3DeliveryObservationError,
+  expect,
+  test,
+  totp,
+  type C3PrivateChannel,
+} from './admin-auth.fixtures';
 
 const bootstrapEmail = process.env.KORA_C3_BOOTSTRAP_EMAIL ?? '';
 const artifactRedactionProbeMode = process.env.KORA_C3_ARTIFACT_REDACTION_PROBE === '1';
@@ -852,9 +858,26 @@ test.describe.serial('C3 browser contract', () => {
       'DELIVERY_RECIPIENT',
       'DELIVERY_RECIPIENT_CONFIRMED',
       async () => {
-        const delivered = await privateChannel.waitForDelivery('PASSWORD_RESET', previous);
-        expect(delivered.email === bootstrapEmail).toBe(true);
-        return delivered;
+        let observationRecorded = false;
+        try {
+          const delivered = await privateChannel.waitForDelivery('PASSWORD_RESET', previous);
+          const recipientMatches = delivered.email === bootstrapEmail;
+          test.info().annotations.push({
+            type: `c3-reset-delivery-${recipientMatches ? 'MATCHED' : 'RECIPIENT_MISMATCH'}`,
+          });
+          observationRecorded = true;
+          expect(recipientMatches).toBe(true);
+          return delivered;
+        } catch (error) {
+          if (!observationRecorded) {
+            test.info().annotations.push({
+              type: `c3-reset-delivery-${
+                error instanceof C3DeliveryObservationError ? error.observation : 'UNKNOWN'
+              }`,
+            });
+          }
+          throw error;
+        }
       },
     );
     const compromisedPassword = 'Compromise🙂12';

@@ -4,30 +4,30 @@ import { basename, dirname, isAbsolute, resolve } from 'node:path';
 const SUMMARY_BASENAME = 'c3-safe-browser-summary.json';
 
 const scenarioByProjectAndLine = new Map([
-  ['chromium-c3:506', 'CHROMIUM_RETRY_AFTER_BOUNDARIES'],
-  ['chromium-c3:762', 'CHROMIUM_FIRST_LOGIN_TOTP_RECOVERY'],
-  ['chromium-c3:774', 'CHROMIUM_ENROLLMENT_SESSION_LOGOUT'],
-  ['chromium-c3:799', 'CHROMIUM_RESET_UNICODE_PASSWORD'],
-  ['chromium-c3:1015', 'CHROMIUM_RESET_HIBP_FAIL_CLOSED'],
-  ['chromium-c3:1039', 'CHROMIUM_LOGIN_INVITATION_POST_COMMIT'],
-  ['chromium-c3:1153', 'CHROMIUM_RECOVERY_FRESH_ENROLLMENT'],
-  ['chromium-c3:1186', 'CHROMIUM_RECOVERY_ROTATION_LOGOUT'],
-  ['chromium-c3:1303', 'CHROMIUM_REFRESH_EXPIRY'],
-  ['chromium-c3:1443', 'CHROMIUM_MULTITAB_REFRESH'],
-  ['chromium-c3:1581', 'CHROMIUM_REFRESH_429_RECOVERY'],
-  ['chromium-c3:1698', 'CHROMIUM_CROSS_TAB_CANCEL'],
-  ['chromium-c3:1873', 'CHROMIUM_REFRESH_429_COOKIES'],
-  ['chromium-c3:1937', 'CHROMIUM_UNCERTAIN_LOGOUT'],
-  ['chromium-c3:2020', 'CHROMIUM_EXPIRED_PREAUTH'],
-  ['chromium-c3:2066', 'CHROMIUM_LOGIN_RATE_LIMIT'],
-  ['chromium-c3:2121', 'CHROMIUM_CROSS_SITE_LOGIN'],
-  ['chromium-c3:2221', 'CHROMIUM_PUBLIC_AXE'],
-  ['firefox-public-smoke:458', 'FIREFOX_PUBLIC_SHELL'],
-  ['firefox-public-smoke:477', 'FIREFOX_MOBILE_BOUNDS'],
-  ['firefox-public-smoke:496', 'FIREFOX_WEB_LOCKS_FAIL_CLOSED'],
-  ['webkit-public-smoke:458', 'WEBKIT_PUBLIC_SHELL'],
-  ['webkit-public-smoke:477', 'WEBKIT_MOBILE_BOUNDS'],
-  ['webkit-public-smoke:496', 'WEBKIT_WEB_LOCKS_FAIL_CLOSED'],
+  ['chromium-c3:512', 'CHROMIUM_RETRY_AFTER_BOUNDARIES'],
+  ['chromium-c3:768', 'CHROMIUM_FIRST_LOGIN_TOTP_RECOVERY'],
+  ['chromium-c3:780', 'CHROMIUM_ENROLLMENT_SESSION_LOGOUT'],
+  ['chromium-c3:805', 'CHROMIUM_RESET_UNICODE_PASSWORD'],
+  ['chromium-c3:1038', 'CHROMIUM_RESET_HIBP_FAIL_CLOSED'],
+  ['chromium-c3:1062', 'CHROMIUM_LOGIN_INVITATION_POST_COMMIT'],
+  ['chromium-c3:1176', 'CHROMIUM_RECOVERY_FRESH_ENROLLMENT'],
+  ['chromium-c3:1209', 'CHROMIUM_RECOVERY_ROTATION_LOGOUT'],
+  ['chromium-c3:1326', 'CHROMIUM_REFRESH_EXPIRY'],
+  ['chromium-c3:1466', 'CHROMIUM_MULTITAB_REFRESH'],
+  ['chromium-c3:1604', 'CHROMIUM_REFRESH_429_RECOVERY'],
+  ['chromium-c3:1721', 'CHROMIUM_CROSS_TAB_CANCEL'],
+  ['chromium-c3:1896', 'CHROMIUM_REFRESH_429_COOKIES'],
+  ['chromium-c3:1960', 'CHROMIUM_UNCERTAIN_LOGOUT'],
+  ['chromium-c3:2043', 'CHROMIUM_EXPIRED_PREAUTH'],
+  ['chromium-c3:2089', 'CHROMIUM_LOGIN_RATE_LIMIT'],
+  ['chromium-c3:2144', 'CHROMIUM_CROSS_SITE_LOGIN'],
+  ['chromium-c3:2244', 'CHROMIUM_PUBLIC_AXE'],
+  ['firefox-public-smoke:464', 'FIREFOX_PUBLIC_SHELL'],
+  ['firefox-public-smoke:483', 'FIREFOX_MOBILE_BOUNDS'],
+  ['firefox-public-smoke:502', 'FIREFOX_WEB_LOCKS_FAIL_CLOSED'],
+  ['webkit-public-smoke:464', 'WEBKIT_PUBLIC_SHELL'],
+  ['webkit-public-smoke:483', 'WEBKIT_MOBILE_BOUNDS'],
+  ['webkit-public-smoke:502', 'WEBKIT_WEB_LOCKS_FAIL_CLOSED'],
 ]);
 
 const engineByProject = new Map([
@@ -66,10 +66,21 @@ const resetMismatchFields = [
   'DIAGNOSTICS_TRANSACTION_FAILURES',
 ];
 const resetMismatchFieldIndex = new Map(resetMismatchFields.map((field, index) => [field, index]));
+const resetDeliveryStates = [
+  'ABSENT',
+  'INVALID',
+  'LATE',
+  'MATCHED',
+  'RECIPIENT_MISMATCH',
+  'SENTINEL_REGISTRATION_FAILED',
+  'UNKNOWN',
+  'UNREADABLE',
+];
 
 function neutralDiagnostic() {
   return {
     cleanup: 'NOT_APPLICABLE',
+    delivery: 'NOT_APPLICABLE',
     firstFailedInvariant: 'NONE',
     lastConfirmedMilestone: 'NONE',
     mismatchFields: [],
@@ -78,7 +89,16 @@ function neutralDiagnostic() {
 }
 
 function parseResetDiagnostic(annotations, scenario, status) {
-  const resetAnnotations = annotations.filter(({ type }) => type.startsWith('c3-reset-'));
+  if (!Array.isArray(annotations)) return null;
+  const resetAnnotations = [];
+  for (const annotation of annotations) {
+    if (annotation === null || typeof annotation !== 'object' || Array.isArray(annotation)) {
+      return null;
+    }
+    const type = Reflect.get(annotation, 'type');
+    if (typeof type !== 'string') return null;
+    if (type.startsWith('c3-reset-')) resetAnnotations.push(annotation);
+  }
   if (scenario !== RESET_SCENARIO)
     return resetAnnotations.length === 0 ? neutralDiagnostic() : null;
   if (status === 'skipped' && resetAnnotations.length === 0) return neutralDiagnostic();
@@ -87,6 +107,8 @@ function parseResetDiagnostic(annotations, scenario, status) {
   let cleanupPassed = false;
   let cleanupStarted = false;
   let cursor = 0;
+  let delivery = 'NOT_APPLICABLE';
+  let deliveryObserved = false;
   let lastConfirmedMilestone = 'NONE';
   let lastMismatchIndex = -1;
   let origin = 'UNKNOWN';
@@ -145,6 +167,20 @@ function parseResetDiagnostic(annotations, scenario, status) {
       originObserved = true;
       continue;
     }
+    if (type.startsWith('c3-reset-delivery-')) {
+      const candidate = type.slice('c3-reset-delivery-'.length);
+      if (
+        cleanupStarted ||
+        pendingInvariant !== 'DELIVERY_RECIPIENT' ||
+        deliveryObserved ||
+        !resetDeliveryStates.includes(candidate)
+      ) {
+        return null;
+      }
+      delivery = candidate;
+      deliveryObserved = true;
+      continue;
+    }
     if (type.startsWith('c3-reset-mismatch-')) {
       const field = type.slice('c3-reset-mismatch-'.length);
       const index = resetMismatchFieldIndex.get(field);
@@ -178,6 +214,8 @@ function parseResetDiagnostic(annotations, scenario, status) {
     if (
       cursor !== resetSequence.length ||
       pendingInvariant !== null ||
+      !deliveryObserved ||
+      delivery !== 'MATCHED' ||
       mismatchFields.length !== 0 ||
       cleanupStarted ||
       origin !== 'API'
@@ -186,6 +224,7 @@ function parseResetDiagnostic(annotations, scenario, status) {
     }
     return {
       cleanup: 'NOT_REQUIRED',
+      delivery,
       firstFailedInvariant: 'NONE',
       lastConfirmedMilestone,
       mismatchFields,
@@ -197,8 +236,19 @@ function parseResetDiagnostic(annotations, scenario, status) {
   if (mismatchFields.length > 0 && firstFailedInvariant !== 'COMPROMISED_DIAGNOSTICS') {
     return null;
   }
+  const deliveryFailed = firstFailedInvariant === 'DELIVERY_RECIPIENT';
+  const deliveryConfirmed =
+    cursor > resetSequence.findIndex(([name]) => name === 'DELIVERY_RECIPIENT');
+  if (
+    (deliveryFailed && (!deliveryObserved || ['MATCHED', 'NOT_APPLICABLE'].includes(delivery))) ||
+    (deliveryConfirmed && delivery !== 'MATCHED') ||
+    (!deliveryFailed && !deliveryConfirmed && delivery !== 'NOT_APPLICABLE')
+  ) {
+    return null;
+  }
   return {
     cleanup: cleanupStarted ? (cleanupPassed ? 'PASSED' : 'FAILED') : 'NOT_RUN',
+    delivery,
     firstFailedInvariant,
     lastConfirmedMilestone,
     mismatchFields,
@@ -290,7 +340,7 @@ export default class C3SafeReporter {
       phase,
       scenario: identity.scenario,
       status,
-      version: 2,
+      version: 3,
     };
     writeFileSync(this.outputFile, `${JSON.stringify(record)}\n`, {
       encoding: 'utf8',

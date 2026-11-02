@@ -9,6 +9,7 @@ import {
   readFileSync,
   realpathSync,
   readdirSync,
+  renameSync,
   rmSync,
   statSync,
   unlinkSync,
@@ -179,7 +180,35 @@ interface AdminSecurityServiceLike {
     execution: Readonly<{ requestId: string }>,
     now?: Date,
   ): Promise<Readonly<{ invitationId: string }>>;
+  requestPasswordReset(
+    input: unknown,
+    execution: Readonly<{ ipAddress: string; requestId: string }>,
+    now?: Date,
+  ): Promise<void>;
 }
+
+interface NotificationWakeupLike {
+  notify(outboxId: string): Promise<boolean>;
+}
+
+// BEGIN C3 NOTIFICATION WAKEUP DIAGNOSTIC BRIDGE
+export async function observeC3NotificationWakeup(
+  notify: (outboxId: string) => Promise<boolean>,
+  recordDiagnostic: (state: 'CALLED_PENDING' | 'REJECTED' | 'RESOLVED' | 'UNCONFIRMED') => void,
+  outboxId: string,
+): Promise<boolean> {
+  recordDiagnostic('CALLED_PENDING');
+  let accepted: boolean;
+  try {
+    accepted = await notify(outboxId);
+  } catch (error: unknown) {
+    recordDiagnostic('REJECTED');
+    throw error;
+  }
+  recordDiagnostic(accepted ? 'RESOLVED' : 'UNCONFIRMED');
+  return accepted;
+}
+// END C3 NOTIFICATION WAKEUP DIAGNOSTIC BRIDGE
 
 interface AdminRateLimitServiceLike {
   consume(scope: string, ipAddress: string, subject: string): Promise<unknown>;
@@ -312,9 +341,42 @@ function claimFile(source: string, target: string): boolean {
   }
 }
 
+function writeReplacingJson(directory: string, filename: string, value: unknown): void {
+  const target = join(directory, filename);
+  const temporary = join(directory, `.${filename}.${randomUUID()}.tmp`);
+  let descriptor: number | undefined;
+  try {
+    descriptor = openSync(temporary, 'wx', 0o600);
+    writeSync(descriptor, `${JSON.stringify(value)}\n`, undefined, 'utf8');
+    fsyncSync(descriptor);
+    closeSync(descriptor);
+    descriptor = undefined;
+    renameSync(temporary, target);
+    const directoryDescriptor = openSync(directory, 'r');
+    try {
+      fsyncSync(directoryDescriptor);
+    } finally {
+      closeSync(directoryDescriptor);
+    }
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+    rmSync(temporary, { force: true });
+  }
+}
+
+const DIAGNOSTIC_STATES = Object.freeze({
+  bullmq: new Set(['CALLED_PENDING', 'NOT_CALLED', 'REJECTED', 'RESOLVED', 'UNCONFIRMED']),
+  delivery: new Set(['ATTEMPTED', 'NOT_OBSERVED', 'REJECTED', 'WRITTEN']),
+  producer: new Set(['AMBIGUOUS', 'INELIGIBLE_RECORDED', 'OUTBOX_COMMITTED', 'STARTED']),
+  worker: new Set(['READY']),
+});
+
+type DiagnosticName = keyof typeof DIAGNOSTIC_STATES;
+
 class HarnessChannel {
   readonly commands: string;
   readonly deliveries: string;
+  readonly diagnostics: string;
   readonly processing: string;
   readonly responses: string;
   private readonly campaignId: string;
@@ -331,7 +393,14 @@ class HarnessChannel {
     this.processing = join(CHANNEL_ROOT, 'processing');
     this.responses = join(CHANNEL_ROOT, 'responses');
     this.deliveries = join(CHANNEL_ROOT, 'deliveries');
-    for (const directory of [this.commands, this.processing, this.responses, this.deliveries]) {
+    this.diagnostics = join(CHANNEL_ROOT, 'diagnostics');
+    for (const directory of [
+      this.commands,
+      this.processing,
+      this.responses,
+      this.deliveries,
+      this.diagnostics,
+    ]) {
       assertDirectory(CHANNEL_ROOT, directory);
     }
     const manifest = exactRecord(readBoundedJson(join(CHANNEL_ROOT, 'campaign.json')), [
@@ -349,6 +418,15 @@ class HarnessChannel {
       !/^[A-Za-z0-9_-]{43}$/u.test(this.capability)
     ) {
       throw new Error('The C3 harness channel identity is invalid.');
+    }
+  }
+
+  recordDiagnostic(name: DiagnosticName, state: string): void {
+    if (!DIAGNOSTIC_STATES[name].has(state)) return;
+    try {
+      writeReplacingJson(this.diagnostics, `${name}.json`, { state, version: 1 });
+    } catch {
+      // Diagnostic evidence must never alter the runtime path under qualification.
     }
   }
 
@@ -509,9 +587,17 @@ class FileNotificationPort implements NotificationPortLike {
     | { readonly kind: 'ACKNOWLEDGEMENT_UNUSABLE' }
     | { readonly kind: 'NOT_ACCEPTED'; readonly retryable: false }
   > {
-    if (delivery.signal.aborted) return { kind: 'NOT_ACCEPTED', retryable: false };
-    if (!UUID_PATTERN.test(delivery.logicalDeliveryId)) return { kind: 'ACKNOWLEDGEMENT_UNUSABLE' };
+    this.channel.recordDiagnostic('delivery', 'ATTEMPTED');
+    if (delivery.signal.aborted) {
+      this.channel.recordDiagnostic('delivery', 'REJECTED');
+      return { kind: 'NOT_ACCEPTED', retryable: false };
+    }
+    if (!UUID_PATTERN.test(delivery.logicalDeliveryId)) {
+      this.channel.recordDiagnostic('delivery', 'REJECTED');
+      return { kind: 'ACKNOWLEDGEMENT_UNUSABLE' };
+    }
     if (delivery.purpose !== 'PASSWORD_RESET' && delivery.purpose !== 'INVITATION') {
+      this.channel.recordDiagnostic('delivery', 'REJECTED');
       return { kind: 'ACKNOWLEDGEMENT_UNUSABLE' };
     }
     const payload = exactRecord(delivery.payload, ['code', 'email']);
@@ -521,6 +607,7 @@ class FileNotificationPort implements NotificationPortLike {
       !EMAIL_PATTERN.test(payload.email) ||
       Buffer.byteLength(payload.code, 'utf8') > 256
     ) {
+      this.channel.recordDiagnostic('delivery', 'REJECTED');
       return { kind: 'ACKNOWLEDGEMENT_UNUSABLE' };
     }
     const acknowledgement = `c3-file-${delivery.logicalDeliveryId}`;
@@ -536,19 +623,29 @@ class FileNotificationPort implements NotificationPortLike {
     const target = join(this.channel.deliveries, filename);
     if (existsSync(target)) {
       const existing = readFileSync(target, 'utf8');
-      return constantTimeTextEqual(existing, `${JSON.stringify(record)}\n`)
-        ? { acknowledgement, kind: 'ACCEPTED' }
-        : { kind: 'ACKNOWLEDGEMENT_UNUSABLE' };
+      if (constantTimeTextEqual(existing, `${JSON.stringify(record)}\n`)) {
+        this.channel.recordDiagnostic('delivery', 'WRITTEN');
+        return { acknowledgement, kind: 'ACCEPTED' };
+      }
+      this.channel.recordDiagnostic('delivery', 'REJECTED');
+      return { kind: 'ACKNOWLEDGEMENT_UNUSABLE' };
     }
     try {
       writeAtomicJson(this.channel.deliveries, filename, record);
     } catch {
-      if (!existsSync(target)) return { kind: 'ACKNOWLEDGEMENT_UNUSABLE' };
+      if (!existsSync(target)) {
+        this.channel.recordDiagnostic('delivery', 'REJECTED');
+        return { kind: 'ACKNOWLEDGEMENT_UNUSABLE' };
+      }
       const existing = readFileSync(target, 'utf8');
-      return constantTimeTextEqual(existing, `${JSON.stringify(record)}\n`)
-        ? { acknowledgement, kind: 'ACCEPTED' }
-        : { kind: 'ACKNOWLEDGEMENT_UNUSABLE' };
+      if (constantTimeTextEqual(existing, `${JSON.stringify(record)}\n`)) {
+        this.channel.recordDiagnostic('delivery', 'WRITTEN');
+        return { acknowledgement, kind: 'ACCEPTED' };
+      }
+      this.channel.recordDiagnostic('delivery', 'REJECTED');
+      return { kind: 'ACKNOWLEDGEMENT_UNUSABLE' };
     }
+    this.channel.recordDiagnostic('delivery', 'WRITTEN');
     return { acknowledgement, kind: 'ACCEPTED' };
   }
 
@@ -737,7 +834,18 @@ async function runApi(): Promise<void> {
   const refresh = sessions.refresh.bind(sessions);
   const consumeRateLimit = rateLimiter.consume.bind(rateLimiter);
   const acceptInvitation = security.acceptInvitation.bind(security);
+  const requestPasswordReset = security.requestPasswordReset.bind(security);
   const securityTransaction = securityRepository.transaction.bind(securityRepository);
+  const notificationWakeupCandidate = Reflect.get(security, 'notificationWakeup') as unknown;
+  if (
+    notificationWakeupCandidate === null ||
+    typeof notificationWakeupCandidate !== 'object' ||
+    typeof Reflect.get(notificationWakeupCandidate, 'notify') !== 'function'
+  ) {
+    throw new Error('C3 notification wakeup diagnostic boundary is unavailable.');
+  }
+  const notificationWakeup = notificationWakeupCandidate as NotificationWakeupLike;
+  const notifyNotificationWakeup = notificationWakeup.notify.bind(notificationWakeup);
   const rateLimitRedisClientCandidate = Reflect.get(rateLimiter, 'client') as unknown;
   if (
     rateLimitRedisClientCandidate === null ||
@@ -775,6 +883,8 @@ async function runApi(): Promise<void> {
   let lastRateLimitStage = 'NOT_CALLED';
   let transactionCalls = 0;
   let transactionFailures = 0;
+  let passwordResetRequestActive = 0;
+  let passwordResetDiagnosticsAmbiguous = false;
   const passwordRateLimitIpCounts = new Map<string, number>();
   const passwordRateLimitSubjectCounts = new Map<string, number>();
   let passwordRateLimitCalls = 0;
@@ -908,16 +1018,57 @@ async function runApi(): Promise<void> {
     }
     return evalRateLimitRedis(script, numberOfKeys, ...args);
   };
+  notificationWakeup.notify = async (outboxId): Promise<boolean> => {
+    const observed = passwordResetRequestActive > 0;
+    if (!observed) return notifyNotificationWakeup(outboxId);
+    return observeC3NotificationWakeup(
+      notifyNotificationWakeup,
+      (state) => channel.recordDiagnostic('bullmq', state),
+      outboxId,
+    );
+  };
   securityRepository.transaction = async <T>(
     callback: (transaction: unknown) => Promise<T>,
   ): Promise<T> => {
     transactionCalls += 1;
     try {
-      return await securityTransaction(callback);
+      const result = await securityTransaction(callback);
+      if (passwordResetRequestActive > 0) {
+        channel.recordDiagnostic(
+          'producer',
+          passwordResetDiagnosticsAmbiguous
+            ? 'AMBIGUOUS'
+            : result === true
+              ? 'OUTBOX_COMMITTED'
+              : result === false
+                ? 'INELIGIBLE_RECORDED'
+                : 'AMBIGUOUS',
+        );
+      }
+      return result;
     } catch (error: unknown) {
       transactionFailures += 1;
       lastTransactionFailure = safeTransactionFailure(error);
+      if (passwordResetRequestActive > 0) channel.recordDiagnostic('producer', 'AMBIGUOUS');
       throw error;
+    }
+  };
+  security.requestPasswordReset = async (...args): Promise<void> => {
+    const startsDiagnosticWindow = passwordResetRequestActive === 0;
+    if (startsDiagnosticWindow) {
+      passwordResetDiagnosticsAmbiguous = false;
+      channel.recordDiagnostic('producer', 'STARTED');
+      channel.recordDiagnostic('bullmq', 'NOT_CALLED');
+      channel.recordDiagnostic('delivery', 'NOT_OBSERVED');
+    } else {
+      passwordResetDiagnosticsAmbiguous = true;
+      channel.recordDiagnostic('producer', 'AMBIGUOUS');
+    }
+    passwordResetRequestActive += 1;
+    try {
+      await requestPasswordReset(...args);
+    } finally {
+      passwordResetRequestActive -= 1;
     }
   };
   security.acceptInvitation = async (...args): Promise<unknown> => {
@@ -1702,10 +1853,12 @@ async function runNotification(): Promise<void> {
         }),
         { logger: false },
       ),
-    onReady: () =>
+    onReady: () => {
+      channel.recordDiagnostic('worker', 'READY');
       process.stdout.write(
         `${JSON.stringify({ event: 'c3_browser_harness_ready', mode: 'notification', profile: 'NOTIFICATION' })}\n`,
-      ),
+      );
+    },
   });
   if (outcome.failed || outcome.forceExit) process.exitCode = 1;
 }

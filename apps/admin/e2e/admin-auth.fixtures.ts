@@ -12,12 +12,15 @@ import {
   writeSync,
 } from 'node:fs';
 import { join, relative, sep } from 'node:path';
+import { performance } from 'node:perf_hooks';
 
 import { test as base, type Page } from '@playwright/test';
 
 const MAX_FILE_BYTES = 8192;
 const REDACTED_ERROR_CONTEXT = '[C3_ERROR_CONTEXT_REDACTED]';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
+const DELIVERY_TEMPORARY_FILE = /^\.[0-9a-f-]{36}\.delivery\.json\.[0-9a-f-]{36}\.tmp$/iu;
 const C3_PRIVATE_REJECTION_CODES = new Set([
   'PASSWORD_ISOLATION_KEYS',
   'PASSWORD_ISOLATION_COUNT',
@@ -152,6 +155,36 @@ async function waitForFile(path: string, timeoutMs = 15_000): Promise<void> {
 
 export type DeliveryPurpose = 'INVITATION' | 'PASSWORD_RESET';
 
+export type DeliveryObservationFailure =
+  'ABSENT' | 'INVALID' | 'LATE' | 'SENTINEL_REGISTRATION_FAILED' | 'UNKNOWN' | 'UNREADABLE';
+
+export class C3DeliveryObservationError extends Error {
+  constructor(readonly observation: DeliveryObservationFailure) {
+    super('Deterministic delivery observation failed.');
+    this.name = 'C3DeliveryObservationError';
+  }
+}
+
+export async function waitForC3DeliveryObservation<T>(
+  observe: () => T | null,
+  monotonicNow: () => number,
+  sleep: (milliseconds: number) => Promise<void>,
+): Promise<T> {
+  const deadline = monotonicNow() + 20_000;
+  while (monotonicNow() < deadline) {
+    const delivery = observe();
+    if (delivery !== null) return delivery;
+    await sleep(100);
+  }
+  const diagnosticDeadline = monotonicNow() + 5_000;
+  while (monotonicNow() < diagnosticDeadline) {
+    const lateDelivery = observe();
+    if (lateDelivery !== null) throw new C3DeliveryObservationError('LATE');
+    await sleep(100);
+  }
+  throw new C3DeliveryObservationError('ABSENT');
+}
+
 export interface PasswordDiagnostics {
   readonly hibpChecks: number;
   readonly hibpCompromisedResults: number;
@@ -279,17 +312,31 @@ export class C3PrivateChannel {
     );
   }
 
-  async waitForDelivery(
+  private observeDelivery(
     purpose: DeliveryPurpose,
     previous: ReadonlySet<string>,
-  ): Promise<Readonly<{ code: string; email: string }>> {
-    const deadline = Date.now() + 20_000;
-    while (Date.now() < deadline) {
-      for (const filename of readdirSync(join(this.root, 'deliveries')).sort()) {
-        if (previous.has(filename) || !/^[-0-9a-f]{36}\.delivery\.json$/iu.test(filename)) {
-          continue;
-        }
-        const delivery = exactRecord(readJson(join(this.root, 'deliveries', filename)), [
+  ): Readonly<{ code: string; email: string }> | null {
+    let filenames: string[];
+    try {
+      filenames = readdirSync(join(this.root, 'deliveries')).sort();
+    } catch {
+      throw new C3DeliveryObservationError('UNREADABLE');
+    }
+    for (const filename of filenames) {
+      if (previous.has(filename) || DELIVERY_TEMPORARY_FILE.test(filename)) continue;
+      if (!filename.endsWith('.delivery.json')) continue;
+      const logicalDeliveryId = filename.slice(0, -'.delivery.json'.length);
+      if (!UUID.test(logicalDeliveryId)) throw new C3DeliveryObservationError('INVALID');
+      let encoded: Buffer;
+      try {
+        encoded = readFileSync(join(this.root, 'deliveries', filename));
+      } catch {
+        throw new C3DeliveryObservationError('UNREADABLE');
+      }
+      if (encoded.byteLength > MAX_FILE_BYTES) throw new C3DeliveryObservationError('INVALID');
+      let delivery: Record<string, unknown>;
+      try {
+        delivery = exactRecord(JSON.parse(encoded.toString('utf8')) as unknown, [
           'acknowledgement',
           'campaignId',
           'logicalDeliveryId',
@@ -297,17 +344,53 @@ export class C3PrivateChannel {
           'purpose',
           'version',
         ]);
-        if (delivery.campaignId !== this.campaignId || delivery.purpose !== purpose) continue;
-        const payload = exactRecord(delivery.payload, ['code', 'email']);
-        if (typeof payload.code !== 'string' || typeof payload.email !== 'string') {
-          throw new Error('Invalid deterministic delivery payload.');
-        }
-        this.registerSensitiveValues([payload.code, payload.email]);
-        return { code: payload.code, email: payload.email };
+      } catch {
+        throw new C3DeliveryObservationError('INVALID');
       }
-      await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
+      if (
+        delivery.version !== 1 ||
+        delivery.campaignId !== this.campaignId ||
+        delivery.logicalDeliveryId !== logicalDeliveryId ||
+        delivery.acknowledgement !== `c3-file-${logicalDeliveryId}` ||
+        !UUID.test(logicalDeliveryId) ||
+        (delivery.purpose !== 'PASSWORD_RESET' && delivery.purpose !== 'INVITATION')
+      ) {
+        throw new C3DeliveryObservationError('INVALID');
+      }
+      if (delivery.purpose !== purpose) continue;
+      let payload: Record<string, unknown>;
+      try {
+        payload = exactRecord(delivery.payload, ['code', 'email']);
+      } catch {
+        throw new C3DeliveryObservationError('INVALID');
+      }
+      if (
+        typeof payload.code !== 'string' ||
+        Buffer.byteLength(payload.code, 'utf8') > 256 ||
+        typeof payload.email !== 'string' ||
+        !EMAIL.test(payload.email)
+      ) {
+        throw new C3DeliveryObservationError('INVALID');
+      }
+      try {
+        this.registerSensitiveValues([payload.code, payload.email]);
+      } catch {
+        throw new C3DeliveryObservationError('SENTINEL_REGISTRATION_FAILED');
+      }
+      return { code: payload.code, email: payload.email };
     }
-    throw new Error('Deterministic delivery timed out.');
+    return null;
+  }
+
+  async waitForDelivery(
+    purpose: DeliveryPurpose,
+    previous: ReadonlySet<string>,
+  ): Promise<Readonly<{ code: string; email: string }>> {
+    return waitForC3DeliveryObservation(
+      () => this.observeDelivery(purpose, previous),
+      () => performance.now(),
+      (milliseconds) => new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds)),
+    );
   }
 
   async configureHibp(available: boolean, compromisedPasswords: readonly string[]): Promise<void> {

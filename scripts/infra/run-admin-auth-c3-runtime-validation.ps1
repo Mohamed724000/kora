@@ -140,6 +140,7 @@ function New-C3SafeBrowserGenericSummary([string]$Phase, [string]$Status) {
     counts = New-C3SafeBrowserCounts
     diagnostic = [ordered]@{
       cleanup = 'NOT_APPLICABLE'
+      delivery = 'NOT_APPLICABLE'
       firstFailedInvariant = 'NONE'
       lastConfirmedMilestone = 'NONE'
       mismatchFields = @()
@@ -149,7 +150,7 @@ function New-C3SafeBrowserGenericSummary([string]$Phase, [string]$Status) {
     phase = $Phase
     scenario = 'NONE'
     status = $Status
-    version = 2
+    version = 3
   }
 }
 
@@ -235,10 +236,10 @@ function Get-C3SafeBrowserPublicSummary(
     if (-not (Test-C3ExactPropertySet $record.counts @('began', 'discovered', 'failed', 'interrupted', 'notRun', 'passed', 'skipped', 'timedOut'))) {
       return $invalid
     }
-    if (-not (Test-C3ExactPropertySet $record.diagnostic @('cleanup', 'firstFailedInvariant', 'lastConfirmedMilestone', 'mismatchFields', 'origin'))) {
+    if (-not (Test-C3ExactPropertySet $record.diagnostic @('cleanup', 'delivery', 'firstFailedInvariant', 'lastConfirmedMilestone', 'mismatchFields', 'origin'))) {
       return $invalid
     }
-    if (($record.version -isnot [int] -and $record.version -isnot [long]) -or [long]$record.version -ne 2) {
+    if (($record.version -isnot [int] -and $record.version -isnot [long]) -or [long]$record.version -ne 3) {
       return $invalid
     }
     foreach ($name in @('began', 'discovered', 'failed', 'interrupted', 'notRun', 'passed', 'skipped', 'timedOut')) {
@@ -254,6 +255,17 @@ function Get-C3SafeBrowserPublicSummary(
     ) { return $invalid }
 
     $allowedCleanups = @('FAILED', 'NOT_APPLICABLE', 'NOT_REQUIRED', 'NOT_RUN', 'PASSED')
+    $allowedDeliveries = @(
+      'ABSENT',
+      'INVALID',
+      'LATE',
+      'MATCHED',
+      'NOT_APPLICABLE',
+      'RECIPIENT_MISMATCH',
+      'SENTINEL_REGISTRATION_FAILED',
+      'UNKNOWN',
+      'UNREADABLE'
+    )
     $allowedInvariants = @(
       'COMPROMISED_DIAGNOSTICS',
       'COMPROMISED_REFUSAL',
@@ -298,6 +310,8 @@ function Get-C3SafeBrowserPublicSummary(
     if (
       $record.diagnostic.cleanup -isnot [string] -or
       $allowedCleanups -cnotcontains $record.diagnostic.cleanup -or
+      $record.diagnostic.delivery -isnot [string] -or
+      $allowedDeliveries -cnotcontains $record.diagnostic.delivery -or
       $record.diagnostic.firstFailedInvariant -isnot [string] -or
       $allowedInvariants -cnotcontains $record.diagnostic.firstFailedInvariant -or
       $record.diagnostic.lastConfirmedMilestone -isnot [string] -or
@@ -316,6 +330,7 @@ function Get-C3SafeBrowserPublicSummary(
     }
     $diagnostic = [ordered]@{
       cleanup = [string]$record.diagnostic.cleanup
+      delivery = [string]$record.diagnostic.delivery
       firstFailedInvariant = [string]$record.diagnostic.firstFailedInvariant
       lastConfirmedMilestone = [string]$record.diagnostic.lastConfirmedMilestone
       mismatchFields = [object[]]$mismatchFields
@@ -373,6 +388,7 @@ function Get-C3SafeBrowserPublicSummary(
 
     $diagnosticIsNeutral = (
       $diagnostic.cleanup -ceq 'NOT_APPLICABLE' -and
+      $diagnostic.delivery -ceq 'NOT_APPLICABLE' -and
       $diagnostic.firstFailedInvariant -ceq 'NONE' -and
       $diagnostic.lastConfirmedMilestone -ceq 'NONE' -and
       $diagnostic.mismatchFields.Count -eq 0 -and
@@ -387,6 +403,7 @@ function Get-C3SafeBrowserPublicSummary(
     elseif ($record.status -ceq 'PASSED') {
       if (
         $diagnostic.cleanup -cne 'NOT_REQUIRED' -or
+        $diagnostic.delivery -cne 'MATCHED' -or
         $diagnostic.firstFailedInvariant -cne 'NONE' -or
         $diagnostic.lastConfirmedMilestone -cne 'SUCCESS_CONFIRMED' -or
         $diagnostic.mismatchFields.Count -ne 0 -or
@@ -429,6 +446,13 @@ function Get-C3SafeBrowserPublicSummary(
       if ($milestoneRank[$diagnostic.lastConfirmedMilestone] -ge $invariantRank[$diagnostic.firstFailedInvariant]) {
         return $invalid
       }
+      $deliveryFailed = $diagnostic.firstFailedInvariant -ceq 'DELIVERY_RECIPIENT'
+      $deliveryConfirmed = $milestoneRank[$diagnostic.lastConfirmedMilestone] -ge 3
+      if (
+        ($deliveryFailed -and $diagnostic.delivery -in @('MATCHED', 'NOT_APPLICABLE')) -or
+        ($deliveryConfirmed -and $diagnostic.delivery -cne 'MATCHED') -or
+        (-not $deliveryFailed -and -not $deliveryConfirmed -and $diagnostic.delivery -cne 'NOT_APPLICABLE')
+      ) { return $invalid }
     }
     if (
       $null -ne $ProcessExitCode -and
@@ -463,7 +487,7 @@ function Get-C3SafeBrowserPublicSummary(
         phase = $publicPhase
         scenario = [string]$record.scenario
         status = $publicStatus
-        version = 2
+        version = 3
       }
       Valid = $true
     }
@@ -478,21 +502,406 @@ function Write-C3SafeBrowserPublicSummary([object]$Result) {
 }
 # END C3 SAFE BROWSER SUMMARY FUNCTIONS
 
+# BEGIN C3 SAFE DELIVERY PIPELINE SUMMARY FUNCTIONS
+function New-C3UnavailableDeliveryMarkerSnapshot() {
+  return [ordered]@{
+    bullmq = 'UNAVAILABLE'
+    delivery = 'UNAVAILABLE'
+    directoryMode = 'UNAVAILABLE'
+    file = 'UNAVAILABLE'
+    fileCount = 'UNAVAILABLE'
+    fileMode = 'UNAVAILABLE'
+    producer = 'UNAVAILABLE'
+    worker = 'UNAVAILABLE'
+  }
+}
+
+function Test-C3DeliveryExactPropertySet([object]$Value, [string[]]$Expected) {
+  if ($null -eq $Value) { return $false }
+  $actual = if ($Value -is [Collections.IDictionary]) {
+    @($Value.Keys | ForEach-Object { [string]$_ } | Sort-Object -CaseSensitive)
+  } else {
+    @($Value.PSObject.Properties.Name | Sort-Object -CaseSensitive)
+  }
+  $expectedNames = @($Expected | Sort-Object -CaseSensitive)
+  return ($actual -join "`n") -ceq ($expectedNames -join "`n")
+}
+
+function Test-C3DeliveryMarkerSnapshot([object]$Snapshot) {
+  if (-not (Test-C3DeliveryExactPropertySet $Snapshot @(
+        'bullmq', 'delivery', 'directoryMode', 'file', 'fileCount', 'fileMode',
+        'producer', 'worker'
+      ))) { return $false }
+  return (
+    $Snapshot.bullmq -is [string] -and
+    @('CALLED_PENDING', 'NOT_CALLED', 'REJECTED', 'RESOLVED', 'UNAVAILABLE', 'UNCONFIRMED') -ccontains $Snapshot.bullmq -and
+    $Snapshot.delivery -is [string] -and
+    @('ATTEMPTED', 'NOT_OBSERVED', 'REJECTED', 'UNAVAILABLE', 'WRITTEN') -ccontains $Snapshot.delivery -and
+    $Snapshot.directoryMode -is [string] -and
+    @('OTHER', 'PRIVATE_0700', 'UNAVAILABLE') -ccontains $Snapshot.directoryMode -and
+    $Snapshot.file -is [string] -and
+    @('ABSENT', 'PRESENT_INVALID', 'PRESENT_VALID', 'UNAVAILABLE') -ccontains $Snapshot.file -and
+    $Snapshot.fileCount -is [string] -and
+    @('MULTIPLE', 'ONE', 'UNAVAILABLE', 'ZERO') -ccontains $Snapshot.fileCount -and
+    $Snapshot.fileMode -is [string] -and
+    @('NOT_APPLICABLE', 'OTHER', 'PRIVATE_0600', 'UNAVAILABLE') -ccontains $Snapshot.fileMode -and
+    $Snapshot.producer -is [string] -and
+    @('AMBIGUOUS', 'INELIGIBLE_RECORDED', 'OUTBOX_COMMITTED', 'STARTED', 'UNAVAILABLE') -ccontains $Snapshot.producer -and
+    $Snapshot.worker -is [string] -and
+    @('NOT_OBSERVED', 'READY', 'UNAVAILABLE') -ccontains $Snapshot.worker
+  )
+}
+
+function Test-C3NotificationOutboxSnapshot([object]$Snapshot) {
+  if (-not (Test-C3DeliveryExactPropertySet $Snapshot @('attempt', 'identity', 'state'))) {
+    return $false
+  }
+  return (
+    $Snapshot.attempt -is [string] -and
+    @('MULTIPLE', 'ONE', 'UNAVAILABLE', 'ZERO') -ccontains $Snapshot.attempt -and
+    $Snapshot.identity -is [string] -and
+    @('EXPECTED', 'UNAVAILABLE', 'UNEXPECTED') -ccontains $Snapshot.identity -and
+    $Snapshot.state -is [string] -and
+    @(
+      'ABSENT', 'AMBIGUOUS', 'CANCELLED', 'CLAIMED', 'DELIVERED',
+      'DELIVERY_UNCERTAIN', 'FAILED', 'PENDING_UNCLAIMED', 'RETRY_PENDING', 'UNAVAILABLE'
+    ) -ccontains $Snapshot.state
+  )
+}
+
+function Get-C3DeliveryPipelineClassification(
+  [string]$ObservedDelivery,
+  [object]$Snapshot,
+  [object]$Outbox,
+  [string]$Stability
+) {
+  if ($Stability -cne 'STABLE') { return 'AMBIGUOUS' }
+  switch -CaseSensitive ($ObservedDelivery) {
+    'INVALID' { return 'HARNESS_RECORD_INVALID' }
+    'LATE' { return 'LATE_DELIVERY' }
+    'RECIPIENT_MISMATCH' { return 'RECIPIENT_MISMATCH' }
+    'SENTINEL_REGISTRATION_FAILED' { return 'SENTINEL_REGISTRATION_FAILED' }
+    'UNREADABLE' {
+      if (
+        @(
+          $Snapshot.file,
+          $Snapshot.fileCount,
+          $Snapshot.fileMode,
+          $Snapshot.directoryMode
+        ) -contains 'UNAVAILABLE'
+      ) { return 'DIAGNOSTIC_UNAVAILABLE' }
+      if ($Snapshot.file -ceq 'PRESENT_VALID') { return 'HOST_READ_BOUNDARY' }
+      return 'AMBIGUOUS'
+    }
+    'ABSENT' {
+      if (
+        @(
+          $Snapshot.bullmq,
+          $Snapshot.delivery,
+          $Snapshot.file,
+          $Snapshot.fileCount,
+          $Snapshot.fileMode,
+          $Snapshot.directoryMode,
+          $Snapshot.producer,
+          $Snapshot.worker,
+          $Outbox.attempt,
+          $Outbox.identity,
+          $Outbox.state
+        ) -contains 'UNAVAILABLE'
+      ) { return 'DIAGNOSTIC_UNAVAILABLE' }
+      if ($Snapshot.producer -ceq 'INELIGIBLE_RECORDED') { return 'ACCOUNT_INELIGIBLE' }
+      if ($Snapshot.producer -ceq 'AMBIGUOUS') { return 'AMBIGUOUS' }
+      if ($Snapshot.producer -cne 'OUTBOX_COMMITTED') { return 'PRODUCER_NOT_COMMITTED' }
+      if ($Snapshot.delivery -ceq 'WRITTEN' -and $Snapshot.file -ceq 'PRESENT_VALID') {
+        return 'CHANNEL_VISIBILITY_MISMATCH'
+      }
+      if ($Outbox.state -ceq 'CLAIMED' -or $Snapshot.delivery -ceq 'ATTEMPTED') {
+        return 'WORKER_CLAIM_IN_PROGRESS'
+      }
+      if ($Outbox.state -ceq 'RETRY_PENDING') { return 'WORKER_RETRY_SCHEDULED' }
+      if ($Outbox.state -ceq 'DELIVERY_UNCERTAIN') { return 'WORKER_DELIVERY_UNCERTAIN' }
+      if ($Outbox.state -ceq 'FAILED' -or $Snapshot.delivery -ceq 'REJECTED') {
+        return 'WORKER_FAILED'
+      }
+      if ($Outbox.state -ceq 'DELIVERED') { return 'CHANNEL_VISIBILITY_MISMATCH' }
+      if ($Snapshot.worker -cne 'READY') { return 'WORKER_NOT_READY' }
+      $pendingDeliveryIsPristine = (
+        $Outbox.attempt -ceq 'ZERO' -and
+        $Outbox.identity -ceq 'EXPECTED' -and
+        $Outbox.state -ceq 'PENDING_UNCLAIMED' -and
+        $Snapshot.worker -ceq 'READY' -and
+        $Snapshot.directoryMode -ceq 'PRIVATE_0700' -and
+        $Snapshot.delivery -ceq 'NOT_OBSERVED' -and
+        $Snapshot.file -ceq 'ABSENT' -and
+        $Snapshot.fileCount -ceq 'ZERO' -and
+        $Snapshot.fileMode -ceq 'NOT_APPLICABLE'
+      )
+      if (
+        $Snapshot.bullmq -in @('REJECTED', 'UNCONFIRMED') -and
+        $pendingDeliveryIsPristine
+      ) { return 'WAKEUP_UNCONFIRMED' }
+      if ($Snapshot.bullmq -ceq 'RESOLVED' -and $pendingDeliveryIsPristine) {
+        return 'WAKEUP_WAITING'
+      }
+      return 'AMBIGUOUS'
+    }
+    default { return 'AMBIGUOUS' }
+  }
+}
+
+function New-C3SafeDeliveryPipelineSummary(
+  [object]$BrowserSummary,
+  [object]$FirstSnapshot,
+  [object]$SecondSnapshot,
+  [object]$FirstOutboxSnapshot,
+  [object]$SecondOutboxSnapshot
+) {
+  $invalid = [ordered]@{
+    attempt = 'UNAVAILABLE'
+    bullmq = 'UNAVAILABLE'
+    classification = 'DIAGNOSTIC_UNAVAILABLE'
+    containerFile = 'UNAVAILABLE'
+    delivery = 'UNKNOWN'
+    directoryMode = 'UNAVAILABLE'
+    fileCount = 'UNAVAILABLE'
+    fileMode = 'UNAVAILABLE'
+    outbox = 'UNAVAILABLE'
+    outboxIdentity = 'UNAVAILABLE'
+    producer = 'UNAVAILABLE'
+    stability = 'UNAVAILABLE'
+    version = 1
+    worker = 'UNAVAILABLE'
+  }
+  if (
+    $null -eq $BrowserSummary -or
+    -not $BrowserSummary.Valid -or
+    $BrowserSummary.Public.scenario -cne 'CHROMIUM_RESET_UNICODE_PASSWORD' -or
+    $BrowserSummary.Public.diagnostic.firstFailedInvariant -cne 'DELIVERY_RECIPIENT' -or
+    -not (Test-C3DeliveryMarkerSnapshot $FirstSnapshot) -or
+    -not (Test-C3DeliveryMarkerSnapshot $SecondSnapshot) -or
+    -not (Test-C3NotificationOutboxSnapshot $FirstOutboxSnapshot) -or
+    -not (Test-C3NotificationOutboxSnapshot $SecondOutboxSnapshot)
+  ) { return $invalid }
+  $observedDelivery = [string]$BrowserSummary.Public.diagnostic.delivery
+  if (@('ABSENT', 'INVALID', 'LATE', 'RECIPIENT_MISMATCH', 'SENTINEL_REGISTRATION_FAILED', 'UNKNOWN', 'UNREADABLE') -cnotcontains $observedDelivery) {
+    return $invalid
+  }
+  $stability = if (
+    ($FirstSnapshot | ConvertTo-Json -Compress -Depth 4) -ceq
+    ($SecondSnapshot | ConvertTo-Json -Compress -Depth 4) -and
+    ($FirstOutboxSnapshot | ConvertTo-Json -Compress -Depth 4) -ceq
+    ($SecondOutboxSnapshot | ConvertTo-Json -Compress -Depth 4)
+  ) { 'STABLE' } else { 'CHANGED' }
+  return [ordered]@{
+    attempt = [string]$SecondOutboxSnapshot.attempt
+    bullmq = [string]$SecondSnapshot.bullmq
+    classification = Get-C3DeliveryPipelineClassification $observedDelivery $SecondSnapshot $SecondOutboxSnapshot $stability
+    containerFile = [string]$SecondSnapshot.file
+    delivery = $observedDelivery
+    directoryMode = [string]$SecondSnapshot.directoryMode
+    fileCount = [string]$SecondSnapshot.fileCount
+    fileMode = [string]$SecondSnapshot.fileMode
+    outbox = [string]$SecondOutboxSnapshot.state
+    outboxIdentity = [string]$SecondOutboxSnapshot.identity
+    producer = [string]$SecondSnapshot.producer
+    stability = $stability
+    version = 1
+    worker = [string]$SecondSnapshot.worker
+  }
+}
+
+function Write-C3SafeDeliveryPipelinePublicSummary([object]$Summary) {
+  [Console]::Out.WriteLine(
+    'C3_SAFE_DELIVERY_PIPELINE_SUMMARY ' + ($Summary | ConvertTo-Json -Compress -Depth 4)
+  )
+}
+# END C3 SAFE DELIVERY PIPELINE SUMMARY FUNCTIONS
+
 # BEGIN C3 SAFE CLEANUP SUMMARY FUNCTIONS
+function New-C3SafeInventoryChecks() {
+  $checks = [Collections.Generic.List[object]]::new()
+  foreach ($family in @('CONTAINERS', 'VOLUMES', 'NETWORKS', 'IMAGES')) {
+    foreach ($phase in @('BEFORE_CAPTURE', 'AFTER_CAPTURE', 'COMPARISON')) {
+      $checks.Add([ordered]@{
+          added = 0
+          family = $family
+          missing = 0
+          modified = 0
+          phase = $phase
+          qualifiedAcquisitions = 0
+          status = 'NOT_RUN'
+        })
+    }
+  }
+  return [object[]]$checks
+}
+
+function Set-C3SafeInventoryCheckStatus(
+  [object[]]$Checks,
+  [string]$Family,
+  [string]$Phase,
+  [string]$Status,
+  [int]$Added = 0,
+  [int]$Missing = 0,
+  [int]$Modified = 0,
+  [int]$QualifiedAcquisitions = 0
+) {
+  $matches = @($Checks | Where-Object { $_.family -ceq $Family -and $_.phase -ceq $Phase })
+  if ($matches.Count -ne 1) { throw 'C3 inventory summary target is invalid.' }
+  $allowed = if ($Phase -in @('BEFORE_CAPTURE', 'AFTER_CAPTURE')) {
+    @('CAPTURED', 'NOT_RUN', 'UNAVAILABLE')
+  } else {
+    @(
+      'COMPARISON_UNAVAILABLE', 'DIFFERENCE_CONFIRMED', 'IDENTICAL', 'NOT_RUN',
+      'PRESERVED_WITH_QUALIFIED_CAMPAIGN_ACQUISITION'
+    )
+  }
+  if ($allowed -cnotcontains $Status) { throw 'C3 inventory summary status is invalid.' }
+  foreach ($count in @($Added, $Missing, $Modified, $QualifiedAcquisitions)) {
+    if ($count -lt 0 -or $count -gt 1000000) { throw 'C3 inventory summary count is invalid.' }
+  }
+  if (
+    $Phase -ne 'COMPARISON' -and
+    ($Added -ne 0 -or $Missing -ne 0 -or $Modified -ne 0 -or $QualifiedAcquisitions -ne 0)
+  ) { throw 'C3 inventory capture summary must not contain delta counts.' }
+  if ($Family -cne 'IMAGES' -and $QualifiedAcquisitions -ne 0) {
+    throw 'Only the image inventory may report qualified acquisitions.'
+  }
+  $deltaTotal = $Added + $Missing + $Modified
+  if ($Phase -eq 'COMPARISON') {
+    if ($Status -eq 'DIFFERENCE_CONFIRMED' -and $deltaTotal -eq 0) {
+      throw 'A confirmed inventory difference requires a concrete delta.'
+    }
+    if ($Status -eq 'IDENTICAL' -and ($deltaTotal -ne 0 -or $QualifiedAcquisitions -ne 0)) {
+      throw 'An identical inventory cannot report a delta.'
+    }
+    if (
+      $Status -eq 'PRESERVED_WITH_QUALIFIED_CAMPAIGN_ACQUISITION' -and
+      ($Family -cne 'IMAGES' -or $deltaTotal -ne 0 -or $QualifiedAcquisitions -eq 0)
+    ) { throw 'A preserved inventory acquisition must contain only qualified campaign images.' }
+    if (
+      $Status -in @('COMPARISON_UNAVAILABLE', 'NOT_RUN') -and
+      ($deltaTotal -ne 0 -or $QualifiedAcquisitions -ne 0)
+    ) { throw 'An unavailable inventory comparison cannot report a delta.' }
+  }
+  $target = $matches[0]
+  $target.added = $Added
+  $target.missing = $Missing
+  $target.modified = $Modified
+  $target.qualifiedAcquisitions = $QualifiedAcquisitions
+  $target.status = $Status
+}
+
 function New-C3SafeCleanupSummary() {
   return [ordered]@{
     campaignRoot = 'NOT_RUN'
     compose = 'NOT_RUN'
     evidenceScan = 'NOT_RUN'
     inventory = 'NOT_RUN'
+    inventoryChecks = New-C3SafeInventoryChecks
     status = 'NOT_RUN'
-    version = 1
+    version = 2
   }
 }
 
 function Write-C3SafeCleanupPublicSummary([object]$Summary) {
+  $validStages = @('FAILED', 'NOT_RUN', 'PASSED')
+  $valid = (
+    $null -ne $Summary -and
+    $validStages -ccontains $Summary.campaignRoot -and
+    $validStages -ccontains $Summary.compose -and
+    $validStages -ccontains $Summary.evidenceScan -and
+    $validStages -ccontains $Summary.inventory -and
+    $validStages -ccontains $Summary.status -and
+    $Summary.version -eq 2 -and
+    @($Summary.inventoryChecks).Count -eq 12
+  )
+  $projectedChecks = [Collections.Generic.List[object]]::new()
+  if ($valid) {
+    $expectedIndex = 0
+    foreach ($family in @('CONTAINERS', 'VOLUMES', 'NETWORKS', 'IMAGES')) {
+      foreach ($phase in @('BEFORE_CAPTURE', 'AFTER_CAPTURE', 'COMPARISON')) {
+        $check = @($Summary.inventoryChecks)[$expectedIndex]
+        $expectedIndex += 1
+        if (
+          -not (Test-C3DeliveryExactPropertySet $check @(
+              'added', 'family', 'missing', 'modified', 'phase', 'qualifiedAcquisitions', 'status'
+            )) -or
+          $check.family -cne $family -or
+          $check.phase -cne $phase
+        ) { $valid = $false; break }
+        $allowed = if ($phase -in @('BEFORE_CAPTURE', 'AFTER_CAPTURE')) {
+          @('CAPTURED', 'NOT_RUN', 'UNAVAILABLE')
+        } else {
+          @(
+            'COMPARISON_UNAVAILABLE', 'DIFFERENCE_CONFIRMED', 'IDENTICAL', 'NOT_RUN',
+            'PRESERVED_WITH_QUALIFIED_CAMPAIGN_ACQUISITION'
+          )
+        }
+        $counts = @($check.added, $check.missing, $check.modified, $check.qualifiedAcquisitions)
+        if (
+          $allowed -cnotcontains $check.status -or
+          @($counts | Where-Object { ($_ -isnot [int] -and $_ -isnot [long]) -or $_ -lt 0 -or $_ -gt 1000000 }).Count -ne 0 -or
+          ($phase -ne 'COMPARISON' -and ($counts | Measure-Object -Sum).Sum -ne 0) -or
+          ($family -cne 'IMAGES' -and $check.qualifiedAcquisitions -ne 0)
+        ) { $valid = $false; break }
+        $deltaTotal = $check.added + $check.missing + $check.modified
+        if (
+          ($phase -eq 'COMPARISON' -and $check.status -eq 'DIFFERENCE_CONFIRMED' -and $deltaTotal -eq 0) -or
+          ($phase -eq 'COMPARISON' -and $check.status -eq 'IDENTICAL' -and ($deltaTotal -ne 0 -or $check.qualifiedAcquisitions -ne 0)) -or
+          ($phase -eq 'COMPARISON' -and $check.status -eq 'PRESERVED_WITH_QUALIFIED_CAMPAIGN_ACQUISITION' -and ($family -cne 'IMAGES' -or $deltaTotal -ne 0 -or $check.qualifiedAcquisitions -eq 0)) -or
+          ($phase -eq 'COMPARISON' -and $check.status -in @('COMPARISON_UNAVAILABLE', 'NOT_RUN') -and ($deltaTotal -ne 0 -or $check.qualifiedAcquisitions -ne 0))
+        ) { $valid = $false; break }
+        $projectedChecks.Add([ordered]@{
+            added = [int]$check.added
+            family = [string]$check.family
+            missing = [int]$check.missing
+            modified = [int]$check.modified
+            phase = [string]$check.phase
+            qualifiedAcquisitions = [int]$check.qualifiedAcquisitions
+            status = [string]$check.status
+          })
+      }
+      if (-not $valid) { break }
+    }
+  }
+  if ($valid -and $Summary.inventory -eq 'PASSED') {
+    $valid = @($projectedChecks | Where-Object {
+        ($_.phase -in @('BEFORE_CAPTURE', 'AFTER_CAPTURE') -and $_.status -cne 'CAPTURED') -or
+        ($_.phase -eq 'COMPARISON' -and $_.status -notin @('IDENTICAL', 'PRESERVED_WITH_QUALIFIED_CAMPAIGN_ACQUISITION'))
+      }).Count -eq 0
+  }
+  if (
+    $valid -and
+    $Summary.status -eq 'PASSED' -and
+    @(@(
+        $Summary.campaignRoot,
+        $Summary.compose,
+        $Summary.evidenceScan,
+        $Summary.inventory
+      ) | Where-Object { $_ -cne 'PASSED' }).Count -ne 0
+  ) { $valid = $false }
+  if (-not $valid) {
+    $Summary = New-C3SafeCleanupSummary
+    $Summary.campaignRoot = 'FAILED'
+    $Summary.compose = 'FAILED'
+    $Summary.evidenceScan = 'FAILED'
+    $Summary.inventory = 'FAILED'
+    $Summary.status = 'FAILED'
+    $projectedChecks = [Collections.Generic.List[object]]::new()
+    foreach ($check in $Summary.inventoryChecks) { $projectedChecks.Add($check) }
+  }
+  $public = [ordered]@{
+    campaignRoot = [string]$Summary.campaignRoot
+    compose = [string]$Summary.compose
+    evidenceScan = [string]$Summary.evidenceScan
+    inventory = [string]$Summary.inventory
+    inventoryChecks = [object[]]$projectedChecks
+    status = [string]$Summary.status
+    version = 2
+  }
   [Console]::Out.WriteLine(
-    'C3_SAFE_CLEANUP_SUMMARY ' + ($Summary | ConvertTo-Json -Compress -Depth 3)
+    'C3_SAFE_CLEANUP_SUMMARY ' + ($public | ConvertTo-Json -Compress -Depth 6)
   )
 }
 
@@ -779,6 +1188,81 @@ function Compare-CanonicalDockerInventories(
     UnqualifiedImageRows = $unqualifiedImageRows
   }
 }
+
+function Get-CanonicalDockerInventoryIdentity([string]$Label, [string]$Row) {
+  $record = $Row | ConvertFrom-Json
+  $identity = switch -CaseSensitive ($Label) {
+    'containers' { [string]$record.ID }
+    'volumes' { [string]$record.Name }
+    'networks' { [string]$record.ID }
+    'images' {
+      ([ordered]@{
+          Repository = [string]$record.Repository
+          Tag = [string]$record.Tag
+        } | ConvertTo-Json -Compress)
+    }
+    default { throw 'Unknown Docker inventory family.' }
+  }
+  if ($identity.Length -eq 0) { throw 'Docker inventory identity is empty.' }
+  return $identity
+}
+
+function Get-CanonicalDockerInventoryDelta(
+  [string]$Label,
+  [string]$Before,
+  [string]$After,
+  [string[]]$QualifiedImageReferences
+) {
+  $beforeRows = @(Get-CanonicalDockerInventoryRows $Label $Before)
+  $afterRows = @(Get-CanonicalDockerInventoryRows $Label $After)
+  $beforeByIdentity = [Collections.Generic.Dictionary[string, string]]::new([StringComparer]::Ordinal)
+  $afterByIdentity = [Collections.Generic.Dictionary[string, string]]::new([StringComparer]::Ordinal)
+  foreach ($row in $beforeRows) {
+    $identity = Get-CanonicalDockerInventoryIdentity $Label $row
+    if (-not $beforeByIdentity.TryAdd($identity, $row)) { throw 'Duplicate Docker inventory identity before the campaign.' }
+  }
+  foreach ($row in $afterRows) {
+    $identity = Get-CanonicalDockerInventoryIdentity $Label $row
+    if (-not $afterByIdentity.TryAdd($identity, $row)) { throw 'Duplicate Docker inventory identity after the campaign.' }
+  }
+  $added = 0
+  $missing = 0
+  $modified = 0
+  $qualifiedAcquisitions = 0
+  foreach ($entry in $beforeByIdentity.GetEnumerator()) {
+    if (-not $afterByIdentity.ContainsKey($entry.Key)) { $missing += 1; continue }
+    if ($afterByIdentity[$entry.Key] -cne $entry.Value) { $modified += 1 }
+  }
+  foreach ($entry in $afterByIdentity.GetEnumerator()) {
+    if ($beforeByIdentity.ContainsKey($entry.Key)) { continue }
+    if ($Label -ceq 'images') {
+      $record = $entry.Value | ConvertFrom-Json
+      $qualifiedIdentity = ConvertTo-DockerImageReferenceIdentity `
+        ([string]$record.Repository) `
+        ([string]$record.Tag) `
+        ([string]$record.Digest)
+      if ($QualifiedImageReferences -ccontains $qualifiedIdentity) {
+        $qualifiedAcquisitions += 1
+        continue
+      }
+    }
+    $added += 1
+  }
+  $status = if ($added -ne 0 -or $missing -ne 0 -or $modified -ne 0) {
+    'DIFFERENCE_CONFIRMED'
+  } elseif ($qualifiedAcquisitions -ne 0) {
+    'PRESERVED_WITH_QUALIFIED_CAMPAIGN_ACQUISITION'
+  } else {
+    'IDENTICAL'
+  }
+  return [ordered]@{
+    Added = $added
+    Missing = $missing
+    Modified = $modified
+    QualifiedAcquisitions = $qualifiedAcquisitions
+    Status = $status
+  }
+}
 # END C3 INVENTORY COMPARISON FUNCTIONS
 
 function Get-QualifiedComposeImageReferences([string]$Path) {
@@ -1003,6 +1487,169 @@ function Invoke-Docker([string]$Label, [string[]]$Arguments, [int[]]$AllowedExit
   return Invoke-Captured -Label $Label -FilePath $Docker -Arguments $Arguments -Environment $ComposeEnvironment -AllowedExitCodes $AllowedExitCodes
 }
 
+$C3DeliveryMarkerSnapshotScript = @'
+const fs = require('node:fs');
+const path = require('node:path');
+const root = '/run/kora-c3-private';
+const campaignId = process.env.KORA_C3_CAMPAIGN_ID;
+const allowed = {
+  bullmq: new Set(['CALLED_PENDING', 'NOT_CALLED', 'REJECTED', 'RESOLVED', 'UNCONFIRMED']),
+  delivery: new Set(['ATTEMPTED', 'NOT_OBSERVED', 'REJECTED', 'WRITTEN']),
+  producer: new Set(['AMBIGUOUS', 'INELIGIBLE_RECORDED', 'OUTBOX_COMMITTED', 'STARTED']),
+  worker: new Set(['READY']),
+};
+const marker = (name, absent) => {
+  try {
+    const value = JSON.parse(fs.readFileSync(path.join(root, 'diagnostics', `${name}.json`), 'utf8'));
+    if (
+      value === null ||
+      typeof value !== 'object' ||
+      Array.isArray(value) ||
+      JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(['state', 'version']) ||
+      value.version !== 1 ||
+      typeof value.state !== 'string' ||
+      !allowed[name].has(value.state)
+    ) return 'UNAVAILABLE';
+    return value.state;
+  } catch (error) {
+    return error && error.code === 'ENOENT' ? absent : 'UNAVAILABLE';
+  }
+};
+const mode = (candidate, expected, privateMode) => {
+  try {
+    return (fs.statSync(candidate).mode & 0o777) === expected ? privateMode : 'OTHER';
+  } catch {
+    return 'UNAVAILABLE';
+  }
+};
+const result = {
+  bullmq: marker('bullmq', 'UNAVAILABLE'),
+  delivery: marker('delivery', 'UNAVAILABLE'),
+  directoryMode: mode(path.join(root, 'deliveries'), 0o700, 'PRIVATE_0700'),
+  file: 'UNAVAILABLE',
+  fileCount: 'UNAVAILABLE',
+  fileMode: 'UNAVAILABLE',
+  producer: marker('producer', 'UNAVAILABLE'),
+  worker: marker('worker', 'UNAVAILABLE'),
+};
+try {
+  const directory = path.join(root, 'deliveries');
+  const names = fs.readdirSync(directory).filter((name) => name.endsWith('.delivery.json')).sort();
+  let invalid = false;
+  const resetFiles = [];
+  for (const name of names) {
+    const logicalDeliveryId = name.slice(0, -'.delivery.json'.length);
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(logicalDeliveryId)) {
+      invalid = true;
+      continue;
+    }
+    try {
+      const encoded = fs.readFileSync(path.join(directory, name));
+      if (encoded.byteLength > 8192) throw new Error('invalid');
+      const record = JSON.parse(encoded.toString('utf8'));
+      if (
+        record === null ||
+        typeof record !== 'object' ||
+        Array.isArray(record) ||
+        JSON.stringify(Object.keys(record).sort()) !== JSON.stringify(['acknowledgement', 'campaignId', 'logicalDeliveryId', 'payload', 'purpose', 'version']) ||
+        record.version !== 1 ||
+        record.campaignId !== campaignId ||
+        record.logicalDeliveryId !== logicalDeliveryId ||
+        record.acknowledgement !== `c3-file-${logicalDeliveryId}` ||
+        !['INVITATION', 'PASSWORD_RESET'].includes(record.purpose) ||
+        record.payload === null ||
+        typeof record.payload !== 'object' ||
+        Array.isArray(record.payload) ||
+        JSON.stringify(Object.keys(record.payload).sort()) !== JSON.stringify(['code', 'email']) ||
+        typeof record.payload.code !== 'string' ||
+        Buffer.byteLength(record.payload.code, 'utf8') > 256 ||
+        typeof record.payload.email !== 'string' ||
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(record.payload.email)
+      ) throw new Error('invalid');
+      if (record.purpose === 'PASSWORD_RESET') resetFiles.push(path.join(directory, name));
+    } catch {
+      invalid = true;
+    }
+  }
+  result.fileCount = resetFiles.length === 0 ? 'ZERO' : resetFiles.length === 1 ? 'ONE' : 'MULTIPLE';
+  result.file = invalid ? 'PRESENT_INVALID' : resetFiles.length === 0 ? 'ABSENT' : 'PRESENT_VALID';
+  result.fileMode = resetFiles.length === 0
+    ? 'NOT_APPLICABLE'
+    : resetFiles.every((candidate) => (fs.statSync(candidate).mode & 0o777) === 0o600)
+      ? 'PRIVATE_0600'
+      : 'OTHER';
+} catch {
+  result.file = 'UNAVAILABLE';
+  result.fileCount = 'UNAVAILABLE';
+  result.fileMode = 'UNAVAILABLE';
+}
+process.stdout.write(`${JSON.stringify(result)}\n`);
+'@
+
+function Get-C3DeliveryMarkerSnapshot([string]$Label) {
+  $result = Invoke-Docker $Label @(
+    'compose', '-f', $ComposeFile, '--project-name', $ProjectName,
+    '--profile', 'runtime', 'exec', '-T', 'notification',
+    'node', '-e', $C3DeliveryMarkerSnapshotScript
+  )
+  $lines = @($result.Stdout -split "`r?`n" | Where-Object { $_.Length -gt 0 })
+  if ($lines.Count -ne 1) { throw 'C3 delivery marker snapshot output is invalid.' }
+  $snapshot = $lines[0] | ConvertFrom-Json
+  if (-not (Test-C3DeliveryMarkerSnapshot $snapshot)) {
+    throw 'C3 delivery marker snapshot schema is invalid.'
+  }
+  return $snapshot
+}
+
+function Get-C3NotificationOutboxSnapshot() {
+  $query = @'
+WITH selected AS (
+  SELECT "state"::text AS state, "attemptCount" AS attempt_count
+  FROM public."AdminNotificationOutbox"
+  WHERE "purpose" = 'PASSWORD_RESET'
+  ORDER BY "createdAt" DESC, "id" DESC
+  LIMIT 2
+), summary AS (
+  SELECT count(*)::int AS row_count,
+         max(state) AS selected_state,
+         max(attempt_count)::int AS selected_attempt
+  FROM selected
+)
+SELECT
+  (CASE WHEN session_user = 'kora_admin_c2a_notification_worker' THEN 'EXPECTED' ELSE 'UNEXPECTED' END)
+  || '|' ||
+  (CASE
+    WHEN row_count = 0 THEN 'ABSENT'
+    WHEN row_count > 1 THEN 'AMBIGUOUS'
+    WHEN selected_state = 'PENDING' AND selected_attempt = 0 THEN 'PENDING_UNCLAIMED'
+    WHEN selected_state = 'PENDING' THEN 'RETRY_PENDING'
+    WHEN selected_state IN ('CLAIMED', 'DELIVERED', 'FAILED', 'DELIVERY_UNCERTAIN', 'CANCELLED') THEN selected_state
+    ELSE 'AMBIGUOUS'
+  END)
+  || '|' ||
+  (CASE
+    WHEN row_count = 0 OR selected_attempt = 0 THEN 'ZERO'
+    WHEN selected_attempt = 1 THEN 'ONE'
+    ELSE 'MULTIPLE'
+  END)
+FROM summary;
+'@
+  $shell = 'export PGPASSWORD="$(tr -d ''\r\n'' </run/secrets/postgres_admin_c2a_notification_worker_password)"; export PGOPTIONS=''-c default_transaction_read_only=on''; exec psql --no-psqlrc --quiet --tuples-only --no-align --set=ON_ERROR_STOP=1 --host=127.0.0.1 --username=kora_admin_c2a_notification_worker --dbname="$POSTGRES_DB" --command "$KORA_C3_DIAGNOSTIC_SQL"'
+  $result = Invoke-Docker 'delivery-pipeline-outbox' @(
+    'compose', '-f', $ComposeFile, '--project-name', $ProjectName,
+    'exec', '-T', '-e', "KORA_C3_DIAGNOSTIC_SQL=$query", 'postgres', 'sh', '-euc', $shell
+  )
+  $line = $result.Stdout.Trim()
+  if ($line -notmatch '^(EXPECTED|UNEXPECTED)\|(ABSENT|AMBIGUOUS|CANCELLED|CLAIMED|DELIVERED|DELIVERY_UNCERTAIN|FAILED|PENDING_UNCLAIMED|RETRY_PENDING)\|(MULTIPLE|ONE|ZERO)$') {
+    throw 'C3 notification outbox snapshot output is invalid.'
+  }
+  return [ordered]@{
+    attempt = $Matches[3]
+    identity = $Matches[1]
+    state = $Matches[2]
+  }
+}
+
 function Invoke-OpenSsl([string]$Label, [string[]]$Arguments) {
   [void](Invoke-Captured -Label $Label -FilePath $OpenSsl -Arguments $Arguments)
 }
@@ -1080,6 +1727,13 @@ $ComposeEnvironment = @{
   KORA_C3_SOURCE_ROOT = $RepositoryRoot
 }
 
+$DockerInventoryEntries = @(
+  [ordered]@{ Label = 'containers'; Family = 'CONTAINERS'; Arguments = @('ps', '-a', '--no-trunc', '--format', '{{json .}}') },
+  [ordered]@{ Label = 'volumes'; Family = 'VOLUMES'; Arguments = @('volume', 'ls', '--format', '{{json .}}') },
+  [ordered]@{ Label = 'networks'; Family = 'NETWORKS'; Arguments = @('network', 'ls', '--no-trunc', '--format', '{{json .}}') },
+  [ordered]@{ Label = 'images'; Family = 'IMAGES'; Arguments = @('image', 'ls', '--no-trunc', '--digests', '--format', '{{json .}}') }
+)
+
 $ForeignInventoryBefore = $null
 $ForeignInventoryBeforeByLabel = @{}
 $QualifiedCampaignImageReferences = @(Get-QualifiedComposeImageReferences $ComposeFile)
@@ -1122,7 +1776,7 @@ try {
   foreach ($path in @($SecretDirectory, $PrivateDirectory)) {
     New-Item -ItemType Directory -Path $path | Out-Null
   }
-  foreach ($path in @('commands', 'deliveries', 'processing', 'responses', 'sentinels')) {
+  foreach ($path in @('commands', 'deliveries', 'diagnostics', 'processing', 'responses', 'sentinels')) {
     New-Item -ItemType Directory -Path (Join-Path $PrivateDirectory $path) | Out-Null
   }
   foreach ($path in @($PublicCertificateDirectory, $PlaywrightOutputDirectory, $VisualPlaywrightOutputDirectory, $VisualOutputDirectory)) {
@@ -1198,17 +1852,24 @@ try {
   Write-NewText (Join-Path $EvidenceDirectory 'qualified-campaign-image-references.txt') (($QualifiedCampaignImageReferences -join "`n") + "`n")
 
   $inventoryParts = @()
-  foreach ($entry in @(
-    @{ Label = 'containers'; Arguments = @('ps', '-a', '--no-trunc', '--format', '{{json .}}') },
-    @{ Label = 'volumes'; Arguments = @('volume', 'ls', '--format', '{{json .}}') },
-    @{ Label = 'networks'; Arguments = @('network', 'ls', '--no-trunc', '--format', '{{json .}}') },
-    @{ Label = 'images'; Arguments = @('image', 'ls', '--no-trunc', '--digests', '--format', '{{json .}}') }
-  )) {
-    $result = Invoke-Docker ("inventory-before-" + $entry.Label) $entry.Arguments
-    $canonical = ConvertTo-CanonicalDockerInventory $entry.Label $result.Stdout
-    $ForeignInventoryBeforeByLabel[$entry.Label] = $canonical
-    $inventoryParts += $canonical
+  $inventoryBeforeUnavailable = $false
+  foreach ($entry in $DockerInventoryEntries) {
+    try {
+      $result = Invoke-Docker ("inventory-before-" + $entry.Label) $entry.Arguments
+      $canonical = ConvertTo-CanonicalDockerInventory $entry.Label $result.Stdout
+      $ForeignInventoryBeforeByLabel[$entry.Label] = $canonical
+      $inventoryParts += $canonical
+      Write-NewText `
+        (Join-Path $EvidenceDirectory ("foreign-inventory-before-" + $entry.Label + '.canonical.txt')) `
+        ($canonical + "`n")
+      Set-C3SafeInventoryCheckStatus $CleanupSummary.inventoryChecks $entry.Family 'BEFORE_CAPTURE' 'CAPTURED'
+    }
+    catch {
+      $inventoryBeforeUnavailable = $true
+      Set-C3SafeInventoryCheckStatus $CleanupSummary.inventoryChecks $entry.Family 'BEFORE_CAPTURE' 'UNAVAILABLE'
+    }
   }
+  if ($inventoryBeforeUnavailable) { throw 'The foreign Docker inventory preflight is unavailable.' }
   $ForeignInventoryBefore = ($inventoryParts -join "`n")
   Write-NewText (Join-Path $EvidenceDirectory 'foreign-inventory-before.canonical.txt') ($ForeignInventoryBefore + "`n")
 
@@ -1345,6 +2006,42 @@ try {
     -Path $SafeBrowserSummaryPath `
     -ProcessExitCode $browser.ExitCode
   Write-C3SafeBrowserPublicSummary $safeBrowserSummary
+  if (
+    $browser.ExitCode -ne 0 -and
+    $safeBrowserSummary.Valid -and
+    $safeBrowserSummary.Public.scenario -ceq 'CHROMIUM_RESET_UNICODE_PASSWORD' -and
+    $safeBrowserSummary.Public.diagnostic.firstFailedInvariant -ceq 'DELIVERY_RECIPIENT'
+  ) {
+    $firstDeliverySnapshot = try {
+      Get-C3DeliveryMarkerSnapshot 'delivery-pipeline-first'
+    } catch {
+      New-C3UnavailableDeliveryMarkerSnapshot
+    }
+    $firstOutboxSnapshot = try {
+      Get-C3NotificationOutboxSnapshot
+    } catch {
+      [ordered]@{ attempt = 'UNAVAILABLE'; identity = 'UNAVAILABLE'; state = 'UNAVAILABLE' }
+    }
+    Start-Sleep -Milliseconds 250
+    $secondDeliverySnapshot = try {
+      Get-C3DeliveryMarkerSnapshot 'delivery-pipeline-second'
+    } catch {
+      New-C3UnavailableDeliveryMarkerSnapshot
+    }
+    $secondOutboxSnapshot = try {
+      Get-C3NotificationOutboxSnapshot
+    } catch {
+      [ordered]@{ attempt = 'UNAVAILABLE'; identity = 'UNAVAILABLE'; state = 'UNAVAILABLE' }
+    }
+    Write-C3SafeDeliveryPipelinePublicSummary (
+      New-C3SafeDeliveryPipelineSummary `
+        $safeBrowserSummary `
+        $firstDeliverySnapshot `
+        $secondDeliverySnapshot `
+        $firstOutboxSnapshot `
+        $secondOutboxSnapshot
+    )
+  }
   if (-not $safeBrowserSummary.Valid -and $browser.ExitCode -eq 0) {
     $BrowserFailures.Add([Exception]::new('C3 safe browser summary validation failed.'))
   }
@@ -1440,41 +2137,88 @@ finally {
     Add-C3SafeCleanupFailure $CleanupFailures 'COMPOSE'
   }
 
-  try {
-    $inventoryParts = @()
-    $foreignInventoryAfterByLabel = @{}
-    foreach ($entry in @(
-      @{ Label = 'containers'; Arguments = @('ps', '-a', '--no-trunc', '--format', '{{json .}}') },
-      @{ Label = 'volumes'; Arguments = @('volume', 'ls', '--format', '{{json .}}') },
-      @{ Label = 'networks'; Arguments = @('network', 'ls', '--no-trunc', '--format', '{{json .}}') },
-      @{ Label = 'images'; Arguments = @('image', 'ls', '--no-trunc', '--digests', '--format', '{{json .}}') }
-    )) {
+  $inventoryPassed = $true
+  $inventoryParts = @()
+  $foreignInventoryAfterByLabel = @{}
+  foreach ($entry in $DockerInventoryEntries) {
+    try {
       $result = Invoke-Docker ("inventory-after-" + $entry.Label) $entry.Arguments
       $canonical = ConvertTo-CanonicalDockerInventory $entry.Label $result.Stdout
       $foreignInventoryAfterByLabel[$entry.Label] = $canonical
       $inventoryParts += $canonical
+      Write-NewText `
+        (Join-Path $EvidenceDirectory ("foreign-inventory-after-" + $entry.Label + '.canonical.txt')) `
+        ($canonical + "`n")
+      Set-C3SafeInventoryCheckStatus $CleanupSummary.inventoryChecks $entry.Family 'AFTER_CAPTURE' 'CAPTURED'
     }
+    catch {
+      $inventoryPassed = $false
+      Set-C3SafeInventoryCheckStatus $CleanupSummary.inventoryChecks $entry.Family 'AFTER_CAPTURE' 'UNAVAILABLE'
+    }
+  }
+  if ($foreignInventoryAfterByLabel.Count -eq $DockerInventoryEntries.Count) {
     $after = ($inventoryParts -join "`n")
-    Write-NewText (Join-Path $EvidenceDirectory 'foreign-inventory-after.canonical.txt') ($after + "`n")
-    $comparison = Compare-CanonicalDockerInventories `
-      $ForeignInventoryBeforeByLabel `
-      $foreignInventoryAfterByLabel `
-      $QualifiedCampaignImageReferences
-    Write-NewText (Join-Path $EvidenceDirectory 'campaign-acquired-images.canonical.txt') (($comparison.AcquiredImageRows -join "`n") + "`n")
-    if ($null -ne $ForeignInventoryBefore -and $comparison.Status -ceq 'SEMANTIC_DIFFERENT') {
-      Write-NewText (Join-Path $EvidenceDirectory 'foreign-inventory-comparison.txt') ($comparison.Status + "`n")
-      $CleanupSummary.inventory = 'FAILED'
-      Add-C3SafeCleanupFailure $CleanupFailures 'INVENTORY'
+    try {
+      Write-NewText (Join-Path $EvidenceDirectory 'foreign-inventory-after.canonical.txt') ($after + "`n")
+    } catch { $inventoryPassed = $false }
+  }
+  $comparisonEvidence = [Collections.Generic.List[string]]::new()
+  foreach ($entry in $DockerInventoryEntries) {
+    if (
+      -not $ForeignInventoryBeforeByLabel.ContainsKey($entry.Label) -or
+      -not $foreignInventoryAfterByLabel.ContainsKey($entry.Label)
+    ) {
+      Set-C3SafeInventoryCheckStatus `
+        $CleanupSummary.inventoryChecks $entry.Family 'COMPARISON' 'COMPARISON_UNAVAILABLE'
+      $comparisonEvidence.Add("$($entry.Family)=COMPARISON_UNAVAILABLE")
+      $inventoryPassed = $false
+      continue
     }
-    else {
-      Write-NewText (Join-Path $EvidenceDirectory 'foreign-inventory-comparison.txt') ($comparison.Status + "`n")
-      $CleanupSummary.inventory = 'PASSED'
+    try {
+      $delta = Get-CanonicalDockerInventoryDelta `
+        $entry.Label `
+        $ForeignInventoryBeforeByLabel[$entry.Label] `
+        $foreignInventoryAfterByLabel[$entry.Label] `
+        $QualifiedCampaignImageReferences
+      Set-C3SafeInventoryCheckStatus `
+        $CleanupSummary.inventoryChecks `
+        $entry.Family `
+        'COMPARISON' `
+        $delta.Status `
+        $delta.Added `
+        $delta.Missing `
+        $delta.Modified `
+        $delta.QualifiedAcquisitions
+      $comparisonEvidence.Add("$($entry.Family)=$($delta.Status)")
+      if ($delta.Status -ceq 'DIFFERENCE_CONFIRMED') { $inventoryPassed = $false }
+    }
+    catch {
+      Set-C3SafeInventoryCheckStatus `
+        $CleanupSummary.inventoryChecks $entry.Family 'COMPARISON' 'COMPARISON_UNAVAILABLE'
+      $comparisonEvidence.Add("$($entry.Family)=COMPARISON_UNAVAILABLE")
+      $inventoryPassed = $false
     }
   }
-  catch {
-    $CleanupSummary.inventory = 'FAILED'
-    Add-C3SafeCleanupFailure $CleanupFailures 'INVENTORY'
+  try {
+    if (
+      $ForeignInventoryBeforeByLabel.Count -eq $DockerInventoryEntries.Count -and
+      $foreignInventoryAfterByLabel.Count -eq $DockerInventoryEntries.Count
+    ) {
+      $comparison = Compare-CanonicalDockerInventories `
+        $ForeignInventoryBeforeByLabel `
+        $foreignInventoryAfterByLabel `
+        $QualifiedCampaignImageReferences
+      Write-NewText `
+        (Join-Path $EvidenceDirectory 'campaign-acquired-images.canonical.txt') `
+        (($comparison.AcquiredImageRows -join "`n") + "`n")
+    }
+    Write-NewText `
+      (Join-Path $EvidenceDirectory 'foreign-inventory-comparison.txt') `
+      (($comparisonEvidence -join "`n") + "`n")
   }
+  catch { $inventoryPassed = $false }
+  $CleanupSummary.inventory = if ($inventoryPassed) { 'PASSED' } else { 'FAILED' }
+  if (-not $inventoryPassed) { Add-C3SafeCleanupFailure $CleanupFailures 'INVENTORY' }
 
   try {
     Invoke-EvidenceSecretScan $SensitiveValues
