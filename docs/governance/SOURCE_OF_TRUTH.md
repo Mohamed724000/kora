@@ -2,10 +2,10 @@
 
 Statut : **DOCUMENT OPÉRATIONNEL VIVANT — C2a ET C2b INTÉGRÉS DANS MAIN AU
 MERGE `c47a1507dce6ea7333ce7e372f9bd34aa548c81b`, NON DÉPLOYÉS — C3 DANS LA
-DRAFT PR #54 — RACCORDEMENT BUILD C2a PUBLIÉ — INFRASTRUCTURE `41246330316`
-NON-PASS HISTORIQUE — RÉSOLUTION MULTI-PLATEFORME DU RUNNER QUALIFIÉE
-LOCALEMENT — INTÉGRATION CONDITIONNÉE À UNE CI FRAÎCHE — FOURNISSEURS ET
-LINUX DE PRODUCTION NON QUALIFIÉS**
+DRAFT PR #54 — RACCORDEMENT BUILD C2a PUBLIÉ — INFRASTRUCTURE `41439908216`
+NON-PASS HISTORIQUE — DIAGNOSTIC NAVIGATEUR À CHAMPS FERMÉS QUALIFIÉ
+LOCALEMENT — INTÉGRATION CONDITIONNÉE À UNE CI FRAÎCHE — FOURNISSEURS ET LINUX
+DE PRODUCTION NON QUALIFIÉS**
 
 Date d’effet : 2026-07-28
 Dernière réconciliation documentaire : 2026-11-02
@@ -1820,3 +1820,23 @@ deux CPU. Les exécutions à 14 threads 585/592 et 590/592 restent NON-PASS, le
 fichier concerné passant seul 67/67. Ce statut est un GO local borné ; il ne
 vaut ni publication, ni succès CI, ni qualification de Linux de production,
 ni intégration ou déploiement.
+
+## Diagnostic navigateur fermé après le NON-PASS `41439908216` — 2026-11-02
+
+Le head publié `c820becf72e5f2d1fcd9a273282dd1048e368e10` obtient trois
+workflows verts sur quatre. Infrastructure échoue dans la campagne principale
+C3 ; le log public ne révèle pas le moteur ou le scénario et le run reste un
+NON-PASS historique non relancé. Sa cause exacte demeure **NON CONCLUSIVE**.
+
+Le candidat local ajoute uniquement un résumé à champs fermés pour la campagne
+secrète principale. La table couvre les 24 scénarios connus ; aucun titre,
+message, URL, header, stdout, stderr, capture ou trace n'est publié. Le runner
+valide le schéma indépendamment et émet un statut générique si le fichier est
+absent, incomplet ou invalide. La sonde de redaction et le visuel ne reçoivent
+pas ce reporter.
+
+Les tests ciblés passent 34/34 sous Windows et Linux. La reproduction unique
+Linux passe Chromium 18/18, Firefox 3/3 et WebKit 3/3, avec résumé terminal
+24/24, puis sonde attendue, visuel, redaction, secret scan, cleanup et
+inventaire étranger conformes. Le défaut CI n'est pas reproduit ; ce résultat
+n'en explique pas l'origine et ne qualifie ni GitHub ni Linux de production.

@@ -20,6 +20,11 @@ const compose = read("infra/c3/compose.yaml");
 const harness = read("apps/api/test/admin-auth-c3-browser.harness.ts");
 const runner = read("scripts/infra/run-admin-auth-c3-runtime-validation.ps1");
 const playwright = read("apps/admin/playwright.config.ts");
+const safeReporter = read("apps/admin/scripts/c3-safe-reporter.mjs");
+const safeReporterUrl = new URL(
+  "apps/admin/scripts/c3-safe-reporter.mjs",
+  root,
+);
 const specification = read("apps/admin/e2e/admin-auth.c3.spec.ts");
 const fixtures = read("apps/admin/e2e/admin-auth.fixtures.ts");
 const adminAuthProxy = read("apps/admin/lib/auth/admin-auth-proxy.ts");
@@ -222,6 +227,150 @@ finally {
   return JSON.parse(output);
 }
 
+function extractSafeBrowserSummaryFunctions() {
+  const beginMarker = "# BEGIN C3 SAFE BROWSER SUMMARY FUNCTIONS";
+  const endMarker = "# END C3 SAFE BROWSER SUMMARY FUNCTIONS";
+  const begin = runner.indexOf(beginMarker);
+  const end = runner.indexOf(endMarker);
+  assert.ok(
+    begin >= 0 && end > begin,
+    "safe browser summary functions are extractable",
+  );
+  return runner.slice(begin + beginMarker.length, end);
+}
+
+function invokeSafeBrowserSummaryFixture(
+  content,
+  processExitCode = 1,
+  launchFailed = false,
+) {
+  const directory = mkdtempSync(join(tmpdir(), "kora-c3-safe-summary-"));
+  const path = join(directory, "c3-safe-browser-summary.json");
+  if (content !== null) writeFileSync(path, content, "utf8");
+  const encodedPath = Buffer.from(path, "utf8").toString("base64");
+  const exitCodeLiteral = processExitCode === null ? "$null" : processExitCode;
+  const script = `$ErrorActionPreference = 'Stop'
+${extractSafeBrowserSummaryFunctions()}
+$path = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encodedPath}'))
+$result = Get-C3SafeBrowserPublicSummary -Path $path -ProcessExitCode ${exitCodeLiteral} -LaunchFailed $${launchFailed ? "true" : "false"}
+[ordered]@{ public = $result.Public; valid = $result.Valid } | ConvertTo-Json -Compress -Depth 6
+`;
+  const encodedScript = Buffer.from(script, "utf16le").toString("base64");
+  const executable = process.platform === "win32" ? "pwsh.exe" : "pwsh";
+  try {
+    const result = spawnSync(
+      executable,
+      [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-EncodedCommand",
+        encodedScript,
+      ],
+      { encoding: "utf8" },
+    );
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const output = result.stdout.trim().split(/\r?\n/u).at(-1);
+    assert.ok(output);
+    return JSON.parse(output);
+  } finally {
+    rmSync(directory, { force: true, recursive: true });
+  }
+}
+
+const safeScenarioCoordinates = [
+  ["chromium-c3", 506],
+  ["chromium-c3", 753],
+  ["chromium-c3", 765],
+  ["chromium-c3", 790],
+  ["chromium-c3", 870],
+  ["chromium-c3", 894],
+  ["chromium-c3", 1008],
+  ["chromium-c3", 1041],
+  ["chromium-c3", 1158],
+  ["chromium-c3", 1298],
+  ["chromium-c3", 1436],
+  ["chromium-c3", 1553],
+  ["chromium-c3", 1728],
+  ["chromium-c3", 1792],
+  ["chromium-c3", 1875],
+  ["chromium-c3", 1921],
+  ["chromium-c3", 1976],
+  ["chromium-c3", 2076],
+  ["firefox-public-smoke", 458],
+  ["firefox-public-smoke", 477],
+  ["firefox-public-smoke", 496],
+  ["webkit-public-smoke", 458],
+  ["webkit-public-smoke", 477],
+  ["webkit-public-smoke", 496],
+];
+
+function safeTestCase(project, line, title = "SAFE_STATIC_TITLE") {
+  return {
+    location: {
+      file: fileURLToPath(
+        new URL("apps/admin/e2e/admin-auth.c3.spec.ts", root),
+      ),
+      line,
+    },
+    parent: { project: () => ({ name: project }) },
+    title,
+  };
+}
+
+async function invokeSafeReporterFixture(mode) {
+  const directory = mkdtempSync(join(tmpdir(), "kora-c3-safe-reporter-"));
+  const outputFile = join(directory, "c3-safe-browser-summary.json");
+  const previousPrivateDirectory = process.env.KORA_C3_PRIVATE_DIR;
+  process.env.KORA_C3_PRIVATE_DIR = directory;
+  try {
+    const { default: C3SafeReporter } = await import(safeReporterUrl);
+    const reporter = new C3SafeReporter({ outputFile });
+    if (mode === "known-failure") {
+      const tests = safeScenarioCoordinates.map(([project, line], index) =>
+        safeTestCase(project, line, `SENTINEL_TITLE_${index}`),
+      );
+      reporter.onBegin({}, { allTests: () => tests });
+      reporter.onTestBegin(tests[0]);
+      reporter.onTestEnd(tests[0], { status: "passed" });
+      reporter.onTestBegin(tests[7]);
+      reporter.onTestEnd(tests[7], {
+        error: {
+          message: "SENTINEL_ERROR_MESSAGE",
+          stack: "SENTINEL_STACK",
+        },
+        status: "failed",
+        stdout: ["SENTINEL_STDOUT"],
+      });
+      await reporter.onEnd({ status: "failed" });
+    } else if (mode === "unknown") {
+      const unknown = safeTestCase(
+        "SENTINEL_UNKNOWN_PROJECT",
+        9999,
+        "SENTINEL_UNKNOWN_TITLE",
+      );
+      reporter.onBegin({}, { allTests: () => [unknown] });
+      reporter.onError(new Error("SENTINEL_GLOBAL_ERROR"));
+      const known = safeTestCase(...safeScenarioCoordinates[0]);
+      reporter.onTestBegin(known);
+      reporter.onTestEnd(known, { status: "passed" });
+    } else if (mode === "empty") {
+      reporter.onBegin({}, { allTests: () => [] });
+    } else {
+      throw new Error("Unknown safe reporter fixture mode.");
+    }
+    return readFileSync(outputFile, "utf8");
+  } finally {
+    if (previousPrivateDirectory === undefined) {
+      delete process.env.KORA_C3_PRIVATE_DIR;
+    } else {
+      process.env.KORA_C3_PRIVATE_DIR = previousPrivateDirectory;
+    }
+    rmSync(directory, { force: true, recursive: true });
+  }
+}
+
 function resolvePowerShellExecutable() {
   const locator = spawnSync(
     process.platform === "win32" ? "where.exe" : "which",
@@ -366,6 +515,237 @@ try {
   assert.ok(output);
   return JSON.parse(output);
 }
+
+test("the safe reporter publishes only closed identities and counters", async () => {
+  const knownText = await invokeSafeReporterFixture("known-failure");
+  for (const sentinel of [
+    "SENTINEL_TITLE",
+    "SENTINEL_ERROR_MESSAGE",
+    "SENTINEL_STACK",
+    "SENTINEL_STDOUT",
+  ]) {
+    assert.doesNotMatch(knownText, new RegExp(sentinel, "u"));
+  }
+  const known = JSON.parse(knownText);
+  assert.deepEqual(Object.keys(known).sort(), [
+    "counts",
+    "engine",
+    "phase",
+    "scenario",
+    "status",
+    "version",
+  ]);
+  assert.deepEqual(known, {
+    counts: {
+      began: 2,
+      discovered: 24,
+      failed: 1,
+      interrupted: 0,
+      notRun: 22,
+      passed: 1,
+      skipped: 0,
+      timedOut: 0,
+    },
+    engine: "CHROMIUM",
+    phase: "TERMINAL",
+    scenario: "CHROMIUM_RECOVERY_ROTATION_LOGOUT",
+    status: "FAILED",
+    version: 1,
+  });
+  const accepted = invokeSafeBrowserSummaryFixture(knownText, 1);
+  assert.equal(accepted.valid, true);
+  assert.deepEqual(accepted.public, known);
+
+  const unknownText = await invokeSafeReporterFixture("unknown");
+  assert.doesNotMatch(unknownText, /SENTINEL/u);
+  assert.deepEqual(JSON.parse(unknownText), {
+    counts: {
+      began: 0,
+      discovered: 1,
+      failed: 0,
+      interrupted: 0,
+      notRun: 0,
+      passed: 0,
+      skipped: 0,
+      timedOut: 0,
+    },
+    engine: "NONE",
+    phase: "INVALID",
+    scenario: "NONE",
+    status: "INVALID",
+    version: 1,
+  });
+
+  const emptyText = await invokeSafeReporterFixture("empty");
+  assert.equal(JSON.parse(emptyText).phase, "NO_TEST_STARTED");
+  assert.equal(JSON.parse(emptyText).status, "NO_TEST_STARTED");
+  assert.doesNotMatch(safeReporter, /onStdOut|onStdErr/u);
+  assert.doesNotMatch(
+    safeReporter,
+    /result\.(?:error|errors|stdout|stderr|attachments)|testCase\.title/u,
+  );
+});
+
+test("the runner rejects malformed summaries without republishing their content", () => {
+  const initial = JSON.stringify({
+    counts: {
+      began: 0,
+      discovered: 0,
+      failed: 0,
+      interrupted: 0,
+      notRun: 0,
+      passed: 0,
+      skipped: 0,
+      timedOut: 0,
+    },
+    engine: "NONE",
+    phase: "NO_EVENT_OBSERVED",
+    scenario: "NONE",
+    status: "NO_EVENT_OBSERVED",
+    version: 1,
+  });
+  const noEvent = invokeSafeBrowserSummaryFixture(initial, null, true);
+  assert.equal(noEvent.valid, true);
+  assert.equal(noEvent.public.phase, "NO_EVENT_OBSERVED");
+  assert.equal(invokeSafeBrowserSummaryFixture(initial, 0).valid, false);
+
+  const partial = JSON.stringify({
+    ...JSON.parse(initial),
+    counts: {
+      ...JSON.parse(initial).counts,
+      began: 1,
+      discovered: 24,
+    },
+    engine: "CHROMIUM",
+    phase: "TEST_STARTED",
+    scenario: "CHROMIUM_RETRY_AFTER_BOUNDARIES",
+    status: "RUNNING",
+  });
+  const incomplete = invokeSafeBrowserSummaryFixture(partial, 1);
+  assert.equal(incomplete.valid, true);
+  assert.equal(incomplete.public.phase, "INCOMPLETE");
+  assert.equal(incomplete.public.status, "INCOMPLETE");
+  assert.equal(incomplete.public.scenario, "CHROMIUM_RETRY_AFTER_BOUNDARIES");
+  assert.equal(invokeSafeBrowserSummaryFixture(partial, 0).valid, false);
+
+  const reporterReady = JSON.stringify({
+    ...JSON.parse(initial),
+    phase: "REPORTER_READY",
+    status: "NO_TEST_STARTED",
+  });
+  const noTest = invokeSafeBrowserSummaryFixture(reporterReady, 1);
+  assert.equal(noTest.valid, true);
+  assert.equal(noTest.public.phase, "NO_TEST_STARTED");
+  assert.equal(noTest.public.status, "NO_TEST_STARTED");
+  assert.equal(invokeSafeBrowserSummaryFixture(reporterReady, 0).valid, false);
+
+  const malformed = [
+    null,
+    "{",
+    JSON.stringify({ ...JSON.parse(initial), sentinel: "SENTINEL_EXTRA" }),
+    JSON.stringify({
+      ...JSON.parse(initial),
+      counts: { ...JSON.parse(initial).counts, began: "1" },
+    }),
+    JSON.stringify({
+      ...JSON.parse(initial),
+      engine: "SENTINEL_ENGINE",
+      scenario: "SENTINEL_SCENARIO",
+    }),
+  ];
+  for (const candidate of malformed) {
+    const result = invokeSafeBrowserSummaryFixture(candidate, 1);
+    assert.equal(result.valid, false);
+    assert.deepEqual(result.public, {
+      counts: {
+        began: 0,
+        discovered: 0,
+        failed: 0,
+        interrupted: 0,
+        notRun: 0,
+        passed: 0,
+        skipped: 0,
+        timedOut: 0,
+      },
+      engine: "NONE",
+      phase: "INVALID",
+      scenario: "NONE",
+      status: "INVALID",
+      version: 1,
+    });
+    assert.doesNotMatch(JSON.stringify(result.public), /SENTINEL/u);
+  }
+
+  const falsePass = JSON.stringify({
+    ...JSON.parse(initial),
+    counts: {
+      ...JSON.parse(initial).counts,
+      began: 24,
+      discovered: 24,
+      passed: 24,
+    },
+    phase: "TERMINAL",
+    status: "PASSED",
+  });
+  assert.equal(invokeSafeBrowserSummaryFixture(falsePass, 1).valid, false);
+  assert.equal(invokeSafeBrowserSummaryFixture(falsePass, 0).valid, true);
+
+  const skippedPass = JSON.stringify({
+    ...JSON.parse(falsePass),
+    counts: {
+      ...JSON.parse(falsePass).counts,
+      passed: 23,
+      skipped: 1,
+    },
+  });
+  assert.equal(invokeSafeBrowserSummaryFixture(skippedPass, 0).valid, false);
+
+  const notRunPass = JSON.stringify({
+    ...JSON.parse(falsePass),
+    counts: {
+      ...JSON.parse(falsePass).counts,
+      began: 23,
+      notRun: 1,
+      passed: 23,
+    },
+  });
+  assert.equal(invokeSafeBrowserSummaryFixture(notRunPass, 0).valid, false);
+});
+
+test("the safe summary is confined to the main secret-bearing campaign", () => {
+  assert.match(playwright, /KORA_C3_SAFE_SUMMARY_PATH/u);
+  assert.match(playwright, /c3-safe-reporter\.mjs/u);
+  assert.match(playwright, /Invalid C3 safe summary path/u);
+  assert.match(
+    runner,
+    /Initialize-C3SafeBrowserSummary \$SafeBrowserSummaryPath/u,
+  );
+  assert.match(
+    runner,
+    /\$SecretBrowserEnvironment\['KORA_C3_SAFE_SUMMARY_PATH'\] = \$SafeBrowserSummaryPath/u,
+  );
+  assert.equal([...runner.matchAll(/'KORA_C3_SAFE_SUMMARY_PATH'/gu)].length, 3);
+  assert.match(
+    runner,
+    /\$SecretBrowserEnvironment = \$BrowserEnvironment\.Clone\(\)[\s\S]+?\$SecretBrowserEnvironment\['KORA_C3_SAFE_SUMMARY_PATH'\]/u,
+  );
+  assert.match(
+    runner,
+    /Label 'playwright-c3-secret'[\s\S]+?-Environment \$SecretBrowserEnvironment/u,
+  );
+  const probe = runner.match(
+    /\$redactionProbe = Invoke-Captured[\s\S]+?\$probeTranscript/u,
+  )?.[0];
+  const visual = runner.match(
+    /\$visual = Invoke-Captured[\s\S]+?if \(\$visual\.ExitCode/u,
+  )?.[0];
+  assert.ok(probe && visual);
+  assert.match(probe, /'KORA_C3_SAFE_SUMMARY_PATH'/u);
+  assert.match(visual, /'KORA_C3_SAFE_SUMMARY_PATH'/u);
+  assert.match(runner, /C3_SAFE_BROWSER_SUMMARY/u);
+  assert.match(runner, /ProcessExitCode \$browser\.ExitCode/u);
+  assert.match(runner, /C3 safe browser summary validation failed/u);
+});
 
 test("the browser project set resolves only the three exact supported invocations", () => {
   const complete = invokeBrowserTestArguments("Complete");

@@ -1,10 +1,9 @@
 # S1.2-03C3 — Interface d'authentification Admin
 
 Statut : **CANDIDAT C3 DANS LA DRAFT PR #54 — RACCORDEMENT BUILD C2a PUBLIÉ —
-INFRASTRUCTURE `41246330316` NON-PASS HISTORIQUE — RÉSOLUTION
-MULTI-PLATEFORME DU RUNNER QUALIFIÉE LOCALEMENT — INTÉGRATION CONDITIONNÉE À
-UNE CI FRAÎCHE — A-02, FIREFOX WINDOWS ET VISUEL PRODUCT OWNER BORNÉS — NON
-DÉPLOYÉ**
+INFRASTRUCTURE `41439908216` NON-PASS HISTORIQUE — DIAGNOSTIC NAVIGATEUR À
+CHAMPS FERMÉS QUALIFIÉ LOCALEMENT — INTÉGRATION CONDITIONNÉE À UNE CI FRAÎCHE
+— A-02, FIREFOX WINDOWS ET VISUEL PRODUCT OWNER BORNÉS — NON DÉPLOYÉ**
 
 Date : 2026-11-02
 
@@ -340,3 +339,28 @@ de 100 ms ; le fichier concerné passe seul 67/67 et le gate officiel passe
 592/592 avec une allocation Linux explicite de deux CPU, sans changement
 d'assertion ni de timeout. Cette qualification locale ne qualifie ni Linux de
 production, ni une CI future, ni l'intégration ou le déploiement.
+
+## Diagnostic fermé de la campagne navigateur — 2026-11-02
+
+Le head publié `c820becf72e5f2d1fcd9a273282dd1048e368e10` conserve le
+NON-PASS Infrastructure `41439908216`; Launcher Windows, Security et Quality
+Linux réussissent sur ce même head. Le log public établit un exit 1 de la
+campagne principale `Complete`, mais n'identifie ni moteur ni scénario. La
+cause de ce run reste **NON CONCLUSIVE** et n'est pas attribuée à la sonde de
+redaction, dont l'échec est attendu et validé séparément.
+
+Le candidat diagnostique ajoute un reporter privé à table fermée des 24
+couples projet/scénario. Il ne sérialise ni titre, exception, URL, en-tête,
+sortie, capture ou trace. Le runner valide indépendamment propriétés, enums et
+compteurs, puis publie seulement un JSON canonique ; absence d'événement,
+absence de test, exécution incomplète et résumé invalide ont des états fermés.
+Un résumé invalide ne peut ni recopier sa source ni convertir un exit 1 en
+PASS.
+
+Les régressions finales passent 34/34 sous Windows et 34/34 sous Linux. La
+reproduction Linux unique `c3-diag2-20261102t1236` passe 24/24 en 5,1 minutes,
+avec `TERMINAL/PASSED`, 24 tests découverts et commencés, zéro skip, timeout ou
+échec. La sonde de redaction reste volontairement code 1 et le visuel passe ;
+redaction, scan de secrets, cleanup et inventaire étranger passent. Le défaut
+n'étant pas reproduit, ce résultat qualifie le diagnostic local, pas la cause
+historique ni la topologie GitHub.

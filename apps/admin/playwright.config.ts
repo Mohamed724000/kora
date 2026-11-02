@@ -1,5 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
-import { basename, isAbsolute } from 'node:path';
+import { basename, dirname, isAbsolute, resolve } from 'node:path';
 
 function required(name: string): string {
   const value = process.env[name];
@@ -14,6 +14,8 @@ const artifactRedactionProbeMode = process.env.KORA_C3_ARTIFACT_REDACTION_PROBE 
 const visualFixtureMode = process.env.KORA_C3_VISUAL_FIXTURE_MODE === '1';
 const visualOutputDir = visualFixtureMode ? required('KORA_C3_VISUAL_OUTPUT_DIR') : undefined;
 const firefoxExecutablePath = process.env.KORA_C3_FIREFOX_EXECUTABLE_PATH;
+const safeSummaryPath = process.env.KORA_C3_SAFE_SUMMARY_PATH;
+const privateDirectory = process.env.KORA_C3_PRIVATE_DIR;
 const parsedBaseUrl = new URL(baseURL);
 const loopbackSmokeUrl = `https://127.0.0.1:${parsedBaseUrl.port}`;
 
@@ -41,6 +43,16 @@ if (
     basename(firefoxExecutablePath).toLowerCase() !== 'firefox.exe')
 ) {
   throw new Error('Invalid qualified Firefox executable path.');
+}
+if (
+  safeSummaryPath !== undefined &&
+  (!isAbsolute(safeSummaryPath) ||
+    basename(safeSummaryPath) !== 'c3-safe-browser-summary.json' ||
+    privateDirectory === undefined ||
+    !isAbsolute(privateDirectory) ||
+    dirname(resolve(safeSummaryPath)) !== resolve(privateDirectory))
+) {
+  throw new Error('Invalid C3 safe summary path.');
 }
 
 if (
@@ -133,7 +145,10 @@ export default defineConfig({
             },
           },
         ],
-  reporter: [['line']],
+  reporter:
+    safeSummaryPath === undefined
+      ? [['line']]
+      : [['line'], ['./scripts/c3-safe-reporter.mjs', { outputFile: safeSummaryPath }]],
   retries: 0,
   testDir: './e2e',
   timeout: 60_000,

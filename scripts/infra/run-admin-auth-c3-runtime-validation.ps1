@@ -121,6 +121,223 @@ function Resolve-C3BrowserTestArguments([string]$ProjectSet) {
 }
 # END C3 BROWSER TEST ARGUMENT FUNCTIONS
 
+# BEGIN C3 SAFE BROWSER SUMMARY FUNCTIONS
+function New-C3SafeBrowserCounts() {
+  return [ordered]@{
+    began = 0
+    discovered = 0
+    failed = 0
+    interrupted = 0
+    notRun = 0
+    passed = 0
+    skipped = 0
+    timedOut = 0
+  }
+}
+
+function New-C3SafeBrowserGenericSummary([string]$Phase, [string]$Status) {
+  return [ordered]@{
+    counts = New-C3SafeBrowserCounts
+    engine = 'NONE'
+    phase = $Phase
+    scenario = 'NONE'
+    status = $Status
+    version = 1
+  }
+}
+
+function Test-C3ExactPropertySet([object]$Value, [string[]]$Expected) {
+  if ($null -eq $Value) { return $false }
+  $actual = @($Value.PSObject.Properties.Name | Sort-Object -CaseSensitive)
+  $expectedNames = @($Expected | Sort-Object -CaseSensitive)
+  return ($actual -join "`n") -ceq ($expectedNames -join "`n")
+}
+
+function Test-C3SafeBrowserCounter([object]$Value) {
+  return (
+    ($Value -is [int] -or $Value -is [long]) -and
+    [long]$Value -ge 0 -and
+    [long]$Value -le 24
+  )
+}
+
+function Test-C3SafeBrowserIdentity([string]$Engine, [string]$Scenario) {
+  $allowedByEngine = @{
+    NONE = @('NONE')
+    CHROMIUM = @(
+      'CHROMIUM_RETRY_AFTER_BOUNDARIES',
+      'CHROMIUM_FIRST_LOGIN_TOTP_RECOVERY',
+      'CHROMIUM_ENROLLMENT_SESSION_LOGOUT',
+      'CHROMIUM_RESET_UNICODE_PASSWORD',
+      'CHROMIUM_RESET_HIBP_FAIL_CLOSED',
+      'CHROMIUM_LOGIN_INVITATION_POST_COMMIT',
+      'CHROMIUM_RECOVERY_FRESH_ENROLLMENT',
+      'CHROMIUM_RECOVERY_ROTATION_LOGOUT',
+      'CHROMIUM_REFRESH_EXPIRY',
+      'CHROMIUM_MULTITAB_REFRESH',
+      'CHROMIUM_REFRESH_429_RECOVERY',
+      'CHROMIUM_CROSS_TAB_CANCEL',
+      'CHROMIUM_REFRESH_429_COOKIES',
+      'CHROMIUM_UNCERTAIN_LOGOUT',
+      'CHROMIUM_EXPIRED_PREAUTH',
+      'CHROMIUM_LOGIN_RATE_LIMIT',
+      'CHROMIUM_CROSS_SITE_LOGIN',
+      'CHROMIUM_PUBLIC_AXE'
+    )
+    FIREFOX = @(
+      'FIREFOX_PUBLIC_SHELL',
+      'FIREFOX_MOBILE_BOUNDS',
+      'FIREFOX_WEB_LOCKS_FAIL_CLOSED'
+    )
+    WEBKIT = @(
+      'WEBKIT_PUBLIC_SHELL',
+      'WEBKIT_MOBILE_BOUNDS',
+      'WEBKIT_WEB_LOCKS_FAIL_CLOSED'
+    )
+  }
+  return $allowedByEngine.ContainsKey($Engine) -and $allowedByEngine[$Engine] -ccontains $Scenario
+}
+
+function Initialize-C3SafeBrowserSummary([string]$Path) {
+  if (Test-Path -LiteralPath $Path) { throw 'C3 safe browser summary already exists.' }
+  $initial = New-C3SafeBrowserGenericSummary 'NO_EVENT_OBSERVED' 'NO_EVENT_OBSERVED'
+  [IO.File]::WriteAllText(
+    $Path,
+    ($initial | ConvertTo-Json -Compress -Depth 4) + "`n",
+    [Text.UTF8Encoding]::new($false)
+  )
+}
+
+function Get-C3SafeBrowserPublicSummary(
+  [string]$Path,
+  [Nullable[int]]$ProcessExitCode = $null,
+  [bool]$LaunchFailed = $false
+) {
+  $invalid = [pscustomobject]@{
+    Public = New-C3SafeBrowserGenericSummary 'INVALID' 'INVALID'
+    Valid = $false
+  }
+  try {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $invalid }
+    $file = Get-Item -LiteralPath $Path
+    if ($file.Length -le 0 -or $file.Length -gt 4096) { return $invalid }
+    $record = [IO.File]::ReadAllText($Path) | ConvertFrom-Json
+    if (-not (Test-C3ExactPropertySet $record @('counts', 'engine', 'phase', 'scenario', 'status', 'version'))) {
+      return $invalid
+    }
+    if (-not (Test-C3ExactPropertySet $record.counts @('began', 'discovered', 'failed', 'interrupted', 'notRun', 'passed', 'skipped', 'timedOut'))) {
+      return $invalid
+    }
+    if (($record.version -isnot [int] -and $record.version -isnot [long]) -or [long]$record.version -ne 1) {
+      return $invalid
+    }
+    foreach ($name in @('began', 'discovered', 'failed', 'interrupted', 'notRun', 'passed', 'skipped', 'timedOut')) {
+      if (-not (Test-C3SafeBrowserCounter $record.counts.$name)) { return $invalid }
+    }
+    $allowedPhases = @('NO_EVENT_OBSERVED', 'REPORTER_READY', 'NO_TEST_STARTED', 'DISCOVERED', 'TEST_STARTED', 'TEST_FINISHED', 'TERMINAL')
+    $allowedStatuses = @('NO_EVENT_OBSERVED', 'NO_TEST_STARTED', 'RUNNING', 'PASSED', 'FAILED', 'TIMED_OUT', 'SKIPPED', 'INTERRUPTED')
+    if (
+      $record.phase -isnot [string] -or $allowedPhases -cnotcontains $record.phase -or
+      $record.status -isnot [string] -or $allowedStatuses -cnotcontains $record.status -or
+      $record.engine -isnot [string] -or $record.scenario -isnot [string] -or
+      -not (Test-C3SafeBrowserIdentity $record.engine $record.scenario)
+    ) { return $invalid }
+
+    $counts = [ordered]@{}
+    foreach ($name in @('began', 'discovered', 'failed', 'interrupted', 'notRun', 'passed', 'skipped', 'timedOut')) {
+      $counts[$name] = [int]$record.counts.$name
+    }
+    $completed = $counts.failed + $counts.interrupted + $counts.passed + $counts.skipped + $counts.timedOut
+    if (
+      $counts.began -gt $counts.discovered -or
+      $completed -gt $counts.discovered -or
+      $counts.notRun -gt $counts.discovered -or
+      ($counts.failed + $counts.interrupted + $counts.passed + $counts.timedOut) -gt $counts.began
+    ) { return $invalid }
+
+    if ($record.phase -eq 'NO_EVENT_OBSERVED') {
+      if (
+        $record.status -cne 'NO_EVENT_OBSERVED' -or
+        $record.engine -cne 'NONE' -or
+        $record.scenario -cne 'NONE' -or
+        ($counts.Values | Measure-Object -Sum).Sum -ne 0
+      ) { return $invalid }
+    }
+    elseif ($record.phase -eq 'REPORTER_READY') {
+      if ($record.status -cne 'NO_TEST_STARTED' -or ($counts.Values | Measure-Object -Sum).Sum -ne 0) {
+        return $invalid
+      }
+    }
+    elseif ($record.phase -in @('DISCOVERED', 'TEST_STARTED', 'TEST_FINISHED', 'TERMINAL')) {
+      if ($counts.discovered -ne 24) { return $invalid }
+    }
+
+    if ($record.phase -eq 'TERMINAL') {
+      if (
+        $completed + $counts.notRun -ne $counts.discovered -or
+        $record.status -cnotin @('PASSED', 'FAILED', 'TIMED_OUT', 'INTERRUPTED') -or
+        $null -eq $ProcessExitCode -or
+        (($record.status -ceq 'PASSED') -ne ($ProcessExitCode -eq 0))
+      ) { return $invalid }
+      if (
+        $record.status -ceq 'PASSED' -and (
+          $counts.began -ne 24 -or
+          $counts.passed -ne 24 -or
+          $counts.failed -ne 0 -or
+          $counts.interrupted -ne 0 -or
+          $counts.notRun -ne 0 -or
+          $counts.skipped -ne 0 -or
+          $counts.timedOut -ne 0
+        )
+      ) { return $invalid }
+    }
+    if (
+      $null -ne $ProcessExitCode -and
+      $ProcessExitCode -eq 0 -and
+      ($record.phase -cne 'TERMINAL' -or $record.status -cne 'PASSED')
+    ) {
+      return $invalid
+    }
+
+    $publicPhase = [string]$record.phase
+    $publicStatus = [string]$record.status
+    if ($LaunchFailed) {
+      if ($record.phase -cne 'NO_EVENT_OBSERVED') { return $invalid }
+      $publicPhase = 'NO_EVENT_OBSERVED'
+      $publicStatus = 'NO_EVENT_OBSERVED'
+    }
+    elseif ($null -ne $ProcessExitCode -and $record.phase -cne 'TERMINAL') {
+      if ($counts.began -eq 0 -and $record.phase -in @('REPORTER_READY', 'NO_TEST_STARTED', 'DISCOVERED')) {
+        $publicPhase = 'NO_TEST_STARTED'
+        $publicStatus = 'NO_TEST_STARTED'
+      } else {
+        $publicPhase = 'INCOMPLETE'
+        $publicStatus = 'INCOMPLETE'
+      }
+    }
+
+    return [pscustomobject]@{
+      Public = [ordered]@{
+        counts = $counts
+        engine = [string]$record.engine
+        phase = $publicPhase
+        scenario = [string]$record.scenario
+        status = $publicStatus
+        version = 1
+      }
+      Valid = $true
+    }
+  }
+  catch { return $invalid }
+}
+
+function Write-C3SafeBrowserPublicSummary([object]$Result) {
+  [Console]::Out.WriteLine(
+    'C3_SAFE_BROWSER_SUMMARY ' + ($Result.Public | ConvertTo-Json -Compress -Depth 4)
+  )
+}
+# END C3 SAFE BROWSER SUMMARY FUNCTIONS
+
 # BEGIN C3 QUALIFIED FIREFOX CACHE FUNCTIONS
 function Get-C3FirefoxBrowserInventory([string]$FirefoxDirectory) {
   $records = @(
@@ -264,6 +481,7 @@ New-Item -ItemType Directory -Path $EvidenceDirectory | Out-Null
 $CampaignRoot = Join-Path ([IO.Path]::GetTempPath()) ("kora-c3-$Instance-" + [Guid]::NewGuid().ToString('N'))
 $SecretDirectory = Join-Path $CampaignRoot 'secrets'
 $PrivateDirectory = Join-Path $CampaignRoot 'private'
+$SafeBrowserSummaryPath = Join-Path $PrivateDirectory 'c3-safe-browser-summary.json'
 $PublicCertificateDirectory = Join-Path $EvidenceDirectory 'certificates'
 $PlaywrightOutputDirectory = Join-Path $EvidenceDirectory 'playwright-output'
 $RedactionProbePlaywrightOutputDirectory = Join-Path $EvidenceDirectory 'playwright-redaction-probe-output'
@@ -912,12 +1130,31 @@ try {
   if ($null -ne $QualifiedFirefoxBrowser) {
     $BrowserEnvironment['KORA_C3_FIREFOX_EXECUTABLE_PATH'] = $QualifiedFirefoxBrowser.ExecutablePath
   }
-  $browser = Invoke-Captured -Label 'playwright-c3-secret' -FilePath $Npm -Arguments $BrowserTestArguments -Environment $BrowserEnvironment -RemoveEnvironment @(
-    'KORA_C3_ARTIFACT_REDACTION_PROBE',
-    'KORA_C3_ARTIFACT_REDACTION_PROBE_SENTINEL',
-    'KORA_C3_VISUAL_FIXTURE_MODE',
-    'KORA_C3_VISUAL_OUTPUT_DIR'
-  ) -DynamicSentinelDirectory (Join-Path $PrivateDirectory 'sentinels') -SensitiveRedactions @($SensitiveValues) -AllowedExitCodes (0..255)
+  Initialize-C3SafeBrowserSummary $SafeBrowserSummaryPath
+  $SecretBrowserEnvironment = $BrowserEnvironment.Clone()
+  $SecretBrowserEnvironment['KORA_C3_SAFE_SUMMARY_PATH'] = $SafeBrowserSummaryPath
+  $browser = $null
+  try {
+    $browser = Invoke-Captured -Label 'playwright-c3-secret' -FilePath $Npm -Arguments $BrowserTestArguments -Environment $SecretBrowserEnvironment -RemoveEnvironment @(
+      'KORA_C3_ARTIFACT_REDACTION_PROBE',
+      'KORA_C3_ARTIFACT_REDACTION_PROBE_SENTINEL',
+      'KORA_C3_VISUAL_FIXTURE_MODE',
+      'KORA_C3_VISUAL_OUTPUT_DIR'
+    ) -DynamicSentinelDirectory (Join-Path $PrivateDirectory 'sentinels') -SensitiveRedactions @($SensitiveValues) -AllowedExitCodes (0..255)
+  }
+  catch {
+    Write-C3SafeBrowserPublicSummary (
+      Get-C3SafeBrowserPublicSummary -Path $SafeBrowserSummaryPath -LaunchFailed $true
+    )
+    throw
+  }
+  $safeBrowserSummary = Get-C3SafeBrowserPublicSummary `
+    -Path $SafeBrowserSummaryPath `
+    -ProcessExitCode $browser.ExitCode
+  Write-C3SafeBrowserPublicSummary $safeBrowserSummary
+  if (-not $safeBrowserSummary.Valid -and $browser.ExitCode -eq 0) {
+    $BrowserFailures.Add([Exception]::new('C3 safe browser summary validation failed.'))
+  }
   if ($browser.PreWriteRedactionsApplied -ne 0) {
     $BrowserFailures.Add([Exception]::new('Secret-bearing browser transcript required defensive pre-write redaction.'))
   }
@@ -943,6 +1180,7 @@ try {
   $RedactionProbeEnvironment['KORA_C3_ARTIFACT_REDACTION_PROBE_SENTINEL'] = $ArtifactRedactionProbeSentinel
   $RedactionProbeEnvironment['KORA_C3_PLAYWRIGHT_OUTPUT_DIR'] = $RedactionProbePlaywrightOutputDirectory
   $redactionProbe = Invoke-Captured -Label 'playwright-c3-artifact-redaction-probe' -FilePath $Npm -Arguments @('run', 'test:e2e', '--workspace', '@kora-plus/admin') -Environment $RedactionProbeEnvironment -RemoveEnvironment @(
+    'KORA_C3_SAFE_SUMMARY_PATH',
     'KORA_C3_VISUAL_FIXTURE_MODE',
     'KORA_C3_VISUAL_OUTPUT_DIR'
   ) -DynamicSentinelDirectory (Join-Path $PrivateDirectory 'sentinels') -SensitiveRedactions @($SensitiveValues) -AllowedExitCodes (0..255)
@@ -982,6 +1220,7 @@ try {
     'KORA_C3_CAPABILITY_PATH',
     'KORA_C3_PRIVATE_DIR',
     'KORA_C3_PROJECT_NAME',
+    'KORA_C3_SAFE_SUMMARY_PATH',
     'KORA_C3_SECRETS_DIR'
   ) -AllowedExitCodes (0..255)
   if ($visual.ExitCode -ne 0) {

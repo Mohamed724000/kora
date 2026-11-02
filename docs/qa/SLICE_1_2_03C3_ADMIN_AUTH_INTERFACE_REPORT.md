@@ -1,7 +1,8 @@
 # S1.2-03C3 — Rapport de qualification de l'interface Admin Auth
 
-Statut : **C3 DANS LA DRAFT PR #54 — RACCORDEMENT BUILD C2a PUBLIÉ —
-INFRASTRUCTURE `41246330316` NON-PASS HISTORIQUE — RÉSOLUTION
+Statut : **C3 DANS LA DRAFT PR #54 — HEAD `c820bec…` — INFRASTRUCTURE
+`41439908216` NON-PASS HISTORIQUE — DIAGNOSTIC NAVIGATEUR FERMÉ QUALIFIÉ
+LOCALEMENT — RÉSOLUTION
 MULTI-PLATEFORME DU RUNNER QUALIFIÉE LOCALEMENT — INTÉGRATION CONDITIONNÉE À
 UNE CI FRAÎCHE — APPROBATION VISUELLE PRODUCT OWNER BORNÉE**
 
@@ -110,7 +111,7 @@ tests `webkit-public-smoke`, zéro `firefox-public-smoke`, zéro échec, skip ou
 interruption. Les avertissements stderr `NO_COLOR`/`FORCE_COLOR` ont été
 examinés ; ils n'altèrent aucun code ni résultat.
 
-## Gates L5
+## Gates L5 — instantané historique antérieur au diagnostic navigateur fermé
 
 | Gate                               | Résultat                                                |
 | ---------------------------------- | ------------------------------------------------------- |
@@ -363,3 +364,42 @@ Le résultat qualifie localement le runner dans un conteneur Linux sur Docker
 Desktop. Il ne qualifie pas Linux de production, une future exécution GitHub,
 les fournisseurs ou les parcours visuels absents. Le candidat demeure non
 indexé et non publié jusqu'au gel commun et aux trois conclusions terminales.
+
+## Diagnostic fermé de la campagne navigateur — 2026-11-02
+
+Le run Infrastructure `41439908216` du head publié
+`c820becf72e5f2d1fcd9a273282dd1048e368e10` demeure un NON-PASS historique.
+Les preuves CI localisent l'échec dans la campagne principale
+`playwright-c3-secret`, et non dans la sonde de redaction dont le code non nul
+est attendu. Elles ne permettent toutefois pas d'identifier le premier
+scénario en défaut sans exposer des sorties libres : la cause historique reste
+donc NON CONCLUSIVE.
+
+Le candidat ajoute un reporter minimal activé uniquement par un chemin privé
+explicite. Il ne produit que la phase, le moteur, l'identifiant prédéfini du
+scénario, le statut et huit compteurs. Le runner valide et reconstruit le JSON
+canonique avant publication ; titres, exceptions, URL, headers, stdout/stderr,
+traces et captures ne sont jamais sérialisés. Un résumé absent, tronqué,
+incohérent ou enrichi devient un statut générique `INVALID`, sans pouvoir
+transformer un code non nul en succès.
+
+| Contrôle du diagnostic navigateur                   | Résultat sélectionné                                                                                  |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Syntaxe et format des quatre entrées                | PASS                                                                                                  |
+| Régressions fermées Windows                         | 34/34 PASS                                                                                            |
+| Régressions fermées Linux                           | 34/34 PASS                                                                                            |
+| Sentinelles dans titre, erreur, stack et stdout     | aucune sentinelle sérialisée                                                                          |
+| Aucun événement / aucun test / exécution incomplète | statuts fermés distincts                                                                              |
+| Campagne Linux informative unique                   | Chromium 18/18, Firefox 3/3, WebKit 3/3 ; 24/24 PASS                                                  |
+| Résumé public terminal                              | six clés canoniques, dernier scénario WebKit, compteurs 24/24 cohérents                               |
+| Redaction, secrets, cleanup et inventaire étranger  | probe attendu, zéro violation, cleanup code 0, `SEMANTIC_IDENTICAL`                                   |
+| Gates prépublication du gel diagnostic              | tooling 592/592 ; scanner 527 ; format, documents et diff-check PASS ; audits complet/production zéro |
+
+La campagne locale reprend le mode `Complete`, un worker, zéro retry, les
+versions Playwright 1.64.1 et navigateurs qualifiées, ainsi que l'ordre exact
+Chromium, Firefox, WebKit. Elle utilise la fixture Linux imbriquée et son proxy
+TCP opaque déjà documenté ; elle ne reproduit donc pas la topologie du runner
+GitHub. Le défaut n'ayant pas été reproduit localement, la seule voie retenue
+est un commit diagnostique conditionnel. Une future CI verte qualifierait son
+propre SHA dans les étapes exécutées sans expliquer rétroactivement le run
+historique.

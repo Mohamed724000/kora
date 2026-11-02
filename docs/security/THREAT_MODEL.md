@@ -3,9 +3,9 @@
 Périmètre durable couvert : **BASELINE À S1.2-03B ET S1.2-03C1 FUSIONNÉES +
 C2a ET C2b INTÉGRÉS DANS MAIN AU MERGE
 `c47a1507dce6ea7333ce7e372f9bd34aa548c81b`, NON DÉPLOYÉS — C3 DANS LA DRAFT
-PR #54 — RACCORDEMENT BUILD C2a PUBLIÉ — INFRASTRUCTURE `41246330316`
-NON-PASS HISTORIQUE — RÉSOLUTION MULTI-PLATEFORME DU RUNNER QUALIFIÉE
-LOCALEMENT — INTÉGRATION CONDITIONNÉE À UNE CI FRAÎCHE — A-02 QUALIFIÉ
+PR #54 — HEAD `c820bec…` — INFRASTRUCTURE `41439908216` NON-PASS HISTORIQUE —
+DIAGNOSTIC NAVIGATEUR FERMÉ QUALIFIÉ LOCALEMENT — INTÉGRATION CONDITIONNÉE À
+UNE CI FRAÎCHE — A-02 QUALIFIÉ
 LOCAL/CI — FIREFOX WINDOWS GO BORNÉ — APPROBATION VISUELLE PRODUCT OWNER
 BORNÉE — FOURNISSEURS ET LINUX DE PRODUCTION NON QUALIFIÉS**.
 
@@ -1613,3 +1613,19 @@ type ni la cardinalité exacts de ce runner GitHub, qui restent NON CONCLUSIVE.
 | Mutation de ressources étrangères            | instance et port uniques, cleanup ciblé, inventaires canoniques interne et hôte                                                                                         | conteneurs, volumes, réseaux et images identiques avant/après   | Linux de production et inventaire persistant inaccessible hors campagne non qualifiés           |
 | Surqualification de la topologie locale      | le proxy TCP opaque hors dépôt ne termine pas TLS et ne modifie ni runtime ni assertions                                                                                | 24/24 dans la fixture Linux imbriquée                           | topologie GitHub et Linux de production non qualifiés                                           |
 | Faux PASS par contention du tooling          | NON-PASS 585/592 et 590/592 conservés ; fichier 67/67 isolé ; gate exact 592/592 avec deux CPU et mêmes assertions/timeouts                                             | mesure `availableParallelism` 14 puis 2                         | stabilité à 14 threads non démontrée ; CI future doit encore exécuter son propre gate           |
+
+### Diagnostic fermé de la campagne navigateur — 2026-11-02
+
+Infrastructure `41439908216` reste un NON-PASS historique. L'échec est localisé
+dans la campagne principale, distincte du probe de redaction attendu en échec,
+mais le premier scénario et la cause propres au runner GitHub restent NON
+CONCLUSIVE. Le défaut n'a pas été reproduit pendant l'unique reprise Linux
+informative.
+
+| Menace ou dérive                             | Contrôle actualisé                                                                                                                                                | Preuve sélectionnée                                                  | Limite conservée                                       |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------ |
+| Fuite par diagnostic navigateur              | schéma fermé de six clés ; moteur, scénario et statut en enums ; compteurs numériques ; aucune sortie libre, erreur, URL, header, stdout/stderr, trace ou capture | sentinelles adversariales et régressions 34/34 Windows + 34/34 Linux | le dossier privé n'est jamais téléversé                |
+| Faux PASS par résumé mensonger               | validation indépendante des clés, types, identités, compteurs et cohérence exit/statut ; reconstruction canonique avant publication                               | résumés altéré, tronqué, enrichi et faux PASS tous refusés           | un diagnostic invalide ne remplace pas l'échec initial |
+| Absence de preuve confondue avec un scénario | `NO_EVENT_OBSERVED`, `NO_TEST_STARTED`, `INCOMPLETE` et `INVALID` distingués explicitement                                                                        | fixtures sans événement, suite vide et test partiel                  | ces statuts n'identifient pas la cause historique      |
+| Contamination du probe ou du visuel          | variable du reporter retirée explicitement des environnements du probe de redaction et du visuel                                                                  | régression d'isolation et campagne complète                          | reporter réservé à la campagne principale              |
+| Surqualification par succès local            | ordre, worker, retry et versions alignés ; campagne 24/24 ; distinction explicite des topologies locale imbriquée et GitHub                                       | Chromium 18/18, Firefox 3/3, WebKit 3/3 ; inventaire identique       | GitHub et Linux de production restent non qualifiés    |
