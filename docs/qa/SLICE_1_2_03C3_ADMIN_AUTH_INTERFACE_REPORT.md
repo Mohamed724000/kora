@@ -1,11 +1,11 @@
 # S1.2-03C3 — Rapport de qualification de l'interface Admin Auth
 
-Statut : **C3 PUBLIÉ DANS LA DRAFT PR #54 AU HEAD `e27ee24f…75b` — TROIS
-WORKFLOWS INITIAUX VERTS — INFRASTRUCTURE `41221134116` NON-PASS HISTORIQUE —
-CORRECTIF DE RACCORDEMENT BUILD C2a QUALIFIÉ LOCALEMENT, NON ENCORE PUBLIÉ —
-APPROBATION VISUELLE PRODUCT OWNER BORNÉE**
+Statut : **C3 DANS LA DRAFT PR #54 — RACCORDEMENT BUILD C2a PUBLIÉ —
+INFRASTRUCTURE `41246330316` NON-PASS HISTORIQUE — RÉSOLUTION
+MULTI-PLATEFORME DU RUNNER QUALIFIÉE LOCALEMENT — INTÉGRATION CONDITIONNÉE À
+UNE CI FRAÎCHE — APPROBATION VISUELLE PRODUCT OWNER BORNÉE**
 
-Date : 2026-10-31
+Date : 2026-11-02
 
 ## Référence et autorité
 
@@ -315,3 +315,51 @@ Verdict de ce delta : **GO LOCAL CONDITIONNEL AU GEL COMMUN ET AUX TROIS
 CONTRE-REVUES**. Le commit, le push, les nouveaux workflows, l'actualisation du
 corps PR, l'intégration et la production ne sont pas encore acquis à cet
 instantané.
+
+## Résolution des exécutables et qualification du runner Linux — 2026-11-02
+
+Le run Infrastructure `41246330316` du head publié
+`67ecc3d4e6c57ded3f7134b93b78ea30ca32c8d4` reste NON-PASS historique. La
+sonde Linux sans application ni secret observe deux résultats pour OpenSSL et
+deux pour `chmod`; l'ancienne expression `.Source` produit alors une
+collection. Cette reproduction ne permet pas d'affirmer le type ni la
+cardinalité exacts du runner GitHub historique, qui restent NON CONCLUSIVE.
+
+Le correctif introduit une résolution unique pour OpenSSL, Docker, npm et
+l'outil de permissions. Chaque sélection est un `ApplicationInfo`, son chemin
+est scalaire, absolu et un fichier existant, et le premier candidat de l'ordre
+PowerShell est choisi explicitement. Toutes les résolutions sont terminées
+avant création du répertoire de preuves, des secrets ou de ressources Docker.
+
+| Contrôle du candidat runner                            | Résultat sélectionné                                                                                         |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| Syntaxe et régressions Windows                         | 31/31 PASS                                                                                                   |
+| Régressions Linux                                      | 31/31 PASS                                                                                                   |
+| Chemins multiples, espaces, absence et valeur invalide | PASS ; sélection scalaire et absolue                                                                         |
+| Erreur d'un outil                                      | code non nul conservé                                                                                        |
+| Permissions réelles                                    | ACL Windows protégées ; répertoires POSIX `0700`, fichier `0600`                                             |
+| Campagne Linux exacte                                  | Chromium 18/18, Firefox 3/3, WebKit 3/3 ; 24/24 PASS                                                         |
+| Redaction et secrets                                   | probe attendu, 174 textes et 196 sentinelles, zéro violation                                                 |
+| Cleanup et inventaires                                 | compose down code 0 ; projet et parent absents ; conteneurs, volumes, réseaux et images étrangers identiques |
+| Format, scanner, audits et diff-check                  | PASS ; audits complet/production zéro                                                                        |
+| Tooling agrégé non borné                               | 585/592 puis 590/592 NON-PASS à 14 threads ; deadlines PostgreSQL de 100 ms                                  |
+| Diagnostic ciblé et reprise reproductible              | fichier concerné 67/67 ; gate officiel 592/592 avec `availableParallelism=2`, sans changer oracle ni timeout |
+
+La première campagne Linux exacte reste NON-PASS avec 13 tests réussis, 1 en
+échec et 10 non exécutés. Les campagnes diagnostiques suivantes et leurs
+erreurs 503 restent archivées ; leur cause historique exacte demeure NON
+CONCLUSIVE. La campagne terminale utilise le test navigateur original exact,
+un worker, zéro retry, et termine dans sa borne avec cleanup conforme.
+
+La campagne complète porte le runner final et le test navigateur exact. Elle
+a empreinté la préimage pré-format du test du runner, qu'elle n'importe ni
+n'exécute ; les octets finaux de ce test sont qualifiés séparément par 31/31
+sous Windows et 31/31 sous Linux. La fixture imbriquée emploie un proxy TCP
+opaque hors dépôt entre le loopback du conteneur et `host.docker.internal`.
+Il ne termine pas TLS et ne modifie pas les assertions, mais il ne reproduit
+pas byte-à-byte la topologie du futur runner GitHub.
+
+Le résultat qualifie localement le runner dans un conteneur Linux sur Docker
+Desktop. Il ne qualifie pas Linux de production, une future exécution GitHub,
+les fournisseurs ou les parcours visuels absents. Le candidat demeure non
+indexé et non publié jusqu'au gel commun et aux trois conclusions terminales.

@@ -2,9 +2,10 @@
 
 Périmètre durable couvert : **BASELINE À S1.2-03B ET S1.2-03C1 FUSIONNÉES +
 C2a ET C2b INTÉGRÉS DANS MAIN AU MERGE
-`c47a1507dce6ea7333ce7e372f9bd34aa548c81b`, NON DÉPLOYÉS — C3 PUBLIÉ DANS
-LA DRAFT PR #54 AU HEAD `e27ee24f…75b` — INFRASTRUCTURE INITIALE NON-PASS —
-CORRECTIF BUILD C2a QUALIFIÉ LOCALEMENT, NON ENCORE PUBLIÉ — A-02 QUALIFIÉ
+`c47a1507dce6ea7333ce7e372f9bd34aa548c81b`, NON DÉPLOYÉS — C3 DANS LA DRAFT
+PR #54 — RACCORDEMENT BUILD C2a PUBLIÉ — INFRASTRUCTURE `41246330316`
+NON-PASS HISTORIQUE — RÉSOLUTION MULTI-PLATEFORME DU RUNNER QUALIFIÉE
+LOCALEMENT — INTÉGRATION CONDITIONNÉE À UNE CI FRAÎCHE — A-02 QUALIFIÉ
 LOCAL/CI — FIREFOX WINDOWS GO BORNÉ — APPROBATION VISUELLE PRODUCT OWNER
 BORNÉE — FOURNISSEURS ET LINUX DE PRODUCTION NON QUALIFIÉS**.
 
@@ -1595,3 +1596,20 @@ qualifiés.
 | Injection par chemin ou environnement    | appels structurés sans shell pour les outils de build ; secrets `*_PASSWORD` retirés de leur sous-processus ; wrapper publié conservé après preuve qu'il lançait déjà le validateur         | fixture avec espaces/métacaractères et env capturé                                       | mots de passe métier exclus ; autres variables non secrètes héritées comme dans le build canonique ; allowlist environnementale générale NON DEMONSTRATED |
 | Mutation de ressources Docker étrangères | instance isolée, inventaires par IDs/labels/montages et cleanup limité aux ressources de campagne                                                                                           | wrapper réel ; deux comparateurs bruts NON-PASS puis comparaison normalisée stricte PASS | ordre des labels réseau et des trois montages Redis non contractuel ; objets complets, IDs et valeurs inchangés                                           |
 | Surqualification de C3                   | réutilisation uniquement après constat d'absence de changement runtime, dépendances, lockfile, navigateur, image et visuel ; aucune nouvelle exécution `24/24`                              | matrice causale et diff du candidat                                                      | signal Windows, parcours absents et réserves historiques restent actifs                                                                                   |
+
+### Mise à jour résolution des exécutables C3 — 2026-11-02
+
+Le run Infrastructure `41246330316` reste un NON-PASS historique. La sonde
+locale reproduit la classe de défaut des résolutions multiples sans établir le
+type ni la cardinalité exacts de ce runner GitHub, qui restent NON CONCLUSIVE.
+
+| Menace ou dérive                             | Contrôle actualisé                                                                                                                                                      | Preuve sélectionnée                                             | Limite conservée                                                                                |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Collection utilisée comme exécutable         | résolution `Application -All`, sélection explicite du premier candidat, chemin scalaire absolu et fichier présent ; aucune conversion implicite de collection en chaîne | sondes Windows/Linux et régressions 31/31 sur chaque plateforme | type/cardinalité du runner GitHub historique NON CONCLUSIVE                                     |
+| Substitution par alias, fonction ou script   | type `ApplicationInfo` obligatoire ; tous les candidats et la sélection sont archivés                                                                                   | fixtures valeur invalide, absence et résultats multiples        | ordre PowerShell qualifié pour le PATH de la campagne                                           |
+| Secret ou ressource créé avant le fail-close | quatre outils résolus avant répertoire de preuves, secret et Docker ; absence ou chemin invalide terminal                                                               | fixture PATH vide et absence physique du répertoire de preuves  | exécution effective de chaque outil reste contrôlée par ses appels capturés                     |
+| Affaiblissement des permissions              | ACL Windows protégées conservées ; `chmod 700` puis `u=rwX,go=` et vérification des modes POSIX                                                                         | tests sur répertoires temporaires Windows/Linux                 | la preuve récursive repose sur `chmod` code 0, avec mesure indépendante du root et des témoins  |
+| Fuite dans les artefacts navigateur          | collecteur redacted, probe d'échec attendu, scan de 174 textes et 196 sentinelles                                                                                       | campagne exacte 24/24, zéro violation                           | les neuf PNG synthétiques restent exclus du scan textuel et couverts par leur validation bornée |
+| Mutation de ressources étrangères            | instance et port uniques, cleanup ciblé, inventaires canoniques interne et hôte                                                                                         | conteneurs, volumes, réseaux et images identiques avant/après   | Linux de production et inventaire persistant inaccessible hors campagne non qualifiés           |
+| Surqualification de la topologie locale      | le proxy TCP opaque hors dépôt ne termine pas TLS et ne modifie ni runtime ni assertions                                                                                | 24/24 dans la fixture Linux imbriquée                           | topologie GitHub et Linux de production non qualifiés                                           |
+| Faux PASS par contention du tooling          | NON-PASS 585/592 et 590/592 conservés ; fichier 67/67 isolé ; gate exact 592/592 avec deux CPU et mêmes assertions/timeouts                                             | mesure `availableParallelism` 14 puis 2                         | stabilité à 14 threads non démontrée ; CI future doit encore exécuter son propre gate           |

@@ -1,9 +1,17 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 const root = new URL("../../", import.meta.url);
 const read = (path) => readFileSync(new URL(path, root), "utf8");
@@ -22,6 +30,210 @@ const loadingPage = read("apps/admin/app/loading.tsx");
 const notFoundPage = read("apps/admin/app/not-found.tsx");
 const nginx = read("infra/c3/nginx.conf");
 const infrastructureWorkflow = read(".github/workflows/infrastructure.yml");
+
+function extractApplicationResolutionFunctions() {
+  const beginMarker = "# BEGIN C3 APPLICATION RESOLUTION FUNCTIONS";
+  const endMarker = "# END C3 APPLICATION RESOLUTION FUNCTIONS";
+  const begin = runner.indexOf(beginMarker);
+  const end = runner.indexOf(endMarker);
+  assert.ok(
+    begin >= 0 && end > begin,
+    "application resolution functions are extractable",
+  );
+  return runner.slice(begin + beginMarker.length, end);
+}
+
+function invokeApplicationResolutionFixture(mode) {
+  const functions = extractApplicationResolutionFunctions();
+  const encodedMode = Buffer.from(mode, "utf8").toString("base64");
+  const script = `$ErrorActionPreference = 'Stop'
+${functions}
+$mode = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encodedMode}'))
+$fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ('kora-c3-app-resolution-' + [Guid]::NewGuid().ToString('N'))
+$primary = Join-Path $fixtureRoot 'primary with spaces'
+$secondary = Join-Path $fixtureRoot 'secondary'
+$originalPath = $env:PATH
+
+function New-FixtureApplication([string]$Directory, [string]$BaseName, [int]$ExitCode = 0) {
+  [void](New-Item -ItemType Directory -Path $Directory -Force)
+  $name = if ($IsWindows) { "$BaseName.cmd" } else { $BaseName }
+  $path = Join-Path $Directory $name
+  $content = if ($IsWindows) {
+    "@echo off\`r\`nexit /b $ExitCode\`r\`n"
+  } else {
+    "#!/bin/sh\`nexit $ExitCode\`n"
+  }
+  [IO.File]::WriteAllText($path, $content, [Text.UTF8Encoding]::new($false))
+  if (-not $IsWindows) {
+    [IO.File]::SetUnixFileMode($path, (
+        [IO.UnixFileMode]::UserRead -bor
+        [IO.UnixFileMode]::UserWrite -bor
+        [IO.UnixFileMode]::UserExecute -bor
+        [IO.UnixFileMode]::GroupRead -bor
+        [IO.UnixFileMode]::GroupExecute -bor
+        [IO.UnixFileMode]::OtherRead -bor
+        [IO.UnixFileMode]::OtherExecute
+      ))
+  }
+  return $path
+}
+
+try {
+  if ($mode -in @('unique', 'multiple', 'spaces')) {
+    $suffix = [Guid]::NewGuid().ToString('N')
+    $baseNames = [ordered]@{
+      OpenSsl = "c3-openssl-$suffix"
+      Docker = "c3-docker-$suffix"
+      Npm = "c3-npm-$suffix"
+      Permission = "c3-permission-$suffix"
+    }
+    $names = [ordered]@{}
+    foreach ($entry in $baseNames.GetEnumerator()) {
+      $path = New-FixtureApplication $primary $entry.Value
+      $names[$entry.Key] = [IO.Path]::GetFileName($path)
+      if ($mode -eq 'multiple') {
+        [void](New-FixtureApplication $secondary $entry.Value)
+      }
+    }
+    $pathParts = @($primary)
+    if ($mode -eq 'multiple') { $pathParts += $secondary }
+    $env:PATH = ($pathParts -join [IO.Path]::PathSeparator) + [IO.Path]::PathSeparator + $originalPath
+    $set = Resolve-C3ApplicationSet \`
+      -WindowsPlatform $false \`
+      -OpenSslName $names.OpenSsl \`
+      -DockerName $names.Docker \`
+      -NpmName $names.Npm \`
+      -PosixPermissionName $names.Permission
+    [ordered]@{
+      counts = [ordered]@{
+        docker = $set.Docker.CandidateCount
+        npm = $set.Npm.CandidateCount
+        openssl = $set.OpenSsl.CandidateCount
+        permission = $set.Permission.CandidateCount
+      }
+      primary = $primary
+      selected = [ordered]@{
+        docker = $set.Docker.SelectedPath
+        npm = $set.Npm.SelectedPath
+        openssl = $set.OpenSsl.SelectedPath
+        permission = $set.Permission.SelectedPath
+      }
+      selectedTypes = @(
+        $set.Docker.SelectedPath.GetType().FullName
+        $set.Npm.SelectedPath.GetType().FullName
+        $set.OpenSsl.SelectedPath.GetType().FullName
+        $set.Permission.SelectedPath.GetType().FullName
+      )
+    } | ConvertTo-Json -Compress -Depth 6
+  }
+  elseif ($mode -eq 'missing') {
+    $rejected = $false
+    try { [void](Resolve-C3Application ('c3-missing-' + [Guid]::NewGuid().ToString('N'))) }
+    catch { $rejected = $_.Exception.Message -like 'The required application is unavailable:*' }
+    [ordered]@{ rejected = $rejected } | ConvertTo-Json -Compress
+  }
+  elseif ($mode -eq 'invalid') {
+    $rejected = $false
+    try {
+      [void](Select-C3Application 'c3-invalid' @([pscustomobject]@{
+            CommandType = 'Application'
+            Path = $fixtureRoot
+            Source = $fixtureRoot
+          }))
+    }
+    catch { $rejected = $_.Exception.Message -eq 'The resolved application has an invalid type: c3-invalid' }
+    [ordered]@{ rejected = $rejected } | ConvertTo-Json -Compress
+  }
+  elseif ($mode -eq 'nonzero') {
+    $baseName = 'c3-failing-' + [Guid]::NewGuid().ToString('N')
+    $path = New-FixtureApplication $primary $baseName 23
+    $env:PATH = $primary + [IO.Path]::PathSeparator + $originalPath
+    $resolved = Resolve-C3Application ([IO.Path]::GetFileName($path))
+    & $resolved.SelectedPath
+    [ordered]@{ exitCode = $LASTEXITCODE; selected = $resolved.SelectedPath } | ConvertTo-Json -Compress
+  }
+  elseif ($mode -eq 'permissions') {
+    $permissionName = if ($IsWindows) { 'icacls.exe' } else { 'chmod' }
+    $resolved = Resolve-C3Application $permissionName
+    $campaignRoot = Join-Path $fixtureRoot 'campaign'
+    [void](New-Item -ItemType Directory -Path $campaignRoot)
+    if ($IsWindows) {
+      & $resolved.SelectedPath $campaignRoot '/inheritance:r' '/grant:r' "$($env:USERNAME):(OI)(CI)F" | Out-Null
+      if ($LASTEXITCODE -ne 0) { throw 'icacls root restriction failed.' }
+      $subdirectory = Join-Path $campaignRoot 'private'
+      [void](New-Item -ItemType Directory -Path $subdirectory)
+      [IO.File]::WriteAllText((Join-Path $subdirectory 'secret'), 'fixture')
+      & $resolved.SelectedPath $campaignRoot '/T' '/C' | Out-Null
+      if ($LASTEXITCODE -ne 0) { throw 'icacls verification failed.' }
+      $acl = Get-Acl -LiteralPath $campaignRoot
+      $fullControl = @($acl.Access | Where-Object {
+          $_.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and
+          ($_.FileSystemRights -band [Security.AccessControl.FileSystemRights]::FullControl) -ne 0 -and
+          $_.IdentityReference.Value.EndsWith("\\$env:USERNAME", [StringComparison]::OrdinalIgnoreCase)
+        }).Count -gt 0
+      [ordered]@{
+        fullControl = $fullControl
+        protected = $acl.AreAccessRulesProtected
+        selected = $resolved.SelectedPath
+      } | ConvertTo-Json -Compress
+    } else {
+      & $resolved.SelectedPath '700' $campaignRoot
+      if ($LASTEXITCODE -ne 0) { throw 'chmod root restriction failed.' }
+      $subdirectory = Join-Path $campaignRoot 'private'
+      [void](New-Item -ItemType Directory -Path $subdirectory)
+      $file = Join-Path $subdirectory 'secret'
+      [IO.File]::WriteAllText($file, 'fixture')
+      & $resolved.SelectedPath '-R' 'u=rwX,go=' $campaignRoot
+      if ($LASTEXITCODE -ne 0) { throw 'chmod tree restriction failed.' }
+      [ordered]@{
+        fileMode = [int][IO.File]::GetUnixFileMode($file)
+        rootMode = [int][IO.File]::GetUnixFileMode($campaignRoot)
+        selected = $resolved.SelectedPath
+        subdirectoryMode = [int][IO.File]::GetUnixFileMode($subdirectory)
+      } | ConvertTo-Json -Compress
+    }
+  }
+  else { throw 'Unknown application resolution fixture.' }
+}
+finally {
+  $env:PATH = $originalPath
+  if (Test-Path -LiteralPath $fixtureRoot) {
+    Remove-Item -LiteralPath $fixtureRoot -Recurse -Force
+  }
+}
+`;
+  const encodedScript = Buffer.from(script, "utf16le").toString("base64");
+  const executable = process.platform === "win32" ? "pwsh.exe" : "pwsh";
+  const result = spawnSync(
+    executable,
+    [
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-EncodedCommand",
+      encodedScript,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  const output = result.stdout.trim().split(/\r?\n/u).at(-1);
+  assert.ok(output);
+  return JSON.parse(output);
+}
+
+function resolvePowerShellExecutable() {
+  const locator = spawnSync(
+    process.platform === "win32" ? "where.exe" : "which",
+    [process.platform === "win32" ? "pwsh.exe" : "pwsh"],
+    { encoding: "utf8" },
+  );
+  assert.equal(locator.error, undefined);
+  assert.equal(locator.status, 0, locator.stderr);
+  const path = locator.stdout.trim().split(/\r?\n/u)[0];
+  assert.ok(path);
+  return path;
+}
 
 function invokeInventoryComparison(fixture) {
   const beginMarker = "# BEGIN C3 INVENTORY COMPARISON FUNCTIONS";
@@ -457,22 +669,134 @@ test("the real inventory comparator accepts only exact qualified cold-daemon ima
   );
 });
 
-test("the runner resolves qualified tools and permissions on Windows and POSIX", () => {
+test("the runner deterministically resolves one scalar absolute path for all four tools", () => {
+  const unique = invokeApplicationResolutionFixture("unique");
+  assert.deepEqual(unique.counts, {
+    docker: 1,
+    npm: 1,
+    openssl: 1,
+    permission: 1,
+  });
+  assert.deepEqual(unique.selectedTypes, Array(4).fill("System.String"));
+  for (const selected of Object.values(unique.selected)) {
+    assert.ok(selected.startsWith(unique.primary));
+  }
+
+  const multiple = invokeApplicationResolutionFixture("multiple");
+  assert.deepEqual(multiple.counts, {
+    docker: 2,
+    npm: 2,
+    openssl: 2,
+    permission: 2,
+  });
+  for (const selected of Object.values(multiple.selected)) {
+    assert.ok(selected.startsWith(multiple.primary));
+  }
+
+  const spaces = invokeApplicationResolutionFixture("spaces");
+  for (const selected of Object.values(spaces.selected)) {
+    assert.match(selected, /primary with spaces/u);
+  }
+});
+
+test("the application resolver rejects missing and invalid results and preserves tool failures", () => {
+  assert.equal(invokeApplicationResolutionFixture("missing").rejected, true);
+  assert.equal(invokeApplicationResolutionFixture("invalid").rejected, true);
+  const nonzero = invokeApplicationResolutionFixture("nonzero");
+  assert.equal(nonzero.exitCode, 23);
+  assert.ok(nonzero.selected.length > 0);
+});
+
+test("the selected permission tool enforces real private temporary-directory permissions", () => {
+  const permissions = invokeApplicationResolutionFixture("permissions");
+  assert.ok(permissions.selected.length > 0);
+  if (process.platform === "win32") {
+    assert.equal(permissions.protected, true);
+    assert.equal(permissions.fullControl, true);
+  } else {
+    assert.equal(permissions.rootMode, 0o700);
+    assert.equal(permissions.subdirectoryMode, 0o700);
+    assert.equal(permissions.fileMode, 0o600);
+  }
+});
+
+test("missing applications are rejected before evidence, secrets, or Docker resources", () => {
+  const fixtureRoot = mkdtempSync(join(tmpdir(), "kora-c3-missing-tool-"));
+  const emptyPath = join(fixtureRoot, "empty-path");
+  const evidence = join(fixtureRoot, "evidence");
+  mkdirSync(emptyPath);
+  try {
+    const result = spawnSync(
+      resolvePowerShellExecutable(),
+      [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-File",
+        fileURLToPath(
+          new URL(
+            "scripts/infra/run-admin-auth-c3-runtime-validation.ps1",
+            root,
+          ),
+        ),
+        "-Instance",
+        "c3-missing-tool",
+        "-EvidenceDirectory",
+        evidence,
+        "-BrowserProjectSet",
+        "ChromiumWebKit",
+      ],
+      {
+        encoding: "utf8",
+        env: { ...process.env, PATH: emptyPath },
+      },
+    );
+    assert.equal(result.error, undefined);
+    assert.notEqual(result.status, 0);
+    assert.match(
+      `${result.stdout}\n${result.stderr}`,
+      /The required application is unavailable:/u,
+    );
+    assert.equal(existsSync(evidence), false);
+  } finally {
+    rmSync(fixtureRoot, { force: true, recursive: true });
+  }
+});
+
+test("the runner wires resolved tools and preserves Windows and POSIX permission guards", () => {
   assert.match(
     runner,
-    /if \(\$IsWindows\) \{ 'docker\.exe' \} else \{ 'docker' \}/u,
+    /Resolve-C3ApplicationSet -WindowsPlatform \$IsWindows/u,
   );
-  assert.match(runner, /if \(\$IsWindows\) \{ 'npm\.cmd' \} else \{ 'npm' \}/u);
   assert.match(
     runner,
-    /if \(\$IsWindows\) \{ 'icacls\.exe' \} else \{ 'chmod' \}/u,
+    /\$OpenSsl = \[string\]\$ResolvedApplications\.OpenSsl\.SelectedPath/u,
   );
+  assert.match(
+    runner,
+    /\$Docker = \[string\]\$ResolvedApplications\.Docker\.SelectedPath/u,
+  );
+  assert.match(
+    runner,
+    /\$Npm = \[string\]\$ResolvedApplications\.Npm\.SelectedPath/u,
+  );
+  assert.match(
+    runner,
+    /\$PermissionTool = \[string\]\$ResolvedApplications\.Permission\.SelectedPath/u,
+  );
+  assert.match(runner, /\$DockerName -eq 'docker'\) \{ 'docker\.exe' \}/u);
+  assert.match(runner, /\$NpmName -eq 'npm'\) \{ 'npm\.cmd' \}/u);
+  assert.match(runner, /WindowsPermissionName = 'icacls\.exe'/u);
+  assert.match(runner, /PosixPermissionName = 'chmod'/u);
+  assert.match(runner, /-CommandType Application[\s\S]+?-All/u);
+  assert.match(runner, /\$selected = \$commands\[0\]/u);
+  assert.match(runner, /IsPathFullyQualified/u);
+  assert.match(runner, /-PathType Leaf/u);
   assert.match(runner, /'700'/u);
   assert.match(runner, /'u=rwX,go='/u);
   assert.match(runner, /GetUnixFileMode/u);
   assert.match(runner, /certificate-openssl-version/u);
-  assert.doesNotMatch(runner, /Get-Command docker\.exe -ErrorAction/u);
-  assert.doesNotMatch(runner, /Get-Command npm\.cmd -ErrorAction/u);
+  assert.match(runner, /executable-resolutions\.json/u);
 });
 
 test("the campaign root is private before secret directories or Docker are touched", () => {

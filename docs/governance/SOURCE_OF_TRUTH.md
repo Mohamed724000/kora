@@ -1,14 +1,14 @@
 # KORA+ Final — Source de vérité
 
 Statut : **DOCUMENT OPÉRATIONNEL VIVANT — C2a ET C2b INTÉGRÉS DANS MAIN AU
-MERGE `c47a1507dce6ea7333ce7e372f9bd34aa548c81b`, NON DÉPLOYÉS — C3 PUBLIÉ
-DANS LA DRAFT PR #54 AU HEAD `e27ee24…` — TROIS WORKFLOWS VERTS,
-INFRASTRUCTURE `41221134116` NON-PASS HISTORIQUE — CORRECTIF BUILD C2a
-QUALIFIÉ LOCALEMENT ET NON ENCORE PUBLIÉ — FOURNISSEURS ET LINUX DE
-PRODUCTION NON QUALIFIÉS**
+MERGE `c47a1507dce6ea7333ce7e372f9bd34aa548c81b`, NON DÉPLOYÉS — C3 DANS LA
+DRAFT PR #54 — RACCORDEMENT BUILD C2a PUBLIÉ — INFRASTRUCTURE `41246330316`
+NON-PASS HISTORIQUE — RÉSOLUTION MULTI-PLATEFORME DU RUNNER QUALIFIÉE
+LOCALEMENT — INTÉGRATION CONDITIONNÉE À UNE CI FRAÎCHE — FOURNISSEURS ET
+LINUX DE PRODUCTION NON QUALIFIÉS**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-10-31
+Dernière réconciliation documentaire : 2026-11-02
 
 ## Hiérarchie normative
 
@@ -1786,3 +1786,37 @@ futur. A-02, Chromium, WebKit, Firefox, Nginx et la décision visuelle PO sont
 réutilisés sur leurs surfaces inchangées ; aucune exécution globale 24/24 n'est
 revendiquée. Les réserves Windows, production, fournisseurs, parcours visuels
 absents, artefacts WASM optionnels et politique OSS restent inchangées.
+
+## Résolution locale du runner C3 — 2026-11-02
+
+Le head publié `67ecc3d4e6c57ded3f7134b93b78ea30ca32c8d4` et le run
+Infrastructure `41246330316` restent l'état distant historique NON-PASS. La
+reproduction locale démontre que PowerShell peut retourner plusieurs
+applications pour OpenSSL et `chmod`; elle ne reconstitue pas le type ni la
+cardinalité exacts du runner GitHub, qui restent NON CONCLUSIVE.
+
+Le candidat local résout OpenSSL, Docker, npm et `icacls` ou `chmod` avant
+toute création de preuve, de secret ou de ressource. Il exige un chemin
+scalaire, absolu et existant, choisit explicitement le premier candidat de
+l'ordre PowerShell et archive la liste complète. Les régressions Windows et
+Linux passent chacune 31/31, y compris chemins avec espaces, résultats
+multiples, absence, résultat invalide, erreur d'outil et permissions réelles.
+
+La campagne Linux isolée sur les octets exacts passe 24/24 : Chromium 18/18,
+Firefox 3/3 et WebKit 3/3. Redaction, scan de secrets, cleanup ciblé et
+préservation de l'inventaire étranger passent aux niveaux interne et hôte. Les
+NON-PASS intermédiaires restent archivés et leur cause historique n'est pas
+surqualifiée.
+
+La fixture imbriquée traverse un proxy TCP opaque hors dépôt entre le
+loopback du conteneur et `host.docker.internal`; il ne termine pas TLS et ne
+change aucune assertion. Cette preuve qualifie donc le runner local isolé,
+mais pas la topologie GitHub ni Linux de production. Le test du runner sur ses
+octets formatés finaux est couvert séparément par 31/31 sous Windows et 31/31
+sous Linux.
+
+Le tooling officiel passe 592/592 sous une allocation Linux reproductible de
+deux CPU. Les exécutions à 14 threads 585/592 et 590/592 restent NON-PASS, le
+fichier concerné passant seul 67/67. Ce statut est un GO local borné ; il ne
+vaut ni publication, ni succès CI, ni qualification de Linux de production,
+ni intégration ou déploiement.

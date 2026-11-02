@@ -21,6 +21,81 @@ param(
 $ErrorActionPreference = 'Stop'
 $Utf8 = [Text.UTF8Encoding]::new($false)
 
+# BEGIN C3 APPLICATION RESOLUTION FUNCTIONS
+function Select-C3Application([string]$Name, [object[]]$Commands) {
+  $commands = @($Commands)
+  if ($commands.Count -eq 0) {
+    throw "The required application is unavailable: $Name"
+  }
+
+  $selected = $commands[0]
+  if ($selected -isnot [Management.Automation.ApplicationInfo]) {
+    throw "The resolved application has an invalid type: $Name"
+  }
+  $selectedPath = [string]$selected.Path
+  if (
+    [string]::IsNullOrWhiteSpace($selectedPath) -or
+    -not [IO.Path]::IsPathFullyQualified($selectedPath) -or
+    -not (Test-Path -LiteralPath $selectedPath -PathType Leaf)
+  ) {
+    throw "The resolved application path is invalid: $Name"
+  }
+
+  return [pscustomobject]@{
+    CandidateCount = $commands.Count
+    Candidates = @($commands | ForEach-Object {
+        [pscustomobject]@{
+          CommandType = [string]$_.CommandType
+          Path = [string]$_.Path
+          Source = [string]$_.Source
+        }
+      })
+    Name = $Name
+    SelectedPath = $selectedPath
+  }
+}
+
+function Resolve-C3Application([string]$Name) {
+  if ([string]::IsNullOrWhiteSpace($Name)) {
+    throw 'The application name is empty.'
+  }
+  try {
+    $commands = @(
+      Microsoft.PowerShell.Core\Get-Command `
+        -Name $Name `
+        -CommandType Application `
+        -All `
+        -ErrorAction Stop
+    )
+  }
+  catch {
+    throw [InvalidOperationException]::new("The required application is unavailable: $Name", $_.Exception)
+  }
+  return Select-C3Application $Name $commands
+}
+
+function Resolve-C3ApplicationSet(
+  [bool]$WindowsPlatform,
+  [string]$WindowsOpenSslPath = 'C:\Program Files\Git\mingw64\bin\openssl.exe',
+  [string]$OpenSslName = 'openssl',
+  [string]$DockerName = 'docker',
+  [string]$NpmName = 'npm',
+  [string]$WindowsPermissionName = 'icacls.exe',
+  [string]$PosixPermissionName = 'chmod'
+) {
+  $openSsl = Resolve-C3Application $(if ($WindowsPlatform) { $WindowsOpenSslPath } else { $OpenSslName })
+  $docker = Resolve-C3Application $(if ($WindowsPlatform -and $DockerName -eq 'docker') { 'docker.exe' } else { $DockerName })
+  $npm = Resolve-C3Application $(if ($WindowsPlatform -and $NpmName -eq 'npm') { 'npm.cmd' } else { $NpmName })
+  $permission = Resolve-C3Application $(if ($WindowsPlatform) { $WindowsPermissionName } else { $PosixPermissionName })
+  return [pscustomobject]@{
+    Docker = $docker
+    Npm = $npm
+    OpenSsl = $openSsl
+    Permission = $permission
+  }
+}
+# END C3 APPLICATION RESOLUTION FUNCTIONS
+
 # BEGIN C3 BROWSER TEST ARGUMENT FUNCTIONS
 function Resolve-C3BrowserTestArguments([string]$ProjectSet) {
   $baseArguments = @('run', 'test:e2e', '--workspace', '@kora-plus/admin')
@@ -155,14 +230,11 @@ $ProjectName = "kora-c3-$Instance"
 $CampaignId = "c3-browser-$Instance"
 $DatabaseName = ('kora_c3_' + $Instance.Replace('-', '_'))
 $OwnerName = ('kora_c3_owner_' + ($Instance.Replace('-', '_')))
-$OpenSsl = if ($IsWindows) {
-  'C:\Program Files\Git\mingw64\bin\openssl.exe'
-} else {
-  (Get-Command openssl -CommandType Application -ErrorAction Stop).Source
-}
-$Docker = (Get-Command $(if ($IsWindows) { 'docker.exe' } else { 'docker' }) -CommandType Application -ErrorAction Stop).Source
-$Npm = (Get-Command $(if ($IsWindows) { 'npm.cmd' } else { 'npm' }) -CommandType Application -ErrorAction Stop).Source
-$PermissionTool = (Get-Command $(if ($IsWindows) { 'icacls.exe' } else { 'chmod' }) -CommandType Application -ErrorAction Stop).Source
+$ResolvedApplications = Resolve-C3ApplicationSet -WindowsPlatform $IsWindows
+$OpenSsl = [string]$ResolvedApplications.OpenSsl.SelectedPath
+$Docker = [string]$ResolvedApplications.Docker.SelectedPath
+$Npm = [string]$ResolvedApplications.Npm.SelectedPath
+$PermissionTool = [string]$ResolvedApplications.Permission.SelectedPath
 
 $inheritedFirefoxExecutable = [Environment]::GetEnvironmentVariable('KORA_C3_FIREFOX_EXECUTABLE_PATH', 'Process')
 if ($null -ne $inheritedFirefoxExecutable) {
@@ -187,10 +259,6 @@ if ($ProjectName -eq 'kora-plus-local' -or $ProjectName.Length -gt 72) {
 if (Test-Path -LiteralPath $EvidenceDirectory) {
   throw 'The evidence directory already exists.'
 }
-if (-not (Test-Path -LiteralPath $OpenSsl -PathType Leaf)) {
-  throw 'The qualified OpenSSL executable is unavailable.'
-}
-
 $EvidenceDirectory = [IO.Path]::GetFullPath($EvidenceDirectory)
 New-Item -ItemType Directory -Path $EvidenceDirectory | Out-Null
 $CampaignRoot = Join-Path ([IO.Path]::GetTempPath()) ("kora-c3-$Instance-" + [Guid]::NewGuid().ToString('N'))
@@ -206,6 +274,13 @@ function Write-NewText([string]$Path, [string]$Value) {
   if (Test-Path -LiteralPath $Path) { throw "Refusing to overwrite $Path" }
   [IO.File]::WriteAllText($Path, $Value, $Utf8)
 }
+
+Write-NewText (Join-Path $EvidenceDirectory 'executable-resolutions.json') (([ordered]@{
+      docker = $ResolvedApplications.Docker
+      npm = $ResolvedApplications.Npm
+      openssl = $ResolvedApplications.OpenSsl
+      permission = $ResolvedApplications.Permission
+    } | ConvertTo-Json -Depth 6) + "`n")
 
 function ConvertTo-CanonicalDockerInventory([string]$Label, [string]$JsonLines) {
   $rows = foreach ($line in ($JsonLines -split "`r?`n")) {

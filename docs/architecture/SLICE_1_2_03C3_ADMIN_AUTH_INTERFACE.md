@@ -1,11 +1,12 @@
 # S1.2-03C3 — Interface d'authentification Admin
 
-Statut : **CANDIDAT C3 PUBLIÉ DANS LA DRAFT PR #54 AU HEAD `e27ee24…` —
-TROIS WORKFLOWS VERTS ET INFRASTRUCTURE `41221134116` NON-PASS HISTORIQUE —
-RACCORDEMENT BUILD C2a CORRIGÉ ET QUALIFIÉ LOCALEMENT, NON ENCORE PUBLIÉ —
-A-02, FIREFOX WINDOWS ET VISUEL PRODUCT OWNER BORNÉS — NON DÉPLOYÉ**
+Statut : **CANDIDAT C3 DANS LA DRAFT PR #54 — RACCORDEMENT BUILD C2a PUBLIÉ —
+INFRASTRUCTURE `41246330316` NON-PASS HISTORIQUE — RÉSOLUTION
+MULTI-PLATEFORME DU RUNNER QUALIFIÉE LOCALEMENT — INTÉGRATION CONDITIONNÉE À
+UNE CI FRAÎCHE — A-02, FIREFOX WINDOWS ET VISUEL PRODUCT OWNER BORNÉS — NON
+DÉPLOYÉ**
 
-Date : 2026-10-31
+Date : 2026-11-02
 
 Baseline : merge C2b `c47a1507dce6ea7333ce7e372f9bd34aa548c81b`,
 arbre `063f2c7ab5cdf9df489332263e4b3184adf90330`.
@@ -303,3 +304,39 @@ ni une nouvelle CI, ni une nouvelle campagne navigateur. Les preuves C3 et
 l'approbation visuelle restent applicables parce qu'aucune source, dépendance,
 configuration ou artefact navigateur concerné ne change. La limite de signal
 gracieux Windows demeure explicitement NON DEMONSTRATED.
+
+## Résolution des exécutables du runner C3 — 2026-11-02
+
+Le head publié `67ecc3d4e6c57ded3f7134b93b78ea30ca32c8d4` conserve le
+NON-PASS Infrastructure `41246330316`. La sonde Linux contrôlée reproduit une
+résolution multiple pour OpenSSL et `chmod`, mais le type et la cardinalité
+exacts observés par le runner GitHub historique restent **NON CONCLUSIVE**.
+
+Le runner local sélectionne désormais, avant toute preuve, secret ou ressource
+Docker, le premier résultat `Application` de la résolution PowerShell ordonnée.
+Il exige un chemin scalaire, absolu et existant pour OpenSSL, Docker, npm et
+`icacls` ou `chmod`, et archive tous les candidats ainsi que le chemin retenu.
+Les chemins contenant des espaces, les résultats multiples, l'absence, un
+résultat invalide et le code non nul d'un outil sont exercés sans concaténation
+de commandes ni modification globale du `PATH`.
+
+Les régressions passent 31/31 sous Windows et 31/31 sous Linux. Les permissions
+réelles conservent les ACL Windows protégées et les modes POSIX `0700` pour les
+répertoires et `0600` pour le fichier témoin. Sur les octets exacts du runner
+et du test navigateur, la campagne Linux isolée exécute 24/24 : Chromium
+18/18, Firefox 3/3 et WebKit 3/3, avec redaction, scan de secrets, cleanup ciblé
+et inventaire étranger identique.
+
+La fixture locale imbriquée emploie un proxy TCP opaque hors dépôt entre le
+loopback du conteneur et `host.docker.internal`. Ce proxy ne termine pas TLS et
+ne modifie ni les assertions ni le runtime, mais cette topologie ne qualifie ni
+le runner GitHub ni Linux de production. Le fichier de régressions, formaté
+après la campagne complète, est qualifié séparément par les deux passages
+31/31 sur ses octets finaux.
+
+Les essais navigateur et tooling NON-PASS restent historiques. Le tooling
+agrégé à 14 threads termine 585/592 puis 590/592 sur des deadlines PostgreSQL
+de 100 ms ; le fichier concerné passe seul 67/67 et le gate officiel passe
+592/592 avec une allocation Linux explicite de deux CPU, sans changement
+d'assertion ni de timeout. Cette qualification locale ne qualifie ni Linux de
+production, ni une CI future, ni l'intégration ou le déploiement.
