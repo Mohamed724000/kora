@@ -96,6 +96,23 @@ function Resolve-C3ApplicationSet(
 }
 # END C3 APPLICATION RESOLUTION FUNCTIONS
 
+# BEGIN C3 POSIX CHANNEL IDENTITY FUNCTIONS
+function ConvertTo-C3PosixIdentityComponent([string]$Value, [string]$Component) {
+  if ($Component -notin @('GID', 'UID')) {
+    throw 'The POSIX identity component name is invalid.'
+  }
+  $lines = @($Value -split "`r?`n" | Where-Object { $_.Length -gt 0 })
+  if ($lines.Count -ne 1 -or $lines[0] -notmatch '^[1-9][0-9]{0,9}$') {
+    throw "The campaign POSIX $Component is not one non-root numeric identity."
+  }
+  $parsed = 0L
+  if (-not [long]::TryParse($lines[0], [ref]$parsed) -or $parsed -gt [uint32]::MaxValue) {
+    throw "The campaign POSIX $Component is outside the supported range."
+  }
+  return $lines[0]
+}
+# END C3 POSIX CHANNEL IDENTITY FUNCTIONS
+
 # BEGIN C3 BROWSER TEST ARGUMENT FUNCTIONS
 function Resolve-C3BrowserTestArguments([string]$ProjectSet) {
   $baseArguments = @('run', 'test:e2e', '--workspace', '@kora-plus/admin')
@@ -257,14 +274,16 @@ function Get-C3SafeBrowserPublicSummary(
     $allowedCleanups = @('FAILED', 'NOT_APPLICABLE', 'NOT_REQUIRED', 'NOT_RUN', 'PASSED')
     $allowedDeliveries = @(
       'ABSENT',
+      'DIRECTORY_UNREADABLE',
+      'FILE_DISAPPEARED',
+      'FILE_UNREADABLE',
       'INVALID',
       'LATE',
       'MATCHED',
       'NOT_APPLICABLE',
       'RECIPIENT_MISMATCH',
       'SENTINEL_REGISTRATION_FAILED',
-      'UNKNOWN',
-      'UNREADABLE'
+      'UNKNOWN'
     )
     $allowedInvariants = @(
       'COMPROMISED_DIAGNOSTICS',
@@ -553,7 +572,7 @@ function Test-C3DeliveryMarkerSnapshot([object]$Snapshot) {
 }
 
 function Test-C3NotificationOutboxSnapshot([object]$Snapshot) {
-  if (-not (Test-C3DeliveryExactPropertySet $Snapshot @('attempt', 'identity', 'state'))) {
+  if (-not (Test-C3DeliveryExactPropertySet $Snapshot @('attempt', 'identity', 'readOnly', 'state'))) {
     return $false
   }
   return (
@@ -561,6 +580,8 @@ function Test-C3NotificationOutboxSnapshot([object]$Snapshot) {
     @('MULTIPLE', 'ONE', 'UNAVAILABLE', 'ZERO') -ccontains $Snapshot.attempt -and
     $Snapshot.identity -is [string] -and
     @('EXPECTED', 'UNAVAILABLE', 'UNEXPECTED') -ccontains $Snapshot.identity -and
+    $Snapshot.readOnly -is [string] -and
+    @('CONFIRMED', 'DISABLED', 'UNAVAILABLE') -ccontains $Snapshot.readOnly -and
     $Snapshot.state -is [string] -and
     @(
       'ABSENT', 'AMBIGUOUS', 'CANCELLED', 'CLAIMED', 'DELIVERED',
@@ -575,13 +596,17 @@ function Get-C3DeliveryPipelineClassification(
   [object]$Outbox,
   [string]$Stability
 ) {
+  if ($Stability -ceq 'UNAVAILABLE') { return 'DIAGNOSTIC_UNAVAILABLE' }
   if ($Stability -cne 'STABLE') { return 'AMBIGUOUS' }
+  if ($Outbox.identity -cne 'EXPECTED' -or $Outbox.readOnly -cne 'CONFIRMED') {
+    return 'DIAGNOSTIC_UNAVAILABLE'
+  }
   switch -CaseSensitive ($ObservedDelivery) {
     'INVALID' { return 'HARNESS_RECORD_INVALID' }
     'LATE' { return 'LATE_DELIVERY' }
     'RECIPIENT_MISMATCH' { return 'RECIPIENT_MISMATCH' }
     'SENTINEL_REGISTRATION_FAILED' { return 'SENTINEL_REGISTRATION_FAILED' }
-    'UNREADABLE' {
+    'DIRECTORY_UNREADABLE' {
       if (
         @(
           $Snapshot.file,
@@ -590,7 +615,33 @@ function Get-C3DeliveryPipelineClassification(
           $Snapshot.directoryMode
         ) -contains 'UNAVAILABLE'
       ) { return 'DIAGNOSTIC_UNAVAILABLE' }
-      if ($Snapshot.file -ceq 'PRESENT_VALID') { return 'HOST_READ_BOUNDARY' }
+      if ($Snapshot.file -ceq 'PRESENT_VALID') { return 'HOST_DIRECTORY_BOUNDARY' }
+      return 'AMBIGUOUS'
+    }
+    'FILE_UNREADABLE' {
+      if (
+        @(
+          $Snapshot.file,
+          $Snapshot.fileCount,
+          $Snapshot.fileMode,
+          $Snapshot.directoryMode
+        ) -contains 'UNAVAILABLE'
+      ) { return 'DIAGNOSTIC_UNAVAILABLE' }
+      if ($Snapshot.file -ceq 'PRESENT_VALID') { return 'HOST_FILE_BOUNDARY' }
+      return 'AMBIGUOUS'
+    }
+    'FILE_DISAPPEARED' {
+      if (
+        @(
+          $Snapshot.file,
+          $Snapshot.fileCount,
+          $Snapshot.fileMode,
+          $Snapshot.directoryMode
+        ) -contains 'UNAVAILABLE'
+      ) { return 'DIAGNOSTIC_UNAVAILABLE' }
+      if ($Snapshot.file -ceq 'ABSENT' -and $Snapshot.fileCount -ceq 'ZERO') {
+        return 'HOST_FILE_DISAPPEARED'
+      }
       return 'AMBIGUOUS'
     }
     'ABSENT' {
@@ -667,9 +718,10 @@ function New-C3SafeDeliveryPipelineSummary(
     fileMode = 'UNAVAILABLE'
     outbox = 'UNAVAILABLE'
     outboxIdentity = 'UNAVAILABLE'
+    outboxReadOnly = 'UNAVAILABLE'
     producer = 'UNAVAILABLE'
     stability = 'UNAVAILABLE'
-    version = 1
+    version = 2
     worker = 'UNAVAILABLE'
   }
   if (
@@ -683,10 +735,41 @@ function New-C3SafeDeliveryPipelineSummary(
     -not (Test-C3NotificationOutboxSnapshot $SecondOutboxSnapshot)
   ) { return $invalid }
   $observedDelivery = [string]$BrowserSummary.Public.diagnostic.delivery
-  if (@('ABSENT', 'INVALID', 'LATE', 'RECIPIENT_MISMATCH', 'SENTINEL_REGISTRATION_FAILED', 'UNKNOWN', 'UNREADABLE') -cnotcontains $observedDelivery) {
+  if (@(
+      'ABSENT', 'DIRECTORY_UNREADABLE', 'FILE_DISAPPEARED', 'FILE_UNREADABLE', 'INVALID',
+      'LATE', 'RECIPIENT_MISMATCH', 'SENTINEL_REGISTRATION_FAILED', 'UNKNOWN'
+    ) -cnotcontains $observedDelivery) {
     return $invalid
   }
-  $stability = if (
+  $diagnosticUnavailable = @(
+    $FirstSnapshot.bullmq,
+    $FirstSnapshot.delivery,
+    $FirstSnapshot.directoryMode,
+    $FirstSnapshot.file,
+    $FirstSnapshot.fileCount,
+    $FirstSnapshot.fileMode,
+    $FirstSnapshot.producer,
+    $FirstSnapshot.worker,
+    $SecondSnapshot.bullmq,
+    $SecondSnapshot.delivery,
+    $SecondSnapshot.directoryMode,
+    $SecondSnapshot.file,
+    $SecondSnapshot.fileCount,
+    $SecondSnapshot.fileMode,
+    $SecondSnapshot.producer,
+    $SecondSnapshot.worker,
+    $FirstOutboxSnapshot.attempt,
+    $FirstOutboxSnapshot.identity,
+    $FirstOutboxSnapshot.readOnly,
+    $FirstOutboxSnapshot.state,
+    $SecondOutboxSnapshot.attempt,
+    $SecondOutboxSnapshot.identity,
+    $SecondOutboxSnapshot.readOnly,
+    $SecondOutboxSnapshot.state
+  ) -contains 'UNAVAILABLE'
+  $stability = if ($diagnosticUnavailable) {
+    'UNAVAILABLE'
+  } elseif (
     ($FirstSnapshot | ConvertTo-Json -Compress -Depth 4) -ceq
     ($SecondSnapshot | ConvertTo-Json -Compress -Depth 4) -and
     ($FirstOutboxSnapshot | ConvertTo-Json -Compress -Depth 4) -ceq
@@ -703,9 +786,10 @@ function New-C3SafeDeliveryPipelineSummary(
     fileMode = [string]$SecondSnapshot.fileMode
     outbox = [string]$SecondOutboxSnapshot.state
     outboxIdentity = [string]$SecondOutboxSnapshot.identity
+    outboxReadOnly = [string]$SecondOutboxSnapshot.readOnly
     producer = [string]$SecondSnapshot.producer
     stability = $stability
-    version = 1
+    version = 2
     worker = [string]$SecondSnapshot.worker
   }
 }
@@ -1053,6 +1137,8 @@ $OpenSsl = [string]$ResolvedApplications.OpenSsl.SelectedPath
 $Docker = [string]$ResolvedApplications.Docker.SelectedPath
 $Npm = [string]$ResolvedApplications.Npm.SelectedPath
 $PermissionTool = [string]$ResolvedApplications.Permission.SelectedPath
+$PosixIdentityApplication = if ($IsWindows) { $null } else { Resolve-C3Application 'id' }
+$PosixIdentityTool = if ($IsWindows) { '' } else { [string]$PosixIdentityApplication.SelectedPath }
 
 $inheritedFirefoxExecutable = [Environment]::GetEnvironmentVariable('KORA_C3_FIREFOX_EXECUTABLE_PATH', 'Process')
 if ($null -ne $inheritedFirefoxExecutable) {
@@ -1099,6 +1185,7 @@ Write-NewText (Join-Path $EvidenceDirectory 'executable-resolutions.json') (([or
       npm = $ResolvedApplications.Npm
       openssl = $ResolvedApplications.OpenSsl
       permission = $ResolvedApplications.Permission
+      posixIdentity = $PosixIdentityApplication
     } | ConvertTo-Json -Depth 6) + "`n")
 
 function ConvertTo-CanonicalDockerInventory([string]$Label, [string]$JsonLines) {
@@ -1147,45 +1234,152 @@ function Get-CanonicalDockerInventoryRows([string]$Label, [string]$CanonicalInve
   return @($lines | Select-Object -Skip 1 | Where-Object { $_.Length -gt 0 })
 }
 
-function ConvertTo-DockerImageReferenceIdentity([string]$Repository, [string]$Tag, [string]$Digest) {
-  return ([ordered]@{
-    Digest = $Digest
-    Repository = $Repository
-    Tag = $Tag
-  } | ConvertTo-Json -Compress)
+function Test-C3InventoryExactPropertySet([object]$Value, [string[]]$Expected) {
+  if ($null -eq $Value) { return $false }
+  $actual = if ($Value -is [Collections.IDictionary]) {
+    @($Value.Keys | ForEach-Object { [string]$_ } | Sort-Object -CaseSensitive)
+  } else {
+    @($Value.PSObject.Properties.Name | Sort-Object -CaseSensitive)
+  }
+  return ($actual -join "`n") -ceq (@($Expected | Sort-Object -CaseSensitive) -join "`n")
 }
 
-function Compare-CanonicalDockerInventories(
-  [Collections.IDictionary]$BeforeByLabel,
-  [Collections.IDictionary]$AfterByLabel,
-  [string[]]$QualifiedImageReferences
-) {
-  $changed = $false
-  foreach ($label in @('containers', 'volumes', 'networks')) {
-    if ($AfterByLabel[$label] -cne $BeforeByLabel[$label]) { $changed = $true }
+function ConvertTo-C3CanonicalRepository([string]$Repository) {
+  if ($Repository -cne $Repository.ToLowerInvariant() -or $Repository -notmatch '^[a-z0-9]+(?:[._-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*$') {
+    throw 'Docker repository syntax is invalid.'
   }
-  $beforeImageRows = @(Get-CanonicalDockerInventoryRows 'images' $BeforeByLabel['images'])
-  $afterImageRows = @(Get-CanonicalDockerInventoryRows 'images' $AfterByLabel['images'])
-  $missingImageRows = @($beforeImageRows | Where-Object { $afterImageRows -cnotcontains $_ })
-  $acquiredImageRows = @($afterImageRows | Where-Object { $beforeImageRows -cnotcontains $_ })
-  $unqualifiedImageRows = @($acquiredImageRows | Where-Object {
-    $record = $_ | ConvertFrom-Json
-    $identity = ConvertTo-DockerImageReferenceIdentity ([string]$record.Repository) ([string]$record.Tag) ([string]$record.Digest)
-    $QualifiedImageReferences -cnotcontains $identity
-  })
-  if ($missingImageRows.Count -gt 0 -or $unqualifiedImageRows.Count -gt 0) { $changed = $true }
-  $status = if ($changed) {
-    'SEMANTIC_DIFFERENT'
-  } elseif ($acquiredImageRows.Count -gt 0) {
-    'SEMANTIC_PRESERVED_WITH_QUALIFIED_CAMPAIGN_IMAGES'
+  $segments = @($Repository -split '/')
+  if ($segments[0] -ceq 'index.docker.io') {
+    $segments[0] = 'docker.io'
+    return $segments -join '/'
+  }
+  if ($segments.Count -eq 1) { return "docker.io/library/$Repository" }
+  if ($segments[0] -notmatch '[.:]' -and $segments[0] -cne 'localhost') {
+    return "docker.io/$Repository"
+  }
+  return $Repository
+}
+
+function Get-C3ImageInventoryIdentity([object]$Record) {
+  return ([ordered]@{
+      Repository = [string]$Record.Repository
+      Tag = [string]$Record.Tag
+    } | ConvertTo-Json -Compress)
+}
+
+function Test-C3ImageQualificationEvidence([object]$Evidence) {
+  if (-not (Test-C3InventoryExactPropertySet $Evidence @(
+        'CanonicalRepository', 'ConfigDigest', 'LocalIdentityKind', 'LocalImageId',
+        'ManifestDigest', 'ManifestKind', 'PlatformArchitecture', 'PlatformManifestDigest',
+        'PlatformOs', 'PlatformVariant', 'Reference', 'RepoDigest',
+        'RepoDigestConfirmed', 'Tag', 'Version'
+      ))) { return $false }
+  try { $canonical = ConvertTo-C3CanonicalRepository ([string]$Evidence.CanonicalRepository) }
+  catch { return $false }
+  if ($canonical -cne [string]$Evidence.CanonicalRepository) { return $false }
+  $digestPattern = '^sha256:[0-9a-f]{64}$'
+  if (
+    $Evidence.Version -ne 1 -or
+    $Evidence.Reference -isnot [string] -or [string]::IsNullOrWhiteSpace($Evidence.Reference) -or
+    $Evidence.Reference -match '\s' -or
+    $Evidence.Tag -isnot [string] -or [string]::IsNullOrWhiteSpace($Evidence.Tag) -or
+    $Evidence.Tag -ceq '<none>' -or
+    $Evidence.ManifestDigest -notmatch $digestPattern -or
+    $Evidence.PlatformManifestDigest -notmatch $digestPattern -or
+    $Evidence.ConfigDigest -notmatch $digestPattern -or
+    $Evidence.LocalImageId -notmatch $digestPattern -or
+    $Evidence.ManifestKind -notin @('INDEX', 'SINGLE') -or
+    $Evidence.PlatformOs -notmatch '^[a-z0-9]+$' -or
+    $Evidence.PlatformArchitecture -notmatch '^[a-z0-9_]+$' -or
+    $Evidence.PlatformVariant -isnot [string] -or $Evidence.PlatformVariant.Length -gt 32 -or
+    $Evidence.LocalIdentityKind -notin @('CONFIG', 'DESCRIPTOR') -or
+    $Evidence.RepoDigestConfirmed -isnot [bool] -or -not $Evidence.RepoDigestConfirmed -or
+    $Evidence.RepoDigest -cne "$($Evidence.CanonicalRepository)@$($Evidence.ManifestDigest)"
+  ) { return $false }
+  if (
+    ($Evidence.LocalIdentityKind -ceq 'CONFIG' -and $Evidence.LocalImageId -cne $Evidence.ConfigDigest) -or
+    ($Evidence.LocalIdentityKind -ceq 'DESCRIPTOR' -and $Evidence.LocalImageId -cne $Evidence.ManifestDigest)
+  ) { return $false }
+  return $true
+}
+
+function Resolve-C3ImageInventoryDelta(
+  [string[]]$BeforeRows,
+  [string[]]$AfterRows,
+  [object[]]$QualificationEvidence
+) {
+  $beforeByIdentity = [Collections.Generic.Dictionary[string, string]]::new([StringComparer]::Ordinal)
+  $afterByIdentity = [Collections.Generic.Dictionary[string, string]]::new([StringComparer]::Ordinal)
+  $beforeImageIds = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+  foreach ($row in $BeforeRows) {
+    $record = $row | ConvertFrom-Json
+    $identity = Get-C3ImageInventoryIdentity $record
+    if (-not $beforeByIdentity.TryAdd($identity, $row)) { throw 'Duplicate image inventory identity before the campaign.' }
+    if ([string]$record.ID -match '^sha256:[0-9a-f]{64}$') { [void]$beforeImageIds.Add([string]$record.ID) }
+  }
+  foreach ($row in $AfterRows) {
+    $record = $row | ConvertFrom-Json
+    $identity = Get-C3ImageInventoryIdentity $record
+    if (-not $afterByIdentity.TryAdd($identity, $row)) { throw 'Duplicate image inventory identity after the campaign.' }
+  }
+
+  $validatedEvidence = [Collections.Generic.List[object]]::new()
+  $evidenceIdentities = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+  foreach ($evidence in $QualificationEvidence) {
+    if (-not (Test-C3ImageQualificationEvidence $evidence)) { throw 'Image qualification evidence is incomplete.' }
+    $identity = "$($evidence.CanonicalRepository)`n$($evidence.Tag)`n$($evidence.ManifestDigest)`n$($evidence.LocalImageId)"
+    if (-not $evidenceIdentities.Add($identity)) { throw 'Image qualification evidence is duplicated.' }
+    $validatedEvidence.Add($evidence)
+  }
+
+  $missing = 0
+  $modified = 0
+  foreach ($entry in $beforeByIdentity.GetEnumerator()) {
+    if (-not $afterByIdentity.ContainsKey($entry.Key)) { $missing += 1; continue }
+    if ($afterByIdentity[$entry.Key] -cne $entry.Value) { $modified += 1 }
+  }
+
+  $added = 0
+  $qualifiedRows = [Collections.Generic.List[string]]::new()
+  $usedEvidence = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+  foreach ($entry in $afterByIdentity.GetEnumerator()) {
+    if ($beforeByIdentity.ContainsKey($entry.Key)) { continue }
+    $record = $entry.Value | ConvertFrom-Json
+    $matches = @($validatedEvidence | Where-Object {
+        $canonicalRepository = try { ConvertTo-C3CanonicalRepository ([string]$record.Repository) } catch { '' }
+        $tagKind = if ([string]$record.Tag -ceq [string]$_.Tag) {
+          'EXACT'
+        } elseif ([string]$record.Tag -ceq '<none>') {
+          'UNTAGGED'
+        } else {
+          'OTHER'
+        }
+        $canonicalRepository -ceq [string]$_.CanonicalRepository -and
+        $tagKind -in @('EXACT', 'UNTAGGED') -and
+        [string]$record.Digest -ceq [string]$_.ManifestDigest -and
+        [string]$record.ID -ceq [string]$_.LocalImageId -and
+        -not $beforeImageIds.Contains([string]$record.ID)
+      })
+    if ($matches.Count -ne 1) { $added += 1; continue }
+    $matchKey = "$($matches[0].CanonicalRepository)`n$($matches[0].Tag)`n$($matches[0].ManifestDigest)`n$($matches[0].LocalImageId)"
+    if (-not $usedEvidence.Add($matchKey)) { $added += 1; continue }
+    $qualifiedRows.Add($entry.Value)
+  }
+  $qualifiedAcquisitions = $qualifiedRows.Count
+  $status = if ($added -ne 0 -or $missing -ne 0 -or $modified -ne 0) {
+    'DIFFERENCE_CONFIRMED'
+  } elseif ($qualifiedAcquisitions -ne 0) {
+    'PRESERVED_WITH_QUALIFIED_CAMPAIGN_ACQUISITION'
   } else {
-    'SEMANTIC_IDENTICAL'
+    'IDENTICAL'
   }
   return [ordered]@{
-    AcquiredImageRows = $acquiredImageRows
-    MissingImageRows = $missingImageRows
+    Added = $added
+    Missing = $missing
+    Modified = $modified
+    QualifiedAcquisitions = $qualifiedAcquisitions
+    QualifiedRows = [string[]]$qualifiedRows
     Status = $status
-    UnqualifiedImageRows = $unqualifiedImageRows
   }
 }
 
@@ -1195,12 +1389,7 @@ function Get-CanonicalDockerInventoryIdentity([string]$Label, [string]$Row) {
     'containers' { [string]$record.ID }
     'volumes' { [string]$record.Name }
     'networks' { [string]$record.ID }
-    'images' {
-      ([ordered]@{
-          Repository = [string]$record.Repository
-          Tag = [string]$record.Tag
-        } | ConvertTo-Json -Compress)
-    }
+    'images' { Get-C3ImageInventoryIdentity $record }
     default { throw 'Unknown Docker inventory family.' }
   }
   if ($identity.Length -eq 0) { throw 'Docker inventory identity is empty.' }
@@ -1211,10 +1400,13 @@ function Get-CanonicalDockerInventoryDelta(
   [string]$Label,
   [string]$Before,
   [string]$After,
-  [string[]]$QualifiedImageReferences
+  [object[]]$QualifiedImageEvidence
 ) {
   $beforeRows = @(Get-CanonicalDockerInventoryRows $Label $Before)
   $afterRows = @(Get-CanonicalDockerInventoryRows $Label $After)
+  if ($Label -ceq 'images') {
+    return Resolve-C3ImageInventoryDelta $beforeRows $afterRows $QualifiedImageEvidence
+  }
   $beforeByIdentity = [Collections.Generic.Dictionary[string, string]]::new([StringComparer]::Ordinal)
   $afterByIdentity = [Collections.Generic.Dictionary[string, string]]::new([StringComparer]::Ordinal)
   foreach ($row in $beforeRows) {
@@ -1228,30 +1420,16 @@ function Get-CanonicalDockerInventoryDelta(
   $added = 0
   $missing = 0
   $modified = 0
-  $qualifiedAcquisitions = 0
   foreach ($entry in $beforeByIdentity.GetEnumerator()) {
     if (-not $afterByIdentity.ContainsKey($entry.Key)) { $missing += 1; continue }
     if ($afterByIdentity[$entry.Key] -cne $entry.Value) { $modified += 1 }
   }
   foreach ($entry in $afterByIdentity.GetEnumerator()) {
     if ($beforeByIdentity.ContainsKey($entry.Key)) { continue }
-    if ($Label -ceq 'images') {
-      $record = $entry.Value | ConvertFrom-Json
-      $qualifiedIdentity = ConvertTo-DockerImageReferenceIdentity `
-        ([string]$record.Repository) `
-        ([string]$record.Tag) `
-        ([string]$record.Digest)
-      if ($QualifiedImageReferences -ccontains $qualifiedIdentity) {
-        $qualifiedAcquisitions += 1
-        continue
-      }
-    }
     $added += 1
   }
   $status = if ($added -ne 0 -or $missing -ne 0 -or $modified -ne 0) {
     'DIFFERENCE_CONFIRMED'
-  } elseif ($qualifiedAcquisitions -ne 0) {
-    'PRESERVED_WITH_QUALIFIED_CAMPAIGN_ACQUISITION'
   } else {
     'IDENTICAL'
   }
@@ -1259,28 +1437,56 @@ function Get-CanonicalDockerInventoryDelta(
     Added = $added
     Missing = $missing
     Modified = $modified
-    QualifiedAcquisitions = $qualifiedAcquisitions
+    QualifiedAcquisitions = 0
+    QualifiedRows = @()
     Status = $status
+  }
+}
+
+function Compare-C3DockerInventories(
+  [Collections.IDictionary]$BeforeByLabel,
+  [Collections.IDictionary]$AfterByLabel,
+  [object[]]$QualifiedImageEvidence
+) {
+  $deltas = [ordered]@{}
+  foreach ($label in @('containers', 'volumes', 'networks', 'images')) {
+    $deltas[$label] = Get-CanonicalDockerInventoryDelta `
+      $label `
+      $BeforeByLabel[$label] `
+      $AfterByLabel[$label] `
+      $QualifiedImageEvidence
+  }
+  return [ordered]@{
+    Deltas = $deltas
+    QualifiedImageRows = [string[]]$deltas.images.QualifiedRows
   }
 }
 # END C3 INVENTORY COMPARISON FUNCTIONS
 
-function Get-QualifiedComposeImageReferences([string]$Path) {
-  $references = foreach ($line in [IO.File]::ReadAllLines($Path)) {
+function Get-C3QualifiedComposeImageSpecifications([string]$Path) {
+  $specifications = foreach ($line in [IO.File]::ReadAllLines($Path)) {
     if ($line -match '^\s*(?:x-node-image:\s*&node-image\s+|image:\s+)(?<Reference>[^\s#]+@sha256:[0-9a-f]{64})\s*$') {
       $reference = $Matches['Reference']
       $at = $reference.LastIndexOf('@')
       $nameAndTag = $reference.Substring(0, $at)
       $tagSeparator = $nameAndTag.LastIndexOf(':')
-      if ($tagSeparator -le 0) { throw "Pinned Compose image has no explicit tag: $reference" }
-      ConvertTo-DockerImageReferenceIdentity `
-        $nameAndTag.Substring(0, $tagSeparator) `
-        $nameAndTag.Substring($tagSeparator + 1) `
-        $reference.Substring($at + 1)
+      $lastSlash = $nameAndTag.LastIndexOf('/')
+      if ($tagSeparator -le $lastSlash) { throw "Pinned Compose image has no explicit tag: $reference" }
+      $repository = $nameAndTag.Substring(0, $tagSeparator)
+      [pscustomobject][ordered]@{
+        CanonicalRepository = ConvertTo-C3CanonicalRepository $repository
+        ManifestDigest = $reference.Substring($at + 1)
+        Reference = $reference
+        Tag = $nameAndTag.Substring($tagSeparator + 1)
+        Version = 1
+      }
     }
   }
-  $qualified = @($references | Sort-Object -Unique)
-  if ($qualified.Count -ne 4) { throw 'The four pinned Compose image references were not resolved exactly.' }
+  $qualified = @($specifications | Sort-Object -Property Reference -Unique)
+  if ($qualified.Count -ne 4) { throw 'The four pinned Compose image specifications were not resolved exactly.' }
+  if (@($qualified | Group-Object -Property CanonicalRepository, Tag | Where-Object Count -ne 1).Count -ne 0) {
+    throw 'Pinned Compose image specifications collide after canonicalization.'
+  }
   return $qualified
 }
 
@@ -1487,6 +1693,140 @@ function Invoke-Docker([string]$Label, [string[]]$Arguments, [int[]]$AllowedExit
   return Invoke-Captured -Label $Label -FilePath $Docker -Arguments $Arguments -Environment $ComposeEnvironment -AllowedExitCodes $AllowedExitCodes
 }
 
+# BEGIN C3 IMAGE QUALIFICATION FUNCTIONS
+function ConvertTo-C3DockerArchitecture([string]$Architecture) {
+  switch -CaseSensitive ($Architecture.ToLowerInvariant()) {
+    'amd64' { return 'amd64' }
+    'x86_64' { return 'amd64' }
+    'arm64' { return 'arm64' }
+    'aarch64' { return 'arm64' }
+    default { throw 'The Docker engine architecture is unsupported.' }
+  }
+}
+
+function Get-C3RegistryImageQualifications(
+  [object[]]$Specifications,
+  [string]$PlatformOs,
+  [string]$PlatformArchitecture,
+  [string]$PlatformVariant = ''
+) {
+  $qualifications = [Collections.Generic.List[object]]::new()
+  $ordinal = 0
+  foreach ($specification in $Specifications) {
+    $ordinal += 1
+    $topResult = Invoke-Docker "image-qualification-$ordinal-index" @(
+      'manifest', 'inspect', [string]$specification.Reference
+    )
+    $top = $topResult.Stdout | ConvertFrom-Json
+    $manifestKind = 'SINGLE'
+    $platformManifestDigest = [string]$specification.ManifestDigest
+    $platformManifest = $top
+    if ($null -ne $top.manifests) {
+      $manifestKind = 'INDEX'
+      $candidates = @($top.manifests | Where-Object {
+          [string]$_.platform.os -ceq $PlatformOs -and
+          [string]$_.platform.architecture -ceq $PlatformArchitecture -and
+          [string]$_.platform.variant -ceq $PlatformVariant
+        })
+      if ($candidates.Count -ne 1) { throw 'The pinned image platform descriptor is ambiguous.' }
+      $platformManifestDigest = [string]$candidates[0].digest
+      if ($platformManifestDigest -notmatch '^sha256:[0-9a-f]{64}$') {
+        throw 'The pinned image platform digest is invalid.'
+      }
+      $platformResult = Invoke-Docker "image-qualification-$ordinal-platform" @(
+        'manifest', 'inspect',
+        "$($specification.CanonicalRepository)@$platformManifestDigest"
+      )
+      $platformManifest = $platformResult.Stdout | ConvertFrom-Json
+    }
+    $configDigest = [string]$platformManifest.config.digest
+    if ($configDigest -notmatch '^sha256:[0-9a-f]{64}$') {
+      throw 'The pinned image config digest is invalid.'
+    }
+    $qualifications.Add([pscustomobject][ordered]@{
+        CanonicalRepository = [string]$specification.CanonicalRepository
+        ConfigDigest = $configDigest
+        ManifestDigest = [string]$specification.ManifestDigest
+        ManifestKind = $manifestKind
+        PlatformArchitecture = $PlatformArchitecture
+        PlatformManifestDigest = $platformManifestDigest
+        PlatformOs = $PlatformOs
+        PlatformVariant = $PlatformVariant
+        Reference = [string]$specification.Reference
+        Tag = [string]$specification.Tag
+        Version = 1
+      })
+  }
+  return [object[]]$qualifications
+}
+
+function Complete-C3LocalImageQualifications([object[]]$RegistryQualifications) {
+  $completed = [Collections.Generic.List[object]]::new()
+  $ordinal = 0
+  foreach ($qualification in $RegistryQualifications) {
+    $ordinal += 1
+    $inspectResult = Invoke-Docker "image-qualification-$ordinal-local" @(
+      'image', 'inspect', [string]$qualification.Reference
+    )
+    $records = @($inspectResult.Stdout | ConvertFrom-Json)
+    if ($records.Count -ne 1) { throw 'The local qualified image inspection is ambiguous.' }
+    $record = $records[0]
+    $repoDigests = @($record.RepoDigests | ForEach-Object {
+        $value = [string]$_
+        $at = $value.LastIndexOf('@')
+        if ($at -le 0) {
+          ''
+        } else {
+          $repository = ConvertTo-C3CanonicalRepository $value.Substring(0, $at)
+          "$repository@$($value.Substring($at + 1))"
+        }
+      })
+    $expectedRepoDigest = "$($qualification.CanonicalRepository)@$($qualification.ManifestDigest)"
+    if ($repoDigests.Count -ne 1 -or $repoDigests[0] -cne $expectedRepoDigest) {
+      throw 'The local image RepoDigest set is not exactly the pinned Compose identity.'
+    }
+    $localId = [string]$record.Id
+    $descriptorDigest = if ($null -ne $record.Descriptor) { [string]$record.Descriptor.digest } else { '' }
+    $localIdentityKind = if (
+      $descriptorDigest -ceq [string]$qualification.ManifestDigest -and
+      $localId -ceq [string]$qualification.ManifestDigest
+    ) {
+      'DESCRIPTOR'
+    } elseif ($localId -ceq [string]$qualification.ConfigDigest) {
+      'CONFIG'
+    } else {
+      throw 'The local image ID is not linked to the qualified manifest or config digest.'
+    }
+    $localArchitecture = ConvertTo-C3DockerArchitecture ([string]$record.Architecture)
+    $localOs = ([string]$record.Os).ToLowerInvariant()
+    $localVariant = if ($null -eq $record.Variant) { '' } else { [string]$record.Variant }
+    if (
+      $localArchitecture -cne [string]$qualification.PlatformArchitecture -or
+      $localOs -cne [string]$qualification.PlatformOs -or
+      $localVariant -cne [string]$qualification.PlatformVariant
+    ) { throw 'The local image platform diverges from the qualified platform manifest.' }
+    $completed.Add([pscustomobject][ordered]@{
+        CanonicalRepository = [string]$qualification.CanonicalRepository
+        ConfigDigest = [string]$qualification.ConfigDigest
+        LocalIdentityKind = $localIdentityKind
+        LocalImageId = $localId
+        ManifestDigest = [string]$qualification.ManifestDigest
+        ManifestKind = [string]$qualification.ManifestKind
+        PlatformArchitecture = [string]$qualification.PlatformArchitecture
+        PlatformManifestDigest = [string]$qualification.PlatformManifestDigest
+        PlatformOs = [string]$qualification.PlatformOs
+        PlatformVariant = [string]$qualification.PlatformVariant
+        Reference = [string]$qualification.Reference
+        RepoDigest = $expectedRepoDigest
+        RepoDigestConfirmed = $true
+        Tag = [string]$qualification.Tag
+        Version = 1
+      })
+  }
+  return [object[]]$completed
+}
+# END C3 IMAGE QUALIFICATION FUNCTIONS
+
 $C3DeliveryMarkerSnapshotScript = @'
 const fs = require('node:fs');
 const path = require('node:path');
@@ -1601,7 +1941,10 @@ function Get-C3DeliveryMarkerSnapshot([string]$Label) {
   return $snapshot
 }
 
-function Get-C3NotificationOutboxSnapshot() {
+function Get-C3NotificationOutboxSnapshot([string]$Label) {
+  if ($Label -notmatch '^delivery-pipeline-outbox-(first|second)$') {
+    throw 'C3 notification outbox snapshot label is invalid.'
+  }
   $query = @'
 WITH selected AS (
   SELECT "state"::text AS state, "attemptCount" AS attempt_count
@@ -1617,6 +1960,8 @@ WITH selected AS (
 )
 SELECT
   (CASE WHEN session_user = 'kora_admin_c2a_notification_worker' THEN 'EXPECTED' ELSE 'UNEXPECTED' END)
+  || '|' ||
+  (CASE WHEN current_setting('transaction_read_only') = 'on' THEN 'CONFIRMED' ELSE 'DISABLED' END)
   || '|' ||
   (CASE
     WHEN row_count = 0 THEN 'ABSENT'
@@ -1635,19 +1980,95 @@ SELECT
 FROM summary;
 '@
   $shell = 'export PGPASSWORD="$(tr -d ''\r\n'' </run/secrets/postgres_admin_c2a_notification_worker_password)"; export PGOPTIONS=''-c default_transaction_read_only=on''; exec psql --no-psqlrc --quiet --tuples-only --no-align --set=ON_ERROR_STOP=1 --host=127.0.0.1 --username=kora_admin_c2a_notification_worker --dbname="$POSTGRES_DB" --command "$KORA_C3_DIAGNOSTIC_SQL"'
-  $result = Invoke-Docker 'delivery-pipeline-outbox' @(
+  $result = Invoke-Docker $Label @(
     'compose', '-f', $ComposeFile, '--project-name', $ProjectName,
     'exec', '-T', '-e', "KORA_C3_DIAGNOSTIC_SQL=$query", 'postgres', 'sh', '-euc', $shell
   )
   $line = $result.Stdout.Trim()
-  if ($line -notmatch '^(EXPECTED|UNEXPECTED)\|(ABSENT|AMBIGUOUS|CANCELLED|CLAIMED|DELIVERED|DELIVERY_UNCERTAIN|FAILED|PENDING_UNCLAIMED|RETRY_PENDING)\|(MULTIPLE|ONE|ZERO)$') {
+  if ($line -notmatch '^(EXPECTED|UNEXPECTED)\|(CONFIRMED|DISABLED)\|(ABSENT|AMBIGUOUS|CANCELLED|CLAIMED|DELIVERED|DELIVERY_UNCERTAIN|FAILED|PENDING_UNCLAIMED|RETRY_PENDING)\|(MULTIPLE|ONE|ZERO)$') {
     throw 'C3 notification outbox snapshot output is invalid.'
   }
   return [ordered]@{
-    attempt = $Matches[3]
+    attempt = $Matches[4]
     identity = $Matches[1]
-    state = $Matches[2]
+    readOnly = $Matches[2]
+    state = $Matches[3]
   }
+}
+
+function New-C3UnavailableNotificationOutboxSnapshot {
+  return [ordered]@{
+    attempt = 'UNAVAILABLE'
+    identity = 'UNAVAILABLE'
+    readOnly = 'UNAVAILABLE'
+    state = 'UNAVAILABLE'
+  }
+}
+
+function New-C3NotificationOutboxSuccessVerification(
+  [object]$FirstSnapshot,
+  [object]$SecondSnapshot
+) {
+  $firstValid = Test-C3NotificationOutboxSnapshot $FirstSnapshot
+  $secondValid = Test-C3NotificationOutboxSnapshot $SecondSnapshot
+  $first = if ($firstValid) { $FirstSnapshot } else { New-C3UnavailableNotificationOutboxSnapshot }
+  $second = if ($secondValid) { $SecondSnapshot } else { New-C3UnavailableNotificationOutboxSnapshot }
+  $status = if (
+    -not $firstValid -or
+    -not $secondValid -or
+    @($first.attempt, $first.identity, $first.readOnly, $first.state) -ccontains 'UNAVAILABLE' -or
+    @($second.attempt, $second.identity, $second.readOnly, $second.state) -ccontains 'UNAVAILABLE'
+  ) {
+    'UNAVAILABLE'
+  } elseif (
+    $first.identity -cne 'EXPECTED' -or
+    $first.readOnly -cne 'CONFIRMED' -or
+    $second.identity -cne 'EXPECTED' -or
+    $second.readOnly -cne 'CONFIRMED'
+  ) {
+    'FAIL'
+  } else {
+    'PASS'
+  }
+  $stability = if ($status -ceq 'UNAVAILABLE') {
+    'UNAVAILABLE'
+  } elseif (
+    $first.attempt -ceq $second.attempt -and
+    $first.identity -ceq $second.identity -and
+    $first.readOnly -ceq $second.readOnly -and
+    $first.state -ceq $second.state
+  ) {
+    'STABLE'
+  } else {
+    'CHANGED'
+  }
+  return [ordered]@{
+    version = 1
+    status = $status
+    stability = $stability
+    first = $first
+    second = $second
+  }
+}
+
+function Test-C3NotificationOutboxSuccessVerification([object]$Verification) {
+  if (-not (Test-C3DeliveryExactPropertySet $Verification @(
+        'first', 'second', 'stability', 'status', 'version'
+      ))) { return $false }
+  if (
+    $Verification.version -ne 1 -or
+    @('FAIL', 'PASS', 'UNAVAILABLE') -cnotcontains $Verification.status -or
+    @('CHANGED', 'STABLE', 'UNAVAILABLE') -cnotcontains $Verification.stability -or
+    -not (Test-C3NotificationOutboxSnapshot $Verification.first) -or
+    -not (Test-C3NotificationOutboxSnapshot $Verification.second)
+  ) { return $false }
+  $expected = New-C3NotificationOutboxSuccessVerification `
+    $Verification.first `
+    $Verification.second
+  return (
+    ($Verification | ConvertTo-Json -Compress -Depth 5) -ceq
+    ($expected | ConvertTo-Json -Compress -Depth 5)
+  )
 }
 
 function Invoke-OpenSsl([string]$Label, [string[]]$Arguments) {
@@ -1718,6 +2139,8 @@ $ComposeEnvironment = @{
   KORA_C3_API_CERT_SHA256 = ''
   KORA_C3_BFF_CERT_SHA256 = ''
   KORA_C3_CAMPAIGN_ID = $CampaignId
+  KORA_C3_CHANNEL_GID = if ($IsWindows) { '0' } else { '' }
+  KORA_C3_CHANNEL_UID = if ($IsWindows) { '0' } else { '' }
   KORA_C3_HTTPS_PORT = "$HttpsPort"
   KORA_C3_POSTGRES_DB = $DatabaseName
   KORA_C3_POSTGRES_OWNER = $OwnerName
@@ -1731,12 +2154,14 @@ $DockerInventoryEntries = @(
   [ordered]@{ Label = 'containers'; Family = 'CONTAINERS'; Arguments = @('ps', '-a', '--no-trunc', '--format', '{{json .}}') },
   [ordered]@{ Label = 'volumes'; Family = 'VOLUMES'; Arguments = @('volume', 'ls', '--format', '{{json .}}') },
   [ordered]@{ Label = 'networks'; Family = 'NETWORKS'; Arguments = @('network', 'ls', '--no-trunc', '--format', '{{json .}}') },
-  [ordered]@{ Label = 'images'; Family = 'IMAGES'; Arguments = @('image', 'ls', '--no-trunc', '--digests', '--format', '{{json .}}') }
+  [ordered]@{ Label = 'images'; Family = 'IMAGES'; Arguments = @('image', 'ls', '-a', '--no-trunc', '--digests', '--format', '{{json .}}') }
 )
 
 $ForeignInventoryBefore = $null
 $ForeignInventoryBeforeByLabel = @{}
-$QualifiedCampaignImageReferences = @(Get-QualifiedComposeImageReferences $ComposeFile)
+$ComposeImageSpecifications = @(Get-C3QualifiedComposeImageSpecifications $ComposeFile)
+$RegistryImageQualifications = @()
+$QualifiedCampaignImageEvidence = @()
 $PrimaryFailure = $null
 $CleanupFailures = [Collections.Generic.List[Exception]]::new()
 $CleanupSummary = New-C3SafeCleanupSummary
@@ -1805,6 +2230,24 @@ try {
     }
   }
 
+  if (-not $IsWindows) {
+    $uidResult = Invoke-Captured `
+      -Label 'private-channel-posix-uid' `
+      -FilePath $PosixIdentityTool `
+      -Arguments @('-u')
+    $gidResult = Invoke-Captured `
+      -Label 'private-channel-posix-gid' `
+      -FilePath $PosixIdentityTool `
+      -Arguments @('-g')
+    $ComposeEnvironment.KORA_C3_CHANNEL_UID = ConvertTo-C3PosixIdentityComponent $uidResult.Stdout 'UID'
+    $ComposeEnvironment.KORA_C3_CHANNEL_GID = ConvertTo-C3PosixIdentityComponent $gidResult.Stdout 'GID'
+  }
+  Write-NewText (Join-Path $EvidenceDirectory 'private-channel-identity.json') (([ordered]@{
+        mapping = if ($IsWindows) { 'WINDOWS_ROOT_COMPATIBILITY' } else { 'POSIX_CAMPAIGN_OWNER' }
+        status = 'QUALIFIED'
+        version = 1
+      } | ConvertTo-Json -Compress) + "`n")
+
   $collectorSelfTestKnownSentinel = New-SecretValue
   $collectorSelfTestDynamicSentinel = New-SecretValue
   $SensitiveValues.Add($collectorSelfTestKnownSentinel)
@@ -1838,6 +2281,8 @@ try {
   $dockerInfo = Invoke-Docker 'docker-info' @('info', '--format', '{{json .}}')
   $info = $dockerInfo.Stdout | ConvertFrom-Json
   if ($info.OSType -ne 'linux') { throw 'The Docker engine is not Linux.' }
+  $EnginePlatformOs = ([string]$info.OSType).ToLowerInvariant()
+  $EnginePlatformArchitecture = ConvertTo-C3DockerArchitecture ([string]$info.Architecture)
 
   $portProbe = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $HttpsPort)
   try { $portProbe.Start() }
@@ -1849,7 +2294,9 @@ try {
     port = $HttpsPort
     status = 'AVAILABLE'
   } | ConvertTo-Json) + "`n")
-  Write-NewText (Join-Path $EvidenceDirectory 'qualified-campaign-image-references.txt') (($QualifiedCampaignImageReferences -join "`n") + "`n")
+  Write-NewText `
+    (Join-Path $EvidenceDirectory 'qualified-campaign-image-specifications.json') `
+    (($ComposeImageSpecifications | ConvertTo-Json -Depth 6) + "`n")
 
   $inventoryParts = @()
   $inventoryBeforeUnavailable = $false
@@ -1872,6 +2319,15 @@ try {
   if ($inventoryBeforeUnavailable) { throw 'The foreign Docker inventory preflight is unavailable.' }
   $ForeignInventoryBefore = ($inventoryParts -join "`n")
   Write-NewText (Join-Path $EvidenceDirectory 'foreign-inventory-before.canonical.txt') ($ForeignInventoryBefore + "`n")
+  $RegistryImageQualifications = @(
+    Get-C3RegistryImageQualifications `
+      $ComposeImageSpecifications `
+      $EnginePlatformOs `
+      $EnginePlatformArchitecture
+  )
+  Write-NewText `
+    (Join-Path $EvidenceDirectory 'qualified-campaign-image-registry-evidence.json') `
+    (($RegistryImageQualifications | ConvertTo-Json -Depth 8) + "`n")
 
   foreach ($kind in @('ps', 'volume', 'network')) {
     $arguments = if ($kind -eq 'ps') {
@@ -2018,9 +2474,14 @@ try {
       New-C3UnavailableDeliveryMarkerSnapshot
     }
     $firstOutboxSnapshot = try {
-      Get-C3NotificationOutboxSnapshot
+      Get-C3NotificationOutboxSnapshot 'delivery-pipeline-outbox-first'
     } catch {
-      [ordered]@{ attempt = 'UNAVAILABLE'; identity = 'UNAVAILABLE'; state = 'UNAVAILABLE' }
+      [ordered]@{
+        attempt = 'UNAVAILABLE'
+        identity = 'UNAVAILABLE'
+        readOnly = 'UNAVAILABLE'
+        state = 'UNAVAILABLE'
+      }
     }
     Start-Sleep -Milliseconds 250
     $secondDeliverySnapshot = try {
@@ -2029,9 +2490,14 @@ try {
       New-C3UnavailableDeliveryMarkerSnapshot
     }
     $secondOutboxSnapshot = try {
-      Get-C3NotificationOutboxSnapshot
+      Get-C3NotificationOutboxSnapshot 'delivery-pipeline-outbox-second'
     } catch {
-      [ordered]@{ attempt = 'UNAVAILABLE'; identity = 'UNAVAILABLE'; state = 'UNAVAILABLE' }
+      [ordered]@{
+        attempt = 'UNAVAILABLE'
+        identity = 'UNAVAILABLE'
+        readOnly = 'UNAVAILABLE'
+        state = 'UNAVAILABLE'
+      }
     }
     Write-C3SafeDeliveryPipelinePublicSummary (
       New-C3SafeDeliveryPipelineSummary `
@@ -2041,6 +2507,31 @@ try {
         $firstOutboxSnapshot `
         $secondOutboxSnapshot
     )
+  }
+  if ($browser.ExitCode -eq 0 -and $safeBrowserSummary.Valid) {
+    $firstOutboxSnapshot = try {
+      Get-C3NotificationOutboxSnapshot 'delivery-pipeline-outbox-first'
+    } catch {
+      New-C3UnavailableNotificationOutboxSnapshot
+    }
+    Start-Sleep -Milliseconds 250
+    $secondOutboxSnapshot = try {
+      Get-C3NotificationOutboxSnapshot 'delivery-pipeline-outbox-second'
+    } catch {
+      New-C3UnavailableNotificationOutboxSnapshot
+    }
+    $outboxSuccessVerification = New-C3NotificationOutboxSuccessVerification `
+      $firstOutboxSnapshot `
+      $secondOutboxSnapshot
+    Write-NewText `
+      (Join-Path $EvidenceDirectory 'delivery-pipeline-outbox-success-verification.json') `
+      (($outboxSuccessVerification | ConvertTo-Json -Depth 5) + "`n")
+    if (
+      -not (Test-C3NotificationOutboxSuccessVerification $outboxSuccessVerification) -or
+      $outboxSuccessVerification.status -cne 'PASS'
+    ) {
+      $BrowserFailures.Add([Exception]::new('C3 notification outbox read boundary verification failed.'))
+    }
   }
   if (-not $safeBrowserSummary.Valid -and $browser.ExitCode -eq 0) {
     $BrowserFailures.Add([Exception]::new('C3 safe browser summary validation failed.'))
@@ -2163,23 +2654,42 @@ finally {
     } catch { $inventoryPassed = $false }
   }
   $comparisonEvidence = [Collections.Generic.List[string]]::new()
+  $comparison = $null
+  if (
+    $ForeignInventoryBeforeByLabel.Count -eq $DockerInventoryEntries.Count -and
+    $foreignInventoryAfterByLabel.Count -eq $DockerInventoryEntries.Count -and
+    $RegistryImageQualifications.Count -eq $ComposeImageSpecifications.Count
+  ) {
+    try {
+      $QualifiedCampaignImageEvidence = @(
+        Complete-C3LocalImageQualifications $RegistryImageQualifications
+      )
+      if ($QualifiedCampaignImageEvidence.Count -ne $ComposeImageSpecifications.Count) {
+        throw 'The four local image qualifications were not completed exactly.'
+      }
+      Write-NewText `
+        (Join-Path $EvidenceDirectory 'qualified-campaign-image-evidence.json') `
+        (($QualifiedCampaignImageEvidence | ConvertTo-Json -Depth 8) + "`n")
+      $comparison = Compare-C3DockerInventories `
+        $ForeignInventoryBeforeByLabel `
+        $foreignInventoryAfterByLabel `
+        $QualifiedCampaignImageEvidence
+    }
+    catch {
+      $inventoryPassed = $false
+    }
+  } else {
+    $inventoryPassed = $false
+  }
   foreach ($entry in $DockerInventoryEntries) {
-    if (
-      -not $ForeignInventoryBeforeByLabel.ContainsKey($entry.Label) -or
-      -not $foreignInventoryAfterByLabel.ContainsKey($entry.Label)
-    ) {
+    if ($null -eq $comparison) {
       Set-C3SafeInventoryCheckStatus `
         $CleanupSummary.inventoryChecks $entry.Family 'COMPARISON' 'COMPARISON_UNAVAILABLE'
       $comparisonEvidence.Add("$($entry.Family)=COMPARISON_UNAVAILABLE")
-      $inventoryPassed = $false
       continue
     }
     try {
-      $delta = Get-CanonicalDockerInventoryDelta `
-        $entry.Label `
-        $ForeignInventoryBeforeByLabel[$entry.Label] `
-        $foreignInventoryAfterByLabel[$entry.Label] `
-        $QualifiedCampaignImageReferences
+      $delta = $comparison.Deltas[$entry.Label]
       Set-C3SafeInventoryCheckStatus `
         $CleanupSummary.inventoryChecks `
         $entry.Family `
@@ -2200,17 +2710,10 @@ finally {
     }
   }
   try {
-    if (
-      $ForeignInventoryBeforeByLabel.Count -eq $DockerInventoryEntries.Count -and
-      $foreignInventoryAfterByLabel.Count -eq $DockerInventoryEntries.Count
-    ) {
-      $comparison = Compare-CanonicalDockerInventories `
-        $ForeignInventoryBeforeByLabel `
-        $foreignInventoryAfterByLabel `
-        $QualifiedCampaignImageReferences
+    if ($null -ne $comparison) {
       Write-NewText `
         (Join-Path $EvidenceDirectory 'campaign-acquired-images.canonical.txt') `
-        (($comparison.AcquiredImageRows -join "`n") + "`n")
+        (($comparison.QualifiedImageRows -join "`n") + "`n")
     }
     Write-NewText `
       (Join-Path $EvidenceDirectory 'foreign-inventory-comparison.txt') `

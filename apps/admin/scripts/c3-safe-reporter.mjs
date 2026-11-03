@@ -68,13 +68,15 @@ const resetMismatchFields = [
 const resetMismatchFieldIndex = new Map(resetMismatchFields.map((field, index) => [field, index]));
 const resetDeliveryStates = [
   'ABSENT',
+  'DIRECTORY_UNREADABLE',
+  'FILE_DISAPPEARED',
+  'FILE_UNREADABLE',
   'INVALID',
   'LATE',
   'MATCHED',
   'RECIPIENT_MISMATCH',
   'SENTINEL_REGISTRATION_FAILED',
   'UNKNOWN',
-  'UNREADABLE',
 ];
 
 function neutralDiagnostic() {

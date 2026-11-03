@@ -156,12 +156,44 @@ async function waitForFile(path: string, timeoutMs = 15_000): Promise<void> {
 export type DeliveryPurpose = 'INVITATION' | 'PASSWORD_RESET';
 
 export type DeliveryObservationFailure =
-  'ABSENT' | 'INVALID' | 'LATE' | 'SENTINEL_REGISTRATION_FAILED' | 'UNKNOWN' | 'UNREADABLE';
+  | 'ABSENT'
+  | 'DIRECTORY_UNREADABLE'
+  | 'FILE_DISAPPEARED'
+  | 'FILE_UNREADABLE'
+  | 'INVALID'
+  | 'LATE'
+  | 'SENTINEL_REGISTRATION_FAILED'
+  | 'UNKNOWN';
 
 export class C3DeliveryObservationError extends Error {
   constructor(readonly observation: DeliveryObservationFailure) {
     super('Deterministic delivery observation failed.');
     this.name = 'C3DeliveryObservationError';
+  }
+}
+
+export function readC3DeliveryDirectory(
+  directory: string,
+  readDirectory: (path: string) => string[] = readdirSync,
+): string[] {
+  try {
+    return readDirectory(directory).sort();
+  } catch {
+    throw new C3DeliveryObservationError('DIRECTORY_UNREADABLE');
+  }
+}
+
+export function readC3DeliveryFile(
+  path: string,
+  readFile: (filename: string) => Buffer = (filename) => readFileSync(filename),
+): Buffer {
+  try {
+    return readFile(path);
+  } catch (error) {
+    if (error !== null && typeof error === 'object' && Reflect.get(error, 'code') === 'ENOENT') {
+      throw new C3DeliveryObservationError('FILE_DISAPPEARED');
+    }
+    throw new C3DeliveryObservationError('FILE_UNREADABLE');
   }
 }
 
@@ -316,23 +348,13 @@ export class C3PrivateChannel {
     purpose: DeliveryPurpose,
     previous: ReadonlySet<string>,
   ): Readonly<{ code: string; email: string }> | null {
-    let filenames: string[];
-    try {
-      filenames = readdirSync(join(this.root, 'deliveries')).sort();
-    } catch {
-      throw new C3DeliveryObservationError('UNREADABLE');
-    }
+    const filenames = readC3DeliveryDirectory(join(this.root, 'deliveries'));
     for (const filename of filenames) {
       if (previous.has(filename) || DELIVERY_TEMPORARY_FILE.test(filename)) continue;
       if (!filename.endsWith('.delivery.json')) continue;
       const logicalDeliveryId = filename.slice(0, -'.delivery.json'.length);
       if (!UUID.test(logicalDeliveryId)) throw new C3DeliveryObservationError('INVALID');
-      let encoded: Buffer;
-      try {
-        encoded = readFileSync(join(this.root, 'deliveries', filename));
-      } catch {
-        throw new C3DeliveryObservationError('UNREADABLE');
-      }
+      const encoded = readC3DeliveryFile(join(this.root, 'deliveries', filename));
       if (encoded.byteLength > MAX_FILE_BYTES) throw new C3DeliveryObservationError('INVALID');
       let delivery: Record<string, unknown>;
       try {

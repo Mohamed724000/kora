@@ -93,6 +93,43 @@ function extractApplicationResolutionFunctions() {
   return runner.slice(begin + beginMarker.length, end);
 }
 
+function invokePosixIdentityFixture(value, component = "UID") {
+  const beginMarker = "# BEGIN C3 POSIX CHANNEL IDENTITY FUNCTIONS";
+  const endMarker = "# END C3 POSIX CHANNEL IDENTITY FUNCTIONS";
+  const begin = runner.indexOf(beginMarker);
+  const end = runner.indexOf(endMarker);
+  assert.ok(begin >= 0 && end > begin, "POSIX identity functions are extractable");
+  const functions = runner.slice(begin + beginMarker.length, end);
+  const encodedValue = Buffer.from(value, "utf8").toString("base64");
+  const encodedComponent = Buffer.from(component, "utf8").toString("base64");
+  const script = `$ErrorActionPreference = 'Stop'
+${functions}
+$value = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encodedValue}'))
+$component = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encodedComponent}'))
+try {
+  [ordered]@{ accepted = $true; value = ConvertTo-C3PosixIdentityComponent $value $component } | ConvertTo-Json -Compress
+} catch {
+  [ordered]@{ accepted = $false; value = $null } | ConvertTo-Json -Compress
+}
+`;
+  const result = spawnSync(
+    resolvePowerShellExecutable(),
+    [
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-EncodedCommand",
+      Buffer.from(script, "utf16le").toString("base64"),
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  const output = result.stdout.trim().split(/\r?\n/u).at(-1);
+  assert.ok(output);
+  return JSON.parse(output);
+}
+
 function invokeApplicationResolutionFixture(mode) {
   const functions = extractApplicationResolutionFunctions();
   const encodedMode = Buffer.from(mode, "utf8").toString("base64");
@@ -412,6 +449,115 @@ $result | ConvertTo-Json -Compress -Depth 6
       "-NonInteractive",
       "-EncodedCommand",
       encodedScript,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  const output = result.stdout.trim().split(/\r?\n/u).at(-1);
+  assert.ok(output);
+  return JSON.parse(output);
+}
+
+function invokeOutboxSnapshotFixture() {
+  const begin = runner.indexOf("function Get-C3NotificationOutboxSnapshot");
+  const end = runner.indexOf("function Invoke-OpenSsl", begin);
+  assert.ok(begin >= 0 && end > begin, "outbox snapshot function is extractable");
+  const source = runner.slice(begin, end);
+  const script = `$ErrorActionPreference = 'Stop'
+$ComposeFile = 'SYNTHETIC_COMPOSE'
+$ProjectName = 'SYNTHETIC_PROJECT'
+$calls = [Collections.Generic.List[object]]::new()
+function Invoke-Docker([string]$Label, [string[]]$Arguments) {
+  $calls.Add([ordered]@{ arguments = ($Arguments -join [char]0x1f); label = $Label })
+  return [pscustomobject]@{ Stdout = 'EXPECTED|CONFIRMED|PENDING_UNCLAIMED|ZERO' }
+}
+${source}
+$first = Get-C3NotificationOutboxSnapshot 'delivery-pipeline-outbox-first'
+$second = Get-C3NotificationOutboxSnapshot 'delivery-pipeline-outbox-second'
+[ordered]@{
+  calls = [object[]]$calls
+  first = $first
+  second = $second
+} | ConvertTo-Json -Compress -Depth 8
+`;
+  const executable = resolvePowerShellExecutable();
+  const result = spawnSync(
+    executable,
+    [
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-EncodedCommand",
+      Buffer.from(script, "utf16le").toString("base64"),
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  const output = result.stdout.trim().split(/\r?\n/u).at(-1);
+  assert.ok(output);
+  return JSON.parse(output);
+}
+
+function invokeOutboxSuccessVerificationFixture(first, second) {
+  const exactPropertyBegin = runner.indexOf(
+    "function Test-C3DeliveryExactPropertySet",
+  );
+  const exactPropertyEnd = runner.indexOf(
+    "function Test-C3DeliveryMarkerSnapshot",
+    exactPropertyBegin,
+  );
+  const snapshotBegin = runner.indexOf(
+    "function Test-C3NotificationOutboxSnapshot",
+  );
+  const snapshotEnd = runner.indexOf(
+    "function Get-C3DeliveryPipelineClassification",
+    snapshotBegin,
+  );
+  const verificationBegin = runner.indexOf(
+    "function New-C3UnavailableNotificationOutboxSnapshot",
+  );
+  const verificationEnd = runner.indexOf(
+    "function Invoke-OpenSsl",
+    verificationBegin,
+  );
+  assert.ok(
+    exactPropertyBegin >= 0 && exactPropertyEnd > exactPropertyBegin,
+    "exact property validator is extractable",
+  );
+  assert.ok(
+    snapshotBegin >= 0 && snapshotEnd > snapshotBegin,
+    "outbox snapshot validator is extractable",
+  );
+  assert.ok(
+    verificationBegin >= 0 && verificationEnd > verificationBegin,
+    "outbox success verification functions are extractable",
+  );
+  const fixture = Buffer.from(
+    JSON.stringify({ first, second }),
+    "utf8",
+  ).toString("base64");
+  const script = `$ErrorActionPreference = 'Stop'
+${runner.slice(exactPropertyBegin, exactPropertyEnd)}
+${runner.slice(snapshotBegin, snapshotEnd)}
+${runner.slice(verificationBegin, verificationEnd)}
+$fixture = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${fixture}')) | ConvertFrom-Json
+$verification = New-C3NotificationOutboxSuccessVerification $fixture.first $fixture.second
+[ordered]@{
+  valid = Test-C3NotificationOutboxSuccessVerification $verification
+  verification = $verification
+} | ConvertTo-Json -Compress -Depth 8
+`;
+  const executable = resolvePowerShellExecutable();
+  const result = spawnSync(
+    executable,
+    [
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-EncodedCommand",
+      Buffer.from(script, "utf16le").toString("base64"),
     ],
     { encoding: "utf8" },
   );
@@ -806,34 +952,158 @@ $before = @{}
 $after = @{}
 foreach ($property in $fixture.before.PSObject.Properties) { $before[$property.Name] = [string]$property.Value }
 foreach ($property in $fixture.after.PSObject.Properties) { $after[$property.Name] = [string]$property.Value }
-$qualified = @($fixture.qualified | ForEach-Object { [string]$_ })
-if ($null -ne $fixture.deltaLabel) {
-  $label = [string]$fixture.deltaLabel
-  $beforeValue = [string]$fixture.before.PSObject.Properties[$label].Value
-  $afterValue = [string]$fixture.after.PSObject.Properties[$label].Value
-  Get-CanonicalDockerInventoryDelta -Label $label -Before $beforeValue -After $afterValue -QualifiedImageReferences ([string[]]$qualified) | ConvertTo-Json -Compress -Depth 8
-} else {
-  Compare-CanonicalDockerInventories $before $after $qualified | ConvertTo-Json -Compress -Depth 8
+$qualified = @($fixture.qualified)
+try {
+  if ($null -ne $fixture.deltaLabel) {
+    $label = [string]$fixture.deltaLabel
+    $beforeValue = [string]$fixture.before.PSObject.Properties[$label].Value
+    $afterValue = [string]$fixture.after.PSObject.Properties[$label].Value
+    Get-CanonicalDockerInventoryDelta -Label $label -Before $beforeValue -After $afterValue -QualifiedImageEvidence ([object[]]$qualified) | ConvertTo-Json -Compress -Depth 8
+  } else {
+    Compare-C3DockerInventories $before $after $qualified | ConvertTo-Json -Compress -Depth 8
+  }
+} catch {
+  [ordered]@{ ComparisonUnavailable = $true } | ConvertTo-Json -Compress
 }
 `;
-  const encodedScript = Buffer.from(script, "utf16le").toString("base64");
   const executable = resolvePowerShellExecutable();
-  const result = spawnSync(
-    executable,
-    [
-      "-NoLogo",
-      "-NoProfile",
-      "-NonInteractive",
-      "-EncodedCommand",
-      encodedScript,
+  const directory = mkdtempSync(join(tmpdir(), "kora-c3-inventory-comparison-"));
+  const scriptPath = join(directory, "comparison.ps1");
+  writeFileSync(scriptPath, script, "utf8");
+  try {
+    const result = spawnSync(
+      executable,
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", scriptPath],
+      { encoding: "utf8" },
+    );
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const output = result.stdout.trim().split(/\r?\n/u).at(-1);
+    assert.ok(output);
+    return JSON.parse(output);
+  } finally {
+    rmSync(directory, { force: true, recursive: true });
+  }
+}
+
+function invokeImageQualificationFixture(mode) {
+  const comparisonBegin = runner.indexOf("# BEGIN C3 INVENTORY COMPARISON FUNCTIONS");
+  const comparisonEnd = runner.indexOf("# END C3 INVENTORY COMPARISON FUNCTIONS");
+  const qualificationBegin = runner.indexOf("# BEGIN C3 IMAGE QUALIFICATION FUNCTIONS");
+  const qualificationEnd = runner.indexOf("# END C3 IMAGE QUALIFICATION FUNCTIONS");
+  assert.ok(comparisonBegin >= 0 && comparisonEnd > comparisonBegin);
+  assert.ok(qualificationBegin >= 0 && qualificationEnd > qualificationBegin);
+  const functions = `${runner.slice(
+    comparisonBegin + "# BEGIN C3 INVENTORY COMPARISON FUNCTIONS".length,
+    comparisonEnd,
+  )}\n${runner.slice(
+    qualificationBegin + "# BEGIN C3 IMAGE QUALIFICATION FUNCTIONS".length,
+    qualificationEnd,
+  )}`;
+  const manifestDigest = `sha256:${"a".repeat(64)}`;
+  const platformDigest = `sha256:${"b".repeat(64)}`;
+  const configDigest = `sha256:${"c".repeat(64)}`;
+  const top = {
+    manifests: [
+      {
+        digest: platformDigest,
+        platform: {
+          architecture: mode === "wrong-platform" ? "arm64" : "amd64",
+          os: "linux",
+        },
+      },
     ],
-    { encoding: "utf8" },
-  );
-  assert.equal(result.error, undefined);
-  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-  const output = result.stdout.trim().split(/\r?\n/u).at(-1);
-  assert.ok(output);
-  return JSON.parse(output);
+    mediaType: "application/vnd.oci.image.index.v1+json",
+    schemaVersion: 2,
+  };
+  const platform = {
+    config: { digest: configDigest },
+    mediaType: "application/vnd.oci.image.manifest.v1+json",
+    schemaVersion: 2,
+  };
+  const descriptorMode = mode === "descriptor";
+  const inspect = [
+    {
+      Architecture: "amd64",
+      Descriptor: descriptorMode ? { digest: manifestDigest } : undefined,
+      Id:
+        mode === "wrong-id"
+          ? `sha256:${"d".repeat(64)}`
+          : descriptorMode
+            ? manifestDigest
+            : configDigest,
+      Os: "linux",
+      RepoDigests:
+        mode === "wrong-repodigest"
+          ? [`node@sha256:${"e".repeat(64)}`]
+          : mode === "extra-repodigest"
+            ? [`node@${manifestDigest}`, `foreign.example/node@${manifestDigest}`]
+            : [`node@${manifestDigest}`],
+    },
+  ];
+  const fixture = {
+    inspect,
+    manifestDigest,
+    platform,
+    top,
+  };
+  const encodedFixture = Buffer.from(JSON.stringify(fixture), "utf8").toString("base64");
+  const script = `$ErrorActionPreference = 'Stop'
+${functions}
+$fixture = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encodedFixture}')) | ConvertFrom-Json
+$observedCalls = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+function Invoke-Docker([string]$Label, [string[]]$Arguments) {
+  if (-not $observedCalls.Add($Label)) { throw 'Duplicate fixture call.' }
+  $stdout = if ($Label -like '*-index') {
+    $expected = @('manifest', 'inspect', "node:22.18.0-bookworm-slim@$($fixture.manifestDigest)")
+    if ([string]::Join([char]31, [string[]]$Arguments) -cne [string]::Join([char]31, [string[]]$expected)) { throw 'Unexpected index arguments.' }
+    $fixture.top | ConvertTo-Json -Compress -Depth 8
+  } elseif ($Label -like '*-platform') {
+    $expected = @('manifest', 'inspect', "docker.io/library/node@$($fixture.top.manifests[0].digest)")
+    if ([string]::Join([char]31, [string[]]$Arguments) -cne [string]::Join([char]31, [string[]]$expected)) { throw 'Unexpected platform arguments.' }
+    $fixture.platform | ConvertTo-Json -Compress -Depth 8
+  } elseif ($Label -like '*-local') {
+    $expected = @('image', 'inspect', "node:22.18.0-bookworm-slim@$($fixture.manifestDigest)")
+    if ([string]::Join([char]31, [string[]]$Arguments) -cne [string]::Join([char]31, [string[]]$expected)) { throw 'Unexpected local arguments.' }
+    $fixture.inspect | ConvertTo-Json -Compress -Depth 8
+  } else {
+    throw 'Unexpected fixture call.'
+  }
+  return [pscustomobject]@{ Stdout = $stdout }
+}
+$specification = [pscustomobject][ordered]@{
+  CanonicalRepository = 'docker.io/library/node'
+  ManifestDigest = [string]$fixture.manifestDigest
+  Reference = "node:22.18.0-bookworm-slim@$($fixture.manifestDigest)"
+  Tag = '22.18.0-bookworm-slim'
+  Version = 1
+}
+try {
+  $registry = @(Get-C3RegistryImageQualifications @($specification) 'linux' 'amd64')
+  $completed = @(Complete-C3LocalImageQualifications $registry)
+  if ($observedCalls.Count -ne 3) { throw 'The image qualification call set is incomplete.' }
+  [ordered]@{ accepted = $true; evidence = $completed } | ConvertTo-Json -Compress -Depth 8
+} catch {
+  [ordered]@{ accepted = $false; evidence = @() } | ConvertTo-Json -Compress -Depth 8
+}
+`;
+  const directory = mkdtempSync(join(tmpdir(), "kora-c3-image-qualification-"));
+  const scriptPath = join(directory, "qualification.ps1");
+  writeFileSync(scriptPath, script, "utf8");
+  try {
+    const result = spawnSync(
+      resolvePowerShellExecutable(),
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", scriptPath],
+      { encoding: "utf8" },
+    );
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const output = result.stdout.trim().split(/\r?\n/u).at(-1);
+    assert.ok(output);
+    return JSON.parse(output);
+  } finally {
+    rmSync(directory, { force: true, recursive: true });
+  }
 }
 
 function invokeInventoryCanonicalizer(label, jsonLines) {
@@ -1041,12 +1311,14 @@ test("the safe reporter publishes only closed identities and counters", async ()
 
   for (const delivery of [
     "ABSENT",
+    "DIRECTORY_UNREADABLE",
+    "FILE_DISAPPEARED",
+    "FILE_UNREADABLE",
     "INVALID",
     "LATE",
     "RECIPIENT_MISMATCH",
     "SENTINEL_REGISTRATION_FAILED",
     "UNKNOWN",
-    "UNREADABLE",
   ]) {
     const deliveryFailureText = await invokeSafeReporterFixture(
       `reset-delivery-failure-${delivery}`,
@@ -1065,12 +1337,14 @@ test("the safe reporter publishes only closed identities and counters", async ()
   for (const delivery of [
     "OMITTED",
     "ABSENT",
+    "DIRECTORY_UNREADABLE",
+    "FILE_DISAPPEARED",
+    "FILE_UNREADABLE",
     "INVALID",
     "LATE",
     "RECIPIENT_MISMATCH",
     "SENTINEL_REGISTRATION_FAILED",
     "UNKNOWN",
-    "UNREADABLE",
   ]) {
     const falsePass = JSON.parse(
       await invokeSafeReporterFixture(`reset-pass-delivery-${delivery}`),
@@ -1284,6 +1558,142 @@ test("the runner rejects malformed summaries without republishing their content"
   assert.equal(invokeSafeBrowserSummaryFixture(notRunPass, 0).valid, false);
 });
 
+test("the outbox diagnostic executes two distinct read-only worker captures", () => {
+  const result = invokeOutboxSnapshotFixture();
+  assert.deepEqual(
+    result.calls.map(({ label }) => label),
+    ["delivery-pipeline-outbox-first", "delivery-pipeline-outbox-second"],
+  );
+  assert.equal(new Set(result.calls.map(({ label }) => label)).size, 2);
+  for (const call of result.calls) {
+    assert.match(call.arguments, /default_transaction_read_only=on/u);
+    assert.match(call.arguments, /--username=kora_admin_c2a_notification_worker/u);
+    assert.match(call.arguments, /--no-psqlrc/u);
+    assert.match(call.arguments, /current_setting\('transaction_read_only'\)/u);
+    assert.match(call.arguments, /session_user = 'kora_admin_c2a_notification_worker'/u);
+  }
+  assert.deepEqual(result.first, {
+    attempt: "ZERO",
+    identity: "EXPECTED",
+    readOnly: "CONFIRMED",
+    state: "PENDING_UNCLAIMED",
+  });
+  assert.deepEqual(result.second, result.first);
+  assert.match(
+    runner,
+    /Get-C3NotificationOutboxSnapshot 'delivery-pipeline-outbox-first'/u,
+  );
+  assert.match(
+    runner,
+    /Get-C3NotificationOutboxSnapshot 'delivery-pipeline-outbox-second'/u,
+  );
+});
+
+test("successful browser qualification archives two real outbox boundary reads", () => {
+  assert.match(
+    runner,
+    /if \(\$browser\.ExitCode -eq 0 -and \$safeBrowserSummary\.Valid\) \{[\s\S]*Get-C3NotificationOutboxSnapshot 'delivery-pipeline-outbox-first'[\s\S]*Start-Sleep -Milliseconds 250[\s\S]*Get-C3NotificationOutboxSnapshot 'delivery-pipeline-outbox-second'[\s\S]*delivery-pipeline-outbox-success-verification\.json[\s\S]*C3 notification outbox read boundary verification failed\./u,
+  );
+  assert.equal(
+    [...runner.matchAll(/delivery-pipeline-outbox-first/gu)].length,
+    2,
+    "the label appears once in failure diagnostics and once in success proof",
+  );
+  assert.equal(
+    [...runner.matchAll(/delivery-pipeline-outbox-second/gu)].length,
+    2,
+    "the second label has the same closed uses without an overwrite alias",
+  );
+});
+
+test("outbox success verification distinguishes stable and changed observations", () => {
+  const first = {
+    attempt: "ZERO",
+    identity: "EXPECTED",
+    readOnly: "CONFIRMED",
+    state: "PENDING_UNCLAIMED",
+  };
+  const stable = invokeOutboxSuccessVerificationFixture(first, first);
+  assert.equal(stable.valid, true);
+  assert.deepEqual(stable.verification, {
+    version: 1,
+    status: "PASS",
+    stability: "STABLE",
+    first,
+    second: first,
+  });
+
+  const second = { ...first, attempt: "ONE", state: "DELIVERED" };
+  const changed = invokeOutboxSuccessVerificationFixture(first, second);
+  assert.equal(changed.valid, true);
+  assert.deepEqual(changed.verification, {
+    version: 1,
+    status: "PASS",
+    stability: "CHANGED",
+    first,
+    second,
+  });
+});
+
+test("outbox success verification fails closed on unavailable identity or write access", () => {
+  const expected = {
+    attempt: "ZERO",
+    identity: "EXPECTED",
+    readOnly: "CONFIRMED",
+    state: "ABSENT",
+  };
+  const unavailable = {
+    attempt: "UNAVAILABLE",
+    identity: "UNAVAILABLE",
+    readOnly: "UNAVAILABLE",
+    state: "UNAVAILABLE",
+  };
+  const unavailableResult = invokeOutboxSuccessVerificationFixture(
+    unavailable,
+    expected,
+  );
+  assert.equal(unavailableResult.valid, true);
+  assert.equal(unavailableResult.verification.status, "UNAVAILABLE");
+  assert.equal(unavailableResult.verification.stability, "UNAVAILABLE");
+
+  for (const invalidBoundary of [
+    { ...expected, identity: "UNEXPECTED" },
+    { ...expected, readOnly: "DISABLED" },
+  ]) {
+    const result = invokeOutboxSuccessVerificationFixture(
+      expected,
+      invalidBoundary,
+    );
+    assert.equal(result.valid, true);
+    assert.equal(result.verification.status, "FAIL");
+  }
+});
+
+test("outbox success verification never republishes an invalid snapshot schema", () => {
+  const expected = {
+    attempt: "ZERO",
+    identity: "EXPECTED",
+    readOnly: "CONFIRMED",
+    state: "ABSENT",
+  };
+  for (const invalid of [
+    { ...expected, extra: "FREE_TEXT" },
+    { attempt: expected.attempt, identity: expected.identity, state: expected.state },
+    { ...expected, state: "FREE_TEXT" },
+  ]) {
+    const result = invokeOutboxSuccessVerificationFixture(invalid, expected);
+    assert.equal(result.valid, true);
+    assert.equal(result.verification.status, "UNAVAILABLE");
+    assert.deepEqual(result.verification.first, {
+      attempt: "UNAVAILABLE",
+      identity: "UNAVAILABLE",
+      readOnly: "UNAVAILABLE",
+      state: "UNAVAILABLE",
+    });
+    assert.equal(JSON.stringify(result).includes("FREE_TEXT"), false);
+  }
+});
+
 test("the delivery pipeline summary distinguishes closed causal branches without free evidence", () => {
   const marker = {
     bullmq: "RESOLVED",
@@ -1298,6 +1708,7 @@ test("the delivery pipeline summary distinguishes closed causal branches without
   const outbox = {
     attempt: "ZERO",
     identity: "EXPECTED",
+    readOnly: "CONFIRMED",
     state: "PENDING_UNCLAIMED",
   };
   const run = (
@@ -1364,7 +1775,6 @@ test("the delivery pipeline summary distinguishes closed causal branches without
     "WORKER_FAILED",
   );
   for (const [label, changedMarker, changedOutbox] of [
-    ["unexpected identity", marker, { ...outbox, identity: "UNEXPECTED" }],
     ["existing attempt", marker, { ...outbox, attempt: "ONE" }],
     ["non-private directory", { ...marker, directoryMode: "OTHER" }, outbox],
     ["unexpected file count", { ...marker, fileCount: "ONE" }, outbox],
@@ -1384,6 +1794,14 @@ test("the delivery pipeline summary distinguishes closed causal branches without
     );
   }
   assert.equal(
+    run("ABSENT", marker, { ...outbox, identity: "UNEXPECTED" }).classification,
+    "DIAGNOSTIC_UNAVAILABLE",
+  );
+  assert.equal(
+    run("ABSENT", marker, { ...outbox, readOnly: "DISABLED" }).classification,
+    "DIAGNOSTIC_UNAVAILABLE",
+  );
+  assert.equal(
     run("ABSENT", { ...marker, producer: "INELIGIBLE_RECORDED" })
       .classification,
     "ACCOUNT_INELIGIBLE",
@@ -1399,13 +1817,26 @@ test("the delivery pipeline summary distinguishes closed causal branches without
     "CHANNEL_VISIBILITY_MISMATCH",
   );
   assert.equal(
-    run("UNREADABLE", {
+    run("DIRECTORY_UNREADABLE", {
       ...marker,
       file: "PRESENT_VALID",
       fileCount: "ONE",
       fileMode: "PRIVATE_0600",
     }).classification,
-    "HOST_READ_BOUNDARY",
+    "HOST_DIRECTORY_BOUNDARY",
+  );
+  assert.equal(
+    run("FILE_UNREADABLE", {
+      ...marker,
+      file: "PRESENT_VALID",
+      fileCount: "ONE",
+      fileMode: "PRIVATE_0600",
+    }).classification,
+    "HOST_FILE_BOUNDARY",
+  );
+  assert.equal(
+    run("FILE_DISAPPEARED").classification,
+    "HOST_FILE_DISAPPEARED",
   );
   assert.equal(run("INVALID").classification, "HARNESS_RECORD_INVALID");
   assert.equal(run("LATE").classification, "LATE_DELIVERY");
@@ -1433,8 +1864,26 @@ test("the delivery pipeline summary distinguishes closed causal branches without
     "DIAGNOSTIC_UNAVAILABLE",
   );
   assert.equal(
-    run("UNREADABLE", { ...marker, file: "UNAVAILABLE" }).classification,
+    run("FILE_UNREADABLE", { ...marker, file: "UNAVAILABLE" }).classification,
     "DIAGNOSTIC_UNAVAILABLE",
+  );
+  assert.equal(
+    run(
+      "ABSENT",
+      marker,
+      outbox,
+      { ...marker, producer: "UNAVAILABLE" },
+      { ...outbox, readOnly: "UNAVAILABLE" },
+    ).stability,
+    "UNAVAILABLE",
+  );
+  assert.equal(
+    run(
+      "ABSENT",
+      { ...marker, producer: "UNAVAILABLE" },
+      { ...outbox, readOnly: "UNAVAILABLE" },
+    ).stability,
+    "UNAVAILABLE",
   );
 
   const invalid = run("ABSENT", { ...marker, sentinel: "SENTINEL_PRIVATE" });
@@ -1451,6 +1900,7 @@ test("the delivery pipeline summary distinguishes closed causal branches without
     "fileMode",
     "outbox",
     "outboxIdentity",
+    "outboxReadOnly",
     "producer",
     "stability",
     "version",
@@ -1484,6 +1934,8 @@ test("the real delivery fixture classifies filesystem and timing boundaries", as
   const {
     C3DeliveryObservationError,
     C3PrivateChannel,
+    readC3DeliveryDirectory,
+    readC3DeliveryFile,
     waitForC3DeliveryObservation,
   } = await loadAdminAuthFixturesModule();
   const environmentNames = [
@@ -1573,7 +2025,7 @@ test("the real delivery fixture classifies filesystem and timing boundaries", as
 
     for (const [mode, observation] of [
       ["invalid", "INVALID"],
-      ["unreadable", "UNREADABLE"],
+      ["unreadable", "FILE_UNREADABLE"],
     ]) {
       const channel = createChannel(mode);
       await assert.rejects(
@@ -1583,6 +2035,38 @@ test("the real delivery fixture classifies filesystem and timing boundaries", as
           error.observation === observation,
       );
     }
+
+    assert.throws(
+      () =>
+        readC3DeliveryDirectory("SYNTHETIC_DIRECTORY", () => {
+          throw new Error("SYNTHETIC_DIRECTORY_FAILURE");
+        }),
+      (error) =>
+        error instanceof C3DeliveryObservationError &&
+        error.observation === "DIRECTORY_UNREADABLE",
+    );
+    assert.throws(
+      () =>
+        readC3DeliveryFile("SYNTHETIC_FILE", () => {
+          const error = new Error("SYNTHETIC_DISAPPEARANCE");
+          error.code = "ENOENT";
+          throw error;
+        }),
+      (error) =>
+        error instanceof C3DeliveryObservationError &&
+        error.observation === "FILE_DISAPPEARED",
+    );
+    assert.throws(
+      () =>
+        readC3DeliveryFile("SYNTHETIC_FILE", () => {
+          const error = new Error("SYNTHETIC_FILE_FAILURE");
+          error.code = "EACCES";
+          throw error;
+        }),
+      (error) =>
+        error instanceof C3DeliveryObservationError &&
+        error.observation === "FILE_UNREADABLE",
+    );
 
     const sentinelFailure = createChannel("valid");
     sentinelFailure.registerSensitiveValues = () => {
@@ -2068,58 +2552,149 @@ test("foreign inventory comparison canonicalizes label and row order without rep
   assert.match(runner, /Sort-Object -CaseSensitive/u);
   assert.match(runner, /foreign-inventory-before\.canonical\.txt/u);
   assert.match(runner, /foreign-inventory-after\.canonical\.txt/u);
-  assert.match(runner, /SEMANTIC_IDENTICAL/u);
-  assert.match(runner, /SEMANTIC_PRESERVED_WITH_QUALIFIED_CAMPAIGN_IMAGES/u);
   assert.match(runner, /campaign-acquired-images\.canonical\.txt/u);
-  assert.match(runner, /Get-QualifiedComposeImageReferences/u);
+  assert.match(runner, /Get-C3QualifiedComposeImageSpecifications/u);
   assert.match(runner, /\$qualified\.Count -ne 4/u);
-  assert.match(runner, /qualified-campaign-image-references\.txt/u);
-  assert.match(runner, /\$missingImageRows\.Count -gt 0/u);
-  assert.match(runner, /\$unqualifiedImageRows\.Count -gt 0/u);
-  assert.match(runner, /\$QualifiedImageReferences -cnotcontains/u);
+  assert.match(runner, /qualified-campaign-image-evidence\.json/u);
+  assert.match(runner, /Compare-C3DockerInventories/u);
+  assert.match(runner, /Resolve-C3ImageInventoryDelta/u);
+  assert.match(runner, /'image', 'ls', '-a', '--no-trunc', '--digests'/u);
   assert.match(runner, /inventory-before-/u);
   assert.match(runner, /inventory-after-/u);
+  const finalization = runner.slice(runner.indexOf("finally {", runner.indexOf("$PrimaryFailure")));
+  assert.equal(
+    (finalization.match(/Compare-C3DockerInventories/gu) ?? []).length,
+    1,
+  );
 });
 
-test("the real inventory comparator accepts only exact qualified cold-daemon image references", () => {
-  const digest = `sha256:${"a".repeat(64)}`;
-  const existingDigest = `sha256:${"b".repeat(64)}`;
-  const imageRow = (repository, tag, selectedDigest) =>
+test("the single image decision accepts only fully qualified cold acquisitions", () => {
+  const manifestDigest = `sha256:${"a".repeat(64)}`;
+  const configDigest = `sha256:${"b".repeat(64)}`;
+  const platformDigest = `sha256:${"c".repeat(64)}`;
+  const existingDigest = `sha256:${"d".repeat(64)}`;
+  const existingId = `sha256:${"e".repeat(64)}`;
+  const imageRow = (repository, tag, digest, id) =>
     JSON.stringify({
-      Digest: selectedDigest,
+      Digest: digest,
+      ID: id,
       Repository: repository,
       Tag: tag,
     });
-  const existing = imageRow("foreign", "stable", existingDigest);
-  const qualified = imageRow("node", "22.18.0-bookworm-slim", digest);
+  const qualification = (overrides = {}) => ({
+    CanonicalRepository: "docker.io/library/node",
+    ConfigDigest: configDigest,
+    LocalIdentityKind: "CONFIG",
+    LocalImageId: configDigest,
+    ManifestDigest: manifestDigest,
+    ManifestKind: "INDEX",
+    PlatformArchitecture: "amd64",
+    PlatformManifestDigest: platformDigest,
+    PlatformOs: "linux",
+    PlatformVariant: "",
+    Reference: `node:22.18.0-bookworm-slim@${manifestDigest}`,
+    RepoDigest: `docker.io/library/node@${manifestDigest}`,
+    RepoDigestConfirmed: true,
+    Tag: "22.18.0-bookworm-slim",
+    Version: 1,
+    ...overrides,
+  });
+  const existing = imageRow("foreign", "stable", existingDigest, existingId);
+  const exact = imageRow(
+    "node",
+    "22.18.0-bookworm-slim",
+    manifestDigest,
+    configDigest,
+  );
+  const untagged = imageRow("node", "<none>", manifestDigest, configDigest);
   const common = {
     containers: 'containers\n{"ID":"foreign-container"}',
     networks: 'networks\n{"ID":"foreign-network"}',
     volumes: 'volumes\n{"Name":"foreign-volume"}',
   };
   const before = { ...common, images: `images\n${existing}` };
-  const run = (imageRows) =>
-    invokeInventoryComparison({
+  const run = (imageRows, beforeRows = [existing], evidence = [qualification()]) => {
+    const result = invokeInventoryComparison({
       after: { ...common, images: `images\n${imageRows.join("\n")}` },
-      before,
-      qualified: [qualified],
+      before: { ...common, images: `images\n${beforeRows.join("\n")}` },
+      qualified: evidence,
     });
+    return result.Deltas?.images ?? result;
+  };
 
-  assert.equal(run([existing]).Status, "SEMANTIC_IDENTICAL");
+  assert.equal(run([existing]).Status, "IDENTICAL");
+  for (const acquired of [exact, untagged]) {
+    const delta = run([existing, acquired]);
+    assert.equal(delta.Status, "PRESERVED_WITH_QUALIFIED_CAMPAIGN_ACQUISITION");
+    assert.equal(delta.QualifiedAcquisitions, 1);
+    assert.deepEqual(delta.QualifiedRows, [acquired]);
+  }
+
+  const alias = imageRow("foreign-alias", "latest", manifestDigest, configDigest);
+  const aliasDelta = run([existing, untagged, alias]);
+  assert.equal(aliasDelta.Status, "DIFFERENCE_CONFIRMED");
+  assert.equal(aliasDelta.Added, 1);
+  assert.equal(aliasDelta.QualifiedAcquisitions, 1);
+
+  for (const divergent of [
+    imageRow("node", "<none>", existingDigest, configDigest),
+    imageRow("node", "<none>", manifestDigest, existingId),
+    imageRow("foreign", "<none>", manifestDigest, configDigest),
+  ]) {
+    const delta = run([existing, divergent]);
+    assert.equal(delta.Status, "DIFFERENCE_CONFIRMED");
+    assert.equal(delta.Added, 1);
+    assert.equal(delta.QualifiedAcquisitions, 0);
+  }
+
+  const preexistingSameId = imageRow("foreign-cache", "stable", existingDigest, configDigest);
   assert.equal(
-    run([existing, qualified]).Status,
-    "SEMANTIC_PRESERVED_WITH_QUALIFIED_CAMPAIGN_IMAGES",
+    run([existing, preexistingSameId, untagged], [existing, preexistingSameId]).Status,
+    "DIFFERENCE_CONFIRMED",
   );
-  assert.equal(run([qualified]).Status, "SEMANTIC_DIFFERENT");
+  assert.equal(run([exact]).Status, "DIFFERENCE_CONFIRMED");
   assert.equal(
-    run([existing, imageRow("foreign", "new", `sha256:${"c".repeat(64)}`)])
-      .Status,
-    "SEMANTIC_DIFFERENT",
+    run(
+      [imageRow("foreign", "stable", existingDigest, configDigest)],
+      [existing],
+    ).Status,
+    "DIFFERENCE_CONFIRMED",
+  );
+
+  assert.equal(run([existing, exact], [existing], [{ ...qualification(), ConfigDigest: undefined }]).ComparisonUnavailable, true);
+  assert.equal(
+    run([existing, exact], [existing], [
+      qualification({ LocalImageId: existingId }),
+    ]).ComparisonUnavailable,
+    true,
   );
   assert.equal(
-    run([existing, imageRow("foreign-alias", "latest", digest)]).Status,
-    "SEMANTIC_DIFFERENT",
+    run([existing, exact], [existing], [qualification(), qualification()]).ComparisonUnavailable,
+    true,
   );
+});
+
+test("registry platform and local image identity are linked before inventory acceptance", () => {
+  const classic = invokeImageQualificationFixture("classic");
+  assert.equal(classic.accepted, true);
+  assert.equal(classic.evidence.length, 1);
+  assert.equal(classic.evidence[0].LocalIdentityKind, "CONFIG");
+  assert.equal(classic.evidence[0].PlatformArchitecture, "amd64");
+  assert.equal(classic.evidence[0].PlatformOs, "linux");
+  assert.equal(classic.evidence[0].RepoDigestConfirmed, true);
+
+  const descriptor = invokeImageQualificationFixture("descriptor");
+  assert.equal(descriptor.accepted, true);
+  assert.equal(descriptor.evidence[0].LocalIdentityKind, "DESCRIPTOR");
+
+  for (const mode of [
+    "wrong-platform",
+    "wrong-id",
+    "wrong-repodigest",
+    "extra-repodigest",
+  ]) {
+    assert.equal(invokeImageQualificationFixture(mode).accepted, false, mode);
+  }
 });
 
 test("the real canonicalizer neutralizes only qualified ordering and volatile time", () => {
@@ -2170,25 +2745,42 @@ test("inventory deltas report only bounded counts and qualified image acquisitio
       Missing: 1,
       Modified: 1,
       QualifiedAcquisitions: 0,
+      QualifiedRows: [],
       Status: "DIFFERENCE_CONFIRMED",
     },
   );
   const digest = `sha256:${"a".repeat(64)}`;
+  const configDigest = `sha256:${"b".repeat(64)}`;
+  const platformDigest = `sha256:${"c".repeat(64)}`;
   const image = JSON.stringify({
     Digest: digest,
+    ID: configDigest,
     Repository: "node",
-    Tag: "22.18.0-bookworm-slim",
+    Tag: "<none>",
   });
-  const qualified = JSON.stringify({
-    Digest: digest,
-    Repository: "node",
+  const qualified = {
+    CanonicalRepository: "docker.io/library/node",
+    ConfigDigest: configDigest,
+    LocalIdentityKind: "CONFIG",
+    LocalImageId: configDigest,
+    ManifestDigest: digest,
+    ManifestKind: "INDEX",
+    PlatformArchitecture: "amd64",
+    PlatformManifestDigest: platformDigest,
+    PlatformOs: "linux",
+    PlatformVariant: "",
+    Reference: `node:22.18.0-bookworm-slim@${digest}`,
+    RepoDigest: `docker.io/library/node@${digest}`,
+    RepoDigestConfirmed: true,
     Tag: "22.18.0-bookworm-slim",
-  });
+    Version: 1,
+  };
   assert.deepEqual(delta("images", [], [image], [qualified]), {
     Added: 0,
     Missing: 0,
     Modified: 0,
     QualifiedAcquisitions: 1,
+    QualifiedRows: [image],
     Status: "PRESERVED_WITH_QUALIFIED_CAMPAIGN_ACQUISITION",
   });
 });
@@ -2221,6 +2813,39 @@ test("the runner deterministically resolves one scalar absolute path for all fou
   for (const selected of Object.values(spaces.selected)) {
     assert.match(selected, /primary with spaces/u);
   }
+});
+
+test("the private channel identity is one explicit non-root POSIX owner", () => {
+  assert.deepEqual(invokePosixIdentityFixture("1001\n", "UID"), {
+    accepted: true,
+    value: "1001",
+  });
+  assert.deepEqual(invokePosixIdentityFixture("1001\n", "GID"), {
+    accepted: true,
+    value: "1001",
+  });
+  for (const value of ["0\n", "root\n", "1001\n1002\n", "-1\n", "4294967296\n"]) {
+    assert.equal(invokePosixIdentityFixture(value).accepted, false, value);
+  }
+  assert.equal(invokePosixIdentityFixture("1001\n", "SENTINEL").accepted, false);
+
+  const serviceBlock = (service, nextService) =>
+    compose.match(
+      new RegExp(`\\n  ${service}:\\n[\\s\\S]+?(?=\\n  ${nextService}:\\n)`, "u"),
+    )?.[0];
+  const api = serviceBlock("api", "notification");
+  const notification = serviceBlock("notification", "bootstrap");
+  assert.ok(api);
+  assert.ok(notification);
+  const mapping =
+    'user: "${KORA_C3_CHANNEL_UID:?KORA_C3_CHANNEL_UID is required}:${KORA_C3_CHANNEL_GID:?KORA_C3_CHANNEL_GID is required}"';
+  assert.equal(api.split(mapping).length - 1, 1);
+  assert.equal(notification.split(mapping).length - 1, 1);
+  assert.equal(compose.split(mapping).length - 1, 2);
+  assert.match(runner, /Resolve-C3Application 'id'/u);
+  assert.match(runner, /private-channel-posix-uid/u);
+  assert.match(runner, /private-channel-posix-gid/u);
+  assert.doesNotMatch(compose, /privileged:\s*true/u);
 });
 
 test("the application resolver rejects missing and invalid results and preserves tool failures", () => {
@@ -3800,13 +4425,41 @@ test("the secret-bearing browser campaign disables diagnostic capture", () => {
   assert.match(runner, /\[string\[\]\]\$SensitiveRedactions = @\(\)/u);
   assert.match(runner, /\[string\]\$DynamicSentinelDirectory = ''/u);
   assert.match(runner, /Get-DynamicSentinelValues \$DynamicSentinelDirectory/u);
+  const capturedFunctionStart = runner.indexOf('function Invoke-Captured');
+  const secretScanFunctionStart = runner.indexOf(
+    'function Invoke-EvidenceSecretScan',
+  );
+  const secretScanFunctionEnd = runner.indexOf(
+    'function Invoke-Docker',
+  );
+  assert.ok(
+    capturedFunctionStart >= 0 &&
+      secretScanFunctionStart > capturedFunctionStart &&
+      secretScanFunctionEnd > secretScanFunctionStart,
+  );
+  const capturedFunction = runner.slice(
+    capturedFunctionStart,
+    secretScanFunctionStart,
+  );
+  const secretScanFunction = runner.slice(
+    secretScanFunctionStart,
+    secretScanFunctionEnd,
+  );
   assert.equal(
     [
-      ...runner.matchAll(
-        /HashSet\[string\]\]::new\(\[StringComparer\]::Ordinal\)/gu,
+      ...capturedFunction.matchAll(
+        /\$effectiveRedactions = \[Collections\.Generic\.HashSet\[string\]\]::new\(\[StringComparer\]::Ordinal\)/gu,
       ),
     ].length,
-    2,
+    1,
+  );
+  assert.equal(
+    [
+      ...secretScanFunction.matchAll(
+        /\$uniqueSensitiveValues = \[Collections\.Generic\.HashSet\[string\]\]::new\(\[StringComparer\]::Ordinal\)/gu,
+      ),
+    ].length,
+    1,
   );
   assert.doesNotMatch(
     runner,

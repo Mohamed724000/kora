@@ -217,6 +217,7 @@ services:
         aliases: [api.c3.internal]
       data: {}
     restart: "no"
+    user: "${KORA_C3_CHANNEL_UID:?KORA_C3_CHANNEL_UID is required}:${KORA_C3_CHANNEL_GID:?KORA_C3_CHANNEL_GID is required}"
     secrets:
       - postgres_admin_c2a_writer_password
       - c3_harness_capability
@@ -289,6 +290,7 @@ services:
       com.kora-plus.service: c3-notification
     networks: [data]
     restart: "no"
+    user: "${KORA_C3_CHANNEL_UID:?KORA_C3_CHANNEL_UID is required}:${KORA_C3_CHANNEL_GID:?KORA_C3_CHANNEL_GID is required}"
     secrets:
       - c3_harness_capability
       - postgres_admin_c2a_notification_worker_password
