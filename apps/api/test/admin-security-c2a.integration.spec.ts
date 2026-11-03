@@ -1125,6 +1125,276 @@ realBusiness('Admin C2a real PostgreSQL/Redis/HTTP', { timeout: 300_000 }, () =>
     ]);
   });
 
+  it('terminalizes consumed reset parents atomically and preserves delivery history', async () => {
+    interface ResetProofRow {
+      readonly activeSessions: string;
+      readonly adminUserId: string;
+      readonly authorizationVersion: number;
+      readonly consumedAt: Date | null;
+      readonly contextId: string;
+      readonly generation: number;
+      readonly outboxId: string;
+      readonly outboxJson: string;
+      readonly outboxState: string;
+      readonly passwordHash: string;
+      readonly replacedOutboxId: string | null;
+      readonly replacedRequestId: string | null;
+      readonly requestId: string;
+      readonly requestRevokedAt: Date | null;
+      readonly resetAudits: string;
+    }
+
+    const server = application.getHttpServer();
+    const repository = application.get(AdminSecurityRepository);
+    const originalTransaction = repository.transaction.bind(repository);
+    const outboxFingerprint = (row: ResetProofRow): string =>
+      createHash('sha256').update(row.outboxJson, 'utf8').digest('hex');
+    const resetFingerprint = (row: ResetProofRow): string =>
+      createHash('sha256')
+        .update(
+          JSON.stringify({
+            activeSessions: row.activeSessions,
+            authorizationVersion: row.authorizationVersion,
+            consumedAt: row.consumedAt?.toISOString() ?? null,
+            outboxFingerprint: outboxFingerprint(row),
+            passwordHash: row.passwordHash,
+            requestRevokedAt: row.requestRevokedAt?.toISOString() ?? null,
+            resetAudits: row.resetAudits,
+          }),
+          'utf8',
+        )
+        .digest('hex');
+    const readResetProof = async (outboxId: string): Promise<ResetProofRow> => {
+      const result = await owner.query<ResetProofRow>(
+        `SELECT u."id" AS "adminUserId", u."passwordHash",
+                u."authorizationVersion" AS "authorizationVersion",
+                context."id" AS "contextId", context."consumedAt",
+                request."id" AS "requestId", request."revokedAt" AS "requestRevokedAt",
+                request."replacedRequestId", outbox."id" AS "outboxId",
+                outbox."state"::text AS "outboxState", outbox."generation",
+                outbox."replacedOutboxId", to_jsonb(outbox)::text AS "outboxJson",
+                (SELECT count(*)::text FROM "AdminSession" AS session
+                  WHERE session."adminUserId" = u."id" AND session."revokedAt" IS NULL)
+                  AS "activeSessions",
+                (SELECT count(*)::text FROM "AuditLog" AS audit
+                  WHERE audit."adminPasswordResetContextId" = context."id"
+                    AND audit."action" = 'resetAdminPassword'
+                    AND audit."outcome" = 'SUCCESS') AS "resetAudits"
+           FROM "AdminNotificationOutbox" AS outbox
+           JOIN "AdminPasswordResetRequest" AS request
+             ON request."id" = outbox."passwordResetRequestId"
+           JOIN "AdminPasswordResetContext" AS context
+             ON context."passwordResetRequestId" = request."id"
+            AND context."adminUserId" = request."adminUserId"
+           JOIN "AdminUser" AS u ON u."id" = request."adminUserId"
+          WHERE outbox."id" = $1`,
+        [outboxId],
+      );
+      const row = result.rows[0];
+      if (row === undefined) throw new Error('Password reset proof row is absent.');
+      return row;
+    };
+    const latestReset = async (
+      email: string,
+      excludedRequestId?: string,
+    ): Promise<{
+      readonly outboxId: string;
+      readonly replacedOutboxId: string | null;
+      readonly replacedRequestId: string | null;
+      readonly requestId: string;
+    }> => {
+      const result = await owner.query<{
+        outboxId: string;
+        replacedOutboxId: string | null;
+        replacedRequestId: string | null;
+        requestId: string;
+      }>(
+        `SELECT request."id" AS "requestId", request."replacedRequestId",
+                outbox."id" AS "outboxId", outbox."replacedOutboxId"
+           FROM "AdminPasswordResetRequest" AS request
+           JOIN "AdminUser" AS u ON u."id" = request."adminUserId"
+           JOIN "AdminNotificationOutbox" AS outbox
+             ON outbox."passwordResetRequestId" = request."id"
+          WHERE u."email" = $1 AND ($2::text IS NULL OR request."id" <> $2::text)
+          ORDER BY request."createdAt" DESC, request."id" DESC
+          LIMIT 1`,
+        [email, excludedRequestId ?? null],
+      );
+      const row = result.rows[0];
+      if (row === undefined) throw new Error('Latest password reset proof row is absent.');
+      return row;
+    };
+    const requestReset = async (email: string, requestId: string): Promise<void> => {
+      await clearRecoveryRateLimitFixture();
+      await request(server)
+        .post('/api/v1/admin/auth/password/reset-requests')
+        .set('Origin', origin)
+        .set('Sec-Fetch-Site', 'same-origin')
+        .set('X-Request-Id', requestId)
+        .send({ email })
+        .expect(202);
+    };
+
+    const email = 'reset-terminalization@example.invalid';
+    await seedAdmin(email, 'SUPPORT', ['GENERAL']);
+    await requestReset(email, 'c2a-reset-terminalize-request-1');
+    await expect(notificationWorker.processOne()).resolves.toBe('DELIVERED');
+    const firstDelivery = adapters.notificationPort
+      .acceptedDeliveries()
+      .find(({ payload }) => payload.email === email);
+    expect(firstDelivery?.simulatedEvent).toBe('PROVIDER_ACCEPTED_FOR_TEST');
+    const firstCode = firstDelivery?.payload.code;
+    expect(typeof firstCode).toBe('string');
+    const firstBefore = await readResetProof(firstDelivery!.logicalDeliveryId);
+    expect(firstBefore).toMatchObject({
+      activeSessions: '1',
+      consumedAt: null,
+      outboxState: 'DELIVERED',
+      replacedOutboxId: null,
+      replacedRequestId: null,
+      requestRevokedAt: null,
+      resetAudits: '0',
+    });
+    expect(firstBefore.generation).toBeGreaterThanOrEqual(1);
+
+    await clearRecoveryRateLimitFixture();
+    await request(server)
+      .post('/api/v1/admin/auth/password/reset')
+      .set('Origin', origin)
+      .set('Sec-Fetch-Site', 'same-origin')
+      .set('X-Request-Id', 'c2a-reset-terminalize-consume-1')
+      .send({ newPassword: 'C2aTerminalizedReset!2026-A', resetCode: firstCode })
+      .expect(204);
+    const firstAfter = await readResetProof(firstDelivery!.logicalDeliveryId);
+    expect(firstAfter.consumedAt?.toISOString()).toBe(firstAfter.requestRevokedAt?.toISOString());
+    expect(firstAfter).toMatchObject({
+      activeSessions: '0',
+      authorizationVersion: firstBefore.authorizationVersion + 1,
+      generation: firstBefore.generation,
+      outboxState: 'DELIVERED',
+      resetAudits: '1',
+    });
+    expect(outboxFingerprint(firstAfter)).toBe(outboxFingerprint(firstBefore));
+
+    await requestReset(email, 'c2a-reset-terminalize-request-2');
+    const second = await latestReset(email, firstAfter.requestId);
+    expect(second).toMatchObject({ replacedOutboxId: null, replacedRequestId: null });
+    expect(second.requestId).not.toBe(firstAfter.requestId);
+    expect(second.outboxId).not.toBe(firstAfter.outboxId);
+    await expect(notificationWorker.processOne()).resolves.toBe('DELIVERED');
+    const secondDelivery = adapters.notificationPort
+      .acceptedDeliveries()
+      .find(({ logicalDeliveryId }) => logicalDeliveryId === second.outboxId);
+    const secondCode = secondDelivery?.payload.code;
+    expect(typeof secondCode).toBe('string');
+
+    await clearRecoveryRateLimitFixture();
+    const concurrentConsumption = await Promise.all(
+      ['a', 'b'].map((suffix) =>
+        request(server)
+          .post('/api/v1/admin/auth/password/reset')
+          .set('Origin', origin)
+          .set('Sec-Fetch-Site', 'same-origin')
+          .set('X-Request-Id', `c2a-reset-terminalize-concurrent-${suffix}`)
+          .send({
+            newPassword: `C2aTerminalizedReset!2026-${suffix.toUpperCase()}`,
+            resetCode: secondCode,
+          }),
+      ),
+    );
+    expect(concurrentConsumption.map(({ status }) => status).sort()).toEqual([204, 400]);
+    const secondAfter = await readResetProof(second.outboxId);
+    expect(secondAfter.consumedAt?.toISOString()).toBe(secondAfter.requestRevokedAt?.toISOString());
+    expect(secondAfter).toMatchObject({ outboxState: 'DELIVERED', resetAudits: '1' });
+    expect(outboxFingerprint(await readResetProof(firstAfter.outboxId))).toBe(
+      outboxFingerprint(firstBefore),
+    );
+
+    await clearRecoveryRateLimitFixture();
+    await request(server)
+      .post('/api/v1/admin/auth/password/reset')
+      .set('Origin', origin)
+      .set('Sec-Fetch-Site', 'same-origin')
+      .set('X-Request-Id', 'c2a-reset-terminalize-old-code-replay')
+      .send({ newPassword: 'C2aTerminalizedReplay!2026', resetCode: firstCode })
+      .expect(400);
+    expect(outboxFingerprint(await readResetProof(firstAfter.outboxId))).toBe(
+      outboxFingerprint(firstBefore),
+    );
+
+    const rollbackEmail = 'reset-rollback@example.invalid';
+    await seedAdmin(rollbackEmail, 'SUPPORT', ['GENERAL']);
+    await requestReset(rollbackEmail, 'c2a-reset-rollback-request');
+    await expect(notificationWorker.processOne()).resolves.toBe('DELIVERED');
+    const rollbackDelivery = adapters.notificationPort
+      .acceptedDeliveries()
+      .find(({ payload }) => payload.email === rollbackEmail);
+    const rollbackCode = rollbackDelivery?.payload.code;
+    expect(typeof rollbackCode).toBe('string');
+    const rollbackBefore = await readResetProof(rollbackDelivery!.logicalDeliveryId);
+    const transactionSpy = vi.spyOn(repository, 'transaction').mockImplementation((async <T>(
+      callback: (transaction: AdminSecurityTransactionRepository) => Promise<T>,
+    ): Promise<T> =>
+      originalTransaction((transaction) => {
+        const injected = new Proxy(transaction, {
+          get(target, property) {
+            if (property === 'insertAudit') {
+              return async (): Promise<never> => {
+                throw new Error('controlled password reset audit failure');
+              };
+            }
+            const value = Reflect.get(target, property, target) as unknown;
+            return typeof value === 'function' ? value.bind(target) : value;
+          },
+        });
+        return callback(injected);
+      })) as typeof repository.transaction);
+    try {
+      await clearRecoveryRateLimitFixture();
+      await request(server)
+        .post('/api/v1/admin/auth/password/reset')
+        .set('Origin', origin)
+        .set('Sec-Fetch-Site', 'same-origin')
+        .set('X-Request-Id', 'c2a-reset-rollback-consume')
+        .send({ newPassword: 'C2aRollbackReset!2026', resetCode: rollbackCode })
+        .expect(503);
+    } finally {
+      transactionSpy.mockRestore();
+    }
+    const rollbackAfter = await readResetProof(rollbackDelivery!.logicalDeliveryId);
+    expect(resetFingerprint(rollbackAfter)).toBe(resetFingerprint(rollbackBefore));
+
+    const pendingEmail = 'reset-active-replacement@example.invalid';
+    await seedAdmin(pendingEmail, 'SUPPORT');
+    await requestReset(pendingEmail, 'c2a-reset-active-request-1');
+    const pendingFirst = await latestReset(pendingEmail);
+    const pendingBefore = await readResetProof(pendingFirst.outboxId);
+    expect(pendingBefore).toMatchObject({
+      consumedAt: null,
+      outboxState: 'PENDING',
+      replacedOutboxId: null,
+      replacedRequestId: null,
+      requestRevokedAt: null,
+      resetAudits: '0',
+    });
+    await requestReset(pendingEmail, 'c2a-reset-active-request-2');
+    const pendingSecond = await latestReset(pendingEmail, pendingFirst.requestId);
+    const replaced = await readResetProof(pendingFirst.outboxId);
+    const replacement = await readResetProof(pendingSecond.outboxId);
+    expect(replaced).toMatchObject({
+      generation: pendingBefore.generation + 1,
+      outboxState: 'CANCELLED',
+    });
+    expect(replaced.requestRevokedAt).not.toBeNull();
+    expect(replacement).toMatchObject({
+      outboxState: 'PENDING',
+      replacedOutboxId: pendingFirst.outboxId,
+      replacedRequestId: pendingFirst.requestId,
+      requestRevokedAt: null,
+    });
+    await expect(notificationWorker.processOne()).resolves.toBe('DELIVERED');
+  });
+
   it('expires a due recovery case under the dedicated singleton identity', async () => {
     const now = new Date();
     expiredRecoveryCaseId = randomUUID();

@@ -77,6 +77,7 @@ describe('loadRuntimeConfig', () => {
 
     expect(config.environment).toBe('test');
     expect(config.adminAuth.origin).toBe('https://admin.kora.invalid');
+    expect(config.adminClientProvenance).toEqual({ mode: 'DIRECT' });
     expect(config.adminAuth.postgresql.user).toBe('kora_admin_writer_test');
     expect(config.adminAuth.redis.waitAofTimeoutMs).toBe(100);
     expect(config.adminC2a).toEqual({ enabled: false });
@@ -84,6 +85,55 @@ describe('loadRuntimeConfig', () => {
     expect(config.http).toEqual({ host: '127.0.0.1', port: 3001 });
     expect(config.observability).toEqual({ environment: 'test' });
     expect(config.redis.password).toBeUndefined();
+  });
+
+  it('active MTLS_BFF uniquement avec les chemins TLS et l’empreinte exacts', () => {
+    const config = loadRuntimeConfig({
+      ...SAFE_TEST_ENVIRONMENT,
+      ADMIN_BFF_CLIENT_CERTIFICATE_SHA256: 'ab'.repeat(32),
+      ADMIN_CLIENT_PROVENANCE_MODE: 'MTLS_BFF',
+      API_TLS_CERTIFICATE_PATH: '/run/secrets/c3-api-cert.pem',
+      API_TLS_CLIENT_CA_PATH: '/run/secrets/c3-client-ca.pem',
+      API_TLS_PRIVATE_KEY_PATH: '/run/secrets/c3-api-key.pem',
+    });
+
+    expect(config.adminClientProvenance).toEqual({
+      clientCaPath: '/run/secrets/c3-client-ca.pem',
+      clientCertificateSha256: 'ab'.repeat(32),
+      mode: 'MTLS_BFF',
+      serverCertificatePath: '/run/secrets/c3-api-cert.pem',
+      serverPrivateKeyPath: '/run/secrets/c3-api-key.pem',
+    });
+  });
+
+  it('refuse mode inconnu, TLS incomplet et variables TLS dormantes en DIRECT', () => {
+    expect(() =>
+      loadRuntimeConfig({
+        ...SAFE_TEST_ENVIRONMENT,
+        ADMIN_CLIENT_PROVENANCE_MODE: 'TRUST_PROXY',
+      }),
+    ).toThrow(ConfigValidationError);
+
+    expect(() =>
+      loadRuntimeConfig({
+        ...SAFE_TEST_ENVIRONMENT,
+        ADMIN_CLIENT_PROVENANCE_MODE: 'MTLS_BFF',
+        API_TLS_CERTIFICATE_PATH: 'relative/certificate.pem',
+      }),
+    ).toThrow(ConfigValidationError);
+
+    try {
+      loadRuntimeConfig({
+        ...SAFE_TEST_ENVIRONMENT,
+        ADMIN_CLIENT_PROVENANCE_MODE: 'DIRECT',
+        API_TLS_PRIVATE_KEY_PATH: '/run/secrets/dormant-key.pem',
+      });
+      throw new Error('La validation aurait dû échouer');
+    } catch (error: unknown) {
+      expect(error).toBeInstanceOf(ConfigValidationError);
+      expect((error as ConfigValidationError).invalidFields).toContain('API_TLS_PRIVATE_KEY_PATH');
+      expect((error as Error).message).not.toContain('dormant-key.pem');
+    }
   });
 
   it.each(C2B_PROFILES)('active uniquement le pool C2b du profil $profile', (profile) => {

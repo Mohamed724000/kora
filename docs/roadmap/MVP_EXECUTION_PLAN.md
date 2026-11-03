@@ -10,38 +10,38 @@ réparations d’un Flutter historique sont conservés uniquement comme historiq
 
 ## État des gates et lots
 
-| Gate ou lot         | Objectif                                      | Statut                                                                           |
-| ------------------- | --------------------------------------------- | -------------------------------------------------------------------------------- |
-| Gate 0              | Sources approuvées et readiness clean room    | Completed                                                                        |
-| Lot 00              | Preflight read-only                           | Completed                                                                        |
-| Lot 00B             | Remédiation documentaire                      | Completed                                                                        |
-| Lot 00C             | Canonicalisation AdminLTE                     | Completed                                                                        |
-| S0.1                | Gouvernance et Git                            | Completed                                                                        |
-| S0.2                | Contrat monorepo et versions                  | Completed                                                                        |
-| S0.3                | Fondations applicatives                       | Closed and merged                                                                |
-| S0.4                | Infrastructure locale                         | Closed and merged                                                                |
-| S0.5                | CI, sécurité et observabilité                 | Closed and merged                                                                |
-| M0.1                | Dependency Governance                         | Closed and merged                                                                |
-| M0.2                | Supply-chain Security Hotfix                  | Closed and merged                                                                |
-| S0.6                | Foundation Gate                               | Closed and merged                                                                |
-| Slice 1 / S1.1      | Contrats, données cibles et expérience audio  | Closed and merged                                                                |
-| Slice 1 / S1.2-01   | Contract & Data Readiness Gate                | Closed and merged                                                                |
-| Slice 1 / S1.2-02   | Baseline PostgreSQL et contraintes SQL        | Closed and merged — PR #43                                                       |
-| Slice 1 / S1.2-03A  | Frontière PostgreSQL runtime en lecture seule | Closed and merged — PR #45                                                       |
-| Slice 1 / S1.2-03B  | Admin Security Contract Gate, sans runtime    | Closed and merged — PR #48, merge `c97992ca2c82bc4f22f9222ea98ed53714fede4c`     |
-| Slice 1 / S1.2-03C1 | Auth admin, TOTP et sessions runtime          | Closed and merged — merge dc97eeef72c4e299988ed19d66460011a8551cf3; not deployed |
-| Slice 1 / S1.2-03C2 | Recovery, audit, invitations et RBAC runtime  | C2a closed/merged; C2b R3 published in Draft PR #53; G-QA-01 reconciled          |
-| Slice 1 / S1.2-03C3 | Interface d'authentification Admin            | Not started — separate authorization required                                    |
-| Slice 1 / S1.2-03D  | Artist API                                    | Not started                                                                      |
-| Slice 1 / S1.2-03E  | Artist Admin UI                               | Not started                                                                      |
-| Slice 1 / S1.2-03F  | Audio Draft API                               | Not started                                                                      |
-| Slice 1 / S1.2-03G  | Audio Draft Admin UI                          | Not started                                                                      |
-| Slice 1 / S1.2-03H  | Controlled Upload                             | Not started                                                                      |
-| Slice 1 / S1.2-03I  | Mux, Inbox et Outbox                          | Not started                                                                      |
-| Slice 1 / S1.2-03J  | Publication et archivage                      | Not started                                                                      |
-| Slice 1 / S1.2-03K  | Catalogue public et détail                    | Not started                                                                      |
-| Slice 1 / seed      | Seed/licences distinct                        | Not started                                                                      |
-| Slices suivantes    | Fonctionnalités produit ultérieures           | Not started                                                                      |
+| Gate ou lot         | Objectif                                      | Statut                                                                                                                             |
+| ------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Gate 0              | Sources approuvées et readiness clean room    | Completed                                                                                                                          |
+| Lot 00              | Preflight read-only                           | Completed                                                                                                                          |
+| Lot 00B             | Remédiation documentaire                      | Completed                                                                                                                          |
+| Lot 00C             | Canonicalisation AdminLTE                     | Completed                                                                                                                          |
+| S0.1                | Gouvernance et Git                            | Completed                                                                                                                          |
+| S0.2                | Contrat monorepo et versions                  | Completed                                                                                                                          |
+| S0.3                | Fondations applicatives                       | Closed and merged                                                                                                                  |
+| S0.4                | Infrastructure locale                         | Closed and merged                                                                                                                  |
+| S0.5                | CI, sécurité et observabilité                 | Closed and merged                                                                                                                  |
+| M0.1                | Dependency Governance                         | Closed and merged                                                                                                                  |
+| M0.2                | Supply-chain Security Hotfix                  | Closed and merged                                                                                                                  |
+| S0.6                | Foundation Gate                               | Closed and merged                                                                                                                  |
+| Slice 1 / S1.1      | Contrats, données cibles et expérience audio  | Closed and merged                                                                                                                  |
+| Slice 1 / S1.2-01   | Contract & Data Readiness Gate                | Closed and merged                                                                                                                  |
+| Slice 1 / S1.2-02   | Baseline PostgreSQL et contraintes SQL        | Closed and merged — PR #43                                                                                                         |
+| Slice 1 / S1.2-03A  | Frontière PostgreSQL runtime en lecture seule | Closed and merged — PR #45                                                                                                         |
+| Slice 1 / S1.2-03B  | Admin Security Contract Gate, sans runtime    | Closed and merged — PR #48, merge `c97992ca2c82bc4f22f9222ea98ed53714fede4c`                                                       |
+| Slice 1 / S1.2-03C1 | Auth admin, TOTP et sessions runtime          | Closed and merged — merge dc97eeef72c4e299988ed19d66460011a8551cf3; not deployed                                                   |
+| Slice 1 / S1.2-03C2 | Recovery, audit, invitations et RBAC runtime  | Closed and merged — C2a + C2b, merge `c47a1507…`; not deployed                                                                     |
+| Slice 1 / S1.2-03C3 | Interface d'authentification Admin            | Qualification technique de publication constatée le 3 novembre 2026 au commit `6c80890…` ; PR #54 Draft ; non intégré, non déployé |
+| Slice 1 / S1.2-03D  | Artist API                                    | Not started                                                                                                                        |
+| Slice 1 / S1.2-03E  | Artist Admin UI                               | Not started                                                                                                                        |
+| Slice 1 / S1.2-03F  | Audio Draft API                               | Not started                                                                                                                        |
+| Slice 1 / S1.2-03G  | Audio Draft Admin UI                          | Not started                                                                                                                        |
+| Slice 1 / S1.2-03H  | Controlled Upload                             | Not started                                                                                                                        |
+| Slice 1 / S1.2-03I  | Mux, Inbox et Outbox                          | Not started                                                                                                                        |
+| Slice 1 / S1.2-03J  | Publication et archivage                      | Not started                                                                                                                        |
+| Slice 1 / S1.2-03K  | Catalogue public et détail                    | Not started                                                                                                                        |
+| Slice 1 / seed      | Seed/licences distinct                        | Not started                                                                                                                        |
+| Slices suivantes    | Fonctionnalités produit ultérieures           | Not started                                                                                                                        |
 
 ## Sprint 0 — Clean-room foundation
 
@@ -1246,3 +1246,165 @@ les preuves techniques. Les NON-PASS 12/14, 13/14 et 13/14, les 75 SKIP, les
 réserves sur production, fournisseurs, clés, signal Windows, préincident R9,
 bases externes et perte réelle de l'accusé réseau lors de `COMMIT_UNKNOWN`
 restent NON DEMONSTRATED. C3 et la politique OSS restent hors périmètre.
+
+### S1.2-03C3 — instantané avant fermeture ciblée Firefox — 2026-10-29
+
+C2b est intégré au merge `c47a1507dce6ea7333ce7e372f9bd34aa548c81b`,
+arbre `063f2c7ab5cdf9df489332263e4b3184adf90330`. C3 consomme treize
+opérations C1/C2a sans endpoint nouveau. La frontière A-02 locale/CI est
+qualifiée : Nginx HTTPS contrôlé, BFF privé et API privée mTLS.
+
+Le candidat ferme localement l'alignement Unicode, les états globaux anonymes
+et la terminalisation atomique du reset C2a. La campagne finale traverse le
+graphe courant : Chromium 18/18 et WebKit 3/3 passent avec redaction, visual,
+scan des secrets et cleanup ciblé concluants. Firefox reste non exécuté : le
+premier lancement a produit le NON-PASS historique `spawn UNKNOWN`/SideBySide,
+puis l'installation fraîche lance Firefox mais échoue à l'unique
+`Browser.newPage()` avec deux onglets comptés. Sa cause exclusive n'est pas
+démontrée. Le visual final 1/1 reproduit byte-à-byte les neuf PNG v54, dont
+deux états synthétiques ; la validation Product Owner reste en attente.
+
+Les gates applicatifs, OpenAPI/génération, tooling 573/573, scanner 526,
+licences 824/0/0 et signatures 822/191 passent. Le graphe sélectionné utilise
+TypeScript 5.9.3 et concurrently 10.0.6, sans Nest CLI, fork-ts-checker,
+deepmerge ou cosmiconfig ; les audits complet et production sont à zéro. Pour
+le digest Nginx exact, Alpine 3.24/main classe `musl@1.2.6-r3` corrigé : le
+signal Scout générique/edge est un faux positif d'affectation démontré sans
+waiver. Le SBOM 26/808, les `NOASSERTION`, la provenance non reproductible et
+la production non qualifiée restent déclarés.
+
+Dans cet instantané antérieur, le jalon obtenait une **qualification technique
+locale partielle** et restait BLOCK, local, non indexé, non publié et non
+déployé. Firefox Windows et l'approbation visuelle Product Owner nécessitaient
+alors des suites autorisées distinctes.
+
+### Mise à jour C3 — fermeture ciblée Firefox Windows — 2026-10-31
+
+Les constats précédents sur Firefox restent historiques. La cible
+surnuméraire a été identifiée comme la page de premier lancement Firefox ; la
+préférence confinée au profil de campagne la supprime sans abaisser les
+protections du navigateur. Le cache personnel Windows reste non qualifié après
+un échec `SideBySide/mozglue` dépendant du chemin, dont la cause profonde reste
+NON CONCLUSIVE. Le wrapper exige désormais un cache isolé exact et vérifié.
+
+La campagne `c3-ff-qualified-20261031t1041` passe Firefox 3/3 sans retry, avec
+redaction, scan de secrets, cleanup et préservation des ressources étrangères.
+Chromium 18/18 et WebKit 3/3 restent applicables ; tooling 573/573 passe.
+
+Le jalon atteint un **GO TECHNIQUE LOCAL**. Il reste **BLOCK VISUEL PRODUCT
+OWNER** tant que l'approbation explicite des neuf captures n'est pas reçue.
+Deux états sont synthétiques et aucun parcours absent n'est extrapolé. Le lot
+reste local, non indexé, non publié et non déployé.
+
+### Mise à jour C3 — décision visuelle et C3-PUB-SC-01 — 2026-10-31
+
+Le Product Owner approuve ensuite la planche `5485987f…b11` pour les neuf
+captures représentées sur le gel `79cc6da1…c2fd`. `loading` et
+`unavailable` restent synthétiques ; aucun écran, parcours ou contrôle
+d'accessibilité absent n'est extrapolé.
+
+Le premier préflight de publication bloque avant indexation sur
+`GHSA-g3hv-75wg-m249`, porté par l'unique `minimatch@10.2.6` de
+développement. La remédiation locale utilise l'override exact
+`minimatch@11.0.1` et sa transitive
+`@isaacs/nonrecursive-glob-match@1.0.3`, générée par npm. Le scanner protège
+le graphe exact et refuse copie affectée, substitution ou parent
+supplémentaire.
+
+Installation propre, chaîne npm, audits complet/production zéro, signatures,
+licences, scanner, tooling 579/579, lint, typecheck, tests et build passent.
+La compatibilité reste bornée aux configurations ESLint KORA+ actives ; deux
+options dormantes de plugins restent incompatibles et interdites jusqu'à
+qualification distincte. Sept artefacts WASM optionnels restent signalés
+`extraneous` par npm 10 sans invalidité.
+
+Les preuves A-02, Nginx et navigateurs sont réutilisées sur leurs surfaces
+inchangées ; aucune nouvelle campagne globale 24/24 n'est affirmée. Le jalon
+est **GO LOCAL FINAL BORNÉ**, toujours non indexé et non publié à cet
+instantané. Publication, quatre workflows et revue d'intégration restent des
+étapes distinctes.
+
+### Raccordement build C2a de la publication C3 — 2026-10-31
+
+La Draft PR #54 contient le head publié `e27ee24f6a5be39adedaf45e324c0e482c87675b`.
+Son workflow Infrastructure `41221134116` demeure un NON-PASS historique : le
+validateur métier C2a appelait un Nest CLI volontairement absent du graphe
+qualifié. Le correctif local remplace ce raccordement par le build officiel de
+l'API, en conservant génération Prisma, nettoyage `dist`, compilation
+`tsconfig.build.json`, borne, propagation des échecs et cleanup ciblé. Il
+refuse aussi les cinq hooks npm implicites non réimplémentés ; le wrapper
+PowerShell déjà fonctionnel reste byte-identique au head publié.
+
+Les régressions du raccordement passent `13/13` ; le wrapper réel passe `1`
+contrôle statique, `11` scénarios métier et C1 `47/47`. Tooling final,
+scanner, format, diff-check et audits frais sont concluants. La tentative
+tooling `591/592` reste un NON-PASS historique avant sa reprise causale
+`592/592`. Les preuves C3 et le visuel PO restent réutilisés sur leurs surfaces
+inchangées, sans nouvelle campagne navigateur globale.
+
+Ce statut ne préjuge ni le commit/push du correctif, ni les quatre nouveaux
+workflows, ni la revue cumulative d'intégration. C3 reste non déployé.
+
+### Qualification du runner C3 multi-plateforme — 2026-11-02
+
+Le run Infrastructure `41246330316` du head `67ecc3d…` demeure un NON-PASS
+historique. Le candidat local remplace les valeurs potentiellement multiples de
+`Get-Command ... .Source` par une sélection ordonnée, scalaire, absolue et
+vérifiée pour OpenSSL, Docker, npm et `icacls` ou `chmod`, avant toute preuve,
+secret ou ressource.
+
+Les régressions passent 31/31 sur Windows et 31/31 sous Linux. La campagne
+Linux exacte passe 24/24 — Chromium 18/18, Firefox 3/3 et WebKit 3/3 — puis
+redaction, scan de secrets, cleanup et préservation des ressources étrangères.
+Le tooling passe 592/592 sous une allocation reproductible de deux CPU ; ses
+NON-PASS à 14 threads restent archivés et ne sont pas masqués.
+
+Cette campagne locale imbriquée utilise un proxy TCP opaque hors dépôt ; elle
+qualifie le runner local, pas la topologie GitHub ni Linux de production. Les
+octets finaux formatés du test du runner sont qualifiés séparément par les
+deux passages 31/31.
+
+Le jalon est qualifié localement sous réserve du gel et des trois contre-revues
+terminales. Commit, push, quatre workflows, actualisation du corps PR, revue
+d'intégration et production restent des étapes distinctes et non acquises.
+
+### Diagnostic fermé de la campagne navigateur C3 — 2026-11-02
+
+Le run Infrastructure `41439908216` du head `c820bec…` reste un NON-PASS
+historique et n'est pas relancé. L'analyse distingue la campagne principale
+`playwright-c3-secret` de la sonde de redaction dont l'échec est attendu, mais
+ne révèle pas le premier scénario GitHub en défaut sans introduire de sortie
+libre potentiellement sensible. Sa cause demeure NON CONCLUSIVE.
+
+Le candidat ajoute un reporter à champs et identifiants fermés, activé
+uniquement pour la campagne principale, puis une validation canonique dans le
+runner. Les régressions passent 34/34 sous Windows et 34/34 sous Linux, y
+compris les sentinelles, l'absence d'événement, l'absence de test, l'exécution
+incomplète et les incohérences entre compteurs, statut et code de sortie.
+
+Une campagne informative unique en mode `Complete`, un worker et zéro retry
+passe Chromium 18/18, Firefox 3/3 et WebKit 3/3. Redaction, secret scan,
+cleanup et inventaire étranger restent conformes. Le défaut n'est pas reproduit
+dans la fixture Linux imbriquée : la publication éventuelle suit donc la voie
+du commit diagnostique, après gel, gates et trois GO, sans présenter la
+topologie GitHub ou Linux de production comme qualifiée.
+
+### Qualification technique de publication C3 — 2026-11-03
+
+La qualification technique de publication a été constatée le 3 novembre 2026
+au commit `6c80890c83ea1170064bb0374216f96e37746e95`. Le gel du dernier
+correctif `52bfe458…ec71` reste distinct du diff cumulatif des sept commits.
+Les quatre workflows `41649247825`, `41649247085`, `41649247142` et
+`41649247115` sont concluants sur le checkout synthétique `1360bdc…ad32`.
+
+Les dénominateurs sélectionnés restent C1 47/47, Foundations 34/34, C2a un
+contrôle statique et onze scénarios réels, C2b 14/14 et C3 24/24 sans retry.
+Lifecycle, API health, inventaire et cleanup sont PASS. Deux acquisitions
+d'images sont qualifiées ; leur attribution historique à Node et Nginx reste
+une inférence étayée.
+
+Le run `41544812819` reste NON-PASS et l'observation outbox `AMBIGUOUS` conserve
+sa portée. L'approbation Product Owner couvre neuf captures seulement ; états
+synthétiques, parcours absents, accessibilité non démontrée, fournisseurs et
+Linux de production restent hors portée. La prochaine étape est une décision
+distincte d'intégration ; aucun déploiement n'est acquis.

@@ -38,6 +38,7 @@ const IDEMPOTENCY_MILLISECONDS = 24 * 60 * 60 * 1000;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const IDEMPOTENCY_PATTERN = /^[\x21-\x7e]{16,128}$/u;
+const PASSWORD_PATTERN = /^[\s\S]{12,128}$/u;
 const STEP_UP_PURPOSES = new Set<AdminStepUpPurpose>([
   'SESSION_REVOCATION',
   'RECOVERY_APPROVAL',
@@ -112,8 +113,7 @@ export function parseAdminLogin(value: unknown): AdminLoginInput {
     record.email.length > 254 ||
     !EMAIL_PATTERN.test(record.email) ||
     typeof record.password !== 'string' ||
-    record.password.length < 12 ||
-    record.password.length > 128
+    !PASSWORD_PATTERN.test(record.password)
   )
     throw new AdminC1HttpError(400, 'VALIDATION_ERROR');
   return { email: record.email.toLowerCase(), password: record.password };

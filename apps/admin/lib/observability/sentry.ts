@@ -2,10 +2,10 @@ import type { ErrorEvent } from '@sentry/react';
 
 const REDACTED = '[REDACTED]';
 const SENSITIVE_FIELD =
-  /^(?:authorization|cookie|password|passwd|pwd|token|access[_-]?token|refresh[_-]?token|otp|dsn|email|phone|telephone|tel|user|username|ip(?:_address|address)?|device[_-]?id|card|payment)$/iu;
+  /^(?:authorization|cookie|password|passwd|pwd|token|access[_-]?token|refresh[_-]?token|preauth[_-]?token|csrf|idempotency[_-]?key|otp|totp|secret|selector|verifier|invitation[_-]?code|reset[_-]?code|recovery[_-]?code|qr|blob|dsn|email|phone|telephone|tel|user|username|ip(?:_address|address)?|device[_-]?id|card|payment)$/iu;
 const SENSITIVE_TEXT: readonly RegExp[] = [
   /\bbearer\s+[^\s,;]+/giu,
-  /\b(?:authorization|cookie|password|passwd|pwd|token|access[_-]?token|refresh[_-]?token|otp|dsn|email|phone|telephone|tel)(?:\s*(?:=|:)\s*|\s+)(?:"[^"]*"|'[^']*'|[^\s,;]+)/giu,
+  /\b(?:authorization|cookie|password|passwd|pwd|token|access[_-]?token|refresh[_-]?token|preauth[_-]?token|csrf|idempotency[_-]?key|otp|totp|secret|selector|verifier|invitation[_-]?code|reset[_-]?code|recovery[_-]?code|qr|blob|dsn|email|phone|telephone|tel)(?:\s*(?:=|:)\s*|\s+)(?:"[^"]*"|'[^']*'|[^\s,;]+)/giu,
   /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/giu,
   /\+\d[\d .()-]{6,}\d/gu,
 ];

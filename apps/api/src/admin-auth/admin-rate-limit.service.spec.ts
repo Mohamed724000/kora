@@ -16,6 +16,7 @@ class DigestProvider implements AdminKeyedDigestProvider {
 
 class FakeRedis implements AdminRateLimitRedisClient {
   readonly calls: string[] = [];
+  readonly evalCalls: Array<readonly (string | number)[]> = [];
   evalResult: unknown = [1, 2, 900_000];
   waitAofResult: unknown = [1, 0];
   throwAt?: 'connect' | 'eval' | 'waitaof';
@@ -33,6 +34,7 @@ class FakeRedis implements AdminRateLimitRedisClient {
     ...args: Array<string | number>
   ): Promise<unknown> {
     this.calls.push(`eval:${numberOfKeys}:${args.join(':')}`);
+    this.evalCalls.push(args);
     expect(script).toContain("redis.call('INCR', key)");
     if (this.throwAt === 'eval') {
       throw new Error('private redis diagnostic');
@@ -128,6 +130,18 @@ describe('AdminRateLimitService', () => {
       retryAfterSeconds: 1800,
     });
     expect(fake.calls).toContain('call:WAITAOF:1:0:250');
+  });
+
+  it('sépare les buckets IP tout en conservant le bucket sujet entre deux adresses', async () => {
+    const fake = new FakeRedis();
+    const { service } = createService(fake);
+
+    await service.consume('PASSWORD', '192.0.2.10', 'same-subject');
+    await service.consume('PASSWORD', '2001:db8::10', 'same-subject');
+
+    expect(fake.evalCalls).toHaveLength(2);
+    expect(fake.evalCalls[0]?.[0]).not.toBe(fake.evalCalls[1]?.[0]);
+    expect(fake.evalCalls[0]?.[1]).toBe(fake.evalCalls[1]?.[1]);
   });
 
   it.each([

@@ -17,7 +17,7 @@ concurrency:
 jobs:
   compose:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       KORA_INFRA_EPHEMERAL_INSTANCE: "ci-${{ github.run_id }}-${{ github.run_attempt }}"
     steps:
@@ -190,6 +190,17 @@ jobs:
         env:
           KORA_C2B_INSTANCE: "c2b-ci-business-${{ github.run_id }}-${{ github.run_attempt }}"
         run: ./apps/api/prisma/run-admin-security-c2b-business-validation.ps1
+      - name: Install C3 browser engines
+        run: npm exec --workspace @kora-plus/admin playwright -- install --with-deps chromium firefox webkit
+      - name: Validate C3 browser and API runtime
+        shell: pwsh
+        env:
+          KORA_C3_CI_INSTANCE: "ci-${{ github.run_id }}-${{ github.run_attempt }}"
+        run: |
+          $evidence = Join-Path $env:RUNNER_TEMP "kora-c3-$env:KORA_C3_CI_INSTANCE"
+          ./scripts/infra/run-admin-auth-c3-runtime-validation.ps1 `
+            -Instance $env:KORA_C3_CI_INSTANCE `
+            -EvidenceDirectory $evidence
       - name: Start and verify lifecycle
         shell: pwsh
         run: |

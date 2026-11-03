@@ -42,7 +42,9 @@ const FAST_URI_PARENT = {
 };
 const QS_PACKAGE = "qs";
 const QS_ROOT_PATH = `node_modules/${QS_PACKAGE}`;
-const QS_SAFE_VERSION = "6.16.0";
+const QS_SAFE_VERSION = "6.16.1";
+const QS_SAFE_INTEGRITY =
+  "sha512-5Px6J7rfHBAGUhNQ3es4YzcOdBBw0SDcVtThJml4RdnKw4tKs2epA0kPZ+K8X+WiHktT93RHVcQ/3ym5aTCgtg==";
 const QS_PARENTS = [
   {
     declaredVersion: "^6.16.1",
@@ -71,8 +73,57 @@ const BRACE_EXPANSION_ROOT_PATH = `node_modules/${BRACE_EXPANSION_PACKAGE}`;
 const BRACE_EXPANSION_SAFE_VERSION = "5.0.12";
 const MINIMATCH_PACKAGE = "minimatch";
 const MINIMATCH_ROOT_PATH = `node_modules/${MINIMATCH_PACKAGE}`;
-const MINIMATCH_SAFE_VERSION = "10.2.6";
-const MINIMATCH_BRACE_EXPANSION_RANGE = "^5.0.8";
+const MINIMATCH_SAFE_VERSION = "11.0.1";
+const MINIMATCH_RESOLVED =
+  "https://registry.npmjs.org/minimatch/-/minimatch-11.0.1.tgz";
+const MINIMATCH_INTEGRITY =
+  "sha512-t+Vn6DX4wPCxS23y03C0uhF7S1jpi1GfqPrnlEipCJaA2ykiNbMkVlDutZtmvLfRcUN6R8AYVlzTsQrT4RZoLQ==";
+const MINIMATCH_BRACE_EXPANSION_RANGE = "^5.0.12";
+const MINIMATCH_NONRECURSIVE_GLOB_MATCH_RANGE = "^1.0.1";
+const NONRECURSIVE_GLOB_MATCH_PACKAGE = "@isaacs/nonrecursive-glob-match";
+const NONRECURSIVE_GLOB_MATCH_ROOT_PATH = `node_modules/${NONRECURSIVE_GLOB_MATCH_PACKAGE}`;
+const NONRECURSIVE_GLOB_MATCH_SAFE_VERSION = "1.0.3";
+const NONRECURSIVE_GLOB_MATCH_RESOLVED =
+  "https://registry.npmjs.org/@isaacs/nonrecursive-glob-match/-/nonrecursive-glob-match-1.0.3.tgz";
+const NONRECURSIVE_GLOB_MATCH_INTEGRITY =
+  "sha512-SI7kyKHq4XXDRozw+r9GlRZkia1ZkFrpLW98r2IC2Bpr8YkFGE3fvjzmxCG0x78A++69HmDNrDvSMYBZmHGpKA==";
+const MINIMATCH_APPROVED_PARENTS = [
+  {
+    declaredVersion: "^3.1.5",
+    packagePath: "node_modules/@eslint/config-array",
+    version: "0.21.2",
+  },
+  {
+    declaredVersion: "^3.1.5",
+    packagePath: "node_modules/@eslint/eslintrc",
+    version: "3.3.6",
+  },
+  {
+    declaredVersion: "^10.2.2",
+    packagePath: "node_modules/@typescript-eslint/typescript-estree",
+    version: "8.65.0",
+  },
+  {
+    declaredVersion: "^3.1.2",
+    packagePath: "node_modules/eslint",
+    version: "9.39.2",
+  },
+  {
+    declaredVersion: "^3.1.2",
+    packagePath: "node_modules/eslint-plugin-import",
+    version: "2.32.0",
+  },
+  {
+    declaredVersion: "^3.1.2",
+    packagePath: "node_modules/eslint-plugin-jsx-a11y",
+    version: "6.10.2",
+  },
+  {
+    declaredVersion: "^3.1.2",
+    packagePath: "node_modules/eslint-plugin-react",
+    version: "7.37.5",
+  },
+];
 const NEXT_PACKAGE = "next";
 const NEXT_SAFE_VERSION = "16.4.1";
 const NEXT_WORKSPACES = ["apps/admin", "apps/web"];
@@ -130,11 +181,6 @@ const JS_YAML_PARENTS = [
     declaredVersion: "^4.3.0",
     packagePath: "node_modules/@eslint/eslintrc",
     version: "3.3.6",
-  },
-  {
-    declaredVersion: "^4.1.0",
-    packagePath: "node_modules/cosmiconfig",
-    version: "8.3.6",
   },
 ];
 const JS_YAML_INSTALLATIONS = new Map([["node_modules/js-yaml", "4.3.2"]]);
@@ -1516,7 +1562,9 @@ export function validateExpressBodyParserOverride(manifests, lockfile) {
     BODY_PARSER_PACKAGE,
     [PROXY_ADDR_PARENT_PATH],
   )) {
-    errors.push(`${BODY_PARSER_PACKAGE} has an unapproved lock parent: ${parentPath}`);
+    errors.push(
+      `${BODY_PARSER_PACKAGE} has an unapproved lock parent: ${parentPath}`,
+    );
   }
 
   const installations = packageInstallations(lockfile, BODY_PARSER_PACKAGE);
@@ -1573,7 +1621,9 @@ export function validateReactHooksZodOverride(manifests, lockfile) {
       `${REACT_HOOKS_SELECTOR} lock metadata must retain its audited ${ZOD_PACKAGE} ${ZOD_DECLARED_VERSION} dependency`,
     );
   }
-  if (validationError?.peerDependencies?.[ZOD_PACKAGE] !== ZOD_DECLARED_VERSION) {
+  if (
+    validationError?.peerDependencies?.[ZOD_PACKAGE] !== ZOD_DECLARED_VERSION
+  ) {
     errors.push(
       `${ZOD_VALIDATION_ERROR_PATH} lock metadata must retain its audited ${ZOD_PACKAGE} ${ZOD_DECLARED_VERSION} peer dependency`,
     );
@@ -1595,12 +1645,13 @@ export function validateReactHooksZodOverride(manifests, lockfile) {
     const minor = Number(match[2]);
     const patch = Number(match[3]);
     return (
-      major < 4 ||
-      (major === 4 && (minor < 6 || (minor === 6 && patch < 6)))
+      major < 4 || (major === 4 && (minor < 6 || (minor === 6 && patch < 6)))
     );
   });
   if (vulnerable.length > 0) {
-    errors.push(`vulnerable zod installation(s): ${installationSummary(vulnerable)}`);
+    errors.push(
+      `vulnerable zod installation(s): ${installationSummary(vulnerable)}`,
+    );
   }
   if (
     installations.length !== 1 ||
@@ -1634,10 +1685,9 @@ function isVulnerableQsVersion(version) {
   const major = Number(match[1]);
   const minor = Number(match[2]);
   const patch = Number(match[3]);
-  const atLeast225 =
-    major > 2 || (major === 2 && (minor > 2 || (minor === 2 && patch >= 5)));
-  const before616 = major < 6 || (major === 6 && minor < 16);
-  return atLeast225 && before616;
+  return (
+    major === 6 && minor >= 7 && (minor < 16 || (minor === 16 && patch === 0))
+  );
 }
 
 export function validateQsOverrides(manifests, lockfile) {
@@ -1718,6 +1768,10 @@ export function validateQsOverrides(manifests, lockfile) {
           .join(", ") || "NONE"
       }`,
     );
+  } else if (installations[0][1].integrity !== QS_SAFE_INTEGRITY) {
+    errors.push(
+      `qs@${QS_SAFE_VERSION} lock integrity must equal ${QS_SAFE_INTEGRITY}`,
+    );
   }
 
   return errors;
@@ -1750,6 +1804,26 @@ function isVulnerableBraceExpansionVersion(version) {
     (major === 5 &&
       minor === 0 &&
       (patch < 12 || (patch === 12 && isPrerelease)))
+  );
+}
+
+function isVulnerableMinimatchVersion(version) {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+][A-Za-z0-9.-]+)?$/u.exec(
+    version ?? "",
+  );
+  if (match === null) {
+    return false;
+  }
+
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  const patch = Number(match[3]);
+  const isPrerelease = version.includes("-");
+  return (
+    major < 11 ||
+    (major === 11 &&
+      minor === 0 &&
+      (patch < 1 || (patch === 1 && isPrerelease)))
   );
 }
 
@@ -1789,15 +1863,48 @@ export function validateBraceExpansionOverride(manifests, lockfile) {
     );
   }
 
-  const parentMetadata = lockfile.packages?.[MINIMATCH_ROOT_PATH];
+  const packages = lockfile.packages ?? {};
+  const parentMetadata = packages[MINIMATCH_ROOT_PATH];
+  const parentDependencies = parentMetadata?.dependencies ?? {};
   if (
     parentMetadata?.version !== MINIMATCH_SAFE_VERSION ||
-    parentMetadata?.dependencies?.[BRACE_EXPANSION_PACKAGE] !==
-      MINIMATCH_BRACE_EXPANSION_RANGE
+    parentMetadata?.resolved !== MINIMATCH_RESOLVED ||
+    parentMetadata?.integrity !== MINIMATCH_INTEGRITY ||
+    parentMetadata?.license !== "BlueOak-1.0.0" ||
+    parentMetadata?.dev !== true ||
+    parentMetadata?.engines?.node !== "18 || 20 || >=22" ||
+    parentDependencies[BRACE_EXPANSION_PACKAGE] !==
+      MINIMATCH_BRACE_EXPANSION_RANGE ||
+    parentDependencies[NONRECURSIVE_GLOB_MATCH_PACKAGE] !==
+      MINIMATCH_NONRECURSIVE_GLOB_MATCH_RANGE ||
+    Object.keys(parentDependencies).length !== 2 ||
+    DIRECT_DEPENDENCY_SECTIONS.some(
+      (section) =>
+        section !== "dependencies" &&
+        Object.keys(parentMetadata?.[section] ?? {}).length !== 0,
+    )
   ) {
     errors.push(
-      `minimatch@${MINIMATCH_SAFE_VERSION} lock metadata must retain its audited brace-expansion ${MINIMATCH_BRACE_EXPANSION_RANGE} dependency`,
+      `minimatch@${MINIMATCH_SAFE_VERSION} lock metadata must retain its qualified package identity and exact dependency graph`,
     );
+  }
+  for (const parent of MINIMATCH_APPROVED_PARENTS) {
+    const metadata = packages[parent.packagePath];
+    if (
+      metadata?.version !== parent.version ||
+      metadata?.dependencies?.[MINIMATCH_PACKAGE] !== parent.declaredVersion
+    ) {
+      errors.push(
+        `${parent.packagePath}@${parent.version} must retain its audited minimatch ${parent.declaredVersion} dependency declaration`,
+      );
+    }
+  }
+  for (const parentPath of unexpectedDependencyParentPaths(
+    lockfile,
+    MINIMATCH_PACKAGE,
+    MINIMATCH_APPROVED_PARENTS.map(({ packagePath }) => packagePath),
+  )) {
+    errors.push(`minimatch has an unapproved lock parent: ${parentPath}`);
   }
   for (const parentPath of unexpectedDependencyParentPaths(
     lockfile,
@@ -1805,6 +1912,45 @@ export function validateBraceExpansionOverride(manifests, lockfile) {
     [MINIMATCH_ROOT_PATH],
   )) {
     errors.push(`brace-expansion has an unapproved lock parent: ${parentPath}`);
+  }
+  for (const parentPath of unexpectedDependencyParentPaths(
+    lockfile,
+    NONRECURSIVE_GLOB_MATCH_PACKAGE,
+    [MINIMATCH_ROOT_PATH],
+  )) {
+    errors.push(
+      `${NONRECURSIVE_GLOB_MATCH_PACKAGE} has an unapproved lock parent: ${parentPath}`,
+    );
+  }
+
+  const minimatchInstallations = packageInstallations(
+    lockfile,
+    MINIMATCH_PACKAGE,
+  );
+  const vulnerableMinimatch = minimatchInstallations.filter(([, metadata]) =>
+    isVulnerableMinimatchVersion(metadata.version),
+  );
+  if (vulnerableMinimatch.length > 0) {
+    errors.push(
+      `vulnerable minimatch installation(s): ${installationSummary(vulnerableMinimatch)}`,
+    );
+  }
+
+  const nonrecursiveMetadata = packages[NONRECURSIVE_GLOB_MATCH_ROOT_PATH];
+  if (
+    nonrecursiveMetadata?.version !== NONRECURSIVE_GLOB_MATCH_SAFE_VERSION ||
+    nonrecursiveMetadata?.resolved !== NONRECURSIVE_GLOB_MATCH_RESOLVED ||
+    nonrecursiveMetadata?.integrity !== NONRECURSIVE_GLOB_MATCH_INTEGRITY ||
+    nonrecursiveMetadata?.license !== "BlueOak-1.0.0" ||
+    nonrecursiveMetadata?.dev !== true ||
+    DIRECT_DEPENDENCY_SECTIONS.some(
+      (section) =>
+        Object.keys(nonrecursiveMetadata?.[section] ?? {}).length !== 0,
+    )
+  ) {
+    errors.push(
+      `${NONRECURSIVE_GLOB_MATCH_PACKAGE}@${NONRECURSIVE_GLOB_MATCH_SAFE_VERSION} lock metadata must retain its qualified dev-only dependency-free package identity`,
+    );
   }
 
   const installations = packageInstallations(lockfile, BRACE_EXPANSION_PACKAGE);
@@ -1826,6 +1972,11 @@ export function validateBraceExpansionOverride(manifests, lockfile) {
       lockfile,
       MINIMATCH_PACKAGE,
       MINIMATCH_SAFE_VERSION,
+    ),
+    ...validatePhysicalSingleton(
+      lockfile,
+      NONRECURSIVE_GLOB_MATCH_PACKAGE,
+      NONRECURSIVE_GLOB_MATCH_SAFE_VERSION,
     ),
   );
   return errors;
@@ -2570,7 +2721,9 @@ export function validateNestMulterOverride(manifests, lockfile) {
     ),
   );
   if (lockfile.packages?.[MULTER_ROOT_PATH]?.integrity !== MULTER_INTEGRITY) {
-    errors.push(`multer@${MULTER_SAFE_VERSION} must retain its qualified integrity`);
+    errors.push(
+      `multer@${MULTER_SAFE_VERSION} must retain its qualified integrity`,
+    );
   }
   return errors;
 }

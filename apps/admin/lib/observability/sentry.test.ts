@@ -42,9 +42,12 @@ describe('observabilité Sentry', () => {
     const event = sanitizeSentryEvent({
       extra: {
         note: 'email=private@example.test phone=+22370000000',
+        resetCode: 'RESET-SENTINEL',
+        selector: 'SELECTOR-SENTINEL',
         token: 'private-token',
+        verifier: 'VERIFIER-SENTINEL',
       },
-      message: 'Bearer private-credential',
+      message: 'Bearer private-credential csrf=CSRF-SENTINEL invitationCode=INVITE-SENTINEL',
       request: { headers: { authorization: 'private-credential' } },
       user: { email: 'private@example.test', id: 'private-user' },
     } as unknown as ErrorEvent);
@@ -53,6 +56,6 @@ describe('observabilité Sentry', () => {
     expect(event.request).toBeUndefined();
     expect(event.user).toBeUndefined();
     expect(serialized).toContain('[REDACTED]');
-    expect(serialized).not.toMatch(/private|22370000000/);
+    expect(serialized).not.toMatch(/private|22370000000|SENTINEL/);
   });
 });

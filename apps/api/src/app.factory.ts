@@ -1,4 +1,4 @@
-import { type INestApplication, RequestMethod } from '@nestjs/common';
+import { type INestApplication, type NestApplicationOptions, RequestMethod } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -12,6 +12,7 @@ import type { RuntimeConfig } from './config/runtime-config';
 import { AdminC2aBoundariesService } from './database/admin-c2a-boundaries.service';
 import { AdminWriterService } from './database/admin-writer.service';
 import { AdminAuthRepository } from './admin-auth/admin-auth.repository';
+import { createAdminClientProvenanceMiddleware } from './admin-auth/admin-client-provenance';
 import type { AdminC2OperationId } from './admin-security/admin-security.errors';
 import { AdminSecurityService } from './admin-security/admin-security.service';
 import { AdminAuditFailureService } from './admin-security/admin-audit.failure.service';
@@ -48,15 +49,20 @@ const ADMIN_C2B_JSON_BODY_PATHS: ReadonlyArray<
   readonly [path: string, operationId: AdminC2OperationId]
 > = [['/api/v1/admin/audit-log-exports', 'createAdminAuditLogExport']];
 
-export async function createApplication(options: AppModuleOptions = {}): Promise<INestApplication> {
+export async function createApplication(
+  options: AppModuleOptions = {},
+  transport: Pick<NestApplicationOptions, 'httpsOptions'> = {},
+): Promise<INestApplication> {
   const application = await NestFactory.create<NestExpressApplication>(
     AppModule.register(options),
     {
       abortOnError: false,
       logger: false,
+      ...transport,
     },
   );
   const config = application.get(ConfigService<RuntimeConfig, true>);
+  const adminClientProvenance = config.get('adminClientProvenance', { infer: true });
   const adminC2a = config.get('adminC2a', { infer: true });
   const adminC2b = config.get('adminC2b', { infer: true });
   const adminC2aHttpEnabled = adminC2a.enabled && adminC2a.profile === 'HTTP';
@@ -67,6 +73,8 @@ export async function createApplication(options: AppModuleOptions = {}): Promise
 
   await initializeSentry(observability);
 
+  application.set('trust proxy', false);
+  application.use(createAdminClientProvenanceMiddleware(adminClientProvenance));
   application.useLogger(new NestStructuredLogger(logger));
   application.use(createHttpLogger(logger));
   application.useBodyParser('json');

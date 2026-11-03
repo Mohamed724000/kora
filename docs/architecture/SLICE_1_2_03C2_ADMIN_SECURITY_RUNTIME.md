@@ -1,9 +1,10 @@
 # S1.2-03C2 — Admin Security Runtime Contract
 
-Statut : **C2a INTÉGRÉ DANS MAIN AU MERGE
-`029e30bbc795f3d9c153782bc04e45e9f5a03f8a`, NON DÉPLOYÉ — C2b R2 PUBLIÉ
-DANS LA PR #53 DRAFT ; R3 QUALIFIÉ LOCALEMENT LE 2026-10-26 — ÉTAT DE
-PUBLICATION COURANT PORTÉ PAR LA PR #53 ET SON HEAD — C3 NON COMMENCÉ**
+Statut : **C2a ET C2b INTÉGRÉS DANS MAIN AU MERGE
+`c47a1507dce6ea7333ce7e372f9bd34aa548c81b`, NON DÉPLOYÉS — C3 CANDIDAT
+LOCAL NON INDEXÉ ET NON PUBLIÉ ; A-02 QUALIFIÉ LOCAL/CI ; QUALIFICATION
+TERMINALE C3 BLOQUÉE PAR FIREFOX, SUPPLY-CHAIN ET VALIDATION VISUELLE PRODUCT
+OWNER**
 
 Date : 2026-10-24
 
@@ -85,6 +86,18 @@ peut être remplacé par MFA_RECOVERY. La transaction consomme le contexte,
 change le mot de passe Argon2id, incrémente authorizationVersion, révoque les
 sessions et écrit AuditLog ADMIN_RECOVERY. TOTP et codes de secours sont
 préservés. Aucun enrollment, session ou bypass MFA n’est créé.
+
+Le candidat local C3 ferme un défaut révélé par deux resets successifs.
+`consumePasswordReset` terminalise la requête parente exacte via `revokedAt`,
+au même instant et dans la même transaction que la consommation du contexte,
+le changement du credential, l'incrément de `authorizationVersion`, la
+révocation des sessions et l'audit. Les cardinalités contexte, requête et
+utilisateur doivent chacune valoir un. L'ancien outbox `DELIVERED`, ses
+horodatages et son accusé fournisseur restent inchangés. Une demande
+ultérieure crée ses propres identifiants sans faux `replacedRequestId` ou
+`replacedOutboxId`. Un seul reset concurrent réussit durablement ; une erreur
+d'audit rollbacke toutes les mutations. Aucun schéma, migration, trigger, ACL
+ou contrat n'est modifié et aucune base persistante externe n'est réparée.
 
 ### Recovery assistée
 
@@ -189,7 +202,7 @@ Le CLI hors OpenAPI :
 
 P0 ne crée ni commande, compte, rôle ou permission.
 
-## Livraison future C2a/C2b
+## Livraison future C2a/C2b — instantané historique P0
 
 C2a contient onze opérations reset, invitation, recovery, users et RBAC, plus
 le bootstrap hors API. C2b contient quatre opérations audit/export. La somme
@@ -960,3 +973,25 @@ publication ou de CI ultérieur, qui doit être constaté sur la PR #53 et son
 head. Production, fournisseurs, installations persistantes externes et C3
 restent non qualifiés ; les SKIP restent des SKIP et la politique OSS demeure
 différée.
+
+## C3 — consommateur local des frontières C1/C2a — 2026-10-29
+
+L'état courant de l'interface est décrit dans
+[S1.2-03C3](SLICE_1_2_03C3_ADMIN_AUTH_INTERFACE.md). C3 consomme dix
+opérations C1 et exactement trois opérations C2a :
+`requestAdminPasswordReset`, `resetAdminPassword` et
+`acceptAdminInvitation`. Il n'expose aucune opération C2b, gestion
+users/RBAC/statuts, récupération assistée, révocation ciblée ou step-up sans
+consommateur.
+
+Le BFF same-origin n'affaiblit ni preuve serveur, ACL, audit, HIBP, atomicité,
+`COMMIT_UNKNOWN` ni interdiction de replay. A-02 qualifie localement/CI la
+provenance réseau Nginx -> BFF -> API mTLS ; elle ne change ni les identités
+PostgreSQL ni les contrats C2.
+
+Sur le candidat v55, Chromium passe 18/18 et WebKit 3/3 ; Firefox n'exécute
+aucun de ses trois scénarios car le lancement échoue avec `spawn UNKNOWN`.
+Le wrapper reste donc NON-PASS. Les audits npm frais sont rouges, dont
+`qs@6.16.0` dans le graphe production, et la validation visuelle Product Owner
+reste en attente. C3 demeure local, non indexé, non publié et non déployé ;
+aucune qualification de production n'en découle.

@@ -12,6 +12,7 @@ import {
   Res,
 } from '@nestjs/common';
 import type { ServerResponse } from 'node:http';
+import { getResolvedAdminClientAddress } from '../admin-auth/admin-client-provenance';
 import {
   ADMIN_CSRF_COOKIE,
   ADMIN_PREAUTH_COOKIE,
@@ -50,7 +51,7 @@ function oneHeader(headers: HeadersMap, name: string): string | undefined {
 
 function execution(request: RequestWithId): { ipAddress: string; requestId: string } {
   return {
-    ipAddress: request.socket.remoteAddress ?? 'unavailable',
+    ipAddress: getResolvedAdminClientAddress(request),
     requestId: request.id ?? 'unavailable',
   };
 }

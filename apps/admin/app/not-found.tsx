@@ -1,20 +1,16 @@
-import { AppContent } from '@adminlte/react';
-import { StatusPanel } from '@kora-plus/ui';
 import Link from 'next/link';
 
 export default function NotFound() {
   return (
-    <AppContent title="Page introuvable">
-      <StatusPanel
-        action={
-          <Link className="admin-return-link" href="/">
-            Revenir au tableau de bord
-          </Link>
-        }
-        description="Cette adresse ne correspond à aucune page d’administration."
-        title="Page introuvable"
-        variant="error"
-      />
-    </AppContent>
+    <main className="admin-session-gate" id="contenu-principal" tabIndex={-1}>
+      <section className="admin-status-card">
+        <p className="admin-eyebrow">Administration KORA+</p>
+        <h1>Page introuvable</h1>
+        <p>Cette adresse ne correspond à aucun parcours d’administration disponible.</p>
+        <Link className="admin-return-link" href="/login">
+          Aller à la connexion
+        </Link>
+      </section>
+    </main>
   );
 }

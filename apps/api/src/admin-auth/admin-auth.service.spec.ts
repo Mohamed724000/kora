@@ -34,6 +34,58 @@ describe('AdminAuthService contract validation', () => {
     expect(() => parseAdminTotp({ code: '12345' })).toThrow(AdminC1HttpError);
   });
 
+  it.each([
+    ['ASCII sous la borne', 'a'.repeat(11), false],
+    ['ASCII à la borne basse', 'a'.repeat(12), true],
+    ['ASCII à la borne haute', 'a'.repeat(128), true],
+    ['ASCII au-dessus de la borne', 'a'.repeat(129), false],
+    ['astral sous la borne', '😀'.repeat(11), false],
+    ['astral à la borne basse', '😀'.repeat(12), true],
+    ['astral à la borne haute', '😀'.repeat(128), true],
+    ['astral au-dessus de la borne', '😀'.repeat(129), false],
+  ])('compte les points de code Unicode pour %s', (_label, password, accepted) => {
+    const input = { email: 'Admin@example.test', password };
+
+    if (!accepted) {
+      expect(() => parseAdminLogin(input)).toThrow(AdminC1HttpError);
+      return;
+    }
+
+    const parsed = parseAdminLogin(input);
+    expect(parsed.password).toBe(password);
+    expect([...parsed.password]).toHaveLength([...password].length);
+  });
+
+  it('accepte 65 caractères astrals sans les compter comme 130 unités UTF-16', () => {
+    const password = '😀'.repeat(65);
+
+    expect(password).toHaveLength(130);
+    expect([...password]).toHaveLength(65);
+    expect(parseAdminLogin({ email: 'Admin@example.test', password })).toEqual({
+      email: 'admin@example.test',
+      password,
+    });
+  });
+
+  it('préserve exactement les mélanges, caractères combinants et espaces', () => {
+    const passwords = [`prefix-${'😀'.repeat(5)}`, 'e\u0301'.repeat(6), '  mot-de-passe exact  '];
+
+    for (const password of passwords) {
+      const parsed = parseAdminLogin({ email: 'Admin@example.test', password });
+      expect(parsed.password).toBe(password);
+      expect([...parsed.password]).toEqual([...password]);
+    }
+  });
+
+  it('refuse toujours les types invalides et les propriétés supplémentaires', () => {
+    expect(() => parseAdminLogin({ email: 'admin@example.test', password: 123456789012 })).toThrow(
+      AdminC1HttpError,
+    );
+    expect(() =>
+      parseAdminLogin({ email: 'admin@example.test', password: 'a'.repeat(12), unexpected: true }),
+    ).toThrow(AdminC1HttpError);
+  });
+
   it('validates recovery material, generic step-up purposes and identifiers', () => {
     expect(
       parseAdminRecovery({ selector: 'ABCDEFGH2345', verifier: 'ABCDEFGHJKLMNPQRSTUVWXYZ2345' }),
