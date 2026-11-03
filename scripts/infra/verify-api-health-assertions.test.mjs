@@ -19,6 +19,7 @@ import { tmpdir } from "node:os";
 import { delimiter, dirname, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import test from "node:test";
+import { clearImmediate, setImmediate } from "node:timers";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -1203,6 +1204,28 @@ function shortReadinessOptions(overrides = {}) {
   };
 }
 
+function createControlledMonotonicClock() {
+  let monotonicMilliseconds = 0;
+  const pendingTimeouts = new Set();
+
+  return {
+    cancelTimeout(handle) {
+      if (pendingTimeouts.delete(handle)) clearImmediate(handle);
+    },
+    now: () => monotonicMilliseconds,
+    pendingTimeouts: () => pendingTimeouts.size,
+    scheduleTimeout(callback, milliseconds) {
+      const handle = setImmediate(() => {
+        if (!pendingTimeouts.delete(handle)) return;
+        monotonicMilliseconds += milliseconds;
+        callback();
+      });
+      pendingTimeouts.add(handle);
+      return handle;
+    },
+  };
+}
+
 function postgresMessage(type, payload = Buffer.alloc(0)) {
   const message = Buffer.alloc(5 + payload.length);
   message.write(type, 0, 1, "ascii");
@@ -1328,13 +1351,13 @@ test("attend la disponibilite PostgreSQL authentifiee et transfere le meme clien
   assert.equal(ended, 3);
 });
 
-test("refuse de facon reellement bornee un PostgreSQL jamais disponible", async () => {
+test("refuse avec une horloge monotone controlee un PostgreSQL jamais disponible", async () => {
+  const clock = createControlledMonotonicClock();
   let attempts = 0;
   let ended = 0;
   let activeClients = 0;
   let maximumActiveClients = 0;
   let mutations = 0;
-  const startedAt = performance.now();
 
   await assert.rejects(
     waitForPostgresReadiness({
@@ -1343,6 +1366,7 @@ test("refuse de facon reellement bornee un PostgreSQL jamais disponible", async 
         cleanupTimeoutMilliseconds: 10,
         timeoutMilliseconds: 60,
       }),
+      cancelTimeout: clock.cancelTimeout,
       createClient: () => ({
         async connect() {
           attempts += 1;
@@ -1358,12 +1382,15 @@ test("refuse de facon reellement bornee un PostgreSQL jamais disponible", async 
           activeClients -= 1;
         },
       }),
+      now: clock.now,
+      scheduleTimeout: clock.scheduleTimeout,
     }),
     (error) => {
       assert.equal(error.name, "PostgresReadinessTimeoutError");
       assert.equal(error.phase, "postgres_readiness");
-      assert(error.attempts >= 2);
-      assert(error.elapsedMilliseconds >= 40);
+      assert.equal(error.timeoutPhase, "retry_delay");
+      assert.equal(error.attempts, 10);
+      assert.equal(error.elapsedMilliseconds, 50);
       assert.equal(error.lastErrorCode, "ECONNREFUSED");
       assert.match(error.message, /timeout_ms=60/u);
       assert.doesNotMatch(error.message, /secret-value/u);
@@ -1371,11 +1398,11 @@ test("refuse de facon reellement bornee un PostgreSQL jamais disponible", async 
     },
   );
 
-  assert(performance.now() - startedAt < 500);
   assert.equal(ended, attempts);
   assert.equal(activeClients, 0);
   assert.equal(maximumActiveClients, 1);
   assert.equal(mutations, 0);
+  assert.equal(clock.pendingTimeouts(), 0);
 });
 
 test("interrompt un connect suspendu et ne lance aucune query tardive", async () => {
@@ -1573,7 +1600,7 @@ test("ignore un SELECT 1 qui rejette apres la deadline sans rejet non gere", asy
   assert.equal(mutations, 0);
 });
 
-test("expire entre connect et SELECT 1 sans lancer la query", async () => {
+test("expire avec une horloge monotone controlee entre connect et SELECT 1", async () => {
   const moments = [0, 0, 0, 0, 0, 29, 30, 30, 30, 30, 30];
   let ended = 0;
   let queries = 0;
@@ -1606,8 +1633,11 @@ test("expire entre connect et SELECT 1 sans lancer la query", async () => {
   assert.equal(queries, 0);
 });
 
-test("appelle end une fois meme si la hard deadline est deja depassee", async () => {
+test("conserve avec une horloge monotone controlee les erreurs apres la hard deadline", async () => {
   const moments = [0, 0, 0, 0, 0, 45, 45, 45];
+  const primary = Object.assign(new Error("unavailable"), {
+    code: "ECONNREFUSED",
+  });
   let clients = 0;
   let endCalls = 0;
   let hardAborts = 0;
@@ -1623,9 +1653,7 @@ test("appelle end une fois meme si la hard deadline est deja depassee", async ()
         clients += 1;
         return {
           async connect() {
-            throw Object.assign(new Error("unavailable"), {
-              code: "ECONNREFUSED",
-            });
+            throw primary;
           },
           async end() {
             endCalls += 1;
@@ -1639,7 +1667,8 @@ test("appelle end une fois meme si la hard deadline est deja depassee", async ()
     }),
     (error) => {
       assert(error instanceof AggregateError);
-      assert.equal(error.errors[0].code, "ECONNREFUSED");
+      assert.equal(error.errors[0], primary);
+      assert.equal(error.cause, primary);
       assert(error.errors[1] instanceof AggregateError);
       assert.equal(error.errors[1].errors.length, 2);
       assert(
