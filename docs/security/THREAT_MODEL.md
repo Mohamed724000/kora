@@ -2,12 +2,12 @@
 
 Périmètre durable couvert : **BASELINE À S1.2-03B ET S1.2-03C1 FUSIONNÉES +
 C2a ET C2b INTÉGRÉS DANS MAIN AU MERGE
-`c47a1507dce6ea7333ce7e372f9bd34aa548c81b`, NON DÉPLOYÉS — C3 DANS LA DRAFT
-PR #54 — HEAD `c820bec…` — INFRASTRUCTURE `41439908216` NON-PASS HISTORIQUE —
-DIAGNOSTIC NAVIGATEUR FERMÉ QUALIFIÉ LOCALEMENT — INTÉGRATION CONDITIONNÉE À
-UNE CI FRAÎCHE — A-02 QUALIFIÉ
-LOCAL/CI — FIREFOX WINDOWS GO BORNÉ — APPROBATION VISUELLE PRODUCT OWNER
-BORNÉE — FOURNISSEURS ET LINUX DE PRODUCTION NON QUALIFIÉS**.
+`c47a1507dce6ea7333ce7e372f9bd34aa548c81b`, NON DÉPLOYÉS — QUALIFICATION
+TECHNIQUE DE PUBLICATION CONSTATÉE LE 3 NOVEMBRE 2026 AU COMMIT
+`6c80890c83ea1170064bb0374216f96e37746e95` POUR C3 DANS LA DRAFT PR #54 — A-02 ET
+FIREFOX WINDOWS QUALIFIÉS DANS LEUR PORTÉE — APPROBATION VISUELLE PRODUCT OWNER
+BORNÉE — INTÉGRATION DISTINCTE — FOURNISSEURS ET LINUX DE PRODUCTION NON
+QUALIFIÉS**.
 
 La validation locale S1.1 a été achevée le 2026-09-07. À cet instant, aucun
 commit, push ou changement GitHub S1.1 n’avait encore été effectué : il s’agit
@@ -1629,3 +1629,24 @@ informative.
 | Absence de preuve confondue avec un scénario | `NO_EVENT_OBSERVED`, `NO_TEST_STARTED`, `INCOMPLETE` et `INVALID` distingués explicitement                                                                        | fixtures sans événement, suite vide et test partiel                  | ces statuts n'identifient pas la cause historique      |
 | Contamination du probe ou du visuel          | variable du reporter retirée explicitement des environnements du probe de redaction et du visuel                                                                  | régression d'isolation et campagne complète                          | reporter réservé à la campagne principale              |
 | Surqualification par succès local            | ordre, worker, retry et versions alignés ; campagne 24/24 ; distinction explicite des topologies locale imbriquée et GitHub                                       | Chromium 18/18, Firefox 3/3, WebKit 3/3 ; inventaire identique       | GitHub et Linux de production restent non qualifiés    |
+
+### Qualification technique de publication C3 — 2026-11-03
+
+La qualification technique de publication est constatée au commit
+`6c80890c83ea1170064bb0374216f96e37746e95`. Le gel `52bfe458…ec71` protège
+les cinq entrées du dernier correctif et reste distinct du cumul de sept
+commits. Les quatre workflows `41649247825`, `41649247085`, `41649247142` et
+`41649247115` réussissent sur le checkout synthétique `1360bdc…ad32`.
+
+| Menace ou dérive                    | Contrôle constaté                                                                                                                                                  | Preuve sélectionnée                                         | Limite conservée                                                             |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Extrapolation de la couverture CI   | dénominateurs séparés : C1 47/47, Foundations 34/34, C2a 1 statique + 11 réels, C2b 14/14, C3 24/24 sans retry ; lifecycle, API health, inventaire et cleanup PASS | logs Infrastructure du commit technique                     | 61 SKIP historiques non transformés en PASS                                  |
+| Acquisition d'image mal attribuée   | référence fermée, digest, manifeste de plateforme et identité locale exigés pour chacune des deux acquisitions                                                     | résumé final d'inventaire                                   | attribution historique à Node/Nginx seulement inférée                        |
+| Perte des preuves défavorables      | run `41544812819` conservé NON-PASS ; outbox `AMBIGUOUS`/`STABLE` conservée comme observation en lecture seule                                                     | logs historiques et rapport QA                              | aucune transition métier précise déduite                                     |
+| Lecture du canal privé par un tiers | répertoires `0700`, fichiers `0600`, lecteur POSIX non privilégié autorisé et tiers refusé                                                                         | campagne Linux finale                                       | Windows ne constitue pas une preuve POSIX équivalente                        |
+| Surqualification visuelle           | approbation limitée aux neuf captures ; `loading` et `unavailable` synthétiques                                                                                    | décision Product Owner et planche `5485987f…b11`            | parcours absents et accessibilité non démontrée                              |
+| Surqualification d'exploitation     | aucune conclusion de production tirée de la qualification locale/CI                                                                                                | séparation explicite publication, intégration et production | fournisseurs, clés, certificats, réseau et Linux de production non qualifiés |
+
+La qualification technique de publication n'autorise ni intégration ni
+déploiement. Les instantanés antérieurs, y compris le diagnostic du run
+`41439908216`, restent historiques et ne décrivent plus l'état courant publié.

@@ -1,11 +1,10 @@
 # S1.2-03C3 — Interface d'authentification Admin
 
-Statut : **CANDIDAT C3 DANS LA DRAFT PR #54 — RACCORDEMENT BUILD C2a PUBLIÉ —
-INFRASTRUCTURE `41439908216` NON-PASS HISTORIQUE — DIAGNOSTIC NAVIGATEUR À
-CHAMPS FERMÉS QUALIFIÉ LOCALEMENT — INTÉGRATION CONDITIONNÉE À UNE CI FRAÎCHE
-— A-02, FIREFOX WINDOWS ET VISUEL PRODUCT OWNER BORNÉS — NON DÉPLOYÉ**
+Statut : **QUALIFICATION TECHNIQUE DE PUBLICATION CONSTATÉE LE 3 NOVEMBRE 2026
+AU COMMIT `6c80890c83ea1170064bb0374216f96e37746e95` — DRAFT PR #54 —
+INTÉGRATION SOUMISE À UNE DÉCISION DISTINCTE — NON DÉPLOYÉ**
 
-Date : 2026-11-02
+Date : 2026-11-03
 
 Baseline : merge C2b `c47a1507dce6ea7333ce7e372f9bd34aa548c81b`,
 arbre `063f2c7ab5cdf9df489332263e4b3184adf90330`.
@@ -14,8 +13,12 @@ Autorités : [ADR-025](../adr/ADR-025-admin-auth-session-audit-contexts.md),
 [ADR-026](../adr/ADR-026-admin-security-c2-runtime-contract.md), contrat
 OpenAPI intégré et décision A-02 du mandat C3.
 
-Ce document décrit le candidat local courant. Il ne qualifie ni publication,
-ni hébergement, ni certificat, ni réseau, ni fournisseur de production.
+Ce document décrit l'architecture du candidat C3 dont la qualification
+technique de publication a été constatée le 3 novembre 2026 au commit
+`6c80890c83ea1170064bb0374216f96e37746e95`. Il ne qualifie ni intégration,
+ni déploiement, ni hébergement, ni certificat, ni réseau, ni fournisseur de
+production. Les preuves terminales et leurs limites sont centralisées dans le
+[rapport QA C3](../qa/SLICE_1_2_03C3_ADMIN_AUTH_INTERFACE_REPORT.md).
 
 ## Périmètre fermé
 
@@ -364,3 +367,32 @@ avec `TERMINAL/PASSED`, 24 tests découverts et commencés, zéro skip, timeout 
 redaction, scan de secrets, cleanup et inventaire étranger passent. Le défaut
 n'étant pas reproduit, ce résultat qualifie le diagnostic local, pas la cause
 historique ni la topologie GitHub.
+
+## Qualification technique de publication constatée — 2026-11-03
+
+La qualification technique de publication a été constatée le 3 novembre 2026
+au commit `6c80890c83ea1170064bb0374216f96e37746e95`, arbre
+`29cb5b79becca24d3e265ff4c92411ed01765ba1`, sur la base
+`c47a1507dce6ea7333ce7e372f9bd34aa548c81b`. Le gel
+`52bfe45828a196604ef2d73e3a7cab36d44fcbc00f11842daa19b3515159ec71`
+porte uniquement les cinq entrées du dernier correctif ; il reste distinct du
+diff cumulatif des sept commits.
+
+Les quatre workflows pull request, tentative 1, terminent en succès sur le
+checkout synthétique `1360bdc10ad8fba306f19a99c8aa4f134655ad32` :
+Infrastructure `41649247825`, Launcher Windows `41649247085`, Security
+`41649247142` et Quality Linux `41649247115`. Infrastructure traverse C1
+47/47, Foundations C2a 34/34, C2a métier avec un contrôle statique et onze
+scénarios réels, C2b 14/14 et C3 24/24 sans retry, puis lifecycle, API health,
+inventaire et cleanup.
+
+Deux acquisitions d'images sont qualifiées par leurs références fermées,
+digests, plateforme et identité locale. Leur attribution historique à Node et
+Nginx reste une inférence étayée, pas une observation directe. Le run
+Infrastructure `41544812819` demeure NON-PASS historique et l'observation
+outbox `AMBIGUOUS` reste bornée à la lecture seule observée.
+
+L'approbation Product Owner couvre uniquement les neuf captures de la planche
+`5485987f…b11`; `loading` et `unavailable` sont synthétiques. Les parcours
+absents, les contrôles d'accessibilité non démontrés, les fournisseurs, les
+clés, les certificats, le réseau et Linux de production restent hors portée.

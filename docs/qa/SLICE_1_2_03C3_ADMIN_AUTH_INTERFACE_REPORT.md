@@ -1,25 +1,25 @@
 # S1.2-03C3 — Rapport de qualification de l'interface Admin Auth
 
-Statut : **C3 DANS LA DRAFT PR #54 — HEAD `c820bec…` — INFRASTRUCTURE
-`41439908216` NON-PASS HISTORIQUE — DIAGNOSTIC NAVIGATEUR FERMÉ QUALIFIÉ
-LOCALEMENT — RÉSOLUTION
-MULTI-PLATEFORME DU RUNNER QUALIFIÉE LOCALEMENT — INTÉGRATION CONDITIONNÉE À
-UNE CI FRAÎCHE — APPROBATION VISUELLE PRODUCT OWNER BORNÉE**
+Statut : **QUALIFICATION TECHNIQUE DE PUBLICATION CONSTATÉE LE 3 NOVEMBRE 2026
+AU COMMIT `6c80890c83ea1170064bb0374216f96e37746e95` — DRAFT PR #54 — QUATRE
+WORKFLOWS CONCLUANTS — INTÉGRATION SOUMISE À UNE DÉCISION DISTINCTE —
+APPROBATION VISUELLE PRODUCT OWNER BORNÉE**
 
-Date : 2026-11-02
+Date : 2026-11-03
 
 ## Référence et autorité
 
 - baseline : `c47a1507dce6ea7333ce7e372f9bd34aa548c81b` ;
 - arbre baseline : `063f2c7ab5cdf9df489332263e4b3184adf90330` ;
-- branche locale : `feat/s1-2-03c3-admin-auth-interface` ;
+- branche publiée : `feat/s1-2-03c3-admin-auth-interface` ;
 - quatorze worktrees attendus ;
 - ADR-025, ADR-026, OpenAPI intégré, mandat C3 A-02 et avenants Unicode,
   états globaux anonymes et reset C2a atomique.
 
-Le candidat demeure dans le worktree local, avec index vide. Aucun `git add`,
-commit, push, PR, Ready, approval, merge, tag, release ou déploiement C3 n'est
-autorisé par la campagne.
+La qualification technique de publication est rattachée au commit
+`6c80890c83ea1170064bb0374216f96e37746e95`. Elle ne vaut ni Ready, approval,
+intégration, tag, release, déploiement ou qualification de production. Les
+formulations prépublication plus bas restent des instantanés historiques datés.
 
 ## Périmètre
 
@@ -403,3 +403,54 @@ GitHub. Le défaut n'ayant pas été reproduit localement, la seule voie retenue
 est un commit diagnostique conditionnel. Une future CI verte qualifierait son
 propre SHA dans les étapes exécutées sans expliquer rétroactivement le run
 historique.
+
+## Qualification technique de publication constatée — 2026-11-03
+
+La qualification technique de publication a été constatée le 3 novembre 2026
+au commit `6c80890c83ea1170064bb0374216f96e37746e95`, arbre
+`29cb5b79becca24d3e265ff4c92411ed01765ba1`, sur la base
+`c47a1507dce6ea7333ce7e372f9bd34aa548c81b`. Le gel correctif
+`52bfe45828a196604ef2d73e3a7cab36d44fcbc00f11842daa19b3515159ec71`
+contient cinq entrées et reste distinct du diff cumulatif des sept commits.
+
+Les quatre workflows `pull_request`, tentative 1, sont `completed/success` sur
+le checkout synthétique `1360bdc10ad8fba306f19a99c8aa4f134655ad32` :
+
+| Workflow         | Run           | Résultat sélectionné                                                            |
+| ---------------- | ------------- | ------------------------------------------------------------------------------- |
+| Infrastructure   | `41649247825` | C1 47/47 ; Foundations 34/34 ; C2a 1 statique + 11 réels ; C2b 14/14 ; C3 24/24 |
+| Launcher Windows | `41649247085` | `completed/success` sur la même tête et le même checkout synthétique            |
+| Security         | `41649247142` | `completed/success` ; contrôles dépendances et secrets concluants               |
+| Quality Linux    | `41649247115` | `completed/success` sur la même tête et le même checkout synthétique            |
+
+C3 exécute réellement 24 scénarios sans retry : Chromium 18/18, Firefox 3/3 et
+WebKit 3/3. Infrastructure termine également lifecycle, API health, inventaire
+et cleanup. Ces résultats ne transforment pas les 61 SKIP historiques en PASS ;
+les campagnes réelles séparées restent les preuves sélectionnées de leur propre
+périmètre.
+
+Le contrôle d'inventaire accepte exactement deux acquisitions d'images après
+vérification des références fermées, digests, manifestes de plateforme et
+identités locales. Leur attribution historique à Node et Nginx reste une
+inférence étayée : PostgreSQL et Redis étaient déjà acquis au préflight et la
+liste admissible contenait exactement quatre images. Cette inférence n'est pas
+présentée comme une observation directe.
+
+Le run Infrastructure `41544812819` reste NON-PASS historique. Les deux mesures
+outbox restent `EXPECTED|CONFIRMED|AMBIGUOUS|ONE` et `STABLE` : elles qualifient
+la lecture seule et la stabilité observées, pas une transition métier précise.
+Les permissions privées `0700`/`0600`, le lecteur POSIX non privilégié et le
+refus d'un tiers sont qualifiés dans la campagne finale.
+
+L'approbation Product Owner est strictement limitée aux neuf captures de la
+planche SHA-256 `5485987f4da1be07a30234e91c0a065c61552b0ea0ea5ee713c168da1fd0cb11`,
+rattachée au gel technique
+`79cc6da1b1fd047c877e175ac8bcee8af5fd2707528bbec5099d2726a3c7c2fd`.
+Les états `loading` et `unavailable` sont synthétiques. Les parcours absents,
+lecteur d'écran réel, forced-colors, zoom/reflow, appareils physiques et
+localisation ne sont pas qualifiés.
+
+Fournisseurs, clés, certificats, réseau, Linux de production et politique OSS
+restent non qualifiés ou différés selon leur portée historique. La qualification
+technique de publication ne constitue ni un GO d'intégration ni un GO de
+production.

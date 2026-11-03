@@ -1,14 +1,14 @@
 # KORA+ Final — Source de vérité
 
 Statut : **DOCUMENT OPÉRATIONNEL VIVANT — C2a ET C2b INTÉGRÉS DANS MAIN AU
-MERGE `c47a1507dce6ea7333ce7e372f9bd34aa548c81b`, NON DÉPLOYÉS — C3 DANS LA
-DRAFT PR #54 — RACCORDEMENT BUILD C2a PUBLIÉ — INFRASTRUCTURE `41439908216`
-NON-PASS HISTORIQUE — DIAGNOSTIC NAVIGATEUR À CHAMPS FERMÉS QUALIFIÉ
-LOCALEMENT — INTÉGRATION CONDITIONNÉE À UNE CI FRAÎCHE — FOURNISSEURS ET LINUX
-DE PRODUCTION NON QUALIFIÉS**
+MERGE `c47a1507dce6ea7333ce7e372f9bd34aa548c81b`, NON DÉPLOYÉS — QUALIFICATION
+TECHNIQUE DE PUBLICATION CONSTATÉE LE 3 NOVEMBRE 2026 AU COMMIT
+`6c80890c83ea1170064bb0374216f96e37746e95` POUR C3 DANS LA DRAFT PR #54 —
+INTÉGRATION SOUMISE À UNE DÉCISION DISTINCTE — FOURNISSEURS ET LINUX DE
+PRODUCTION NON QUALIFIÉS**
 
 Date d’effet : 2026-07-28
-Dernière réconciliation documentaire : 2026-11-02
+Dernière réconciliation documentaire : 2026-11-03
 
 ## Hiérarchie normative
 
@@ -1840,3 +1840,26 @@ Linux passe Chromium 18/18, Firefox 3/3 et WebKit 3/3, avec résumé terminal
 24/24, puis sonde attendue, visuel, redaction, secret scan, cleanup et
 inventaire étranger conformes. Le défaut CI n'est pas reproduit ; ce résultat
 n'en explique pas l'origine et ne qualifie ni GitHub ni Linux de production.
+
+## Qualification technique de publication C3 constatée — 2026-11-03
+
+La qualification technique de publication a été constatée le 3 novembre 2026
+au commit `6c80890c83ea1170064bb0374216f96e37746e95`. Le dernier gel correctif
+`52bfe45828a196604ef2d73e3a7cab36d44fcbc00f11842daa19b3515159ec71`
+porte cinq entrées et ne remplace pas le diff cumulatif des sept commits.
+
+Infrastructure `41649247825`, Launcher Windows `41649247085`, Security
+`41649247142` et Quality Linux `41649247115` terminent en succès, tentative 1,
+sur le checkout synthétique `1360bdc10ad8fba306f19a99c8aa4f134655ad32`.
+Infrastructure exécute C1 47/47, Foundations C2a 34/34, C2a métier avec un
+contrôle statique et onze scénarios réels, C2b 14/14 et C3 24/24 sans retry,
+puis lifecycle, API health, inventaire et cleanup.
+
+Deux acquisitions d'images sont qualifiées ; leur attribution historique à
+Node et Nginx reste une inférence étayée. Le run `41544812819` reste NON-PASS,
+l'observation outbox `AMBIGUOUS` demeure bornée, et les SKIP historiques ne
+sont pas reclassés PASS. L'approbation Product Owner reste limitée aux neuf
+captures, dont deux états synthétiques. Accessibilité non démontrée, parcours
+absents, fournisseurs, clés, certificats, réseau, Linux de production et
+politique OSS conservent leurs limites. Le détail probatoire figure dans le
+[rapport QA C3](../qa/SLICE_1_2_03C3_ADMIN_AUTH_INTERFACE_REPORT.md).
